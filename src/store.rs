@@ -139,10 +139,17 @@ impl Store {
                 line            INTEGER,
 
                 -- For Hebbian associations
-                strength        REAL NOT NULL DEFAULT 1.0,
-
-                UNIQUE(codebase_id, file_path, role, kind, line)
+                strength        REAL NOT NULL DEFAULT 1.0
             );
+
+            -- Code edges: one entry per (codebase, file, role, kind, line)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_code_edge
+                ON graph(codebase_id, file_path, role, kind, line)
+                WHERE codebase_id IS NOT NULL;
+            -- Hebbian associations: one edge per (source, target, role)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_association
+                ON graph(source_chunk, target_chunk, role)
+                WHERE role = 'associates';
 
             CREATE INDEX IF NOT EXISTS idx_graph_symbol
                 ON graph(codebase_id, symbol) WHERE symbol IS NOT NULL;
@@ -150,6 +157,16 @@ impl Store {
                 ON graph(source_chunk) WHERE source_chunk IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_graph_target
                 ON graph(target_chunk) WHERE target_chunk IS NOT NULL;
+
+            -- FTS5 keyword search across all chunks (code + memory)
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+                title,
+                content,
+                snippet,
+                symbol_name,
+                descriptors,
+                tokenize='porter unicode61'
+            );
 
             -- Session handoffs for continuity
             CREATE TABLE IF NOT EXISTS handoffs (
@@ -239,39 +256,54 @@ impl Store {
         include_archived: bool,
         limit: usize,
     ) -> Result<Vec<Chunk>> {
-        let mut sql = String::from(
-            "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
+        let select = "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
                     file_path, language, start_line, end_line, memory_type,
                     descriptors, source, access_count, last_accessed, salience, archived,
                     content_hash, agent_id, created_at, updated_at, codebase_id
-             FROM chunks WHERE kind = 'memory'",
-        );
+             FROM chunks WHERE kind = 'memory'";
 
-        if !include_archived {
-            sql.push_str(" AND archived = 0");
-        }
-        if memory_type.is_some() {
-            sql.push_str(" AND memory_type = ?1");
-        }
-        sql.push_str(" ORDER BY created_at DESC LIMIT ?2");
+        let archived_clause = if include_archived { "" } else { " AND archived = 0" };
 
-        let mut stmt = self.conn.prepare(&sql)?;
-
-        let rows = if let Some(mt) = memory_type {
-            stmt.query_map(params![mt, limit as i64], row_to_chunk)?
+        if let Some(mt) = memory_type {
+            let sql = format!(
+                "{select}{archived_clause} AND memory_type = ?1 ORDER BY created_at DESC LIMIT ?2"
+            );
+            let mut stmt = self.conn.prepare(&sql)?;
+            let rows = stmt
+                .query_map(params![mt, limit as i64], row_to_chunk)?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok(rows)
         } else {
-            // When no memory_type filter, ?1 is not used — shift limit to ?1
-            let adjusted = sql.replace("?2", "?1");
-            drop(stmt);
-            let mut stmt2 = self.conn.prepare(&adjusted)?;
-            let results: Vec<Chunk> = stmt2
+            let sql = format!(
+                "{select}{archived_clause} ORDER BY created_at DESC LIMIT ?1"
+            );
+            let mut stmt = self.conn.prepare(&sql)?;
+            let rows = stmt
                 .query_map(params![limit as i64], row_to_chunk)?
                 .filter_map(|r| r.ok())
                 .collect();
-            return Ok(results);
-        };
+            Ok(rows)
+        }
+    }
 
-        Ok(rows.filter_map(|r| r.ok()).collect())
+    /// Update a memory entry's content and metadata.
+    pub fn update_memory(
+        &self,
+        id: i64,
+        title: &str,
+        content: &str,
+        descriptors: &str,
+        content_hash: &str,
+    ) -> Result<bool> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let rows = self.conn.execute(
+            "UPDATE chunks SET title = ?1, content = ?2, descriptors = ?3,
+                               content_hash = ?4, updated_at = ?5
+             WHERE id = ?6 AND kind = 'memory'",
+            params![title, content, descriptors, content_hash, now, id],
+        )?;
+        Ok(rows > 0)
     }
 
     /// Count chunks by kind.
@@ -541,6 +573,59 @@ mod tests {
 
         let with_archived = store.list_memories(None, true, 100).unwrap();
         assert_eq!(with_archived.len(), 1);
+    }
+
+    #[test]
+    fn test_update_memory() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = Store::open(&db_path).unwrap();
+
+        let id = store
+            .insert_memory("Original", "Old content", "knowledge", "tag1", 0.5, "hash1", "test")
+            .unwrap();
+
+        let updated = store
+            .update_memory(id, "Updated", "New content", "tag1, tag2", "hash2")
+            .unwrap();
+        assert!(updated);
+
+        let chunk = store.get_chunk(id).unwrap().unwrap();
+        assert_eq!(chunk.title, "Updated");
+        assert_eq!(chunk.content, "New content");
+        assert_eq!(chunk.descriptors, "tag1, tag2");
+        assert_eq!(chunk.content_hash, "hash2");
+    }
+
+    #[test]
+    fn test_update_nonexistent_returns_false() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = Store::open(&db_path).unwrap();
+
+        let updated = store.update_memory(999, "X", "Y", "", "").unwrap();
+        assert!(!updated);
+    }
+
+    #[test]
+    fn test_fts_table_exists() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = Store::open(&db_path).unwrap();
+
+        // Verify FTS5 table was created by inserting and querying
+        store.conn().execute(
+            "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
+             VALUES (1, 'test title', 'test content', '', '', 'tag1')",
+            [],
+        ).unwrap();
+
+        let count: i64 = store.conn().query_row(
+            "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'test'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 1);
     }
 
     #[test]
