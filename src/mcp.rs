@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Content, ServerCapabilities, ServerInfo};
+use rmcp::model::{CallToolResult, Content, ServerCapabilities, ServerInfo, ToolAnnotations};
 use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -16,59 +16,59 @@ use ferret::embed::Embedder;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchParams {
-    /// Search query string
+    /// Natural language query or keyword to search for
     pub query: String,
-    /// Filter results: "all" (default), "code", or "memory"
+    /// Filter by entry type. Values: "all" (default), "code", "memory"
     pub kind: Option<String>,
-    /// Maximum number of results (default: 10)
+    /// Maximum results to return, 1-100 (default: 10)
     pub limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct IndexParams {
-    /// Directory path to index (absolute path)
+    /// Absolute path to the directory to index (e.g. "/home/user/projects/myapp")
     pub directory: String,
-    /// Generate embeddings for semantic search (slower, ~4/sec on CPU)
+    /// Also generate semantic embeddings after indexing. Enables hybrid search but is slow (~4 embeddings/sec on CPU). Default: false
     pub embed: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NavigateParams {
-    /// Symbol name to look up
+    /// Exact symbol name to look up (e.g. "SearchParams", "run_http", "Store")
     pub symbol: String,
-    /// Direction: "refs" (references only), "defs" (definitions only), or "both" (default)
+    /// Which edges to follow. Values: "both" (default), "defs", "refs"
     pub direction: Option<String>,
-    /// Filter results to files under this directory path
+    /// Scope to a codebase by directory name or path suffix. Required when multiple codebases are indexed
     pub dir: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MapParams {
-    /// Filter to a specific codebase directory path
+    /// Scope to a codebase by directory name or path suffix. Required when multiple codebases are indexed
     pub dir: Option<String>,
-    /// Token budget for output (default: 4000)
+    /// Approximate token budget for output, 1-200000 (default: 4000). Larger budget = more detail
     pub budget: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ImpactParams {
-    /// Symbol name to analyze
+    /// Exact symbol name to analyze (e.g. "Store", "search")
     pub symbol: String,
-    /// Maximum BFS depth (default: 2)
+    /// Maximum BFS traversal depth, 1-5 (default: 2). Depth 1 = direct callers only
     pub depth: Option<usize>,
-    /// Filter results to files under this directory path
+    /// Scope to a codebase by directory name or path suffix. Required when multiple codebases are indexed
     pub dir: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RememberParams {
-    /// Memory content to store
+    /// The information to remember. Can be a fact, decision, preference, observation, or procedure
     pub content: String,
-    /// Title (auto-generated from content if omitted)
+    /// Short title for this memory. Auto-generated from content if omitted
     pub title: Option<String>,
-    /// Memory type: identity, knowledge, episode, procedure (auto-classified if omitted)
+    /// Memory type. Values: "identity" (who I am), "knowledge" (facts/decisions), "episode" (events), "procedure" (how-to). Auto-classified if omitted
     pub r#type: Option<String>,
-    /// Comma-separated descriptor tags
+    /// Comma-separated tags for organization (e.g. "rust,grasshopper,architecture")
     pub tags: Option<String>,
 }
 
@@ -77,37 +77,37 @@ pub struct MeParams {}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct PickupParams {
-    /// Filter by project name
+    /// Filter to a specific project's handoff (e.g. "grasshopper"). Returns latest handoff if omitted
     pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct HandoffParams {
-    /// Project name this handoff belongs to
+    /// Project name this handoff belongs to (e.g. "grasshopper", "ferret")
     pub project: String,
-    /// Summary of what was accomplished
+    /// What was accomplished in this session
     pub summary: String,
-    /// What should happen next
+    /// Concrete next steps for whoever picks up this project
     pub next_steps: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ConsolidateParams {
-    /// Preview only — do not archive anything
+    /// Preview changes without applying them. Default: true (safe preview mode)
     pub dry_run: Option<bool>,
-    /// Days of inactivity before considering stale (default: 90)
+    /// Days of inactivity before a memory is considered stale, minimum 1 (default: 90)
     pub stale_days: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReflectParams {
-    /// Focus area: overview (default), growing, fading, connections, gaps
+    /// What aspect of memory to analyze. Values: "overview" (default), "growing" (recently active), "fading" (neglected), "connections" (Hebbian associations), "gaps" (missing coverage)
     pub focus: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetParams {
-    /// Chunk/memory ID to retrieve
+    /// Numeric ID of the entry to retrieve (from search results or other tool outputs)
     pub id: i64,
 }
 
@@ -126,7 +126,7 @@ impl GrasshopperMcp {
         Self {
             db_path,
             embedder: Arc::new(Mutex::new(None)),
-            tool_router: Self::tool_router(),
+            tool_router: Self::annotated_router(),
         }
     }
 
@@ -134,14 +134,50 @@ impl GrasshopperMcp {
         Self {
             db_path,
             embedder,
-            tool_router: Self::tool_router(),
+            tool_router: Self::annotated_router(),
         }
     }
 
-    fn try_init_embedder(embedder: &Arc<Mutex<Option<Embedder>>>) {
+    /// Build tool router with MCP annotations so clients can categorize tools
+    /// into read-only vs write/delete groups.
+    fn annotated_router() -> rmcp::handler::server::router::tool::ToolRouter<Self> {
+        let mut router = Self::tool_router();
+
+        let read_only = ToolAnnotations::new()
+            .read_only(true)
+            .destructive(false);
+        let write = ToolAnnotations::new()
+            .read_only(false)
+            .destructive(false);
+        let destructive_write = ToolAnnotations::new()
+            .read_only(false)
+            .destructive(true);
+
+        for (name, route) in router.map.iter_mut() {
+            let ann = match name.as_ref() {
+                // Read-only: search, navigate, map, impact, me, pickup, reflect, get
+                "search" | "navigate" | "map" | "impact" | "me" | "pickup" | "reflect"
+                | "get" => read_only.clone(),
+                // Destructive: consolidate can archive/delete memories
+                "consolidate" => destructive_write.clone(),
+                // Write (non-destructive): index, remember, handoff
+                _ => write.clone(),
+            };
+            route.attr.annotations = Some(ann);
+        }
+
+        router
+    }
+
+    /// Initialize embedder if not yet loaded. MUST be called inside spawn_blocking
+    /// (not on an async thread) since it acquires a blocking std::sync::Mutex.
+    fn init_embedder_blocking(embedder: &Arc<Mutex<Option<Embedder>>>) {
         let mut guard = match embedder.lock() {
             Ok(g) => g,
-            Err(_) => return,
+            Err(poisoned) => {
+                tracing::warn!("embedder mutex poisoned, recovering: {poisoned}");
+                poisoned.into_inner()
+            }
         };
         if guard.is_none() {
             let cache_dir = ferret::embed::default_cache_dir();
@@ -155,8 +191,8 @@ impl GrasshopperMcp {
     // --- Code Intelligence Tools ---
 
     #[tool(
-        name = "grasshopper_search",
-        description = "Search code and memory in one query. Hybrid search (keyword + semantic) across indexed codebases and stored memories. Use kind='code' or kind='memory' to filter, or 'all' (default) for both."
+        name = "search",
+        description = "Search across code and memory with a single query. Returns ranked results using hybrid search (keyword matching + semantic similarity). Use kind='code' to search only indexed source files, kind='memory' to search only stored memories, or omit for both. Start here when looking for anything."
     )]
     async fn search(
         &self,
@@ -164,16 +200,16 @@ impl GrasshopperMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
-        Self::try_init_embedder(&embedder);
 
         let result = tokio::task::spawn_blocking(move || {
+            Self::init_embedder_blocking(&embedder);
             let store = Store::open(&db_path)?;
             let kind_filter = match params.kind.as_deref() {
                 Some("all") | None => None,
                 Some(k @ ("code" | "memory")) => Some(k),
                 Some(k) => anyhow::bail!("invalid kind '{k}': must be 'all', 'code', or 'memory'"),
             };
-            let limit = params.limit.unwrap_or(10).min(100);
+            let limit = params.limit.unwrap_or(10).clamp(1, 100);
             let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let results =
                 crate::search::search(&store, &params.query, kind_filter, limit, guard.as_mut())?;
@@ -190,8 +226,8 @@ impl GrasshopperMcp {
     }
 
     #[tool(
-        name = "grasshopper_index",
-        description = "Index a directory of source code for search. Supports 13 languages. Incremental: only re-indexes changed files. Use embed=true to generate semantic embeddings (slow on CPU)."
+        name = "index",
+        description = "Index a source code directory for search and navigation. Parses 13 languages (Rust, TypeScript, Python, Go, etc.) using tree-sitter, extracts symbols and references. Incremental — only re-indexes changed files. Run once per codebase, then use search/navigate/map/impact."
     )]
     async fn index_dir(
         &self,
@@ -217,7 +253,7 @@ impl GrasshopperMcp {
             });
 
             if embed {
-                Self::try_init_embedder(&embedder);
+                Self::init_embedder_blocking(&embedder);
                 let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
                 if let Some(emb) = guard.as_mut() {
                     let embedded =
@@ -241,8 +277,8 @@ impl GrasshopperMcp {
     }
 
     #[tool(
-        name = "grasshopper_navigate",
-        description = "Navigate code graph: find where a symbol is defined and what references it. Use direction='refs' (callers), 'defs' (definitions), or 'both' (default)."
+        name = "navigate",
+        description = "Find where a symbol is defined and what references it. Returns file:line locations. Use when you know the exact symbol name and need to find its definition or callers."
     )]
     async fn navigate(
         &self,
@@ -309,8 +345,8 @@ impl GrasshopperMcp {
     }
 
     #[tool(
-        name = "grasshopper_map",
-        description = "Show codebase map: definitions grouped by file, ranked by reference frequency. Token-budgeted output for LLM context. Use dir parameter to scope to a specific codebase."
+        name = "map",
+        description = "Get a high-level overview of a codebase. Returns all symbols (functions, structs, traits, etc.) grouped by file, ranked by how frequently they're referenced. Output is token-budgeted to fit in context. Use to orient yourself in an unfamiliar codebase."
     )]
     async fn map(
         &self,
@@ -320,10 +356,10 @@ impl GrasshopperMcp {
 
         let result = tokio::task::spawn_blocking(move || {
             let store = Store::open(&db_path)?;
-            let budget = params.budget.unwrap_or(4000).min(200_000);
+            let budget = params.budget.unwrap_or(4000).clamp(1, 200_000);
 
             let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
-                .context("no codebases indexed — run grasshopper_index first")?;
+                .context("no codebases indexed — run index first")?;
 
             generate_map(&store, codebase_id, budget)
         })
@@ -337,8 +373,8 @@ impl GrasshopperMcp {
     }
 
     #[tool(
-        name = "grasshopper_impact",
-        description = "Analyze impact of changing a symbol. BFS traversal through the reference graph: depth 1 = direct callers, depth 2+ = transitive dependents. Shows which files would be affected."
+        name = "impact",
+        description = "Analyze what would break if a symbol were changed. Walks the reference graph outward: depth 1 shows direct callers, depth 2+ shows transitive dependents. Use before refactoring to understand blast radius."
     )]
     async fn impact(
         &self,
@@ -349,7 +385,7 @@ impl GrasshopperMcp {
         let result = tokio::task::spawn_blocking(move || {
             let store = Store::open(&db_path)?;
             let codebase_id = resolve_codebase(&store, params.dir.as_deref())?;
-            let max_depth = params.depth.unwrap_or(2).min(5);
+            let max_depth = params.depth.unwrap_or(2).clamp(1, 5);
 
             let hits = store.find_impact(&params.symbol, codebase_id, max_depth)?;
 
@@ -400,8 +436,8 @@ impl GrasshopperMcp {
     // --- Cognitive Memory Tools ---
 
     #[tool(
-        name = "grasshopper_remember",
-        description = "Store a memory with auto-classification and dedup. Content is auto-classified as identity/knowledge/episode/procedure if type omitted. Near-duplicate memories are updated rather than duplicated."
+        name = "remember",
+        description = "Store a fact, decision, preference, or observation as a persistent memory. Auto-classifies the memory type and deduplicates — if a near-duplicate exists, it updates the existing entry instead of creating a new one. Use proactively to save anything worth remembering across sessions."
     )]
     async fn remember(
         &self,
@@ -409,9 +445,9 @@ impl GrasshopperMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
-        Self::try_init_embedder(&embedder);
 
         let result = tokio::task::spawn_blocking(move || {
+            Self::init_embedder_blocking(&embedder);
             let store = Store::open(&db_path)?;
             let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let tags = params.tags.as_deref().unwrap_or("");
@@ -443,8 +479,8 @@ impl GrasshopperMcp {
     }
 
     #[tool(
-        name = "grasshopper_me",
-        description = "Identity snapshot: who am I, what am I working on, working memory. Returns identity entries, active projects (latest handoffs), most-accessed memories, and counts."
+        name = "me",
+        description = "Load identity and working context. Returns: who I am (identity memories), active projects (latest handoffs), most-accessed memories (working set), and memory counts. Call at session start to establish context."
     )]
     async fn me(
         &self,
@@ -479,8 +515,8 @@ impl GrasshopperMcp {
     }
 
     #[tool(
-        name = "grasshopper_pickup",
-        description = "Resume a previous session. Loads the latest handoff and retrieves related memories via cognitive search. Use at session start for continuity."
+        name = "pickup",
+        description = "Resume where a previous session left off. Loads the latest handoff (summary + next steps) and retrieves related memories via cognitive search. Call at session start after me for continuity."
     )]
     async fn pickup(
         &self,
@@ -488,9 +524,9 @@ impl GrasshopperMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
-        Self::try_init_embedder(&embedder);
 
         let result = tokio::task::spawn_blocking(move || {
+            Self::init_embedder_blocking(&embedder);
             let store = Store::open(&db_path)?;
             let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let result =
@@ -511,8 +547,8 @@ impl GrasshopperMcp {
     }
 
     #[tool(
-        name = "grasshopper_handoff",
-        description = "Create a session handoff for continuity. Records what was accomplished, what should happen next, and which project this belongs to. Retrieved later via grasshopper_pickup."
+        name = "handoff",
+        description = "Save a session handoff before ending work. Records what was accomplished and what should happen next. The next session retrieves this via pickup. Call at session end."
     )]
     async fn handoff(
         &self,
@@ -542,8 +578,8 @@ impl GrasshopperMcp {
     }
 
     #[tool(
-        name = "grasshopper_consolidate",
-        description = "Memory hygiene: find near-duplicates, auto-archive stale entries, cluster episodes by tag. Use dry_run=true to preview without changes."
+        name = "consolidate",
+        description = "Clean up memory: find near-duplicate entries, auto-archive stale memories, and cluster episodes by tag. Defaults to dry_run=true (preview only). Run periodically to keep memory lean."
     )]
     async fn consolidate(
         &self,
@@ -551,9 +587,9 @@ impl GrasshopperMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
-        Self::try_init_embedder(&embedder);
 
         let result = tokio::task::spawn_blocking(move || {
+            Self::init_embedder_blocking(&embedder);
             let store = Store::open(&db_path)?;
             let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let dry_run = params.dry_run.unwrap_or(true);
@@ -583,8 +619,8 @@ impl GrasshopperMcp {
     }
 
     #[tool(
-        name = "grasshopper_reflect",
-        description = "Meta-cognition analytics: growing memories (recently active), fading memories (need attention), Hebbian connections, memory type distribution, and auto-generated observations."
+        name = "reflect",
+        description = "Analyze the state of memory. Shows which memories are growing (recently active), fading (neglected), strongly connected (Hebbian associations), and overall distribution. Use to understand what's well-remembered and what needs attention."
     )]
     async fn reflect(
         &self,
@@ -634,8 +670,8 @@ impl GrasshopperMcp {
     // --- Data Management Tools ---
 
     #[tool(
-        name = "grasshopper_get",
-        description = "Fetch a specific chunk or memory by ID. Returns full content, metadata, and cognitive fields."
+        name = "get",
+        description = "Retrieve the full content of an entry by its numeric ID. Returns all fields including content, metadata, and cognitive state. Use when search results show a relevant entry and you need the complete text."
     )]
     async fn get(
         &self,
@@ -665,18 +701,23 @@ impl ServerHandler for GrasshopperMcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "Grasshopper: Unified agent brain — code intelligence + cognitive memory. \
-                 12 tools: search code and memory (grasshopper_search), \
-                 index codebases (grasshopper_index), \
-                 navigate code graph (grasshopper_navigate), \
-                 codebase map (grasshopper_map), \
-                 impact analysis (grasshopper_impact), \
-                 store memories (grasshopper_remember), \
-                 identity snapshot (grasshopper_me), \
-                 session continuity (grasshopper_pickup, grasshopper_handoff), \
-                 meta-cognition (grasshopper_reflect), \
-                 memory hygiene (grasshopper_consolidate), \
-                 get entry by ID (grasshopper_get)."
+                "Grasshopper is a unified agent brain combining code intelligence and cognitive memory.\n\n\
+                 SESSION WORKFLOW:\n\
+                 - Start: call me then pickup to load identity and resume context\n\
+                 - During: use remember to save decisions, learnings, and preferences\n\
+                 - End: call handoff to record progress and next steps\n\n\
+                 CODE INTELLIGENCE (requires index first):\n\
+                 - search: find code or memories by natural language query\n\
+                 - navigate: jump to a symbol's definition or find its callers\n\
+                 - map: get a token-budgeted overview of an entire codebase\n\
+                 - impact: see what breaks if you change a symbol\n\n\
+                 COGNITIVE MEMORY:\n\
+                 - remember: store facts, decisions, preferences (auto-deduplicates)\n\
+                 - me: load identity and working context\n\
+                 - pickup / handoff: session continuity\n\
+                 - reflect: analyze memory health and patterns\n\
+                 - consolidate: clean up duplicates and stale entries\n\n\
+                 get retrieves the full content of any entry by ID."
                     .into(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
@@ -689,7 +730,7 @@ impl ServerHandler for GrasshopperMcp {
 
 /// Run the MCP server over stdio (for direct Claude Code integration).
 pub async fn run_stdio(db_path: PathBuf) -> Result<()> {
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
                 .add_directive(tracing::Level::INFO.into())
@@ -698,7 +739,7 @@ pub async fn run_stdio(db_path: PathBuf) -> Result<()> {
         .with_writer(std::io::stderr)
         .with_target(false)
         .with_ansi(false)
-        .init();
+        .try_init();
 
     tracing::info!("starting grasshopper MCP server (stdio)");
     let server = GrasshopperMcp::new(db_path);
@@ -709,14 +750,14 @@ pub async fn run_stdio(db_path: PathBuf) -> Result<()> {
 
 /// Run the MCP server over HTTP (daemon mode).
 pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
                 .add_directive(tracing::Level::INFO.into())
                 .add_directive("ort=warn".parse().unwrap()),
         )
         .with_target(false)
-        .init();
+        .try_init();
 
     use rmcp::transport::streamable_http_server::{
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
@@ -867,12 +908,22 @@ fn chunk_summary(c: &crate::store::Chunk) -> serde_json::Value {
 fn resolve_codebase(store: &Store, dir: Option<&str>) -> Result<Option<i64>> {
     let codebases = store.list_codebases()?;
     if let Some(dir) = dir {
-        let found = codebases
+        let matches: Vec<_> = codebases
             .iter()
-            .find(|(_, root, name)| name == dir || root.ends_with(dir))
-            .map(|(id, _, _)| Some(*id))
-            .context(format!("no indexed codebase matching '{dir}'"))?;
-        Ok(found)
+            .filter(|(_, root, name)| name == dir || root.ends_with(dir))
+            .collect();
+        match matches.len() {
+            0 => anyhow::bail!("no indexed codebase matching '{dir}'"),
+            1 => Ok(Some(matches[0].0)),
+            _ => {
+                let names: Vec<&str> = matches.iter().map(|(_, _, n)| n.as_str()).collect();
+                anyhow::bail!(
+                    "ambiguous dir '{dir}' matches {} codebases: {}. Use a more specific path.",
+                    matches.len(),
+                    names.join(", ")
+                );
+            }
+        }
     } else if codebases.len() <= 1 {
         Ok(codebases.first().map(|(id, _, _)| *id))
     } else {
@@ -890,7 +941,7 @@ fn generate_map(store: &Store, codebase_id: i64, token_budget: usize) -> Result<
     let ref_counts = store.count_graph_references(codebase_id)?;
 
     if definitions.is_empty() {
-        return Ok("No definitions found. Run grasshopper_index first.".into());
+        return Ok("No definitions found. Run index first.".into());
     }
 
     // Group definitions by file
