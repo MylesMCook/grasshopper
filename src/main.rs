@@ -99,7 +99,7 @@ enum Commands {
     /// Start the MCP server (HTTP daemon mode)
     Serve {
         /// Port to listen on
-        #[arg(long, default_value = "8101")]
+        #[arg(long, default_value = "8106")]
         port: u16,
     },
 

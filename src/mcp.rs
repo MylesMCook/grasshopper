@@ -763,10 +763,23 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
             http::HeaderName::from_static("mcp-protocol-version"),
         ]);
 
+    // Prevent Cloudflare edge from Brotli-compressing streaming MCP responses
+    let no_transform = axum::middleware::from_fn(
+        |req: axum::extract::Request, next: axum::middleware::Next| async move {
+            let mut res = next.run(req).await;
+            res.headers_mut().insert(
+                http::header::CACHE_CONTROL,
+                http::HeaderValue::from_static("no-transform"),
+            );
+            res
+        },
+    );
+
     let router = axum::Router::new()
         .route("/healthz", axum::routing::get(|| async { "ok" }))
         .nest_service("/mcp", mcp_service)
-        .layer(cors);
+        .layer(cors)
+        .layer(no_transform);
 
     let addr = format!("127.0.0.1:{port}");
     tracing::info!("starting grasshopper MCP server on http://{addr}/mcp");
