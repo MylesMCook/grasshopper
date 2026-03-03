@@ -170,9 +170,10 @@ impl GrasshopperMcp {
             let store = Store::open(&db_path)?;
             let kind_filter = match params.kind.as_deref() {
                 Some("all") | None => None,
-                Some(k) => Some(k),
+                Some(k @ ("code" | "memory")) => Some(k),
+                Some(k) => anyhow::bail!("invalid kind '{k}': must be 'all', 'code', or 'memory'"),
             };
-            let limit = params.limit.unwrap_or(10);
+            let limit = params.limit.unwrap_or(10).min(100);
             let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let results =
                 crate::search::search(&store, &params.query, kind_filter, limit, guard.as_mut())?;
@@ -254,8 +255,12 @@ impl GrasshopperMcp {
             let codebase_id = resolve_codebase(&store, params.dir.as_deref())?;
             let direction = params.direction.as_deref().unwrap_or("both");
 
-            let show_defs = direction == "both" || direction == "defs" || direction == "def";
-            let show_refs = direction == "both" || direction == "refs" || direction == "ref";
+            let (show_defs, show_refs) = match direction {
+                "both" => (true, true),
+                "defs" | "def" => (true, false),
+                "refs" | "ref" => (false, true),
+                d => anyhow::bail!("invalid direction '{d}': must be 'both', 'defs', or 'refs'"),
+            };
 
             let mut output = String::new();
 
@@ -315,27 +320,10 @@ impl GrasshopperMcp {
 
         let result = tokio::task::spawn_blocking(move || {
             let store = Store::open(&db_path)?;
-            let budget = params.budget.unwrap_or(4000);
+            let budget = params.budget.unwrap_or(4000).min(200_000);
 
-            let codebase_id = if let Some(ref dir) = params.dir {
-                let codebases = store.list_codebases()?;
-                codebases
-                    .iter()
-                    .find(|(_, root, name)| name == dir || root.ends_with(dir))
-                    .map(|(id, _, _)| *id)
-                    .context(format!("no indexed codebase matching '{dir}'"))?
-            } else {
-                let codebases = store.list_codebases()?;
-                if codebases.len() == 1 {
-                    codebases[0].0
-                } else {
-                    let names: Vec<&str> = codebases.iter().map(|(_, _, n)| n.as_str()).collect();
-                    anyhow::bail!(
-                        "Multiple codebases indexed. Use dir parameter to select one: {}",
-                        names.join(", ")
-                    );
-                }
-            };
+            let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
+                .context("no codebases indexed — run grasshopper_index first")?;
 
             generate_map(&store, codebase_id, budget)
         })
@@ -361,7 +349,7 @@ impl GrasshopperMcp {
         let result = tokio::task::spawn_blocking(move || {
             let store = Store::open(&db_path)?;
             let codebase_id = resolve_codebase(&store, params.dir.as_deref())?;
-            let max_depth = params.depth.unwrap_or(2);
+            let max_depth = params.depth.unwrap_or(2).min(5);
 
             let hits = store.find_impact(&params.symbol, codebase_id, max_depth)?;
 
@@ -568,8 +556,8 @@ impl GrasshopperMcp {
         let result = tokio::task::spawn_blocking(move || {
             let store = Store::open(&db_path)?;
             let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let dry_run = params.dry_run.unwrap_or(false);
-            let stale_days = params.stale_days.unwrap_or(90);
+            let dry_run = params.dry_run.unwrap_or(true);
+            let stale_days = params.stale_days.unwrap_or(90).max(1);
             let result =
                 crate::memory::consolidate(&store, guard.as_mut(), dry_run, stale_days)?;
             let output = serde_json::json!({
@@ -607,11 +595,14 @@ impl GrasshopperMcp {
         let result = tokio::task::spawn_blocking(move || {
             let store = Store::open(&db_path)?;
             let focus = match params.focus.as_deref() {
+                Some("overview") | None => crate::memory::ReflectFocus::Overview,
                 Some("growing") => crate::memory::ReflectFocus::Growing,
                 Some("fading") => crate::memory::ReflectFocus::Fading,
                 Some("connections") => crate::memory::ReflectFocus::Connections,
                 Some("gaps") => crate::memory::ReflectFocus::Gaps,
-                _ => crate::memory::ReflectFocus::Overview,
+                Some(f) => anyhow::bail!(
+                    "invalid focus '{f}': must be 'overview', 'growing', 'fading', 'connections', or 'gaps'"
+                ),
             };
             let result = crate::memory::reflect(&store, &focus)?;
             let output = serde_json::json!({
@@ -751,15 +742,21 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
         },
     );
 
+    // No permissive CORS — MCP clients (Claude Code, agents) don't use browser fetch.
+    // Only allow the specific headers MCP protocol needs, no wildcard origins.
     let cors = CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
         .allow_methods([
             http::Method::GET,
             http::Method::POST,
             http::Method::DELETE,
             http::Method::OPTIONS,
         ])
-        .allow_headers(tower_http::cors::Any)
+        .allow_headers([
+            http::header::CONTENT_TYPE,
+            http::header::ACCEPT,
+            http::HeaderName::from_static("mcp-session-id"),
+            http::HeaderName::from_static("mcp-protocol-version"),
+        ])
         .expose_headers([
             http::header::CONTENT_TYPE,
             http::HeaderName::from_static("mcp-session-id"),
@@ -852,17 +849,25 @@ fn chunk_summary(c: &crate::store::Chunk) -> serde_json::Value {
 }
 
 /// Resolve a codebase directory filter to a codebase_id.
+/// If multiple codebases are indexed and no dir is specified, returns an error
+/// listing available codebases (consistent policy across all code-intel tools).
 fn resolve_codebase(store: &Store, dir: Option<&str>) -> Result<Option<i64>> {
+    let codebases = store.list_codebases()?;
     if let Some(dir) = dir {
-        let codebases = store.list_codebases()?;
         let found = codebases
             .iter()
             .find(|(_, root, name)| name == dir || root.ends_with(dir))
             .map(|(id, _, _)| Some(*id))
             .context(format!("no indexed codebase matching '{dir}'"))?;
         Ok(found)
+    } else if codebases.len() <= 1 {
+        Ok(codebases.first().map(|(id, _, _)| *id))
     } else {
-        Ok(None)
+        let names: Vec<&str> = codebases.iter().map(|(_, _, n)| n.as_str()).collect();
+        anyhow::bail!(
+            "Multiple codebases indexed. Use dir parameter to select one: {}",
+            names.join(", ")
+        );
     }
 }
 

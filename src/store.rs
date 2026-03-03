@@ -1109,8 +1109,7 @@ impl Store {
         )?;
         let rows = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
@@ -1125,8 +1124,7 @@ impl Store {
         )?;
         let rows = stmt
             .query_map(params![codebase_id], row_to_graph_edge)?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
@@ -1186,6 +1184,8 @@ impl Store {
     ) -> Result<Vec<ImpactHit>> {
         use std::collections::{HashSet, VecDeque};
 
+        const MAX_NODES: usize = 500;
+
         let mut hits = Vec::new();
         let mut visited_files: HashSet<String> = HashSet::new();
         let mut visited_symbols: HashSet<String> = HashSet::new();
@@ -1220,6 +1220,9 @@ impl Store {
                             via_symbol: sym.clone(),
                             depth,
                         });
+                        if hits.len() >= MAX_NODES {
+                            return Ok(hits);
+                        }
                     }
                 }
 
