@@ -96,12 +96,15 @@ enum Commands {
     /// Show memory statistics
     Stats,
 
-    /// Start the MCP server
+    /// Start the MCP server (HTTP daemon mode)
     Serve {
         /// Port to listen on
         #[arg(long, default_value = "8101")]
         port: u16,
     },
+
+    /// Start the MCP server (stdio, for direct Claude Code integration)
+    Mcp,
 }
 
 fn default_db_path() -> PathBuf {
@@ -115,15 +118,29 @@ fn try_embedder() -> Option<ferret::embed::Embedder> {
 }
 
 fn main() -> Result<()> {
+    let cli = Cli::parse();
+    let db_path = cli.db.unwrap_or_else(default_db_path);
+
+    // MCP commands init their own tracing — handle before CLI tracing
+    match cli.command {
+        Commands::Serve { port } => {
+            let rt = tokio::runtime::Runtime::new()?;
+            return rt.block_on(grasshopper::mcp::run_http(db_path, port));
+        }
+        Commands::Mcp => {
+            let rt = tokio::runtime::Runtime::new()?;
+            return rt.block_on(grasshopper::mcp::run_stdio(db_path));
+        }
+        _ => {}
+    }
+
+    // CLI tracing
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
         )
         .init();
-
-    let cli = Cli::parse();
-    let db_path = cli.db.unwrap_or_else(default_db_path);
 
     match cli.command {
         Commands::Index { dir, embed } => {
@@ -440,10 +457,7 @@ fn main() -> Result<()> {
             println!("Database:     {}", db_path.display());
         }
 
-        Commands::Serve { port } => {
-            println!("TODO: MCP server on port {}", port);
-            println!("(Phase 3 — not yet implemented)");
-        }
+        Commands::Serve { .. } | Commands::Mcp => unreachable!(),
     }
 
     Ok(())

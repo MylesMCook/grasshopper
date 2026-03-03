@@ -1100,6 +1100,145 @@ impl Store {
         Ok(rows)
     }
 
+    // --- Graph query methods (for navigate/map/impact MCP tools) ---
+
+    /// List all indexed codebases.
+    pub fn list_codebases(&self) -> Result<Vec<(i64, String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, root_path, name FROM codebases ORDER BY name",
+        )?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// Get all definition edges for a codebase (used by map).
+    pub fn get_all_definitions(&self, codebase_id: i64) -> Result<Vec<GraphEdge>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT file_path, symbol, 'definition' AS role, MAX(kind) AS kind, line
+             FROM graph
+             WHERE codebase_id = ?1 AND role = 'definition'
+             GROUP BY file_path, symbol, line
+             ORDER BY file_path, line",
+        )?;
+        let rows = stmt
+            .query_map(params![codebase_id], row_to_graph_edge)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// Count reference occurrences per symbol (used by map for ranking).
+    pub fn count_graph_references(&self, codebase_id: i64) -> Result<HashMap<String, usize>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT symbol, COUNT(*) FROM graph
+             WHERE codebase_id = ?1 AND role = 'reference'
+             GROUP BY symbol",
+        )?;
+        let mut counts = HashMap::new();
+        let rows = stmt.query_map(params![codebase_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
+        })?;
+        for row in rows {
+            let (symbol, count) = row?;
+            counts.insert(symbol, count);
+        }
+        Ok(counts)
+    }
+
+    /// Get unique symbol names defined in a specific file (used by impact BFS).
+    pub fn get_definitions_in_file(
+        &self,
+        file_path: &str,
+        codebase_id: Option<i64>,
+    ) -> Result<Vec<String>> {
+        if let Some(cid) = codebase_id {
+            let mut stmt = self.conn.prepare_cached(
+                "SELECT DISTINCT symbol FROM graph
+                 WHERE codebase_id = ?1 AND file_path = ?2 AND role = 'definition'",
+            )?;
+            let rows = stmt
+                .query_map(params![cid, file_path], |row| row.get(0))?
+                .collect::<std::result::Result<Vec<String>, _>>()?;
+            Ok(rows)
+        } else {
+            let mut stmt = self.conn.prepare_cached(
+                "SELECT DISTINCT symbol FROM graph
+                 WHERE file_path = ?1 AND role = 'definition'",
+            )?;
+            let rows = stmt
+                .query_map(params![file_path], |row| row.get(0))?
+                .collect::<std::result::Result<Vec<String>, _>>()?;
+            Ok(rows)
+        }
+    }
+
+    /// BFS impact analysis: "if I change symbol X, what files might be affected?"
+    ///
+    /// Depth 1 = direct callers, depth 2+ = transitive dependents.
+    pub fn find_impact(
+        &self,
+        start_symbol: &str,
+        codebase_id: Option<i64>,
+        max_depth: usize,
+    ) -> Result<Vec<ImpactHit>> {
+        use std::collections::{HashSet, VecDeque};
+
+        let mut hits = Vec::new();
+        let mut visited_files: HashSet<String> = HashSet::new();
+        let mut visited_symbols: HashSet<String> = HashSet::new();
+
+        // Exclude the definition file(s) of the start symbol
+        let start_defs = self.find_definitions(start_symbol, codebase_id)?;
+        for d in &start_defs {
+            visited_files.insert(d.file_path.clone());
+        }
+        visited_symbols.insert(start_symbol.to_owned());
+
+        let mut frontier: VecDeque<String> = VecDeque::new();
+        frontier.push_back(start_symbol.to_owned());
+
+        for depth in 1..=max_depth {
+            let mut next_frontier: HashSet<String> = HashSet::new();
+            let current_batch: Vec<String> = frontier.drain(..).collect();
+
+            if current_batch.is_empty() {
+                break;
+            }
+
+            for sym in &current_batch {
+                let refs = self.find_references(sym, codebase_id)?;
+                let mut ref_files: HashSet<String> = HashSet::new();
+
+                for r in &refs {
+                    ref_files.insert(r.file_path.clone());
+                    if visited_files.insert(r.file_path.clone()) {
+                        hits.push(ImpactHit {
+                            file_path: r.file_path.clone(),
+                            via_symbol: sym.clone(),
+                            depth,
+                        });
+                    }
+                }
+
+                for file in &ref_files {
+                    let file_defs = self.get_definitions_in_file(file, codebase_id)?;
+                    for def_sym in file_defs {
+                        if visited_symbols.insert(def_sym.clone()) {
+                            next_frontier.insert(def_sym);
+                        }
+                    }
+                }
+            }
+
+            frontier.extend(next_frontier);
+        }
+
+        Ok(hits)
+    }
+
     /// Run PRAGMA optimize for query planner stats.
     pub fn optimize(&self) -> Result<()> {
         self.conn.execute_batch("PRAGMA optimize;")?;
@@ -1144,6 +1283,13 @@ pub struct Handoff {
     pub next_steps: String,
     pub project: String,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImpactHit {
+    pub file_path: String,
+    pub via_symbol: String,
+    pub depth: usize,
 }
 
 // --- Row mappers ---
