@@ -1,0 +1,45 @@
+[package]
+name = "grasshopper"
+version = "0.1.0"
+edition = "2024"
+description = "Unified agent brain — code intelligence + cognitive memory in one MCP server"
+
+[lints.clippy]
+perf = { level = "deny", priority = -1 }
+redundant_clone = { level = "deny" }
+
+[dependencies]
+# Ferret — code intelligence primitives
+ferret = { path = "../ferret", features = ["semantic"] }
+
+# Database (same version as Ferret for compatibility)
+rusqlite = { version = "0.32", features = ["bundled", "functions"] }
+
+# MCP server
+rmcp = { version = "0.16", features = ["server", "transport-io", "transport-streamable-http-server"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors"] }
+http = "1"
+schemars = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Utilities
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
