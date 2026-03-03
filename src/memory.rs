@@ -56,10 +56,11 @@ fn auto_title(content: &str) -> String {
         .next()
         .unwrap_or(content)
         .trim();
-    if first_sentence.len() <= 80 {
+    if first_sentence.chars().count() <= 80 {
         first_sentence.to_string()
     } else {
-        format!("{}...", &first_sentence[..77])
+        let truncated: String = first_sentence.chars().take(77).collect();
+        format!("{truncated}...")
     }
 }
 
@@ -133,23 +134,30 @@ pub fn recall(
     // 1. FTS keyword candidates
     let fts = store.fts_search(query, Some("memory"), 20)?;
 
-    // 2. Vector candidates (if embedder available)
+    // 2. Vector candidates (if embedder available, graceful fallback on error)
     let vec_results = if let Some(emb) = embedder {
-        let query_vec = emb.embed_batch(&[query.to_string()])?;
-        if query_vec.is_empty() {
-            vec![]
-        } else {
-            store.vector_search(&query_vec[0], ferret::embed::MODEL_NAME, Some("memory"), 20)?
+        match emb.embed_batch(&[query.to_string()]) {
+            Ok(query_vec) if !query_vec.is_empty() => {
+                store.vector_search(&query_vec[0], ferret::embed::MODEL_NAME, Some("memory"), 20)?
+            }
+            Ok(_) => vec![],
+            Err(e) => {
+                tracing::warn!("Embedding failed, falling back to FTS-only: {e}");
+                vec![]
+            }
         }
     } else {
         vec![]
     };
 
-    // 3. Merge via RRF
-    let merged = if fts.is_empty() {
-        vec_results
+    // 3. Merge via RRF — always normalize through RRF for consistent score scale
+    let empty: Vec<SearchHit> = vec![];
+    let merged = if fts.is_empty() && vec_results.is_empty() {
+        vec![]
+    } else if fts.is_empty() {
+        hybrid_search(&empty, &vec_results, 20)
     } else if vec_results.is_empty() {
-        fts
+        hybrid_search(&fts, &empty, 20)
     } else {
         hybrid_search(&fts, &vec_results, 20)
     };
@@ -171,14 +179,18 @@ pub fn recall(
     scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     scored.truncate(limit);
 
-    // 6. Side effects: touch and create associations
+    // 6. Side effects: touch and create associations (log failures, don't abort)
     let ids: Vec<i64> = scored.iter().map(|h| h.id).collect();
     for &id in &ids {
-        let _ = store.touch_memory(id);
+        if let Err(e) = store.touch_memory(id) {
+            tracing::warn!("Failed to touch memory #{id}: {e}");
+        }
     }
     for i in 0..ids.len() {
         for j in (i + 1)..ids.len() {
-            let _ = store.upsert_association(ids[i], ids[j]);
+            if let Err(e) = store.upsert_association(ids[i], ids[j]) {
+                tracing::warn!("Failed to associate #{} <-> #{}: {e}", ids[i], ids[j]);
+            }
         }
     }
 
@@ -223,10 +235,16 @@ pub fn remember(
             .finalize()
     );
 
-    // 4. Dedup via embedding similarity (if embedder available)
+    // 4. Dedup via embedding similarity (if embedder available, graceful fallback on error)
     if let Some(emb) = embedder {
         let embed_text = format!("{}\n{}", title, content);
-        let vectors = emb.embed_batch(&[embed_text])?;
+        let vectors = match emb.embed_batch(&[embed_text]) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("Embedding failed, skipping dedup: {e}");
+                vec![]
+            }
+        };
         if let Some(query_vec) = vectors.first() {
             let similar = store.search_similar_memories(
                 query_vec,
@@ -237,7 +255,10 @@ pub fn remember(
 
             if let Some(&(existing_id, _sim)) = similar.first() {
                 // Update existing entry
-                store.update_memory(existing_id, &title, content, tags, &hash)?;
+                store.update_memory(existing_id, &MemoryParams {
+                    title: &title, content, memory_type, descriptors: tags,
+                    salience, content_hash: &hash, agent_id: "cli",
+                })?;
                 // Re-embed the updated entry
                 store.batch_upsert_embeddings(&[(
                     existing_id,

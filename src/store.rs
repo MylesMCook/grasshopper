@@ -372,29 +372,22 @@ impl Store {
     }
 
     /// Update a memory entry's content and metadata.
-    pub fn update_memory(
-        &self,
-        id: i64,
-        title: &str,
-        content: &str,
-        descriptors: &str,
-        content_hash: &str,
-    ) -> Result<bool> {
+    pub fn update_memory(&self, id: i64, p: &MemoryParams) -> Result<bool> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute_batch("BEGIN")?;
         let result = (|| -> Result<bool> {
             let rows = self.conn.execute(
-                "UPDATE chunks SET title = ?1, content = ?2, descriptors = ?3,
-                                   content_hash = ?4, updated_at = ?5
-                 WHERE id = ?6 AND kind = 'memory'",
-                params![title, content, descriptors, content_hash, now, id],
+                "UPDATE chunks SET title = ?1, content = ?2, memory_type = ?3, descriptors = ?4,
+                                   salience = ?5, content_hash = ?6, updated_at = ?7
+                 WHERE id = ?8 AND kind = 'memory'",
+                params![p.title, p.content, p.memory_type, p.descriptors, p.salience, p.content_hash, now, id],
             )?;
             if rows > 0 {
                 self.conn.execute("DELETE FROM chunks_fts WHERE rowid = ?1", params![id])?;
                 self.conn.execute(
                     "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
                      VALUES (?1, ?2, ?3, '', '', ?4)",
-                    params![id, title, content, descriptors],
+                    params![id, p.title, p.content, p.descriptors],
                 )?;
             }
             Ok(rows > 0)
@@ -1397,7 +1390,10 @@ mod tests {
             .unwrap();
 
         let updated = store
-            .update_memory(id, "Updated", "New content", "tag1, tag2", "hash2")
+            .update_memory(id, &MemoryParams {
+                title: "Updated", content: "New content", memory_type: "knowledge",
+                descriptors: "tag1, tag2", salience: 0.5, content_hash: "hash2", agent_id: "test",
+            })
             .unwrap();
         assert!(updated);
 
@@ -1414,7 +1410,10 @@ mod tests {
         let db_path = dir.path().join("test.db");
         let store = Store::open(&db_path).unwrap();
 
-        let updated = store.update_memory(999, "X", "Y", "", "").unwrap();
+        let updated = store.update_memory(999, &MemoryParams {
+            title: "X", content: "Y", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
         assert!(!updated);
     }
 
@@ -1451,7 +1450,10 @@ mod tests {
             salience: 0.5, content_hash: "h1", agent_id: "test",
         }).unwrap();
 
-        store.update_memory(id, "Updated", "new content about deno", "", "h2").unwrap();
+        store.update_memory(id, &MemoryParams {
+            title: "Updated", content: "new content about deno", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "h2", agent_id: "test",
+        }).unwrap();
 
         // Old term gone from FTS
         let old: i64 = store.conn().query_row(
