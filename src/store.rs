@@ -258,22 +258,26 @@ impl Store {
     /// Insert a memory entry. Returns the new row ID.
     pub fn insert_memory(&self, p: &MemoryParams) -> Result<i64> {
         let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute(
-            "INSERT INTO chunks (kind, title, content, memory_type, descriptors, salience,
-                                 content_hash, agent_id, created_at, updated_at)
-             VALUES ('memory', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
-            params![p.title, p.content, p.memory_type, p.descriptors, p.salience, p.content_hash, p.agent_id, now],
-        )?;
-        let id = self.conn.last_insert_rowid();
-
-        // Sync to FTS5 index
-        self.conn.execute(
-            "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
-             VALUES (?1, ?2, ?3, '', '', ?4)",
-            params![id, p.title, p.content, p.descriptors],
-        )?;
-
-        Ok(id)
+        self.conn.execute_batch("BEGIN")?;
+        let result = (|| -> Result<i64> {
+            self.conn.execute(
+                "INSERT INTO chunks (kind, title, content, memory_type, descriptors, salience,
+                                     content_hash, agent_id, created_at, updated_at)
+                 VALUES ('memory', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+                params![p.title, p.content, p.memory_type, p.descriptors, p.salience, p.content_hash, p.agent_id, now],
+            )?;
+            let id = self.conn.last_insert_rowid();
+            self.conn.execute(
+                "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
+                 VALUES (?1, ?2, ?3, '', '', ?4)",
+                params![id, p.title, p.content, p.descriptors],
+            )?;
+            Ok(id)
+        })();
+        match result {
+            Ok(id) => { self.conn.execute_batch("COMMIT")?; Ok(id) }
+            Err(e) => { let _ = self.conn.execute_batch("ROLLBACK"); Err(e) }
+        }
     }
 
     /// Get a chunk by ID.
@@ -370,24 +374,28 @@ impl Store {
         content_hash: &str,
     ) -> Result<bool> {
         let now = chrono::Utc::now().to_rfc3339();
-        let rows = self.conn.execute(
-            "UPDATE chunks SET title = ?1, content = ?2, descriptors = ?3,
-                               content_hash = ?4, updated_at = ?5
-             WHERE id = ?6 AND kind = 'memory'",
-            params![title, content, descriptors, content_hash, now, id],
-        )?;
-
-        if rows > 0 {
-            // Sync FTS5 index — delete old row and re-insert
-            self.conn.execute("DELETE FROM chunks_fts WHERE rowid = ?1", params![id])?;
-            self.conn.execute(
-                "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
-                 VALUES (?1, ?2, ?3, '', '', ?4)",
-                params![id, title, content, descriptors],
+        self.conn.execute_batch("BEGIN")?;
+        let result = (|| -> Result<bool> {
+            let rows = self.conn.execute(
+                "UPDATE chunks SET title = ?1, content = ?2, descriptors = ?3,
+                                   content_hash = ?4, updated_at = ?5
+                 WHERE id = ?6 AND kind = 'memory'",
+                params![title, content, descriptors, content_hash, now, id],
             )?;
+            if rows > 0 {
+                self.conn.execute("DELETE FROM chunks_fts WHERE rowid = ?1", params![id])?;
+                self.conn.execute(
+                    "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
+                     VALUES (?1, ?2, ?3, '', '', ?4)",
+                    params![id, title, content, descriptors],
+                )?;
+            }
+            Ok(rows > 0)
+        })();
+        match result {
+            Ok(updated) => { self.conn.execute_batch("COMMIT")?; Ok(updated) }
+            Err(e) => { let _ = self.conn.execute_batch("ROLLBACK"); Err(e) }
         }
-
-        Ok(rows > 0)
     }
 
     /// Count chunks by kind.
@@ -420,14 +428,14 @@ impl Store {
         Ok(())
     }
 
-    /// Archive a memory (soft delete).
-    pub fn archive_memory(&self, id: i64) -> Result<()> {
+    /// Archive a memory (soft delete). Returns false if ID not found or not a memory.
+    pub fn archive_memory(&self, id: i64) -> Result<bool> {
         let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute(
-            "UPDATE chunks SET archived = 1, updated_at = ?1 WHERE id = ?2",
+        let rows = self.conn.execute(
+            "UPDATE chunks SET archived = 1, updated_at = ?1 WHERE id = ?2 AND kind = 'memory'",
             params![now, id],
         )?;
-        Ok(())
+        Ok(rows > 0)
     }
 
     /// Create a session handoff.
@@ -471,8 +479,9 @@ impl Store {
         }
     }
 
-    /// Raw connection access for advanced operations (FTS setup, etc.)
-    pub fn conn(&self) -> &Connection {
+    /// Raw connection access — restricted to this crate (tests only).
+    #[cfg(test)]
+    pub(crate) fn conn(&self) -> &Connection {
         &self.conn
     }
 
@@ -1131,7 +1140,9 @@ mod tests {
         let before = store.list_memories(None, false, 100).unwrap();
         assert_eq!(before.len(), 1);
 
-        store.archive_memory(id).unwrap();
+        assert!(store.archive_memory(id).unwrap());
+        // Archiving a non-existent ID returns false
+        assert!(!store.archive_memory(99999).unwrap());
 
         let after = store.list_memories(None, false, 100).unwrap();
         assert_eq!(after.len(), 0);

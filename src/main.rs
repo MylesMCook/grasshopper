@@ -50,7 +50,7 @@ enum Commands {
         #[arg(long)]
         title: Option<String>,
         /// Memory type: identity, knowledge, episode, procedure
-        #[arg(long, default_value = "knowledge")]
+        #[arg(long, default_value = "knowledge", value_parser = ["identity", "knowledge", "episode", "procedure"])]
         r#type: String,
         /// Descriptors (comma-separated tags)
         #[arg(long, default_value = "")]
