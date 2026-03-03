@@ -134,7 +134,7 @@ impl Store {
                 -- Code fields (NULL for memories)
                 codebase_id     INTEGER REFERENCES codebases(id),
                 file_path       TEXT,
-                chunk_key       TEXT UNIQUE,          -- dedup key for code chunks
+                chunk_key       TEXT,                  -- dedup key for code chunks
                 language        TEXT,
                 symbol_kind     TEXT,                 -- 'function', 'class', 'struct', etc.
                 symbol_name     TEXT DEFAULT '',
@@ -183,6 +183,8 @@ impl Store {
                 ON chunks(archived) WHERE kind = 'memory';
             CREATE INDEX IF NOT EXISTS idx_chunks_content_hash
                 ON chunks(content_hash) WHERE content_hash != '';
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_chunks_chunk_key
+                ON chunks(codebase_id, chunk_key);
 
             -- File tracking for incremental code indexing
             CREATE TABLE IF NOT EXISTS indexed_files (
@@ -213,9 +215,9 @@ impl Store {
                 strength        REAL NOT NULL DEFAULT 1.0
             );
 
-            -- Code edges: one entry per (codebase, file, role, kind, line)
+            -- Code edges: one entry per (codebase, file, symbol, role, kind, line)
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_code_edge
-                ON graph(codebase_id, file_path, role, kind, line)
+                ON graph(codebase_id, file_path, symbol, role, kind, line)
                 WHERE codebase_id IS NOT NULL;
             -- Hebbian associations: one edge per (source, target, role)
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_association
@@ -525,6 +527,13 @@ impl Store {
             let now = chrono::Utc::now().to_rfc3339();
             let ts = now_millis();
             for fc in file_chunks {
+                // Delete old FTS rows before removing chunks (avoids orphaned FTS entries)
+                self.conn.execute(
+                    "DELETE FROM chunks_fts WHERE rowid IN (
+                        SELECT id FROM chunks WHERE codebase_id = ?1 AND file_path = ?2 AND kind = 'code'
+                    )",
+                    params![codebase_id, fc.file_path],
+                )?;
                 // Delete old chunks for this file
                 self.conn.execute(
                     "DELETE FROM chunks WHERE codebase_id = ?1 AND file_path = ?2 AND kind = 'code'",
@@ -537,7 +546,7 @@ impl Store {
                             symbol_kind, symbol_name, signature, content, snippet,
                             start_line, end_line, file_hash, indexed_at, created_at, updated_at)
                          VALUES ('code', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)
-                         ON CONFLICT(chunk_key) DO UPDATE SET
+                         ON CONFLICT(codebase_id, chunk_key) DO UPDATE SET
                             content = excluded.content, snippet = excluded.snippet,
                             signature = excluded.signature, symbol_kind = excluded.symbol_kind,
                             symbol_name = excluded.symbol_name, file_hash = excluded.file_hash,
@@ -812,6 +821,7 @@ impl Store {
     pub fn vector_search(
         &self,
         query_embedding: &[f32],
+        model_name: &str,
         kind_filter: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>> {
@@ -825,32 +835,31 @@ impl Store {
             "SELECT id, kind, file_path, symbol_name, symbol_kind, signature,
                     snippet, start_line, end_line, title, memory_type, embedding
              FROM chunks
-             WHERE embedding IS NOT NULL {kind_clause}"
+             WHERE embedding IS NOT NULL AND embedding_model = ?1 {kind_clause}"
         );
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let mut scored: Vec<SearchHit> = stmt
-            .query_map([], |row| {
-                let blob: Vec<u8> = row.get(11)?;
-                let emb = blob_to_embedding(&blob);
-                let score = dot_product(query_embedding, emb) as f64;
-                Ok(SearchHit {
-                    id: row.get(0)?,
-                    kind: row.get(1)?,
-                    file_path: row.get(2)?,
-                    symbol_name: row.get(3)?,
-                    symbol_kind: row.get(4)?,
-                    signature: row.get(5)?,
-                    snippet: row.get(6)?,
-                    start_line: row.get(7)?,
-                    end_line: row.get(8)?,
-                    title: row.get(9)?,
-                    memory_type: row.get(10)?,
-                    score,
-                })
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
+        let mut scored: Vec<SearchHit> = Vec::new();
+        let mut rows = stmt.query(params![model_name])?;
+        while let Some(row) = rows.next()? {
+            let blob: Vec<u8> = row.get(11)?;
+            let Some(emb) = blob_to_embedding(&blob) else { continue };
+            let score = dot_product(query_embedding, emb) as f64;
+            scored.push(SearchHit {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                file_path: row.get(2)?,
+                symbol_name: row.get(3)?,
+                symbol_kind: row.get(4)?,
+                signature: row.get(5)?,
+                snippet: row.get(6)?,
+                start_line: row.get(7)?,
+                end_line: row.get(8)?,
+                title: row.get(9)?,
+                memory_type: row.get(10)?,
+                score,
+            });
+        }
 
         scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         scored.truncate(limit);
@@ -1006,8 +1015,8 @@ fn embedding_to_blob(embedding: &[f32]) -> Vec<u8> {
     embedding.iter().flat_map(|f| f.to_le_bytes()).collect()
 }
 
-fn blob_to_embedding(blob: &[u8]) -> &[f32] {
-    bytemuck::cast_slice(blob)
+fn blob_to_embedding(blob: &[u8]) -> Option<&[f32]> {
+    bytemuck::try_cast_slice(blob).ok()
 }
 
 fn dot_product(a: &[f32], b: &[f32]) -> f32 {
@@ -1468,7 +1477,7 @@ mod tests {
 
         // Search near emb_a
         let query = vec![0.9, 0.1, 0.0];
-        let results = store.vector_search(&query, None, 10).unwrap();
+        let results = store.vector_search(&query, "test-model", None, 10).unwrap();
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].symbol_name.as_deref(), Some("a")); // closer to query
     }

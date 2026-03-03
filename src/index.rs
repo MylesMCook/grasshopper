@@ -64,18 +64,25 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
             .par_iter()
             .map(|file| {
                 let chunks = ferret::chunk::chunk_file(&file.rel_path, &file.content, &file.language);
-                let tags = ferret::graph::get_tags_query(&file.language)
+                let (tags, tag_err) = match ferret::graph::get_tags_query(&file.language)
                     .and_then(|q| {
                         ferret::graph::get_language(&file.language).map(|lang| (lang, q))
-                    })
-                    .and_then(|(lang, q)| ferret::graph::extract_tags(&file.content, lang, q).ok())
-                    .unwrap_or_default();
-                (file, chunks, tags)
+                    }) {
+                    Some((lang, q)) => match ferret::graph::extract_tags(&file.content, lang, q) {
+                        Ok(t) => (t, None),
+                        Err(e) => (vec![], Some(format!("{}: tag extraction failed: {e}", file.rel_path))),
+                    },
+                    None => (vec![], None),
+                };
+                (file, chunks, tags, tag_err)
             })
             .collect();
 
         let mut file_chunks_batch = Vec::new();
-        for (file, chunk_result, tags) in results {
+        for (file, chunk_result, tags, tag_err) in results {
+            if let Some(te) = tag_err {
+                errors.push(te);
+            }
             match chunk_result {
                 Ok(parsed) => {
                     let params: Vec<CodeChunkParams> = parsed
@@ -89,10 +96,9 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
                         file_hash: file.hash.clone(),
                         chunks: params,
                     });
-                    if !tags.is_empty() {
-                        total_edges += tags.len();
-                        store.upsert_graph_edges_for_file(codebase_id, &file.rel_path, &tags)?;
-                    }
+                    // Always upsert graph edges (even empty) to clear stale edges
+                    total_edges += tags.len();
+                    store.upsert_graph_edges_for_file(codebase_id, &file.rel_path, &tags)?;
                 }
                 Err(e) => errors.push(format!("{}: {e}", file.rel_path)),
             }

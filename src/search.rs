@@ -18,7 +18,7 @@ pub fn search(
         if query_vec.is_empty() {
             vec![]
         } else {
-            store.vector_search(&query_vec[0], kind_filter, limit)?
+            store.vector_search(&query_vec[0], ferret::embed::MODEL_NAME, kind_filter, limit)?
         }
     } else {
         vec![]
