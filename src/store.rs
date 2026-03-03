@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{params, Connection};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 /// Unified data store for code intelligence + cognitive memory.
@@ -19,6 +20,65 @@ pub struct MemoryParams<'a> {
     pub salience: f64,
     pub content_hash: &'a str,
     pub agent_id: &'a str,
+}
+
+/// Parameters for a single code chunk, converted from ferret::chunk::ParsedChunk.
+pub struct CodeChunkParams {
+    pub chunk_key: String,
+    pub file_path: String,
+    pub language: String,
+    pub symbol_kind: String,
+    pub symbol_name: String,
+    pub signature: String,
+    pub snippet: String,
+    pub start_line: i64,
+    pub end_line: i64,
+    pub file_hash: String,
+}
+
+/// Batch of chunks for a single file, used during indexing.
+pub struct FileChunks {
+    pub file_path: String,
+    pub file_hash: String,
+    pub chunks: Vec<CodeChunkParams>,
+}
+
+/// A chunk that needs (re-)embedding.
+pub struct StaleChunk {
+    pub id: i64,
+    pub file_path: String,
+    pub language: String,
+    pub symbol_kind: String,
+    pub symbol_name: String,
+    pub signature: String,
+    pub snippet: String,
+}
+
+/// Search result from FTS, vector, or hybrid search.
+#[derive(Debug, Clone)]
+pub struct SearchHit {
+    pub id: i64,
+    pub kind: String,
+    pub file_path: Option<String>,
+    pub symbol_name: Option<String>,
+    pub symbol_kind: Option<String>,
+    pub signature: Option<String>,
+    pub title: String,
+    pub snippet: String,
+    pub start_line: Option<i64>,
+    pub end_line: Option<i64>,
+    pub memory_type: Option<String>,
+    pub score: f64,
+}
+
+/// A code graph edge.
+#[derive(Debug)]
+pub struct GraphEdge {
+    pub file_path: String,
+    pub symbol: String,
+    pub role: String,
+    pub kind: String,
+    pub line: i64,
 }
 
 impl Store {
@@ -413,6 +473,395 @@ impl Store {
     pub fn conn(&self) -> &Connection {
         &self.conn
     }
+
+    // --- Codebase operations ---
+
+    /// Get or create a codebase entry, returning its ID.
+    pub fn get_or_create_codebase(&self, root_path: &str, name: &str) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO codebases (root_path, name) VALUES (?1, ?2)
+             ON CONFLICT(root_path) DO UPDATE SET name = ?2",
+            params![root_path, name],
+        )?;
+        let id = self.conn.query_row(
+            "SELECT id FROM codebases WHERE root_path = ?1",
+            params![root_path],
+            |row| row.get(0),
+        )?;
+        Ok(id)
+    }
+
+    /// Get all file hashes for a codebase (rel_path → hash).
+    pub fn get_all_file_hashes(&self, codebase_id: i64) -> Result<HashMap<String, String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT file_path, file_hash FROM indexed_files WHERE codebase_id = ?1",
+        )?;
+        let map = stmt
+            .query_map(params![codebase_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(map)
+    }
+
+    /// Update the indexed_at timestamp for a codebase.
+    pub fn touch_codebase(&self, codebase_id: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE codebases SET indexed_at = ?1 WHERE id = ?2",
+            params![now_millis(), codebase_id],
+        )?;
+        Ok(())
+    }
+
+    // --- Code chunk operations ---
+
+    /// Batch upsert chunks for multiple files within a transaction.
+    /// Deletes old chunks for each file, inserts new ones. Returns total chunk count.
+    pub fn batch_upsert_chunks(&self, codebase_id: i64, file_chunks: &[FileChunks]) -> Result<usize> {
+        self.conn.execute_batch("BEGIN")?;
+        let result = (|| -> Result<usize> {
+            let mut total = 0;
+            let now = chrono::Utc::now().to_rfc3339();
+            let ts = now_millis();
+            for fc in file_chunks {
+                // Delete old chunks for this file
+                self.conn.execute(
+                    "DELETE FROM chunks WHERE codebase_id = ?1 AND file_path = ?2 AND kind = 'code'",
+                    params![codebase_id, fc.file_path],
+                )?;
+                // Insert new chunks
+                for c in &fc.chunks {
+                    self.conn.execute(
+                        "INSERT INTO chunks (kind, codebase_id, file_path, chunk_key, language,
+                            symbol_kind, symbol_name, signature, content, snippet,
+                            start_line, end_line, file_hash, indexed_at, created_at, updated_at)
+                         VALUES ('code', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)
+                         ON CONFLICT(chunk_key) DO UPDATE SET
+                            content = excluded.content, snippet = excluded.snippet,
+                            signature = excluded.signature, symbol_kind = excluded.symbol_kind,
+                            symbol_name = excluded.symbol_name, file_hash = excluded.file_hash,
+                            start_line = excluded.start_line, end_line = excluded.end_line,
+                            indexed_at = excluded.indexed_at, updated_at = excluded.updated_at,
+                            embedding = NULL, embedding_model = ''",
+                        params![
+                            codebase_id, c.file_path, c.chunk_key, c.language,
+                            c.symbol_kind, c.symbol_name, c.signature, c.snippet, c.snippet,
+                            c.start_line, c.end_line, c.file_hash, ts, now,
+                        ],
+                    )?;
+                    total += 1;
+                }
+                // Upsert indexed_files
+                self.conn.execute(
+                    "INSERT INTO indexed_files (codebase_id, file_path, file_hash, chunk_count, indexed_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5)
+                     ON CONFLICT(codebase_id, file_path) DO UPDATE SET
+                        file_hash = excluded.file_hash, chunk_count = excluded.chunk_count,
+                        indexed_at = excluded.indexed_at",
+                    params![codebase_id, fc.file_path, fc.file_hash, fc.chunks.len() as i64, ts],
+                )?;
+            }
+            Ok(total)
+        })();
+        match result {
+            Ok(total) => {
+                self.conn.execute_batch("COMMIT")?;
+                Ok(total)
+            }
+            Err(e) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
+    }
+
+    /// Remove indexed files and their chunks/graph edges that no longer exist on disk.
+    pub fn remove_stale_files(&self, codebase_id: i64, active_files: &HashSet<String>) -> Result<usize> {
+        // Get all indexed files for this codebase
+        let mut stmt = self.conn.prepare(
+            "SELECT file_path FROM indexed_files WHERE codebase_id = ?1",
+        )?;
+        let stale: Vec<String> = stmt
+            .query_map(params![codebase_id], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .filter(|p: &String| !active_files.contains(p))
+            .collect();
+
+        for file_path in &stale {
+            // Delete FTS entries for these chunks
+            self.conn.execute(
+                "DELETE FROM chunks_fts WHERE rowid IN (
+                    SELECT id FROM chunks WHERE codebase_id = ?1 AND file_path = ?2 AND kind = 'code'
+                )",
+                params![codebase_id, file_path],
+            )?;
+            self.conn.execute(
+                "DELETE FROM chunks WHERE codebase_id = ?1 AND file_path = ?2 AND kind = 'code'",
+                params![codebase_id, file_path],
+            )?;
+            self.conn.execute(
+                "DELETE FROM graph WHERE codebase_id = ?1 AND file_path = ?2 AND role != 'associates'",
+                params![codebase_id, file_path],
+            )?;
+            self.conn.execute(
+                "DELETE FROM indexed_files WHERE codebase_id = ?1 AND file_path = ?2",
+                params![codebase_id, file_path],
+            )?;
+        }
+
+        Ok(stale.len())
+    }
+
+    // --- Graph operations ---
+
+    /// Replace all code graph edges for a file. Preserves Hebbian associations.
+    pub fn upsert_graph_edges_for_file(
+        &self,
+        codebase_id: i64,
+        file_path: &str,
+        tags: &[ferret::graph::Tag],
+    ) -> Result<usize> {
+        self.conn.execute(
+            "DELETE FROM graph WHERE codebase_id = ?1 AND file_path = ?2 AND role != 'associates'",
+            params![codebase_id, file_path],
+        )?;
+        for tag in tags {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO graph (codebase_id, file_path, symbol, role, kind, line, strength)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1.0)",
+                params![codebase_id, file_path, tag.symbol, tag.role, tag.kind, tag.line as i64],
+            )?;
+        }
+        Ok(tags.len())
+    }
+
+    /// Find all definitions of a symbol.
+    pub fn find_definitions(&self, symbol: &str, codebase_id: Option<i64>) -> Result<Vec<GraphEdge>> {
+        self.query_graph_edges(symbol, "definition", codebase_id)
+    }
+
+    /// Find all references to a symbol.
+    pub fn find_references(&self, symbol: &str, codebase_id: Option<i64>) -> Result<Vec<GraphEdge>> {
+        self.query_graph_edges(symbol, "reference", codebase_id)
+    }
+
+    fn query_graph_edges(&self, symbol: &str, role: &str, codebase_id: Option<i64>) -> Result<Vec<GraphEdge>> {
+        if let Some(cb) = codebase_id {
+            let mut stmt = self.conn.prepare(
+                "SELECT file_path, symbol, role, kind, line FROM graph
+                 WHERE symbol = ?1 AND role = ?2 AND codebase_id = ?3
+                 ORDER BY file_path, line",
+            )?;
+            let edges = stmt
+                .query_map(params![symbol, role, cb], row_to_graph_edge)?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok(edges)
+        } else {
+            let mut stmt = self.conn.prepare(
+                "SELECT file_path, symbol, role, kind, line FROM graph
+                 WHERE symbol = ?1 AND role = ?2
+                 ORDER BY file_path, line",
+            )?;
+            let edges = stmt
+                .query_map(params![symbol, role], row_to_graph_edge)?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok(edges)
+        }
+    }
+
+    // --- FTS sync for code ---
+
+    /// Incremental FTS sync for changed files. Uses code_expand() on symbol_name.
+    pub fn sync_fts_for_files(&self, codebase_id: i64, changed_files: &[String]) -> Result<()> {
+        for file_path in changed_files {
+            self.conn.execute(
+                "DELETE FROM chunks_fts WHERE rowid IN (
+                    SELECT id FROM chunks WHERE codebase_id = ?1 AND file_path = ?2 AND kind = 'code'
+                )",
+                params![codebase_id, file_path],
+            )?;
+            self.conn.execute(
+                "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
+                 SELECT id, COALESCE(symbol_name, ''), content, snippet,
+                        code_expand(COALESCE(symbol_name, '')), COALESCE(descriptors, '')
+                 FROM chunks WHERE codebase_id = ?1 AND file_path = ?2 AND kind = 'code'",
+                params![codebase_id, file_path],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Full FTS rebuild for all code chunks in a codebase.
+    pub fn rebuild_fts_for_codebase(&self, codebase_id: i64) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM chunks_fts WHERE rowid IN (
+                SELECT id FROM chunks WHERE codebase_id = ?1 AND kind = 'code'
+            )",
+            params![codebase_id],
+        )?;
+        self.conn.execute(
+            "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
+             SELECT id, COALESCE(symbol_name, ''), content, snippet,
+                    code_expand(COALESCE(symbol_name, '')), COALESCE(descriptors, '')
+             FROM chunks WHERE codebase_id = ?1 AND kind = 'code'",
+            params![codebase_id],
+        )?;
+        Ok(())
+    }
+
+    // --- Embedding operations ---
+
+    /// Get chunks that need (re-)embedding: NULL embedding or wrong model.
+    pub fn get_stale_embeddings(&self, codebase_id: i64, model_name: &str) -> Result<Vec<StaleChunk>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, file_path, language, symbol_kind, symbol_name, signature, content
+             FROM chunks
+             WHERE codebase_id = ?1 AND kind = 'code'
+               AND (embedding IS NULL OR embedding_model != ?2)",
+        )?;
+        let chunks = stmt
+            .query_map(params![codebase_id, model_name], |row| {
+                Ok(StaleChunk {
+                    id: row.get(0)?,
+                    file_path: row.get(1)?,
+                    language: row.get(2)?,
+                    symbol_kind: row.get(3)?,
+                    symbol_name: row.get(4)?,
+                    signature: row.get(5)?,
+                    snippet: row.get(6)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(chunks)
+    }
+
+    /// Batch update embeddings for chunks by ID.
+    pub fn batch_upsert_embeddings(&self, items: &[(i64, &[f32], &str)]) -> Result<()> {
+        let mut stmt = self.conn.prepare_cached(
+            "UPDATE chunks SET embedding = ?1, embedding_model = ?2 WHERE id = ?3",
+        )?;
+        for &(id, embedding, model_name) in items {
+            let blob = embedding_to_blob(embedding);
+            stmt.execute(params![blob, model_name, id])?;
+        }
+        Ok(())
+    }
+
+    // --- Search operations ---
+
+    /// Full-text search across code and/or memory chunks.
+    pub fn fts_search(
+        &self,
+        query: &str,
+        kind_filter: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SearchHit>> {
+        let prepared = ferret::tokenizer::prepare_fts_query(query);
+        if prepared.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let kind_clause = match kind_filter {
+            Some("code") => "AND c.kind = 'code'",
+            Some("memory") => "AND c.kind = 'memory'",
+            _ => "",
+        };
+
+        let sql = format!(
+            "SELECT c.id, c.kind, c.file_path, c.symbol_name, c.symbol_kind, c.signature,
+                    c.snippet, c.start_line, c.end_line, c.title, c.memory_type,
+                    bm25(chunks_fts, 5.0, 1.0, 1.0, 5.0, 2.0) AS score
+             FROM chunks_fts f
+             JOIN chunks c ON c.id = f.rowid
+             WHERE chunks_fts MATCH ?1 {kind_clause}
+             ORDER BY score ASC
+             LIMIT ?2"
+        );
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let hits = stmt
+            .query_map(params![prepared, limit as i64], |row| {
+                Ok(SearchHit {
+                    id: row.get(0)?,
+                    kind: row.get(1)?,
+                    file_path: row.get(2)?,
+                    symbol_name: row.get(3)?,
+                    symbol_kind: row.get(4)?,
+                    signature: row.get(5)?,
+                    snippet: row.get(6)?,
+                    start_line: row.get(7)?,
+                    end_line: row.get(8)?,
+                    title: row.get(9)?,
+                    memory_type: row.get(10)?,
+                    score: {
+                        let raw: f64 = row.get(11)?;
+                        -raw // BM25 returns negative (lower=better), negate for consistent scoring
+                    },
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(hits)
+    }
+
+    /// Brute-force vector search across all chunks with embeddings.
+    pub fn vector_search(
+        &self,
+        query_embedding: &[f32],
+        kind_filter: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SearchHit>> {
+        let kind_clause = match kind_filter {
+            Some("code") => "AND kind = 'code'",
+            Some("memory") => "AND kind = 'memory'",
+            _ => "",
+        };
+
+        let sql = format!(
+            "SELECT id, kind, file_path, symbol_name, symbol_kind, signature,
+                    snippet, start_line, end_line, title, memory_type, embedding
+             FROM chunks
+             WHERE embedding IS NOT NULL {kind_clause}"
+        );
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut scored: Vec<SearchHit> = stmt
+            .query_map([], |row| {
+                let blob: Vec<u8> = row.get(11)?;
+                let emb = blob_to_embedding(&blob);
+                let score = dot_product(query_embedding, emb) as f64;
+                Ok(SearchHit {
+                    id: row.get(0)?,
+                    kind: row.get(1)?,
+                    file_path: row.get(2)?,
+                    symbol_name: row.get(3)?,
+                    symbol_kind: row.get(4)?,
+                    signature: row.get(5)?,
+                    snippet: row.get(6)?,
+                    start_line: row.get(7)?,
+                    end_line: row.get(8)?,
+                    title: row.get(9)?,
+                    memory_type: row.get(10)?,
+                    score,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit);
+        Ok(scored)
+    }
+
+    /// Run PRAGMA optimize for query planner stats.
+    pub fn optimize(&self) -> Result<()> {
+        self.conn.execute_batch("PRAGMA optimize;")?;
+        Ok(())
+    }
 }
 
 // --- Data types ---
@@ -493,6 +942,76 @@ fn row_to_handoff(row: &rusqlite::Row) -> rusqlite::Result<Handoff> {
         project: row.get(3)?,
         created_at: row.get(4)?,
     })
+}
+
+fn row_to_graph_edge(row: &rusqlite::Row) -> rusqlite::Result<GraphEdge> {
+    Ok(GraphEdge {
+        file_path: row.get(0)?,
+        symbol: row.get(1)?,
+        role: row.get(2)?,
+        kind: row.get(3)?,
+        line: row.get(4)?,
+    })
+}
+
+// --- Standalone search functions ---
+
+/// Hybrid merge of FTS and vector results via Reciprocal Rank Fusion.
+pub fn hybrid_search(fts: &[SearchHit], vec: &[SearchHit], limit: usize) -> Vec<SearchHit> {
+    const K: f64 = 60.0;
+    const FTS_WEIGHT: f64 = 0.4;
+    const VEC_WEIGHT: f64 = 0.6;
+
+    let mut scores: HashMap<i64, (f64, SearchHit)> = HashMap::new();
+
+    for (rank, hit) in fts.iter().enumerate() {
+        let rrf = FTS_WEIGHT / (K + rank as f64 + 1.0);
+        scores
+            .entry(hit.id)
+            .and_modify(|(s, _)| *s += rrf)
+            .or_insert_with(|| (rrf, hit.clone()));
+    }
+
+    for (rank, hit) in vec.iter().enumerate() {
+        let rrf = VEC_WEIGHT / (K + rank as f64 + 1.0);
+        scores
+            .entry(hit.id)
+            .and_modify(|(s, _)| *s += rrf)
+            .or_insert_with(|| (rrf, hit.clone()));
+    }
+
+    let mut results: Vec<SearchHit> = scores
+        .into_values()
+        .map(|(score, mut hit)| {
+            hit.score = score;
+            hit
+        })
+        .collect();
+
+    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(limit);
+    results
+}
+
+// --- Utility functions ---
+
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
+fn embedding_to_blob(embedding: &[f32]) -> Vec<u8> {
+    embedding.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+fn blob_to_embedding(blob: &[u8]) -> &[f32] {
+    bytemuck::cast_slice(blob)
+}
+
+fn dot_product(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
 
 #[cfg(test)]
@@ -695,6 +1214,323 @@ mod tests {
             [], |row| row.get(0),
         ).unwrap();
         assert_eq!(new, 1);
+    }
+
+    // --- Code indexing tests ---
+
+    #[test]
+    fn test_get_or_create_codebase() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id1 = store.get_or_create_codebase("/tmp/project", "project").unwrap();
+        let id2 = store.get_or_create_codebase("/tmp/project", "project-renamed").unwrap();
+        assert_eq!(id1, id2); // same path = same ID
+
+        let id3 = store.get_or_create_codebase("/tmp/other", "other").unwrap();
+        assert_ne!(id1, id3);
+    }
+
+    #[test]
+    fn test_batch_upsert_chunks() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let cb = store.get_or_create_codebase("/tmp/p", "p").unwrap();
+
+        let fc = FileChunks {
+            file_path: "src/main.rs".into(),
+            file_hash: "aaa".into(),
+            chunks: vec![
+                CodeChunkParams {
+                    chunk_key: "src/main.rs:function:hello:1:3".into(),
+                    file_path: "src/main.rs".into(),
+                    language: "rust".into(),
+                    symbol_kind: "function_item".into(),
+                    symbol_name: "hello".into(),
+                    signature: "fn hello()".into(),
+                    snippet: "fn hello() { println!(\"hi\"); }".into(),
+                    start_line: 1, end_line: 3, file_hash: "aaa".into(),
+                },
+            ],
+        };
+        let count = store.batch_upsert_chunks(cb, &[fc]).unwrap();
+        assert_eq!(count, 1);
+
+        let (code, _) = store.count_by_kind().unwrap();
+        assert_eq!(code, 1);
+
+        // Verify indexed_files
+        let hashes = store.get_all_file_hashes(cb).unwrap();
+        assert_eq!(hashes.get("src/main.rs").unwrap(), "aaa");
+    }
+
+    #[test]
+    fn test_batch_upsert_replaces_on_reindex() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let cb = store.get_or_create_codebase("/tmp/p", "p").unwrap();
+
+        let make_fc = |hash: &str, name: &str| FileChunks {
+            file_path: "src/lib.rs".into(),
+            file_hash: hash.into(),
+            chunks: vec![CodeChunkParams {
+                chunk_key: format!("src/lib.rs:function:{name}:1:5"),
+                file_path: "src/lib.rs".into(),
+                language: "rust".into(),
+                symbol_kind: "function_item".into(),
+                symbol_name: name.into(),
+                signature: format!("fn {name}()"),
+                snippet: format!("fn {name}() {{}}"),
+                start_line: 1, end_line: 5, file_hash: hash.into(),
+            }],
+        };
+
+        store.batch_upsert_chunks(cb, &[make_fc("v1", "old_fn")]).unwrap();
+        store.batch_upsert_chunks(cb, &[make_fc("v2", "new_fn")]).unwrap();
+
+        // Old chunk should be gone, new one present
+        let (code, _) = store.count_by_kind().unwrap();
+        assert_eq!(code, 1);
+
+        let hashes = store.get_all_file_hashes(cb).unwrap();
+        assert_eq!(hashes.get("src/lib.rs").unwrap(), "v2");
+    }
+
+    #[test]
+    fn test_remove_stale_files() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let cb = store.get_or_create_codebase("/tmp/p", "p").unwrap();
+
+        let fc1 = FileChunks {
+            file_path: "a.rs".into(), file_hash: "h1".into(),
+            chunks: vec![CodeChunkParams {
+                chunk_key: "a.rs:fn:f:1:2".into(), file_path: "a.rs".into(),
+                language: "rust".into(), symbol_kind: "function_item".into(),
+                symbol_name: "f".into(), signature: "fn f()".into(),
+                snippet: "fn f() {}".into(), start_line: 1, end_line: 2, file_hash: "h1".into(),
+            }],
+        };
+        let fc2 = FileChunks {
+            file_path: "b.rs".into(), file_hash: "h2".into(),
+            chunks: vec![CodeChunkParams {
+                chunk_key: "b.rs:fn:g:1:2".into(), file_path: "b.rs".into(),
+                language: "rust".into(), symbol_kind: "function_item".into(),
+                symbol_name: "g".into(), signature: "fn g()".into(),
+                snippet: "fn g() {}".into(), start_line: 1, end_line: 2, file_hash: "h2".into(),
+            }],
+        };
+        store.batch_upsert_chunks(cb, &[fc1, fc2]).unwrap();
+        assert_eq!(store.count_by_kind().unwrap().0, 2);
+
+        // Only a.rs still active
+        let active: HashSet<String> = ["a.rs".to_string()].into();
+        let removed = store.remove_stale_files(cb, &active).unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(store.count_by_kind().unwrap().0, 1);
+    }
+
+    #[test]
+    fn test_graph_edges() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let cb = store.get_or_create_codebase("/tmp/p", "p").unwrap();
+
+        let tags = vec![
+            ferret::graph::Tag { symbol: "Store".into(), role: "definition".into(), kind: "struct".into(), line: 10 },
+            ferret::graph::Tag { symbol: "Store".into(), role: "reference".into(), kind: "call".into(), line: 25 },
+            ferret::graph::Tag { symbol: "open".into(), role: "definition".into(), kind: "function".into(), line: 14 },
+        ];
+        let count = store.upsert_graph_edges_for_file(cb, "src/store.rs", &tags).unwrap();
+        assert_eq!(count, 3);
+
+        let defs = store.find_definitions("Store", Some(cb)).unwrap();
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].line, 10);
+
+        let refs = store.find_references("Store", Some(cb)).unwrap();
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].line, 25);
+    }
+
+    #[test]
+    fn test_fts_code_expand() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let cb = store.get_or_create_codebase("/tmp/p", "p").unwrap();
+
+        let fc = FileChunks {
+            file_path: "src/main.rs".into(), file_hash: "h".into(),
+            chunks: vec![CodeChunkParams {
+                chunk_key: "src/main.rs:fn:myFuncName:1:3".into(),
+                file_path: "src/main.rs".into(), language: "rust".into(),
+                symbol_kind: "function_item".into(), symbol_name: "myFuncName".into(),
+                signature: "fn myFuncName()".into(), snippet: "fn myFuncName() {}".into(),
+                start_line: 1, end_line: 3, file_hash: "h".into(),
+            }],
+        };
+        store.batch_upsert_chunks(cb, &[fc]).unwrap();
+        store.rebuild_fts_for_codebase(cb).unwrap();
+
+        // code_expand should make camelCase searchable as separate words
+        let hits = store.fts_search("func", None, 10).unwrap();
+        assert!(!hits.is_empty(), "should find 'func' via code_expand of 'myFuncName'");
+    }
+
+    #[test]
+    fn test_fts_search_kind_filter() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let cb = store.get_or_create_codebase("/tmp/p", "p").unwrap();
+
+        // Insert a code chunk
+        let fc = FileChunks {
+            file_path: "src/lib.rs".into(), file_hash: "h".into(),
+            chunks: vec![CodeChunkParams {
+                chunk_key: "src/lib.rs:fn:search:1:5".into(),
+                file_path: "src/lib.rs".into(), language: "rust".into(),
+                symbol_kind: "function_item".into(), symbol_name: "search".into(),
+                signature: "fn search()".into(), snippet: "fn search() { query_database(); }".into(),
+                start_line: 1, end_line: 5, file_hash: "h".into(),
+            }],
+        };
+        store.batch_upsert_chunks(cb, &[fc]).unwrap();
+        store.rebuild_fts_for_codebase(cb).unwrap();
+
+        // Insert a memory
+        store.insert_memory(&MemoryParams {
+            title: "Search tips", content: "Use search with hybrid mode for best results",
+            memory_type: "knowledge", descriptors: "", salience: 0.5,
+            content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        // All
+        let all = store.fts_search("search", None, 10).unwrap();
+        assert_eq!(all.len(), 2);
+
+        // Code only
+        let code = store.fts_search("search", Some("code"), 10).unwrap();
+        assert_eq!(code.len(), 1);
+        assert_eq!(code[0].kind, "code");
+
+        // Memory only
+        let mem = store.fts_search("search", Some("memory"), 10).unwrap();
+        assert_eq!(mem.len(), 1);
+        assert_eq!(mem[0].kind, "memory");
+    }
+
+    #[test]
+    fn test_vector_search() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let cb = store.get_or_create_codebase("/tmp/p", "p").unwrap();
+
+        // Insert chunks
+        let fc = FileChunks {
+            file_path: "a.rs".into(), file_hash: "h".into(),
+            chunks: vec![
+                CodeChunkParams {
+                    chunk_key: "a.rs:fn:a:1:2".into(), file_path: "a.rs".into(),
+                    language: "rust".into(), symbol_kind: "fn".into(), symbol_name: "a".into(),
+                    signature: "fn a()".into(), snippet: "fn a() {}".into(),
+                    start_line: 1, end_line: 2, file_hash: "h".into(),
+                },
+                CodeChunkParams {
+                    chunk_key: "a.rs:fn:b:3:4".into(), file_path: "a.rs".into(),
+                    language: "rust".into(), symbol_kind: "fn".into(), symbol_name: "b".into(),
+                    signature: "fn b()".into(), snippet: "fn b() {}".into(),
+                    start_line: 3, end_line: 4, file_hash: "h".into(),
+                },
+            ],
+        };
+        store.batch_upsert_chunks(cb, &[fc]).unwrap();
+
+        // Get chunk IDs
+        let (code, _) = store.count_by_kind().unwrap();
+        assert_eq!(code, 2);
+
+        // Manually embed with simple vectors
+        let emb_a: Vec<f32> = vec![1.0, 0.0, 0.0];
+        let emb_b: Vec<f32> = vec![0.0, 1.0, 0.0];
+
+        // Find the chunk IDs
+        let chunk_a = store.conn().query_row(
+            "SELECT id FROM chunks WHERE symbol_name = 'a'", [], |r| r.get::<_, i64>(0),
+        ).unwrap();
+        let chunk_b = store.conn().query_row(
+            "SELECT id FROM chunks WHERE symbol_name = 'b'", [], |r| r.get::<_, i64>(0),
+        ).unwrap();
+
+        store.batch_upsert_embeddings(&[
+            (chunk_a, &emb_a, "test-model"),
+            (chunk_b, &emb_b, "test-model"),
+        ]).unwrap();
+
+        // Search near emb_a
+        let query = vec![0.9, 0.1, 0.0];
+        let results = store.vector_search(&query, None, 10).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].symbol_name.as_deref(), Some("a")); // closer to query
+    }
+
+    #[test]
+    fn test_hybrid_search_rrf() {
+        let fts = vec![
+            SearchHit { id: 1, kind: "code".into(), file_path: None, symbol_name: None,
+                symbol_kind: None, signature: None, title: "A".into(), snippet: String::new(),
+                start_line: None, end_line: None, memory_type: None, score: 5.0 },
+            SearchHit { id: 2, kind: "code".into(), file_path: None, symbol_name: None,
+                symbol_kind: None, signature: None, title: "B".into(), snippet: String::new(),
+                start_line: None, end_line: None, memory_type: None, score: 3.0 },
+        ];
+        let vec_results = vec![
+            SearchHit { id: 2, kind: "code".into(), file_path: None, symbol_name: None,
+                symbol_kind: None, signature: None, title: "B".into(), snippet: String::new(),
+                start_line: None, end_line: None, memory_type: None, score: 0.9 },
+            SearchHit { id: 3, kind: "code".into(), file_path: None, symbol_name: None,
+                symbol_kind: None, signature: None, title: "C".into(), snippet: String::new(),
+                start_line: None, end_line: None, memory_type: None, score: 0.8 },
+        ];
+
+        let merged = hybrid_search(&fts, &vec_results, 10);
+        assert_eq!(merged.len(), 3);
+        // ID 2 appears in both lists so should have highest RRF score
+        assert_eq!(merged[0].id, 2);
+    }
+
+    #[test]
+    fn test_stale_embeddings() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let cb = store.get_or_create_codebase("/tmp/p", "p").unwrap();
+
+        let fc = FileChunks {
+            file_path: "a.rs".into(), file_hash: "h".into(),
+            chunks: vec![CodeChunkParams {
+                chunk_key: "a.rs:fn:f:1:2".into(), file_path: "a.rs".into(),
+                language: "rust".into(), symbol_kind: "fn".into(), symbol_name: "f".into(),
+                signature: "fn f()".into(), snippet: "fn f() {}".into(),
+                start_line: 1, end_line: 2, file_hash: "h".into(),
+            }],
+        };
+        store.batch_upsert_chunks(cb, &[fc]).unwrap();
+
+        // All chunks should be stale (no embeddings yet)
+        let stale = store.get_stale_embeddings(cb, "test-model").unwrap();
+        assert_eq!(stale.len(), 1);
+        assert_eq!(stale[0].symbol_name, "f");
+
+        // Embed it
+        let id = stale[0].id;
+        store.batch_upsert_embeddings(&[(id, &[1.0_f32, 0.0, 0.0], "test-model")]).unwrap();
+
+        // No longer stale
+        let stale2 = store.get_stale_embeddings(cb, "test-model").unwrap();
+        assert!(stale2.is_empty());
+
+        // But stale for a different model
+        let stale3 = store.get_stale_embeddings(cb, "other-model").unwrap();
+        assert_eq!(stale3.len(), 1);
     }
 
     #[test]
