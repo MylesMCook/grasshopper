@@ -886,6 +886,7 @@ dependencies = [
  "ferret",
  "http",
  "rayon",
+ "regex",
  "rmcp",
  "rusqlite",
  "schemars",

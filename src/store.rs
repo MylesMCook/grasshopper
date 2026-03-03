@@ -69,6 +69,13 @@ pub struct SearchHit {
     pub end_line: Option<i64>,
     pub memory_type: Option<String>,
     pub score: f64,
+    // Cognitive fields (populated from chunks table)
+    pub access_count: i64,
+    pub last_accessed: Option<String>,
+    pub salience: f64,
+    pub created_at: String,
+    pub archived: bool,
+    pub descriptors: String,
 }
 
 /// A code graph edge.
@@ -792,7 +799,9 @@ impl Store {
         let sql = format!(
             "SELECT c.id, c.kind, c.file_path, c.symbol_name, c.symbol_kind, c.signature,
                     c.snippet, c.start_line, c.end_line, c.title, c.memory_type,
-                    bm25(chunks_fts, 5.0, 1.0, 1.0, 5.0, 2.0) AS score
+                    bm25(chunks_fts, 5.0, 1.0, 1.0, 5.0, 2.0) AS score,
+                    c.access_count, c.last_accessed, c.salience, c.created_at, c.archived,
+                    c.descriptors
              FROM chunks_fts f
              JOIN chunks c ON c.id = f.rowid
              WHERE chunks_fts MATCH ?1 {kind_clause}
@@ -817,8 +826,14 @@ impl Store {
                     memory_type: row.get(10)?,
                     score: {
                         let raw: f64 = row.get(11)?;
-                        -raw // BM25 returns negative (lower=better), negate for consistent scoring
+                        -raw
                     },
+                    access_count: row.get(12)?,
+                    last_accessed: row.get(13)?,
+                    salience: row.get(14)?,
+                    created_at: row.get(15)?,
+                    archived: row.get(16)?,
+                    descriptors: row.get::<_, Option<String>>(17)?.unwrap_or_default(),
                 })
             })?
             .filter_map(|r| r.ok())
@@ -842,7 +857,8 @@ impl Store {
 
         let sql = format!(
             "SELECT id, kind, file_path, symbol_name, symbol_kind, signature,
-                    snippet, start_line, end_line, title, memory_type, embedding
+                    snippet, start_line, end_line, title, memory_type, embedding,
+                    access_count, last_accessed, salience, created_at, archived, descriptors
              FROM chunks
              WHERE embedding IS NOT NULL AND embedding_model = ?1 {kind_clause}"
         );
@@ -867,12 +883,228 @@ impl Store {
                 title: row.get(9)?,
                 memory_type: row.get(10)?,
                 score,
+                access_count: row.get(12)?,
+                last_accessed: row.get(13)?,
+                salience: row.get(14)?,
+                created_at: row.get(15)?,
+                archived: row.get(16)?,
+                descriptors: row.get::<_, Option<String>>(17)?.unwrap_or_default(),
             });
         }
 
         scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         scored.truncate(limit);
         Ok(scored)
+    }
+
+    // --- Cognitive memory queries ---
+
+    /// List memories ordered by access count (most accessed first).
+    pub fn list_memories_by_access(&self, limit: usize) -> Result<Vec<Chunk>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
+                    file_path, language, start_line, end_line, memory_type,
+                    descriptors, source, access_count, last_accessed, salience, archived,
+                    content_hash, agent_id, created_at, updated_at, codebase_id
+             FROM chunks WHERE kind = 'memory' AND archived = 0
+             ORDER BY access_count DESC LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![limit as i64], row_to_chunk)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// Count memories, optionally filtering by archived status.
+    pub fn count_memories(&self, archived: bool) -> Result<i64> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM chunks WHERE kind = 'memory' AND archived = ?1",
+            params![archived as i64],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Count memories grouped by memory_type. Returns HashMap<type, count>.
+    pub fn count_memories_by_type(&self) -> Result<HashMap<String, i64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT memory_type, COUNT(*) FROM chunks
+             WHERE kind = 'memory' AND archived = 0
+             GROUP BY memory_type",
+        )?;
+        let map = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    row.get::<_, i64>(1)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(map)
+    }
+
+    /// List stale memories (not accessed within `older_than_days`).
+    /// Handles NULL last_accessed by treating those as stale if they're old enough.
+    pub fn list_memories_stale(&self, older_than_days: i64, limit: usize) -> Result<Vec<Chunk>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
+                    file_path, language, start_line, end_line, memory_type,
+                    descriptors, source, access_count, last_accessed, salience, archived,
+                    content_hash, agent_id, created_at, updated_at, codebase_id
+             FROM chunks WHERE kind = 'memory' AND archived = 0
+               AND (last_accessed IS NULL OR julianday('now') - julianday(last_accessed) > ?1)
+               AND julianday('now') - julianday(created_at) > ?1
+             ORDER BY COALESCE(last_accessed, created_at) ASC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![older_than_days, limit as i64], row_to_chunk)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// List growing memories: recently accessed with high access counts.
+    pub fn list_memories_growing(&self, since_days: i64, limit: usize) -> Result<Vec<Chunk>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
+                    file_path, language, start_line, end_line, memory_type,
+                    descriptors, source, access_count, last_accessed, salience, archived,
+                    content_hash, agent_id, created_at, updated_at, codebase_id
+             FROM chunks WHERE kind = 'memory' AND archived = 0
+               AND last_accessed IS NOT NULL
+               AND julianday('now') - julianday(last_accessed) <= ?1
+             ORDER BY access_count DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![since_days, limit as i64], row_to_chunk)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// List fading memories: previously accessed but not recently.
+    pub fn list_memories_fading(&self, before_days: i64, limit: usize) -> Result<Vec<Chunk>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
+                    file_path, language, start_line, end_line, memory_type,
+                    descriptors, source, access_count, last_accessed, salience, archived,
+                    content_hash, agent_id, created_at, updated_at, codebase_id
+             FROM chunks WHERE kind = 'memory' AND archived = 0
+               AND access_count > 0
+               AND last_accessed IS NOT NULL
+               AND julianday('now') - julianday(last_accessed) > ?1
+             ORDER BY last_accessed ASC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![before_days, limit as i64], row_to_chunk)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// List memories that have Hebbian associations (via graph table).
+    pub fn list_memories_with_associations(&self, limit: usize) -> Result<Vec<(Chunk, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.kind, c.title, c.content, c.snippet, c.symbol_name, c.symbol_kind,
+                    c.signature, c.file_path, c.language, c.start_line, c.end_line, c.memory_type,
+                    c.descriptors, c.source, c.access_count, c.last_accessed, c.salience, c.archived,
+                    c.content_hash, c.agent_id, c.created_at, c.updated_at, c.codebase_id,
+                    COUNT(g.id) as assoc_count
+             FROM chunks c
+             JOIN graph g ON (g.source_chunk = c.id OR g.target_chunk = c.id) AND g.role = 'associates'
+             WHERE c.kind = 'memory' AND c.archived = 0
+             GROUP BY c.id
+             ORDER BY assoc_count DESC LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![limit as i64], |row| {
+                let chunk = row_to_chunk(row)?;
+                let count: i64 = row.get(24)?;
+                Ok((chunk, count))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// Upsert a bidirectional Hebbian association between two memory chunks.
+    pub fn upsert_association(&self, source_id: i64, target_id: i64) -> Result<()> {
+        // Insert both directions (idempotent via unique index)
+        self.conn.execute(
+            "INSERT OR IGNORE INTO graph (source_chunk, target_chunk, role, strength)
+             VALUES (?1, ?2, 'associates', 1.0)",
+            params![source_id, target_id],
+        )?;
+        self.conn.execute(
+            "INSERT OR IGNORE INTO graph (source_chunk, target_chunk, role, strength)
+             VALUES (?1, ?2, 'associates', 1.0)",
+            params![target_id, source_id],
+        )?;
+        Ok(())
+    }
+
+    /// Search for similar memories by embedding cosine similarity.
+    /// Returns Vec<(chunk_id, similarity_score)> above threshold.
+    pub fn search_similar_memories(
+        &self,
+        query_embedding: &[f32],
+        model_name: &str,
+        threshold: f64,
+        limit: usize,
+    ) -> Result<Vec<(i64, f64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, embedding FROM chunks
+             WHERE kind = 'memory' AND archived = 0
+               AND embedding IS NOT NULL AND embedding_model = ?1",
+        )?;
+        let mut scored: Vec<(i64, f64)> = Vec::new();
+        let mut rows = stmt.query(params![model_name])?;
+        while let Some(row) = rows.next()? {
+            let id: i64 = row.get(0)?;
+            let blob: Vec<u8> = row.get(1)?;
+            let Some(emb) = blob_to_embedding(&blob) else { continue };
+            let sim = dot_product(query_embedding, emb) as f64;
+            if sim >= threshold {
+                scored.push((id, sim));
+            }
+        }
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit);
+        Ok(scored)
+    }
+
+    /// Get all non-archived memory embeddings for consolidation scanning.
+    pub fn get_all_memory_embeddings(&self, model_name: &str) -> Result<Vec<(i64, Vec<f32>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, embedding FROM chunks
+             WHERE kind = 'memory' AND archived = 0
+               AND embedding IS NOT NULL AND embedding_model = ?1",
+        )?;
+        let mut results = Vec::new();
+        let mut rows = stmt.query(params![model_name])?;
+        while let Some(row) = rows.next()? {
+            let id: i64 = row.get(0)?;
+            let blob: Vec<u8> = row.get(1)?;
+            if let Some(emb) = blob_to_embedding(&blob) {
+                results.push((id, emb.to_vec()));
+            }
+        }
+        Ok(results)
+    }
+
+    /// List recent handoffs (for `me` active_projects).
+    pub fn list_recent_handoffs(&self, limit: usize) -> Result<Vec<Handoff>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, summary, next_steps, project, created_at
+             FROM handoffs ORDER BY created_at DESC LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![limit as i64], row_to_handoff)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
     }
 
     /// Run PRAGMA optimize for query planner stats.
@@ -1493,24 +1725,20 @@ mod tests {
         assert_eq!(results[0].symbol_name.as_deref(), Some("a")); // closer to query
     }
 
+    fn test_hit(id: i64, title: &str, score: f64) -> SearchHit {
+        SearchHit {
+            id, kind: "code".into(), file_path: None, symbol_name: None,
+            symbol_kind: None, signature: None, title: title.into(), snippet: String::new(),
+            start_line: None, end_line: None, memory_type: None, score,
+            access_count: 0, last_accessed: None, salience: 0.5,
+            created_at: String::new(), archived: false, descriptors: String::new(),
+        }
+    }
+
     #[test]
     fn test_hybrid_search_rrf() {
-        let fts = vec![
-            SearchHit { id: 1, kind: "code".into(), file_path: None, symbol_name: None,
-                symbol_kind: None, signature: None, title: "A".into(), snippet: String::new(),
-                start_line: None, end_line: None, memory_type: None, score: 5.0 },
-            SearchHit { id: 2, kind: "code".into(), file_path: None, symbol_name: None,
-                symbol_kind: None, signature: None, title: "B".into(), snippet: String::new(),
-                start_line: None, end_line: None, memory_type: None, score: 3.0 },
-        ];
-        let vec_results = vec![
-            SearchHit { id: 2, kind: "code".into(), file_path: None, symbol_name: None,
-                symbol_kind: None, signature: None, title: "B".into(), snippet: String::new(),
-                start_line: None, end_line: None, memory_type: None, score: 0.9 },
-            SearchHit { id: 3, kind: "code".into(), file_path: None, symbol_name: None,
-                symbol_kind: None, signature: None, title: "C".into(), snippet: String::new(),
-                start_line: None, end_line: None, memory_type: None, score: 0.8 },
-        ];
+        let fts = vec![test_hit(1, "A", 5.0), test_hit(2, "B", 3.0)];
+        let vec_results = vec![test_hit(2, "B", 0.9), test_hit(3, "C", 0.8)];
 
         let merged = hybrid_search(&fts, &vec_results, 10);
         assert_eq!(merged.len(), 3);
@@ -1568,5 +1796,198 @@ mod tests {
 
         let gh_latest = store.get_latest_handoff(Some("grasshopper")).unwrap().unwrap();
         assert_eq!(gh_latest.id, "h2");
+    }
+
+    #[test]
+    fn test_list_memories_by_access() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id1 = store.insert_memory(&MemoryParams {
+            title: "Rarely used", content: "c1", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        let id2 = store.insert_memory(&MemoryParams {
+            title: "Often used", content: "c2", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        store.touch_memory(id2).unwrap();
+        store.touch_memory(id2).unwrap();
+        store.touch_memory(id1).unwrap();
+
+        let result = store.list_memories_by_access(10).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].id, id2); // 2 accesses
+        assert_eq!(result[1].id, id1); // 1 access
+    }
+
+    #[test]
+    fn test_count_memories() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id = store.insert_memory(&MemoryParams {
+            title: "A", content: "c", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        store.insert_memory(&MemoryParams {
+            title: "B", content: "c", memory_type: "episode",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        assert_eq!(store.count_memories(false).unwrap(), 2);
+        assert_eq!(store.count_memories(true).unwrap(), 0);
+
+        store.archive_memory(id).unwrap();
+        assert_eq!(store.count_memories(false).unwrap(), 1);
+        assert_eq!(store.count_memories(true).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_count_memories_by_type() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        store.insert_memory(&MemoryParams {
+            title: "A", content: "c", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        store.insert_memory(&MemoryParams {
+            title: "B", content: "c", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        store.insert_memory(&MemoryParams {
+            title: "C", content: "c", memory_type: "identity",
+            descriptors: "", salience: 1.0, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        let counts = store.count_memories_by_type().unwrap();
+        assert_eq!(counts.get("knowledge"), Some(&2));
+        assert_eq!(counts.get("identity"), Some(&1));
+        assert_eq!(counts.get("episode"), None);
+    }
+
+    #[test]
+    fn test_upsert_association() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id1 = store.insert_memory(&MemoryParams {
+            title: "A", content: "c1", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        let id2 = store.insert_memory(&MemoryParams {
+            title: "B", content: "c2", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        // First upsert — creates bidirectional edges
+        store.upsert_association(id1, id2).unwrap();
+        let count: i64 = store.conn().query_row(
+            "SELECT COUNT(*) FROM graph WHERE role = 'associates'", [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(count, 2);
+
+        // Second upsert — idempotent
+        store.upsert_association(id1, id2).unwrap();
+        let count2: i64 = store.conn().query_row(
+            "SELECT COUNT(*) FROM graph WHERE role = 'associates'", [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(count2, 2);
+    }
+
+    #[test]
+    fn test_search_similar_memories() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id1 = store.insert_memory(&MemoryParams {
+            title: "A", content: "c1", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        let id2 = store.insert_memory(&MemoryParams {
+            title: "B", content: "c2", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        // Embed both
+        let emb1: Vec<f32> = vec![1.0, 0.0, 0.0];
+        let emb2: Vec<f32> = vec![0.9, 0.1, 0.0]; // similar to emb1
+        store.batch_upsert_embeddings(&[(id1, &emb1, "test-model"), (id2, &emb2, "test-model")]).unwrap();
+
+        // Search near emb1
+        let query: Vec<f32> = vec![1.0, 0.0, 0.0];
+        let results = store.search_similar_memories(&query, "test-model", 0.5, 10).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].0, id1); // exact match first
+
+        // High threshold should filter
+        let strict = store.search_similar_memories(&query, "test-model", 0.95, 10).unwrap();
+        assert_eq!(strict.len(), 1);
+        assert_eq!(strict[0].0, id1);
+    }
+
+    #[test]
+    fn test_list_recent_handoffs() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        store.create_handoff("h1", "S1", "N1", "p1").unwrap();
+        store.create_handoff("h2", "S2", "N2", "p2").unwrap();
+        store.create_handoff("h3", "S3", "N3", "p1").unwrap();
+
+        let recent = store.list_recent_handoffs(2).unwrap();
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].id, "h3"); // most recent first
+    }
+
+    #[test]
+    fn test_list_memories_with_associations() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id1 = store.insert_memory(&MemoryParams {
+            title: "A", content: "c1", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        let id2 = store.insert_memory(&MemoryParams {
+            title: "B", content: "c2", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        let id3 = store.insert_memory(&MemoryParams {
+            title: "C", content: "c3", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        // id1 <-> id2, id1 <-> id3 (id1 has 2 associations, id2 and id3 have 1 each)
+        store.upsert_association(id1, id2).unwrap();
+        store.upsert_association(id1, id3).unwrap();
+
+        let connected = store.list_memories_with_associations(10).unwrap();
+        assert!(!connected.is_empty());
+        // id1 should have highest count (bidirectional: 2 outgoing + 2 incoming edges)
+        assert_eq!(connected[0].0.id, id1);
+        assert!(connected[0].1 >= 2);
+    }
+
+    #[test]
+    fn test_fts_search_includes_cognitive_fields() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        store.insert_memory(&MemoryParams {
+            title: "Bun preference", content: "Always use bun",
+            memory_type: "knowledge", descriptors: "tools",
+            salience: 0.7, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        let hits = store.fts_search("bun", Some("memory"), 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].access_count, 0);
+        assert_eq!(hits[0].salience, 0.7);
+        assert!(!hits[0].created_at.is_empty());
+        assert!(!hits[0].archived);
+        assert_eq!(hits[0].descriptors, "tools");
     }
 }
