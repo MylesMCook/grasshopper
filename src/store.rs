@@ -10,6 +10,17 @@ pub struct Store {
     conn: Connection,
 }
 
+/// Parameters for inserting a new memory entry.
+pub struct MemoryParams<'a> {
+    pub title: &'a str,
+    pub content: &'a str,
+    pub memory_type: &'a str,
+    pub descriptors: &'a str,
+    pub salience: f64,
+    pub content_hash: &'a str,
+    pub agent_id: &'a str,
+}
+
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
@@ -183,24 +194,24 @@ impl Store {
     // --- Memory operations ---
 
     /// Insert a memory entry. Returns the new row ID.
-    pub fn insert_memory(
-        &self,
-        title: &str,
-        content: &str,
-        memory_type: &str,
-        descriptors: &str,
-        salience: f64,
-        content_hash: &str,
-        agent_id: &str,
-    ) -> Result<i64> {
+    pub fn insert_memory(&self, p: &MemoryParams) -> Result<i64> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
             "INSERT INTO chunks (kind, title, content, memory_type, descriptors, salience,
                                  content_hash, agent_id, created_at, updated_at)
              VALUES ('memory', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
-            params![title, content, memory_type, descriptors, salience, content_hash, agent_id, now],
+            params![p.title, p.content, p.memory_type, p.descriptors, p.salience, p.content_hash, p.agent_id, now],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        let id = self.conn.last_insert_rowid();
+
+        // Sync to FTS5 index
+        self.conn.execute(
+            "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
+             VALUES (?1, ?2, ?3, '', '', ?4)",
+            params![id, p.title, p.content, p.descriptors],
+        )?;
+
+        Ok(id)
     }
 
     /// Get a chunk by ID.
@@ -303,6 +314,17 @@ impl Store {
              WHERE id = ?6 AND kind = 'memory'",
             params![title, content, descriptors, content_hash, now, id],
         )?;
+
+        if rows > 0 {
+            // Sync FTS5 index — delete old row and re-insert
+            self.conn.execute("DELETE FROM chunks_fts WHERE rowid = ?1", params![id])?;
+            self.conn.execute(
+                "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
+                 VALUES (?1, ?2, ?3, '', '', ?4)",
+                params![id, title, content, descriptors],
+            )?;
+        }
+
         Ok(rows > 0)
     }
 
@@ -495,15 +517,15 @@ mod tests {
         let store = Store::open(&db_path).unwrap();
 
         let id = store
-            .insert_memory(
-                "Test preference",
-                "Always use bun for running scripts",
-                "knowledge",
-                "tools, preferences",
-                0.5,
-                "abc123",
-                "claude-code",
-            )
+            .insert_memory(&MemoryParams {
+                title: "Test preference",
+                content: "Always use bun for running scripts",
+                memory_type: "knowledge",
+                descriptors: "tools, preferences",
+                salience: 0.5,
+                content_hash: "abc123",
+                agent_id: "claude-code",
+            })
             .unwrap();
 
         let chunk = store.get_chunk(id).unwrap().unwrap();
@@ -521,7 +543,10 @@ mod tests {
         let store = Store::open(&db_path).unwrap();
 
         let id = store
-            .insert_memory("Test", "Content", "knowledge", "", 0.5, "", "test")
+            .insert_memory(&MemoryParams {
+                title: "Test", content: "Content", memory_type: "knowledge",
+                descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+            })
             .unwrap();
 
         store.touch_memory(id).unwrap();
@@ -543,9 +568,18 @@ mod tests {
         let db_path = dir.path().join("test.db");
         let store = Store::open(&db_path).unwrap();
 
-        store.insert_memory("A", "Content A", "knowledge", "", 0.5, "", "test").unwrap();
-        store.insert_memory("B", "Content B", "episode", "", 0.5, "", "test").unwrap();
-        store.insert_memory("C", "Content C", "identity", "", 1.0, "", "test").unwrap();
+        store.insert_memory(&MemoryParams {
+            title: "A", content: "Content A", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        store.insert_memory(&MemoryParams {
+            title: "B", content: "Content B", memory_type: "episode",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        store.insert_memory(&MemoryParams {
+            title: "C", content: "Content C", memory_type: "identity",
+            descriptors: "", salience: 1.0, content_hash: "", agent_id: "test",
+        }).unwrap();
 
         let all = store.list_memories(None, false, 100).unwrap();
         assert_eq!(all.len(), 3);
@@ -561,7 +595,10 @@ mod tests {
         let db_path = dir.path().join("test.db");
         let store = Store::open(&db_path).unwrap();
 
-        let id = store.insert_memory("Old", "Stale", "episode", "", 0.5, "", "test").unwrap();
+        let id = store.insert_memory(&MemoryParams {
+            title: "Old", content: "Stale", memory_type: "episode",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
 
         let before = store.list_memories(None, false, 100).unwrap();
         assert_eq!(before.len(), 1);
@@ -582,7 +619,10 @@ mod tests {
         let store = Store::open(&db_path).unwrap();
 
         let id = store
-            .insert_memory("Original", "Old content", "knowledge", "tag1", 0.5, "hash1", "test")
+            .insert_memory(&MemoryParams {
+                title: "Original", content: "Old content", memory_type: "knowledge",
+                descriptors: "tag1", salience: 0.5, content_hash: "hash1", agent_id: "test",
+            })
             .unwrap();
 
         let updated = store
@@ -608,24 +648,53 @@ mod tests {
     }
 
     #[test]
-    fn test_fts_table_exists() {
+    fn test_fts_syncs_on_insert() {
         let dir = TempDir::new().unwrap();
         let db_path = dir.path().join("test.db");
         let store = Store::open(&db_path).unwrap();
 
-        // Verify FTS5 table was created by inserting and querying
-        store.conn().execute(
-            "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
-             VALUES (1, 'test title', 'test content', '', '', 'tag1')",
-            [],
-        ).unwrap();
+        // insert_memory should auto-populate the FTS index
+        store.insert_memory(&MemoryParams {
+            title: "Bun preference", content: "Always use bun for running scripts",
+            memory_type: "knowledge", descriptors: "tools",
+            salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
 
         let count: i64 = store.conn().query_row(
-            "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'test'",
+            "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'bun'",
             [],
             |row| row.get(0),
         ).unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_fts_syncs_on_update() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = Store::open(&db_path).unwrap();
+
+        let id = store.insert_memory(&MemoryParams {
+            title: "Original", content: "old content about bun",
+            memory_type: "knowledge", descriptors: "",
+            salience: 0.5, content_hash: "h1", agent_id: "test",
+        }).unwrap();
+
+        store.update_memory(id, "Updated", "new content about deno", "", "h2").unwrap();
+
+        // Old term gone from FTS
+        let old: i64 = store.conn().query_row(
+            "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'bun'",
+            [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(old, 0);
+
+        // New term present
+        let new: i64 = store.conn().query_row(
+            "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'deno'",
+            [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(new, 1);
     }
 
     #[test]

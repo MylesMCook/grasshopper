@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use grasshopper::store::Store;
+use grasshopper::store::{MemoryParams, Store};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
@@ -66,12 +66,8 @@ enum Commands {
 }
 
 fn default_db_path() -> PathBuf {
-    dirs_next().join("brain.db")
-}
-
-fn dirs_next() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".grasshopper")
+    PathBuf::from(home).join(".grasshopper").join("brain.db")
 }
 
 fn main() -> Result<()> {
@@ -114,7 +110,15 @@ fn main() -> Result<()> {
                 .chain_update(title.as_bytes())
                 .chain_update(content.as_bytes())
                 .finalize());
-            let id = store.insert_memory(&title, &content, &r#type, &tags, salience, &hash, "cli")?;
+            let id = store.insert_memory(&MemoryParams {
+                title: &title,
+                content: &content,
+                memory_type: &r#type,
+                descriptors: &tags,
+                salience,
+                content_hash: &hash,
+                agent_id: "cli",
+            })?;
             println!("Stored memory #{} (type: {}, salience: {})", id, r#type, salience);
         }
 
