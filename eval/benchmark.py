@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """Benchmark Grasshopper retrieval quality using LoCoMo QA pairs.
 
-For each question:
-1. Search Grasshopper for relevant memories via FTS
-2. Load full content of matched memories
-3. Check if evidence dia_ids appear in retrieved content
+Two modes:
+  fts    — Direct SQLite FTS5 search (fast, baseline)
+  hybrid — Calls `grasshopper recall` CLI (tests full pipeline: FTS + vector + RRF + rerank)
 
-Uses direct SQLite access for speed.
+For each question, checks if evidence dia_ids appear in retrieved content.
 
 Usage:
-    python eval/benchmark.py [--db eval/data/eval.db] [--qa eval/data/qa_map.json]
+    python eval/benchmark.py [--mode fts|hybrid] [--db eval/data/eval.db] [--qa eval/data/qa_map.json]
 """
 
 import argparse
 import json
 import sqlite3
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -52,6 +52,51 @@ def fts_search(conn: sqlite3.Connection, query: str, limit: int = 10) -> list[di
     return [{"id": r[0], "title": r[1], "content": r[2], "score": -r[3]} for r in rows]
 
 
+def hybrid_search(db_path: str, query: str, limit: int = 10, binary: str = "grasshopper") -> list[dict]:
+    """Call `grasshopper recall` CLI and parse output, then load full content from DB."""
+    try:
+        result = subprocess.run(
+            [binary, "--db", db_path, "recall", query, "--limit", str(limit)],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return []
+
+    if result.returncode != 0:
+        return []
+
+    # Parse recall output to extract memory IDs from the numbered list
+    # Format: "1. [0.1234] [episode] title (accessed: N, salience: 0.50)"
+    hit_titles = []
+    for line in result.stdout.strip().split("\n"):
+        line = line.strip()
+        if not line or line.startswith("No memories"):
+            continue
+        # Extract title between type bracket and " (accessed:"
+        if "] " in line and " (accessed:" in line:
+            # Find the second "] " (after score and type)
+            parts = line.split("] ", 2)
+            if len(parts) >= 3:
+                title = parts[2].split(" (accessed:")[0]
+                hit_titles.append(title)
+
+    if not hit_titles:
+        return []
+
+    # Load full content from DB by title match
+    conn = sqlite3.connect(db_path)
+    results = []
+    for title in hit_titles:
+        row = conn.execute(
+            "SELECT id, title, content FROM chunks WHERE kind='memory' AND title=? LIMIT 1",
+            (title,),
+        ).fetchone()
+        if row:
+            results.append({"id": row[0], "title": row[1], "content": row[2]})
+    conn.close()
+    return results
+
+
 def evidence_in_results(evidence: list[str], results: list[dict]) -> dict:
     """Check which evidence dia_ids appear in retrieved content."""
     if not evidence:
@@ -78,8 +123,14 @@ def main():
     parser.add_argument("--db", default="eval/data/eval.db", help="Database path")
     parser.add_argument("--qa", default="eval/data/qa_map.json", help="QA map file")
     parser.add_argument("--limit", type=int, default=10, help="Search result limit")
-    parser.add_argument("--output", default="eval/results/benchmark.json", help="Output file")
+    parser.add_argument("--output", default=None, help="Output file (auto-named by mode if omitted)")
+    parser.add_argument("--mode", choices=["fts", "hybrid"], default="fts",
+                        help="fts = direct SQLite FTS (fast), hybrid = grasshopper recall CLI (full pipeline)")
+    parser.add_argument("--binary", default="grasshopper", help="Path to grasshopper binary")
     args = parser.parse_args()
+
+    if args.output is None:
+        args.output = f"eval/results/benchmark-{args.mode}.json"
 
     qa_path = Path(args.qa)
     db_path = Path(args.db)
@@ -97,8 +148,9 @@ def main():
     with open(qa_path) as f:
         qa_items = json.load(f)
 
+    mode_label = "FTS-only (direct SQLite)" if args.mode == "fts" else "Hybrid (grasshopper recall CLI)"
     print(f"Benchmarking {len(qa_items)} questions against {db_path} ({total_memories} memories)")
-    print(f"Search limit: {args.limit}")
+    print(f"Mode: {mode_label}, limit: {args.limit}")
 
     results = []
     by_category = defaultdict(list)
@@ -109,7 +161,11 @@ def main():
         category = qa["category"]
         sample_id = qa["sample_id"]
 
-        hits = fts_search(conn, question, args.limit)
+        if args.mode == "fts":
+            hits = fts_search(conn, question, args.limit)
+        else:
+            hits = hybrid_search(str(db_path), question, args.limit, args.binary)
+
         ev = evidence_in_results(evidence, hits)
 
         result = {
@@ -125,10 +181,11 @@ def main():
         results.append(result)
         by_category[category].append(result)
 
-        if (i + 1) % 500 == 0:
+        if (i + 1) % 100 == 0:
             print(f"  {i + 1}/{len(qa_items)} questions evaluated")
 
-    conn.close()
+    if args.mode == "fts":
+        conn.close()
 
     # Compute aggregates
     total = len(results)
@@ -141,7 +198,7 @@ def main():
     avg_hits = sum(r["n_hits"] for r in results) / total if total else 0
 
     print(f"\n{'='*60}")
-    print(f"RESULTS ({total} questions, limit={args.limit})")
+    print(f"RESULTS — {mode_label} ({total} questions, limit={args.limit})")
     print(f"{'='*60}")
     print(f"Avg hits per query:                {avg_hits:.1f}")
     print(f"Evidence Recall (non-adversarial):  {avg_recall:.4f}")
@@ -164,7 +221,13 @@ def main():
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     summary = {
-        "config": {"db": str(db_path), "limit": args.limit, "n_questions": total, "n_memories": total_memories},
+        "config": {
+            "mode": args.mode,
+            "db": str(db_path),
+            "limit": args.limit,
+            "n_questions": total,
+            "n_memories": total_memories,
+        },
         "aggregate": {
             "evidence_recall": avg_recall,
             "perfect_recall_rate": perfect_recall / len(non_adversarial) if non_adversarial else 0,

@@ -120,6 +120,10 @@ fn try_embedder() -> Option<ferret::embed::Embedder> {
     ferret::embed::Embedder::new(&cache_dir).ok()
 }
 
+fn try_reranker() -> Option<grasshopper::rerank::Reranker> {
+    grasshopper::rerank::Reranker::new().ok()
+}
+
 fn try_hnsw(db_path: &Path) -> Option<ferret::hnsw::HnswIndex> {
     let hnsw_path = ferret::hnsw::hnsw_path(db_path);
     if hnsw_path.exists() {
@@ -200,6 +204,7 @@ fn main() -> Result<()> {
             };
 
             let mut embedder = try_embedder();
+            let mut reranker = try_reranker();
             let hnsw = try_hnsw(&db_path);
             let results = grasshopper::search::search(
                 &store,
@@ -207,7 +212,7 @@ fn main() -> Result<()> {
                 kind_filter,
                 limit,
                 embedder.as_mut(),
-                None,
+                reranker.as_mut(),
                 hnsw.as_ref(),
             )?;
 
@@ -254,8 +259,9 @@ fn main() -> Result<()> {
         Commands::Recall { query, limit } => {
             let store = Store::open(&db_path)?;
             let mut embedder = try_embedder();
+            let mut reranker = try_reranker();
             let hnsw = try_hnsw(&db_path);
-            let result = memory::recall(&store, embedder.as_mut(), None, &query, limit, hnsw.as_ref())?;
+            let result = memory::recall(&store, embedder.as_mut(), reranker.as_mut(), &query, limit, hnsw.as_ref())?;
 
             if result.hits.is_empty() {
                 println!("No memories found.");
@@ -316,8 +322,9 @@ fn main() -> Result<()> {
         Commands::Pickup { project } => {
             let store = Store::open(&db_path)?;
             let mut embedder = try_embedder();
+            let mut reranker = try_reranker();
             let hnsw = try_hnsw(&db_path);
-            let result = memory::pickup(&store, embedder.as_mut(), None, project.as_deref(), hnsw.as_ref())?;
+            let result = memory::pickup(&store, embedder.as_mut(), reranker.as_mut(), project.as_deref(), hnsw.as_ref())?;
 
             match result.handoff {
                 Some(h) => {

@@ -54,11 +54,13 @@ Runs the benchmark with different configurations and outputs a comparison table.
 | 4 | Commonsense | External knowledge needed |
 | 5 | Adversarial | Answer is "Not mentioned" |
 
-## Target Metrics (Yuan et al.)
+## Reference: Yuan et al. QA Accuracy
 
-| Config | Accuracy |
-|--------|----------|
+| Config | QA Accuracy |
+|--------|-------------|
 | Basic RAG + Hybrid | ~73-77% |
 | Basic RAG + Hybrid + Rerank | 81.1% |
+
+Note: Yuan et al. measure end-to-end **QA accuracy** (LLM judge). This benchmark measures **evidence recall** (are gold evidence dia_ids in retrieved chunks?) — a retrieval-only metric that doesn't require an LLM judge. The metrics are complementary but not directly comparable.
 
 Grasshopper's cognitive scoring is an additional signal not tested in the paper.

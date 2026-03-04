@@ -32,10 +32,10 @@ src/
 ├── lib.rs     — Module exports
 ├── store.rs   — Unified SQLite schema, all queries (2144 lines)
 ├── memory.rs  — Cognitive layer: remember, recall, classify, score, reflect, consolidate (797 lines)
-├── search.rs  — Hybrid search: FTS5 + vector → RRF fusion (→ cross-encoder rerank, planned)
+├── search.rs  — Hybrid search: FTS5 + vector → RRF fusion → cross-encoder rerank
 ├── index.rs   — Code indexing: scan → chunk → graph → FTS → embed (286 lines)
 ├── mcp.rs     — MCP server: 12 tools, HTTP + stdio transport (1092 lines)
-└── rerank.rs  — Cross-encoder reranking via fastembed/ONNX (planned, LAB-32)
+└── rerank.rs  — Cross-encoder reranking via fastembed/ONNX (BAAI/bge-reranker-base)
 ```
 
 - Imports Ferret as library: chunk, embed, scan, graph, hnsw, tokenizer modules
@@ -44,8 +44,10 @@ src/
 ### Retrieval Pipeline
 
 ```
-FTS5 (BM25) → Vector (cosine) → RRF fusion (k=60) → [Rerank (planned)] → Cognitive scoring → Return
+FTS5 (BM25) → Vector (cosine, HNSW) → RRF fusion (k=60) → Cross-encoder rerank → Cognitive scoring → Return
 ```
+
+**Known limitation:** HNSW index is loaded once at startup. New embeddings added after startup are searchable via FTS and brute-force vector, but not via HNSW until `rebuild-hnsw` + restart. Track for Phase 2 auto-refresh.
 
 ### Schema
 
@@ -58,7 +60,7 @@ Supporting tables: `codebases`, `indexed_files`, `graph` (code refs + Hebbian as
 - `ferret` (local `../ferret`, `semantic` feature) — code intelligence, ONNX embeddings (Jina Code V2, 768-dim)
 - `rusqlite` 0.32 — SQLite with FTS5 + bundled
 - `rmcp` 0.16 — MCP server (stdio + streamable HTTP)
-- `fastembed` — cross-encoder reranking via ONNX Runtime (planned, LAB-32)
+- `fastembed` — cross-encoder reranking via ONNX Runtime (BAAI/bge-reranker-base)
 
 ## Conventions
 

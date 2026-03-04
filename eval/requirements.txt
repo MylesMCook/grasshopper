@@ -1,1 +1,1 @@
-requests>=2.28
+# No external dependencies — uses stdlib only (urllib, sqlite3, json)

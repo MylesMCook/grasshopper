@@ -901,18 +901,26 @@ impl Store {
         let mut stmt = self.conn.prepare(
             "SELECT id, embedding FROM chunks WHERE embedding IS NOT NULL",
         )?;
-        let rows: Vec<(i64, Vec<f32>)> = stmt
-            .query_map([], |row| {
-                let id: i64 = row.get(0)?;
-                let blob: Vec<u8> = row.get(1)?;
-                Ok((id, blob))
-            })?
-            .filter_map(|r| r.ok())
-            .filter_map(|(id, blob)| {
-                blob_to_embedding(&blob).map(|emb| (id, emb.to_vec()))
-            })
-            .collect();
-        Ok(rows)
+        let mut results = Vec::new();
+        let mut dropped = 0u64;
+        let raw_rows = stmt.query_map([], |row| {
+            let id: i64 = row.get(0)?;
+            let blob: Vec<u8> = row.get(1)?;
+            Ok((id, blob))
+        })?;
+        for row in raw_rows {
+            match row {
+                Ok((id, blob)) => match blob_to_embedding(&blob) {
+                    Some(emb) => results.push((id, emb.to_vec())),
+                    None => dropped += 1,
+                },
+                Err(_) => dropped += 1,
+            }
+        }
+        if dropped > 0 {
+            tracing::warn!("get_all_embeddings: dropped {dropped} rows with decode errors");
+        }
+        Ok(results)
     }
 
     /// Vector search using HNSW index for O(log N) approximate nearest neighbors.

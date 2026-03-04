@@ -132,7 +132,8 @@ pub struct GrasshopperMcp {
     db_path: PathBuf,
     embedder: Arc<Mutex<Option<Embedder>>>,
     reranker: Arc<Mutex<Option<crate::rerank::Reranker>>>,
-    reranker_init_failed: Arc<std::sync::atomic::AtomicBool>,
+    /// Epoch seconds of last reranker init failure (0 = never failed). Retry after 60s cooldown.
+    reranker_failed_at: Arc<std::sync::atomic::AtomicI64>,
     hnsw: Arc<Mutex<Option<ferret::hnsw::HnswIndex>>>,
     tool_router: ToolRouter<Self>,
 }
@@ -145,7 +146,7 @@ impl GrasshopperMcp {
             db_path,
             embedder: Arc::new(Mutex::new(None)),
             reranker: Arc::new(Mutex::new(None)),
-            reranker_init_failed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             hnsw: Arc::new(Mutex::new(hnsw)),
             tool_router: Self::annotated_router(),
         }
@@ -161,7 +162,7 @@ impl GrasshopperMcp {
             db_path,
             embedder,
             reranker,
-            reranker_init_failed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             hnsw,
             tool_router: Self::annotated_router(),
         }
@@ -236,13 +237,21 @@ impl GrasshopperMcp {
     }
 
     /// Initialize reranker if not yet loaded. MUST be called inside spawn_blocking.
-    /// Skips retry if a previous init attempt failed (circuit breaker).
+    /// Circuit breaker: skips retry for 60s after a failure, then allows retry.
     fn init_reranker_blocking(
         reranker: &Arc<Mutex<Option<crate::rerank::Reranker>>>,
-        init_failed: &Arc<std::sync::atomic::AtomicBool>,
+        failed_at: &Arc<std::sync::atomic::AtomicI64>,
     ) {
-        if init_failed.load(std::sync::atomic::Ordering::Relaxed) {
-            return;
+        const COOLDOWN_SECS: i64 = 60;
+        let last_fail = failed_at.load(std::sync::atomic::Ordering::Relaxed);
+        if last_fail > 0 {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            if now - last_fail < COOLDOWN_SECS {
+                return; // Still in cooldown
+            }
         }
         let mut guard = match reranker.lock() {
             Ok(g) => g,
@@ -253,10 +262,17 @@ impl GrasshopperMcp {
         };
         if guard.is_none() {
             match crate::rerank::Reranker::new() {
-                Ok(r) => *guard = Some(r),
+                Ok(r) => {
+                    failed_at.store(0, std::sync::atomic::Ordering::Relaxed);
+                    *guard = Some(r);
+                }
                 Err(e) => {
-                    tracing::warn!("reranker init failed, disabling for this session: {e}");
-                    init_failed.store(true, std::sync::atomic::Ordering::Relaxed);
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0);
+                    tracing::warn!("reranker init failed (retry in {COOLDOWN_SECS}s): {e}");
+                    failed_at.store(now, std::sync::atomic::Ordering::Relaxed);
                 }
             }
         }
@@ -275,7 +291,7 @@ impl GrasshopperMcp {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
         let reranker = Arc::clone(&self.reranker);
-        let rr_failed = Arc::clone(&self.reranker_init_failed);
+        let rr_failed = Arc::clone(&self.reranker_failed_at);
         let hnsw = Arc::clone(&self.hnsw);
 
         let result = tokio::task::spawn_blocking(move || {
@@ -576,7 +592,7 @@ impl GrasshopperMcp {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
         let reranker = Arc::clone(&self.reranker);
-        let rr_failed = Arc::clone(&self.reranker_init_failed);
+        let rr_failed = Arc::clone(&self.reranker_failed_at);
         let hnsw = Arc::clone(&self.hnsw);
 
         let result = tokio::task::spawn_blocking(move || {
@@ -678,7 +694,7 @@ impl GrasshopperMcp {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
         let reranker = Arc::clone(&self.reranker);
-        let rr_failed = Arc::clone(&self.reranker_init_failed);
+        let rr_failed = Arc::clone(&self.reranker_failed_at);
         let hnsw = Arc::clone(&self.hnsw);
 
         let result = tokio::task::spawn_blocking(move || {
