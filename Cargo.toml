@@ -27,6 +27,9 @@ schemars = "1"
 # CLI
 clap = { version = "4", features = ["derive"] }
 
+# Cross-encoder reranking
+fastembed = "5"
+
 # Utilities
 anyhow = "1"
 bytemuck = { version = "1", features = ["derive"] }

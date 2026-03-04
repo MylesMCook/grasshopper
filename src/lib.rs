@@ -1,5 +1,6 @@
 pub mod index;
 pub mod mcp;
 pub mod memory;
+pub mod rerank;
 pub mod search;
 pub mod store;
