@@ -165,7 +165,13 @@ pub fn recall(
 
     // 3b. Rerank via cross-encoder if available (between RRF and cognitive scoring)
     let merged = if let Some(reranker) = reranker {
-        crate::search::rerank_hits(reranker, query, merged, 20)?
+        match crate::search::rerank_hits(reranker, query, merged.clone(), 20) {
+            Ok(reranked) => reranked,
+            Err(e) => {
+                tracing::warn!("reranking failed in recall, using unreranked results: {e}");
+                merged
+            }
+        }
     } else {
         merged
     };

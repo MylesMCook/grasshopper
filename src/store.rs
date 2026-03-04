@@ -791,7 +791,9 @@ impl Store {
 
         let sql = format!(
             "SELECT c.id, c.kind, c.file_path, c.symbol_name, c.symbol_kind, c.signature,
-                    c.snippet, c.start_line, c.end_line, c.title, c.memory_type,
+                    CASE WHEN c.kind = 'memory' THEN COALESCE(NULLIF(c.snippet, ''), c.content, '')
+                         ELSE COALESCE(c.snippet, '') END AS snippet,
+                    c.start_line, c.end_line, c.title, c.memory_type,
                     bm25(chunks_fts, 5.0, 1.0, 1.0, 5.0, 2.0) AS score,
                     c.access_count, c.last_accessed, c.salience, c.created_at, c.archived,
                     c.descriptors
@@ -850,7 +852,9 @@ impl Store {
 
         let sql = format!(
             "SELECT id, kind, file_path, symbol_name, symbol_kind, signature,
-                    snippet, start_line, end_line, title, memory_type, embedding,
+                    CASE WHEN kind = 'memory' THEN COALESCE(NULLIF(snippet, ''), content, '')
+                         ELSE COALESCE(snippet, '') END AS snippet,
+                    start_line, end_line, title, memory_type, embedding,
                     access_count, last_accessed, salience, created_at, archived, descriptors
              FROM chunks
              WHERE embedding IS NOT NULL AND embedding_model = ?1 {kind_clause}"
