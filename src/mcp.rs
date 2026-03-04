@@ -131,6 +131,7 @@ pub struct GetParams {
 pub struct GrasshopperMcp {
     db_path: PathBuf,
     embedder: Arc<Mutex<Option<Embedder>>>,
+    reranker: Arc<Mutex<Option<crate::rerank::Reranker>>>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -140,14 +141,20 @@ impl GrasshopperMcp {
         Self {
             db_path,
             embedder: Arc::new(Mutex::new(None)),
+            reranker: Arc::new(Mutex::new(None)),
             tool_router: Self::annotated_router(),
         }
     }
 
-    pub fn with_embedder(db_path: PathBuf, embedder: Arc<Mutex<Option<Embedder>>>) -> Self {
+    pub fn with_embedder(
+        db_path: PathBuf,
+        embedder: Arc<Mutex<Option<Embedder>>>,
+        reranker: Arc<Mutex<Option<crate::rerank::Reranker>>>,
+    ) -> Self {
         Self {
             db_path,
             embedder,
+            reranker,
             tool_router: Self::annotated_router(),
         }
     }
@@ -202,6 +209,23 @@ impl GrasshopperMcp {
         }
     }
 
+    /// Initialize reranker if not yet loaded. MUST be called inside spawn_blocking.
+    fn init_reranker_blocking(reranker: &Arc<Mutex<Option<crate::rerank::Reranker>>>) {
+        let mut guard = match reranker.lock() {
+            Ok(g) => g,
+            Err(poisoned) => {
+                tracing::warn!("reranker mutex poisoned, recovering: {poisoned}");
+                poisoned.into_inner()
+            }
+        };
+        if guard.is_none() {
+            match crate::rerank::Reranker::new() {
+                Ok(r) => *guard = Some(r),
+                Err(e) => tracing::warn!("reranker init failed (graceful degrade): {e}"),
+            }
+        }
+    }
+
     // --- Code Intelligence Tools ---
 
     #[tool(
@@ -214,9 +238,11 @@ impl GrasshopperMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
+        let reranker = Arc::clone(&self.reranker);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
+            Self::init_reranker_blocking(&reranker);
             let store = Store::open(&db_path)?;
             let kind_filter = match params.kind.as_deref() {
                 Some("all") | None => None,
@@ -224,9 +250,12 @@ impl GrasshopperMcp {
                 Some(k) => anyhow::bail!("invalid kind '{k}': must be 'all', 'code', or 'memory'"),
             };
             let limit = params.limit.unwrap_or(10).clamp(1, 100);
-            let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let results =
-                crate::search::search(&store, &params.query, kind_filter, limit, guard.as_mut())?;
+            let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let results = crate::search::search(
+                &store, &params.query, kind_filter, limit,
+                emb_guard.as_mut(), rr_guard.as_mut(),
+            )?;
             let json = serde_json::to_string_pretty(&format_search_hits(&results))?;
             Ok::<_, anyhow::Error>(json)
         })
@@ -506,13 +535,18 @@ impl GrasshopperMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
+        let reranker = Arc::clone(&self.reranker);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
+            Self::init_reranker_blocking(&reranker);
             let store = Store::open(&db_path)?;
             let limit = params.limit.unwrap_or(10).clamp(1, 50);
-            let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let result = crate::memory::recall(&store, guard.as_mut(), &params.query, limit)?;
+            let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let result = crate::memory::recall(
+                &store, emb_guard.as_mut(), rr_guard.as_mut(), &params.query, limit,
+            )?;
             let json = serde_json::to_string_pretty(&format_search_hits(&result.hits))?;
             Ok::<_, anyhow::Error>(json)
         })
@@ -599,13 +633,17 @@ impl GrasshopperMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
+        let reranker = Arc::clone(&self.reranker);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
+            Self::init_reranker_blocking(&reranker);
             let store = Store::open(&db_path)?;
-            let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let result =
-                crate::memory::pickup(&store, guard.as_mut(), params.project.as_deref())?;
+            let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let result = crate::memory::pickup(
+                &store, emb_guard.as_mut(), rr_guard.as_mut(), params.project.as_deref(),
+            )?;
             let output = serde_json::json!({
                 "handoff": result.handoff,
                 "related_memories": format_search_hits(&result.related_memories),
@@ -843,14 +881,17 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
 
     let ct = tokio_util::sync::CancellationToken::new();
     let shared_embedder: Arc<Mutex<Option<Embedder>>> = Arc::new(Mutex::new(None));
+    let shared_reranker: Arc<Mutex<Option<crate::rerank::Reranker>>> = Arc::new(Mutex::new(None));
 
     let db = db_path.clone();
     let embedder_for_mcp = shared_embedder.clone();
+    let reranker_for_mcp = shared_reranker.clone();
     let mcp_service = StreamableHttpService::new(
         move || {
             Ok(GrasshopperMcp::with_embedder(
                 db.clone(),
                 embedder_for_mcp.clone(),
+                reranker_for_mcp.clone(),
             ))
         },
         LocalSessionManager::default().into(),

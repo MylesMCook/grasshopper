@@ -128,6 +128,7 @@ pub struct RecallResult {
 pub fn recall(
     store: &Store,
     embedder: Option<&mut ferret::embed::Embedder>,
+    reranker: Option<&mut crate::rerank::Reranker>,
     query: &str,
     limit: usize,
 ) -> Result<RecallResult> {
@@ -160,6 +161,13 @@ pub fn recall(
         hybrid_search(&fts, &empty, 20)
     } else {
         hybrid_search(&fts, &vec_results, 20)
+    };
+
+    // 3b. Rerank via cross-encoder if available (between RRF and cognitive scoring)
+    let merged = if let Some(reranker) = reranker {
+        crate::search::rerank_hits(reranker, query, merged, 20)?
+    } else {
+        merged
     };
 
     // 4. Filter: skip archived and identity (identity is working memory, not searchable)
@@ -359,13 +367,14 @@ pub struct PickupResult {
 pub fn pickup(
     store: &Store,
     embedder: Option<&mut ferret::embed::Embedder>,
+    reranker: Option<&mut crate::rerank::Reranker>,
     project: Option<&str>,
 ) -> Result<PickupResult> {
     let handoff = store.get_latest_handoff(project)?;
 
     let related_memories = if let Some(ref h) = handoff {
         let query = format!("{} {}", h.summary, h.project);
-        recall(store, embedder, &query, 5)?.hits
+        recall(store, embedder, reranker, &query, 5)?.hits
     } else {
         vec![]
     };
@@ -721,7 +730,7 @@ mod tests {
         remember(&store, None, "Always use bun for packages", None, Some("knowledge"), "tools").unwrap();
         remember(&store, None, "SQLite WAL mode", None, Some("knowledge"), "database").unwrap();
 
-        let result = recall(&store, None, "bun", 10).unwrap();
+        let result = recall(&store, None, None, "bun", 10).unwrap();
         assert!(!result.hits.is_empty());
         assert_eq!(result.hits[0].memory_type.as_deref(), Some("knowledge"));
     }
@@ -733,7 +742,7 @@ mod tests {
         remember(&store, None, "I am a developer", None, Some("identity"), "").unwrap();
         remember(&store, None, "Developer tools are great", None, Some("knowledge"), "").unwrap();
 
-        let result = recall(&store, None, "developer", 10).unwrap();
+        let result = recall(&store, None, None, "developer", 10).unwrap();
         // Should only return the knowledge entry, not the identity
         for hit in &result.hits {
             assert_ne!(hit.memory_type.as_deref(), Some("identity"));
@@ -778,7 +787,7 @@ mod tests {
     #[test]
     fn test_pickup_no_handoff() {
         let (_dir, store) = test_store();
-        let result = pickup(&store, None, None).unwrap();
+        let result = pickup(&store, None, None, None).unwrap();
         assert!(result.handoff.is_none());
         assert!(result.related_memories.is_empty());
     }
@@ -790,7 +799,7 @@ mod tests {
         remember(&store, None, "Grasshopper phase 2 work", None, Some("knowledge"), "grasshopper").unwrap();
         store.create_handoff("h1", "Finished phase 1", "Start phase 2", "grasshopper").unwrap();
 
-        let result = pickup(&store, None, Some("grasshopper")).unwrap();
+        let result = pickup(&store, None, None, Some("grasshopper")).unwrap();
         assert!(result.handoff.is_some());
         assert_eq!(result.handoff.as_ref().unwrap().project, "grasshopper");
     }

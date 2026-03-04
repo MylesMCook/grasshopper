@@ -191,6 +191,7 @@ fn main() -> Result<()> {
                 kind_filter,
                 limit,
                 embedder.as_mut(),
+                None,
             )?;
 
             if results.is_empty() {
@@ -236,7 +237,7 @@ fn main() -> Result<()> {
         Commands::Recall { query, limit } => {
             let store = Store::open(&db_path)?;
             let mut embedder = try_embedder();
-            let result = memory::recall(&store, embedder.as_mut(), &query, limit)?;
+            let result = memory::recall(&store, embedder.as_mut(), None, &query, limit)?;
 
             if result.hits.is_empty() {
                 println!("No memories found.");
@@ -297,7 +298,7 @@ fn main() -> Result<()> {
         Commands::Pickup { project } => {
             let store = Store::open(&db_path)?;
             let mut embedder = try_embedder();
-            let result = memory::pickup(&store, embedder.as_mut(), project.as_deref())?;
+            let result = memory::pickup(&store, embedder.as_mut(), None, project.as_deref())?;
 
             match result.handoff {
                 Some(h) => {
