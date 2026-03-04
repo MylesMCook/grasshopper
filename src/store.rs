@@ -894,6 +894,104 @@ impl Store {
         Ok(scored)
     }
 
+    // --- HNSW support ---
+
+    /// Get all embeddings as (chunk_id, embedding_vector) pairs for HNSW index building.
+    pub fn get_all_embeddings(&self) -> Result<Vec<(i64, Vec<f32>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, embedding FROM chunks WHERE embedding IS NOT NULL",
+        )?;
+        let rows: Vec<(i64, Vec<f32>)> = stmt
+            .query_map([], |row| {
+                let id: i64 = row.get(0)?;
+                let blob: Vec<u8> = row.get(1)?;
+                Ok((id, blob))
+            })?
+            .filter_map(|r| r.ok())
+            .filter_map(|(id, blob)| {
+                blob_to_embedding(&blob).map(|emb| (id, emb.to_vec()))
+            })
+            .collect();
+        Ok(rows)
+    }
+
+    /// Vector search using HNSW index for O(log N) approximate nearest neighbors.
+    /// Falls back to brute-force if HNSW returns no results.
+    pub fn vector_search_hnsw(
+        &self,
+        hnsw: &ferret::hnsw::HnswIndex,
+        query_embedding: &[f32],
+        kind_filter: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SearchHit>> {
+        if hnsw.len() == 0 {
+            return self.vector_search(query_embedding, ferret::embed::MODEL_NAME, kind_filter, limit);
+        }
+
+        // Retrieve 2x candidates for re-scoring (HNSW is approximate)
+        let candidates = hnsw.search(query_embedding, limit * 2);
+        if candidates.is_empty() {
+            return self.vector_search(query_embedding, ferret::embed::MODEL_NAME, kind_filter, limit);
+        }
+
+        let kind_clause = match kind_filter {
+            Some("code") => "AND kind = 'code'",
+            Some("memory") => "AND kind = 'memory'",
+            _ => "",
+        };
+
+        // Load full SearchHit data for HNSW candidates and rescore with exact embeddings
+        let placeholders: String = candidates.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT id, kind, file_path, symbol_name, symbol_kind, signature,
+                    CASE WHEN kind = 'memory' THEN COALESCE(NULLIF(snippet, ''), content, '')
+                         ELSE COALESCE(snippet, '') END AS snippet,
+                    start_line, end_line, title, memory_type, embedding,
+                    access_count, last_accessed, salience, created_at, archived, descriptors
+             FROM chunks
+             WHERE id IN ({placeholders}) {kind_clause}"
+        );
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<Box<dyn rusqlite::types::ToSql>> = candidates
+            .iter()
+            .map(|(id, _)| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        let mut scored: Vec<SearchHit> = Vec::new();
+        let mut rows = stmt.query(param_refs.as_slice())?;
+        while let Some(row) = rows.next()? {
+            let blob: Vec<u8> = row.get(11)?;
+            let Some(emb) = blob_to_embedding(&blob) else { continue };
+            let score = dot_product(query_embedding, emb) as f64;
+            scored.push(SearchHit {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                file_path: row.get(2)?,
+                symbol_name: row.get(3)?,
+                symbol_kind: row.get(4)?,
+                signature: row.get(5)?,
+                snippet: row.get(6)?,
+                start_line: row.get(7)?,
+                end_line: row.get(8)?,
+                title: row.get(9)?,
+                memory_type: row.get(10)?,
+                score,
+                access_count: row.get(12)?,
+                last_accessed: row.get(13)?,
+                salience: row.get(14)?,
+                created_at: row.get(15)?,
+                archived: row.get(16)?,
+                descriptors: row.get::<_, Option<String>>(17)?.unwrap_or_default(),
+            });
+        }
+
+        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit);
+        Ok(scored)
+    }
+
     // --- Cognitive memory queries ---
 
     /// List memories ordered by access count (most accessed first).
@@ -1878,6 +1976,78 @@ mod tests {
         let results = store.vector_search(&query, "test-model", None, 10).unwrap();
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].symbol_name.as_deref(), Some("a")); // closer to query
+    }
+
+    #[test]
+    fn test_get_all_embeddings_and_hnsw_search() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = Store::open(&db_path).unwrap();
+        let cb = store.get_or_create_codebase("/tmp/p", "p").unwrap();
+
+        // Insert chunks with embeddings
+        let fc = FileChunks {
+            file_path: "a.rs".into(), file_hash: "h".into(),
+            chunks: vec![
+                CodeChunkParams {
+                    chunk_key: "a.rs:fn:x:1:2".into(), file_path: "a.rs".into(),
+                    language: "rust".into(), symbol_kind: "fn".into(), symbol_name: "x".into(),
+                    signature: "fn x()".into(), snippet: "fn x() {}".into(),
+                    start_line: 1, end_line: 2, file_hash: "h".into(),
+                },
+                CodeChunkParams {
+                    chunk_key: "a.rs:fn:y:3:4".into(), file_path: "a.rs".into(),
+                    language: "rust".into(), symbol_kind: "fn".into(), symbol_name: "y".into(),
+                    signature: "fn y()".into(), snippet: "fn y() {}".into(),
+                    start_line: 3, end_line: 4, file_hash: "h".into(),
+                },
+            ],
+        };
+        store.batch_upsert_chunks(cb, &[fc]).unwrap();
+
+        let chunk_x = store.conn().query_row(
+            "SELECT id FROM chunks WHERE symbol_name = 'x'", [], |r| r.get::<_, i64>(0),
+        ).unwrap();
+        let chunk_y = store.conn().query_row(
+            "SELECT id FROM chunks WHERE symbol_name = 'y'", [], |r| r.get::<_, i64>(0),
+        ).unwrap();
+
+        // Use 10-dim embeddings (small for tests)
+        let mut emb_x = vec![0.0f32; 10];
+        emb_x[0] = 1.0;
+        let mut emb_y = vec![0.0f32; 10];
+        emb_y[1] = 1.0;
+
+        store.batch_upsert_embeddings(&[
+            (chunk_x, &emb_x, "test-model"),
+            (chunk_y, &emb_y, "test-model"),
+        ]).unwrap();
+
+        // get_all_embeddings returns both
+        let all = store.get_all_embeddings().unwrap();
+        assert_eq!(all.len(), 2);
+
+        // Build HNSW and search
+        let hnsw = ferret::hnsw::HnswIndex::from_embeddings(&all).unwrap();
+        assert_eq!(hnsw.len(), 2);
+
+        // Query close to x
+        let mut query = vec![0.0f32; 10];
+        query[0] = 0.9;
+        query[1] = 0.1;
+
+        let results = store.vector_search_hnsw(&hnsw, &query, None, 10).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].symbol_name.as_deref(), Some("x")); // closer to query
+
+        // Test persistence
+        let hnsw_path = ferret::hnsw::hnsw_path(&db_path);
+        hnsw.save(&hnsw_path).unwrap();
+        let loaded = ferret::hnsw::HnswIndex::load(&hnsw_path).unwrap();
+        assert_eq!(loaded.len(), 2);
+
+        let results2 = store.vector_search_hnsw(&loaded, &query, None, 10).unwrap();
+        assert_eq!(results2[0].symbol_name.as_deref(), Some("x"));
     }
 
     fn test_hit(id: i64, title: &str, score: f64) -> SearchHit {

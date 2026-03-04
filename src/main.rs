@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use grasshopper::memory::{self, ReflectFocus};
 use grasshopper::store::{SearchHit, Store};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(
@@ -93,6 +93,9 @@ enum Commands {
         stale_days: i64,
     },
 
+    /// Rebuild the HNSW vector index from all embeddings
+    RebuildHnsw,
+
     /// Show memory statistics
     Stats,
 
@@ -115,6 +118,15 @@ fn default_db_path() -> PathBuf {
 fn try_embedder() -> Option<ferret::embed::Embedder> {
     let cache_dir = ferret::embed::default_cache_dir();
     ferret::embed::Embedder::new(&cache_dir).ok()
+}
+
+fn try_hnsw(db_path: &Path) -> Option<ferret::hnsw::HnswIndex> {
+    let hnsw_path = ferret::hnsw::hnsw_path(db_path);
+    if hnsw_path.exists() {
+        ferret::hnsw::HnswIndex::load(&hnsw_path).ok()
+    } else {
+        None
+    }
 }
 
 fn main() -> Result<()> {
@@ -172,6 +184,9 @@ fn main() -> Result<()> {
                 let embedded =
                     grasshopper::index::embed_codebase(&store, &mut embedder, result.codebase_id)?;
                 println!("Embedded: {} chunks", embedded);
+
+                // Rebuild HNSW index after embedding
+                rebuild_hnsw(&store, &db_path)?;
             }
 
             println!("Done in {}ms", result.duration_ms);
@@ -185,6 +200,7 @@ fn main() -> Result<()> {
             };
 
             let mut embedder = try_embedder();
+            let hnsw = try_hnsw(&db_path);
             let results = grasshopper::search::search(
                 &store,
                 &query,
@@ -192,6 +208,7 @@ fn main() -> Result<()> {
                 limit,
                 embedder.as_mut(),
                 None,
+                hnsw.as_ref(),
             )?;
 
             if results.is_empty() {
@@ -237,7 +254,8 @@ fn main() -> Result<()> {
         Commands::Recall { query, limit } => {
             let store = Store::open(&db_path)?;
             let mut embedder = try_embedder();
-            let result = memory::recall(&store, embedder.as_mut(), None, &query, limit)?;
+            let hnsw = try_hnsw(&db_path);
+            let result = memory::recall(&store, embedder.as_mut(), None, &query, limit, hnsw.as_ref())?;
 
             if result.hits.is_empty() {
                 println!("No memories found.");
@@ -298,7 +316,8 @@ fn main() -> Result<()> {
         Commands::Pickup { project } => {
             let store = Store::open(&db_path)?;
             let mut embedder = try_embedder();
-            let result = memory::pickup(&store, embedder.as_mut(), None, project.as_deref())?;
+            let hnsw = try_hnsw(&db_path);
+            let result = memory::pickup(&store, embedder.as_mut(), None, project.as_deref(), hnsw.as_ref())?;
 
             match result.handoff {
                 Some(h) => {
@@ -443,6 +462,11 @@ fn main() -> Result<()> {
             }
         }
 
+        Commands::RebuildHnsw => {
+            let store = Store::open(&db_path)?;
+            rebuild_hnsw(&store, &db_path)?;
+        }
+
         Commands::Stats => {
             let store = Store::open(&db_path)?;
             let (code, memory) = store.count_by_kind()?;
@@ -491,4 +515,17 @@ fn truncate(s: &str, max: usize) -> String {
         let truncated: String = s.chars().take(max.saturating_sub(3)).collect();
         format!("{truncated}...")
     }
+}
+
+fn rebuild_hnsw(store: &Store, db_path: &Path) -> Result<()> {
+    let rows = store.get_all_embeddings()?;
+    if rows.is_empty() {
+        println!("No embeddings found — skipping HNSW build.");
+        return Ok(());
+    }
+    let index = ferret::hnsw::HnswIndex::from_embeddings(&rows)?;
+    let hnsw_path = ferret::hnsw::hnsw_path(db_path);
+    index.save(&hnsw_path)?;
+    println!("HNSW index: {} points → {}", index.len(), hnsw_path.display());
+    Ok(())
 }

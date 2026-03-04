@@ -8,6 +8,7 @@ const RERANK_CANDIDATES: usize = 20;
 
 /// Unified search: runs FTS (always), vector (if embedder provided),
 /// merges via RRF, then optionally reranks via cross-encoder.
+/// When an HNSW index is provided, vector search uses O(log N) ANN instead of O(N) brute-force.
 pub fn search(
     store: &Store,
     query: &str,
@@ -15,6 +16,7 @@ pub fn search(
     limit: usize,
     embedder: Option<&mut ferret::embed::Embedder>,
     reranker: Option<&mut Reranker>,
+    hnsw: Option<&ferret::hnsw::HnswIndex>,
 ) -> Result<Vec<SearchHit>> {
     let fts_results = store.fts_search(query, kind_filter, limit)?;
 
@@ -22,6 +24,8 @@ pub fn search(
         let query_vec = emb.embed_batch(&[query.to_string()])?;
         if query_vec.is_empty() {
             vec![]
+        } else if let Some(hnsw) = hnsw {
+            store.vector_search_hnsw(hnsw, &query_vec[0], kind_filter, limit)?
         } else {
             store.vector_search(&query_vec[0], ferret::embed::MODEL_NAME, kind_filter, limit)?
         }

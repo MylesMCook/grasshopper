@@ -133,17 +133,20 @@ pub struct GrasshopperMcp {
     embedder: Arc<Mutex<Option<Embedder>>>,
     reranker: Arc<Mutex<Option<crate::rerank::Reranker>>>,
     reranker_init_failed: Arc<std::sync::atomic::AtomicBool>,
+    hnsw: Arc<Mutex<Option<ferret::hnsw::HnswIndex>>>,
     tool_router: ToolRouter<Self>,
 }
 
 #[tool_router]
 impl GrasshopperMcp {
     pub fn new(db_path: PathBuf) -> Self {
+        let hnsw = Self::try_load_hnsw(&db_path);
         Self {
             db_path,
             embedder: Arc::new(Mutex::new(None)),
             reranker: Arc::new(Mutex::new(None)),
             reranker_init_failed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            hnsw: Arc::new(Mutex::new(hnsw)),
             tool_router: Self::annotated_router(),
         }
     }
@@ -152,13 +155,33 @@ impl GrasshopperMcp {
         db_path: PathBuf,
         embedder: Arc<Mutex<Option<Embedder>>>,
         reranker: Arc<Mutex<Option<crate::rerank::Reranker>>>,
+        hnsw: Arc<Mutex<Option<ferret::hnsw::HnswIndex>>>,
     ) -> Self {
         Self {
             db_path,
             embedder,
             reranker,
             reranker_init_failed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            hnsw,
             tool_router: Self::annotated_router(),
+        }
+    }
+
+    fn try_load_hnsw(db_path: &std::path::Path) -> Option<ferret::hnsw::HnswIndex> {
+        let hnsw_path = ferret::hnsw::hnsw_path(db_path);
+        if hnsw_path.exists() {
+            match ferret::hnsw::HnswIndex::load(&hnsw_path) {
+                Ok(idx) => {
+                    tracing::info!("loaded HNSW index ({} points)", idx.len());
+                    Some(idx)
+                }
+                Err(e) => {
+                    tracing::warn!("failed to load HNSW index: {e}");
+                    None
+                }
+            }
+        } else {
+            None
         }
     }
 
@@ -253,6 +276,7 @@ impl GrasshopperMcp {
         let embedder = Arc::clone(&self.embedder);
         let reranker = Arc::clone(&self.reranker);
         let rr_failed = Arc::clone(&self.reranker_init_failed);
+        let hnsw = Arc::clone(&self.hnsw);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
@@ -266,9 +290,11 @@ impl GrasshopperMcp {
             let limit = params.limit.unwrap_or(10).clamp(1, 100);
             let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let results = crate::search::search(
                 &store, &params.query, kind_filter, limit,
                 emb_guard.as_mut(), rr_guard.as_mut(),
+                hnsw_guard.as_ref(),
             )?;
             let json = serde_json::to_string_pretty(&format_search_hits(&results))?;
             Ok::<_, anyhow::Error>(json)
@@ -551,6 +577,7 @@ impl GrasshopperMcp {
         let embedder = Arc::clone(&self.embedder);
         let reranker = Arc::clone(&self.reranker);
         let rr_failed = Arc::clone(&self.reranker_init_failed);
+        let hnsw = Arc::clone(&self.hnsw);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
@@ -559,8 +586,10 @@ impl GrasshopperMcp {
             let limit = params.limit.unwrap_or(10).clamp(1, 50);
             let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let result = crate::memory::recall(
                 &store, emb_guard.as_mut(), rr_guard.as_mut(), &params.query, limit,
+                hnsw_guard.as_ref(),
             )?;
             let json = serde_json::to_string_pretty(&format_search_hits(&result.hits))?;
             Ok::<_, anyhow::Error>(json)
@@ -650,6 +679,7 @@ impl GrasshopperMcp {
         let embedder = Arc::clone(&self.embedder);
         let reranker = Arc::clone(&self.reranker);
         let rr_failed = Arc::clone(&self.reranker_init_failed);
+        let hnsw = Arc::clone(&self.hnsw);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
@@ -657,8 +687,10 @@ impl GrasshopperMcp {
             let store = Store::open(&db_path)?;
             let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let result = crate::memory::pickup(
                 &store, emb_guard.as_mut(), rr_guard.as_mut(), params.project.as_deref(),
+                hnsw_guard.as_ref(),
             )?;
             let output = serde_json::json!({
                 "handoff": result.handoff,
@@ -898,16 +930,20 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
     let ct = tokio_util::sync::CancellationToken::new();
     let shared_embedder: Arc<Mutex<Option<Embedder>>> = Arc::new(Mutex::new(None));
     let shared_reranker: Arc<Mutex<Option<crate::rerank::Reranker>>> = Arc::new(Mutex::new(None));
+    let shared_hnsw: Arc<Mutex<Option<ferret::hnsw::HnswIndex>>> =
+        Arc::new(Mutex::new(GrasshopperMcp::try_load_hnsw(&db_path)));
 
     let db = db_path.clone();
     let embedder_for_mcp = shared_embedder.clone();
     let reranker_for_mcp = shared_reranker.clone();
+    let hnsw_for_mcp = shared_hnsw.clone();
     let mcp_service = StreamableHttpService::new(
         move || {
             Ok(GrasshopperMcp::with_embedder(
                 db.clone(),
                 embedder_for_mcp.clone(),
                 reranker_for_mcp.clone(),
+                hnsw_for_mcp.clone(),
             ))
         },
         LocalSessionManager::default().into(),

@@ -131,6 +131,7 @@ pub fn recall(
     reranker: Option<&mut crate::rerank::Reranker>,
     query: &str,
     limit: usize,
+    hnsw: Option<&ferret::hnsw::HnswIndex>,
 ) -> Result<RecallResult> {
     // 1. FTS keyword candidates
     let fts = store.fts_search(query, Some("memory"), 20)?;
@@ -139,7 +140,11 @@ pub fn recall(
     let vec_results = if let Some(emb) = embedder {
         match emb.embed_batch(&[query.to_string()]) {
             Ok(query_vec) if !query_vec.is_empty() => {
-                store.vector_search(&query_vec[0], ferret::embed::MODEL_NAME, Some("memory"), 20)?
+                if let Some(hnsw) = hnsw {
+                    store.vector_search_hnsw(hnsw, &query_vec[0], Some("memory"), 20)?
+                } else {
+                    store.vector_search(&query_vec[0], ferret::embed::MODEL_NAME, Some("memory"), 20)?
+                }
             }
             Ok(_) => vec![],
             Err(e) => {
@@ -375,12 +380,13 @@ pub fn pickup(
     embedder: Option<&mut ferret::embed::Embedder>,
     reranker: Option<&mut crate::rerank::Reranker>,
     project: Option<&str>,
+    hnsw: Option<&ferret::hnsw::HnswIndex>,
 ) -> Result<PickupResult> {
     let handoff = store.get_latest_handoff(project)?;
 
     let related_memories = if let Some(ref h) = handoff {
         let query = format!("{} {}", h.summary, h.project);
-        recall(store, embedder, reranker, &query, 5)?.hits
+        recall(store, embedder, reranker, &query, 5, hnsw)?.hits
     } else {
         vec![]
     };
@@ -736,7 +742,7 @@ mod tests {
         remember(&store, None, "Always use bun for packages", None, Some("knowledge"), "tools").unwrap();
         remember(&store, None, "SQLite WAL mode", None, Some("knowledge"), "database").unwrap();
 
-        let result = recall(&store, None, None, "bun", 10).unwrap();
+        let result = recall(&store, None, None, "bun", 10, None).unwrap();
         assert!(!result.hits.is_empty());
         assert_eq!(result.hits[0].memory_type.as_deref(), Some("knowledge"));
     }
@@ -748,7 +754,7 @@ mod tests {
         remember(&store, None, "I am a developer", None, Some("identity"), "").unwrap();
         remember(&store, None, "Developer tools are great", None, Some("knowledge"), "").unwrap();
 
-        let result = recall(&store, None, None, "developer", 10).unwrap();
+        let result = recall(&store, None, None, "developer", 10, None).unwrap();
         // Should only return the knowledge entry, not the identity
         for hit in &result.hits {
             assert_ne!(hit.memory_type.as_deref(), Some("identity"));
@@ -793,7 +799,7 @@ mod tests {
     #[test]
     fn test_pickup_no_handoff() {
         let (_dir, store) = test_store();
-        let result = pickup(&store, None, None, None).unwrap();
+        let result = pickup(&store, None, None, None, None).unwrap();
         assert!(result.handoff.is_none());
         assert!(result.related_memories.is_empty());
     }
@@ -805,7 +811,7 @@ mod tests {
         remember(&store, None, "Grasshopper phase 2 work", None, Some("knowledge"), "grasshopper").unwrap();
         store.create_handoff("h1", "Finished phase 1", "Start phase 2", "grasshopper").unwrap();
 
-        let result = pickup(&store, None, None, Some("grasshopper")).unwrap();
+        let result = pickup(&store, None, None, Some("grasshopper"), None).unwrap();
         assert!(result.handoff.is_some());
         assert_eq!(result.handoff.as_ref().unwrap().project, "grasshopper");
     }
