@@ -133,8 +133,8 @@ pub fn recall(
     limit: usize,
     hnsw: Option<&ferret::hnsw::HnswIndex>,
 ) -> Result<RecallResult> {
-    // 1. FTS keyword candidates
-    let fts = store.fts_search(query, Some("memory"), 20)?;
+    // 1. Expanded FTS keyword candidates (multi-query for better recall)
+    let fts = crate::search::expanded_fts_search(store, query, Some("memory"), 20)?;
 
     // 2. Vector candidates (if embedder available, graceful fallback on error)
     let vec_results = if let Some(emb) = embedder {
@@ -214,6 +214,190 @@ pub fn recall(
     }
 
     Ok(RecallResult { hits: scored })
+}
+
+/// Result of proactive context retrieval.
+pub struct GetContextResult {
+    pub hits: Vec<SearchHit>,
+    /// How many candidates were filtered out by the relevance threshold.
+    pub filtered_count: usize,
+    /// The threshold that was applied.
+    pub threshold: f32,
+}
+
+/// Proactive memory surfacing with relevance threshold.
+/// Like recall(), but drops memories below a relevance floor.
+/// Returns empty if nothing is relevant — that's the correct behavior.
+/// Uses reranker score as the gate when available, falls back to RRF score.
+pub fn get_context(
+    store: &Store,
+    embedder: Option<&mut ferret::embed::Embedder>,
+    reranker: Option<&mut crate::rerank::Reranker>,
+    query: &str,
+    limit: usize,
+    threshold: f32,
+    hnsw: Option<&ferret::hnsw::HnswIndex>,
+) -> Result<GetContextResult> {
+    let has_reranker = reranker.is_some();
+
+    // 1. Expanded FTS keyword candidates (multi-query for better recall)
+    let fts = crate::search::expanded_fts_search(store, query, Some("memory"), 20)?;
+
+    // 2. Vector candidates
+    let vec_results = if let Some(emb) = embedder {
+        match emb.embed_batch(&[query.to_string()]) {
+            Ok(query_vec) if !query_vec.is_empty() => {
+                if let Some(hnsw) = hnsw {
+                    store.vector_search_hnsw(hnsw, &query_vec[0], Some("memory"), 20)?
+                } else {
+                    store.vector_search(&query_vec[0], ferret::embed::MODEL_NAME, Some("memory"), 20)?
+                }
+            }
+            Ok(_) => vec![],
+            Err(e) => {
+                tracing::warn!("Embedding failed, falling back to FTS-only: {e}");
+                vec![]
+            }
+        }
+    } else {
+        vec![]
+    };
+
+    // 3. Merge via RRF
+    let empty: Vec<SearchHit> = vec![];
+    let merged = if fts.is_empty() && vec_results.is_empty() {
+        vec![]
+    } else if fts.is_empty() {
+        hybrid_search(&empty, &vec_results, 20)
+    } else if vec_results.is_empty() {
+        hybrid_search(&fts, &empty, 20)
+    } else {
+        hybrid_search(&fts, &vec_results, 20)
+    };
+
+    // 3b. Rerank via cross-encoder
+    let merged = if let Some(reranker) = reranker {
+        match crate::search::rerank_hits(reranker, query, merged.clone(), 20) {
+            Ok(reranked) => reranked,
+            Err(e) => {
+                tracing::warn!("reranking failed in get_context, using unreranked results: {e}");
+                merged
+            }
+        }
+    } else {
+        merged
+    };
+
+    // 4. Filter archived + identity
+    let filtered: Vec<SearchHit> = merged
+        .into_iter()
+        .filter(|h| !h.archived && h.memory_type.as_deref() != Some("identity"))
+        .collect();
+
+    // 5. Relevance gate: drop hits below threshold
+    let pre_gate_count = filtered.len();
+    let gated: Vec<SearchHit> = filtered
+        .into_iter()
+        .filter(|h| {
+            if has_reranker {
+                // Use cross-encoder score when available
+                h.reranker_score.unwrap_or(0.0) >= threshold
+            } else {
+                // Fall back to RRF score (different scale, use lower threshold)
+                h.score >= (threshold * 0.05) as f64
+            }
+        })
+        .collect();
+    let filtered_count = pre_gate_count - gated.len();
+
+    // 6. Apply cognitive scoring and sort
+    let mut scored: Vec<SearchHit> = gated
+        .into_iter()
+        .map(|mut h| {
+            h.score = cognitive_score(&h);
+            h
+        })
+        .collect();
+    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(limit);
+
+    // 7. Side effects: touch and create associations
+    let ids: Vec<i64> = scored.iter().map(|h| h.id).collect();
+    for &id in &ids {
+        if let Err(e) = store.touch_memory(id) {
+            tracing::warn!("Failed to touch memory #{id}: {e}");
+        }
+    }
+    for i in 0..ids.len() {
+        for j in (i + 1)..ids.len() {
+            if let Err(e) = store.upsert_association(ids[i], ids[j]) {
+                tracing::warn!("Failed to associate #{} <-> #{}: {e}", ids[i], ids[j]);
+            }
+        }
+    }
+
+    Ok(GetContextResult {
+        hits: scored,
+        filtered_count,
+        threshold,
+    })
+}
+
+/// Result of budget-aware context truncation.
+pub struct BudgetResult {
+    pub hits: Vec<SearchHit>,
+    /// How many hits were dropped due to budget or dedup.
+    pub dropped_count: usize,
+    /// Estimated total tokens of returned hits.
+    pub estimated_tokens: usize,
+}
+
+/// Budget-aware truncation of search results.
+/// Greedy fill by cognitive score (already sorted) until token budget exhausted.
+/// Deduplicates by content hash (title + snippet) when `dedup` is true.
+pub fn budget_context(
+    hits: Vec<SearchHit>,
+    token_budget: usize,
+    dedup: bool,
+) -> BudgetResult {
+    let mut result = Vec::new();
+    let mut total_tokens: usize = 0;
+    let mut seen_hashes = std::collections::HashSet::new();
+    let original_count = hits.len();
+
+    for hit in hits {
+        // Estimate tokens: ~4 chars per token
+        let hit_tokens = (hit.title.len() + hit.snippet.len()).div_ceil(4);
+
+        // Content-hash dedup
+        if dedup {
+            let hash_input = format!("{}:{}", hit.title, hit.snippet);
+            let hash = {
+                use sha2::{Digest, Sha256};
+                let mut hasher = Sha256::new();
+                hasher.update(hash_input.as_bytes());
+                format!("{:x}", hasher.finalize())
+            };
+            if !seen_hashes.insert(hash) {
+                continue; // Duplicate content
+            }
+        }
+
+        // Budget check
+        if total_tokens + hit_tokens > token_budget && !result.is_empty() {
+            break; // Budget exhausted (always include at least one hit)
+        }
+
+        total_tokens += hit_tokens;
+        result.push(hit);
+    }
+
+    let dropped_count = original_count - result.len();
+    BudgetResult {
+        hits: result,
+        dropped_count,
+        estimated_tokens: total_tokens,
+    }
 }
 
 /// Result of the `remember` command.
@@ -624,6 +808,7 @@ mod tests {
             start_line: None, end_line: None,
             memory_type: Some("identity".into()),
             score: 1.0,
+            reranker_score: None,
             access_count: 5,
             last_accessed: Some("2020-01-01T00:00:00+00:00".into()),
             salience: 1.0,
@@ -648,6 +833,7 @@ mod tests {
             start_line: None, end_line: None,
             memory_type: Some("episode".into()),
             score: 1.0,
+            reranker_score: None,
             access_count: 0,
             last_accessed: Some(now.clone()),
             salience: 0.5,
@@ -814,5 +1000,126 @@ mod tests {
         let result = pickup(&store, None, None, Some("grasshopper"), None).unwrap();
         assert!(result.handoff.is_some());
         assert_eq!(result.handoff.as_ref().unwrap().project, "grasshopper");
+    }
+
+    // --- get_context tests ---
+
+    #[test]
+    fn test_get_context_empty_when_nothing_relevant() {
+        let (_dir, store) = test_store();
+
+        // Store a memory about Rust
+        remember(&store, None, "Rust's ownership model prevents data races", None, None, "").unwrap();
+
+        // Query about something completely unrelated with a high threshold
+        let result = get_context(&store, None, None, "quantum physics entanglement", 5, 0.9, None).unwrap();
+        // With FTS-only (no embedder/reranker), threshold scales down by 0.05x
+        // Even if FTS returns something, a 0.9 threshold (→ 0.045 RRF) should filter weak matches
+        assert_eq!(result.threshold, 0.9);
+    }
+
+    #[test]
+    fn test_get_context_passes_strong_matches() {
+        let (_dir, store) = test_store();
+
+        remember(&store, None, "SQLite WAL mode improves write concurrency", None, None, "database").unwrap();
+        remember(&store, None, "PostgreSQL uses MVCC for concurrency control", None, None, "database").unwrap();
+
+        // Query matching the stored memories, with a low threshold
+        let result = get_context(&store, None, None, "SQLite WAL concurrency", 5, 0.0, None).unwrap();
+        // With threshold 0.0 and FTS match, we should get results
+        assert!(!result.hits.is_empty(), "should find relevant memories with threshold 0.0");
+        assert_eq!(result.threshold, 0.0);
+    }
+
+    #[test]
+    fn test_get_context_filters_identity_and_archived() {
+        let (_dir, store) = test_store();
+
+        // Store identity memory (should be filtered out)
+        remember(&store, None, "I am a Rust developer who loves SQLite", None, Some("identity"), "").unwrap();
+        // Store knowledge memory (should pass)
+        let know = remember(&store, None, "SQLite FTS5 enables full-text search", None, Some("knowledge"), "").unwrap();
+        // Archive one
+        let archived = remember(&store, None, "SQLite is a database engine", None, Some("knowledge"), "").unwrap();
+        store.archive_memory(archived.id).unwrap();
+
+        let result = get_context(&store, None, None, "SQLite", 10, 0.0, None).unwrap();
+        // Should only contain the non-archived knowledge memory
+        let ids: Vec<i64> = result.hits.iter().map(|h| h.id).collect();
+        assert!(ids.contains(&know.id), "should contain knowledge memory");
+        assert!(!ids.contains(&archived.id), "should not contain archived memory");
+        // Identity memories are also filtered
+        for hit in &result.hits {
+            assert_ne!(hit.memory_type.as_deref(), Some("identity"), "should not contain identity memories");
+        }
+    }
+
+    // --- budget_context tests ---
+
+    fn make_hit(id: i64, title: &str, snippet: &str) -> SearchHit {
+        SearchHit {
+            id, kind: "memory".into(), file_path: None, symbol_name: None,
+            symbol_kind: None, signature: None, title: title.into(), snippet: snippet.into(),
+            start_line: None, end_line: None,
+            memory_type: Some("knowledge".into()),
+            score: 1.0 - (id as f64 * 0.1), // Decreasing score
+            reranker_score: None,
+            access_count: 0,
+            last_accessed: None,
+            salience: 0.5,
+            created_at: "2026-01-01T00:00:00+00:00".into(),
+            archived: false,
+            descriptors: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_budget_respects_limit() {
+        let hits = vec![
+            make_hit(1, "Short", "a"),       // ~2 tokens
+            make_hit(2, "Medium", &"x".repeat(100)),  // ~27 tokens
+            make_hit(3, "Long", &"y".repeat(1000)),   // ~252 tokens
+        ];
+        let result = budget_context(hits, 50, false);
+        // Should include first two hits (~29 tokens), but not the third (~252 tokens)
+        assert_eq!(result.hits.len(), 2);
+        assert!(result.estimated_tokens <= 50);
+        assert_eq!(result.dropped_count, 1);
+    }
+
+    #[test]
+    fn test_budget_dedup_works() {
+        let hits = vec![
+            make_hit(1, "Title", "Same content"),
+            make_hit(2, "Title", "Same content"), // Duplicate
+            make_hit(3, "Different", "Other content"),
+        ];
+        let result = budget_context(hits, 10000, true);
+        assert_eq!(result.hits.len(), 2); // Dedup removes one
+        assert_eq!(result.hits[0].id, 1);
+        assert_eq!(result.hits[1].id, 3);
+    }
+
+    #[test]
+    fn test_budget_preserves_order() {
+        let hits = vec![
+            make_hit(1, "First", "Content A"),
+            make_hit(2, "Second", "Content B"),
+            make_hit(3, "Third", "Content C"),
+        ];
+        let result = budget_context(hits, 10000, false);
+        assert_eq!(result.hits.len(), 3);
+        assert_eq!(result.hits[0].id, 1);
+        assert_eq!(result.hits[1].id, 2);
+        assert_eq!(result.hits[2].id, 3);
+    }
+
+    #[test]
+    fn test_budget_empty_input() {
+        let result = budget_context(vec![], 4000, true);
+        assert!(result.hits.is_empty());
+        assert_eq!(result.dropped_count, 0);
+        assert_eq!(result.estimated_tokens, 0);
     }
 }

@@ -14,10 +14,11 @@ Based on Yuan et al. (March 2026, arXiv:2603.02473v1):
 
 ```sh
 cargo build                    # Build
-cargo test                     # 53 tests across all modules
+cargo test                     # 69 tests (+ 4 ignored NLI tests requiring model)
 cargo run -- --help            # CLI help
 cargo run -- remember "text"   # Store a memory
 cargo run -- recall "query"    # Cognitive-scored memory search
+cargo run -- get-context "q"   # Proactive context surfacing with relevance gate
 cargo run -- stats             # Show counts
 cargo run -- search "query"    # Hybrid search (code + memory)
 cargo run -- index ./path      # Index code
@@ -28,13 +29,14 @@ cargo run -- serve --port 8106 # HTTP MCP server
 
 ```
 src/
-├── main.rs    — CLI with 11 subcommands
+├── main.rs    — CLI with 12 subcommands (577 lines)
 ├── lib.rs     — Module exports
-├── store.rs   — Unified SQLite schema, all queries (2144 lines)
-├── memory.rs  — Cognitive layer: remember, recall, classify, score, reflect, consolidate (797 lines)
-├── search.rs  — Hybrid search: FTS5 + vector → RRF fusion → cross-encoder rerank
+├── store.rs   — Unified SQLite schema, all queries (2331 lines)
+├── memory.rs  — Cognitive layer: remember, recall, get_context, classify, score, reflect, consolidate, budget (1125 lines)
+├── search.rs  — Hybrid search: FTS5 + vector → RRF fusion → query expansion → cross-encoder rerank (270 lines)
 ├── index.rs   — Code indexing: scan → chunk → graph → FTS → embed (286 lines)
-├── mcp.rs     — MCP server: 12 tools, HTTP + stdio transport (1092 lines)
+├── mcp.rs     — MCP server: 13 tools, HTTP + stdio transport (1336 lines)
+├── nli.rs     — NLI contradiction detection via ONNX Runtime (cross-encoder/nli-MiniLM2-L6-H768) (256 lines)
 └── rerank.rs  — Cross-encoder reranking via fastembed/ONNX (BAAI/bge-reranker-base)
 ```
 
@@ -44,7 +46,7 @@ src/
 ### Retrieval Pipeline
 
 ```
-FTS5 (BM25) → Vector (cosine, HNSW) → RRF fusion (k=60) → Cross-encoder rerank → Cognitive scoring → Return
+Query Expansion → FTS5 (BM25) → Vector (cosine, HNSW) → RRF fusion (k=60) → Cross-encoder rerank → Relevance gate → Cognitive scoring → NLI contradiction check → Budget truncation → Return
 ```
 
 **Known limitation:** HNSW index is loaded once at startup. New embeddings added after startup are searchable via FTS and brute-force vector, but not via HNSW until `rebuild-hnsw` + restart. Track for Phase 2 auto-refresh.
@@ -61,6 +63,7 @@ Supporting tables: `codebases`, `indexed_files`, `graph` (code refs + Hebbian as
 - `rusqlite` 0.32 — SQLite with FTS5 + bundled
 - `rmcp` 0.16 — MCP server (stdio + streamable HTTP)
 - `fastembed` — cross-encoder reranking via ONNX Runtime (BAAI/bge-reranker-base)
+- `ort` 2.0.0-rc.11 + `tokenizers` 0.22 — NLI contradiction detection (cross-encoder/nli-MiniLM2-L6-H768, 82M params)
 
 ## Conventions
 
@@ -85,5 +88,5 @@ Supporting tables: `codebases`, `indexed_files`, `graph` (code refs + Hebbian as
 - Project: **Grasshopper Next-Gen** (LAB-31+)
 - Completed: LAB-26 (scaffold), LAB-27 (code intelligence), LAB-28 (cognitive memory), LAB-29 (MCP server), LAB-30 (hook-driven consolidation)
 - Phase 1 — Retrieval Excellence: LAB-45 → LAB-32 → LAB-33, LAB-34 (parallel), LAB-35 (eval)
-- Phase 2 — Proactive Intelligence: LAB-36 (parent), LAB-38 (relevance gate), LAB-39 (query expander), LAB-40 (contradiction detector), LAB-46 (working memory)
+- Phase 2 — Proactive Intelligence: LAB-36 (parent), LAB-38 (relevance gate) ✓, LAB-39 (query expander) ✓, LAB-40 (contradiction detector) ✓, LAB-46 (working memory) ✓
 - Phase 3 — Learning & Evolution: LAB-37 (parent), LAB-41 (decay scorer), LAB-42 (consolidation), LAB-43 (entity graph), LAB-44 (fine-tuning pipeline)

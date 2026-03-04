@@ -81,6 +81,18 @@ pub struct RecallParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetContextParams {
+    /// Conversation context or topic to find relevant memories for. Can be the user's latest message, a summary of recent turns, or a specific question
+    pub query: String,
+    /// Minimum relevance score to surface (0.0-1.0, default: 0.1). Higher = stricter filtering. Set to 0.0 to return all results
+    pub threshold: Option<f32>,
+    /// Maximum memories to return, 1-20 (default: 5)
+    pub limit: Option<usize>,
+    /// Token budget for returned context (default: 4000). Results are truncated to fit within this budget
+    pub budget: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct MeParams {}
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -134,6 +146,9 @@ pub struct GrasshopperMcp {
     reranker: Arc<Mutex<Option<crate::rerank::Reranker>>>,
     /// Epoch seconds of last reranker init failure (0 = never failed). Retry after 60s cooldown.
     reranker_failed_at: Arc<std::sync::atomic::AtomicI64>,
+    nli: Arc<Mutex<Option<crate::nli::NliModel>>>,
+    /// Epoch seconds of last NLI init failure (0 = never failed). Retry after 60s cooldown.
+    nli_failed_at: Arc<std::sync::atomic::AtomicI64>,
     hnsw: Arc<Mutex<Option<ferret::hnsw::HnswIndex>>>,
     tool_router: ToolRouter<Self>,
 }
@@ -147,6 +162,8 @@ impl GrasshopperMcp {
             embedder: Arc::new(Mutex::new(None)),
             reranker: Arc::new(Mutex::new(None)),
             reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            nli: Arc::new(Mutex::new(None)),
+            nli_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             hnsw: Arc::new(Mutex::new(hnsw)),
             tool_router: Self::annotated_router(),
         }
@@ -163,6 +180,8 @@ impl GrasshopperMcp {
             embedder,
             reranker,
             reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            nli: Arc::new(Mutex::new(None)),
+            nli_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             hnsw,
             tool_router: Self::annotated_router(),
         }
@@ -205,7 +224,7 @@ impl GrasshopperMcp {
             let ann = match name.as_ref() {
                 // Read-only: search, navigate, map, impact, me, pickup, reflect, get
                 "search" | "navigate" | "map" | "impact" | "me" | "pickup" | "reflect"
-                | "get" => read_only.clone(),
+                | "get" | "get_context" => read_only.clone(),
                 // Destructive: consolidate and archive can remove memories
                 "consolidate" | "archive" => destructive_write.clone(),
                 // Write (non-destructive): index, remember, handoff
@@ -272,6 +291,46 @@ impl GrasshopperMcp {
                         .map(|d| d.as_secs() as i64)
                         .unwrap_or(0);
                     tracing::warn!("reranker init failed (retry in {COOLDOWN_SECS}s): {e}");
+                    failed_at.store(now, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        }
+    }
+
+    fn init_nli_blocking(
+        nli: &Arc<Mutex<Option<crate::nli::NliModel>>>,
+        failed_at: &Arc<std::sync::atomic::AtomicI64>,
+    ) {
+        const COOLDOWN_SECS: i64 = 60;
+        let last_fail = failed_at.load(std::sync::atomic::Ordering::Relaxed);
+        if last_fail > 0 {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            if now - last_fail < COOLDOWN_SECS {
+                return;
+            }
+        }
+        let mut guard = match nli.lock() {
+            Ok(g) => g,
+            Err(poisoned) => {
+                tracing::warn!("nli mutex poisoned, recovering: {poisoned}");
+                poisoned.into_inner()
+            }
+        };
+        if guard.is_none() {
+            match crate::nli::NliModel::new() {
+                Ok(model) => {
+                    failed_at.store(0, std::sync::atomic::Ordering::Relaxed);
+                    *guard = Some(model);
+                }
+                Err(e) => {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0);
+                    tracing::info!("NLI model not available (retry in {COOLDOWN_SECS}s): {e}");
                     failed_at.store(now, std::sync::atomic::Ordering::Relaxed);
                 }
             }
@@ -608,6 +667,82 @@ impl GrasshopperMcp {
                 hnsw_guard.as_ref(),
             )?;
             let json = serde_json::to_string_pretty(&format_search_hits(&result.hits))?;
+            Ok::<_, anyhow::Error>(json)
+        })
+        .await
+        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
+
+        match result {
+            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
+            Err(e) => Ok(error_result(format!("{e:#}"))),
+        }
+    }
+
+    #[tool(
+        name = "get_context",
+        description = "Proactive memory surfacing — call before answering to surface relevant background knowledge. Unlike recall (which always returns results), get_context applies a relevance gate and returns EMPTY when nothing is relevant. This is the correct behavior — don't treat empty results as failure. Memories below the threshold are silently dropped."
+    )]
+    async fn get_context(
+        &self,
+        Parameters(params): Parameters<GetContextParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let db_path = self.db_path.clone();
+        let embedder = Arc::clone(&self.embedder);
+        let reranker = Arc::clone(&self.reranker);
+        let rr_failed = Arc::clone(&self.reranker_failed_at);
+        let nli = Arc::clone(&self.nli);
+        let nli_failed = Arc::clone(&self.nli_failed_at);
+        let hnsw = Arc::clone(&self.hnsw);
+
+        let result = tokio::task::spawn_blocking(move || {
+            Self::init_embedder_blocking(&embedder);
+            Self::init_reranker_blocking(&reranker, &rr_failed);
+            Self::init_nli_blocking(&nli, &nli_failed);
+            let store = Store::open(&db_path)?;
+            let limit = params.limit.unwrap_or(5).clamp(1, 20);
+            let threshold = params.threshold.unwrap_or(0.1);
+            let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let result = crate::memory::get_context(
+                &store, emb_guard.as_mut(), rr_guard.as_mut(), &params.query, limit, threshold,
+                hnsw_guard.as_ref(),
+            )?;
+
+            // Run NLI contradiction detection on results (annotation-only)
+            let contradictions = if result.hits.len() >= 2 {
+                let mut nli_guard = nli.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                if let Some(nli_model) = nli_guard.as_mut() {
+                    let entries: Vec<(i64, String, String)> = result.hits.iter()
+                        .map(|h| (h.id, h.title.clone(), h.snippet.clone()))
+                        .collect();
+                    let found = nli_model.find_contradictions(&entries);
+                    if !found.is_empty() {
+                        Some(serde_json::to_value(&found)?)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Apply token budget truncation + dedup
+            let budget = params.budget.unwrap_or(4000);
+            let budgeted = crate::memory::budget_context(result.hits, budget, true);
+
+            let mut output = serde_json::Map::new();
+            output.insert("memories".to_string(), serde_json::to_value(format_search_hits(&budgeted.hits))?);
+            output.insert("threshold".to_string(), serde_json::Value::from(result.threshold));
+            output.insert("filtered_count".to_string(), serde_json::Value::from(result.filtered_count));
+            output.insert("budget_dropped".to_string(), serde_json::Value::from(budgeted.dropped_count));
+            output.insert("estimated_tokens".to_string(), serde_json::Value::from(budgeted.estimated_tokens));
+            if let Some(contradictions) = contradictions {
+                output.insert("contradictions".to_string(), contradictions);
+            }
+            let json = serde_json::to_string_pretty(&output)?;
             Ok::<_, anyhow::Error>(json)
         })
         .await

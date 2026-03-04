@@ -69,6 +69,8 @@ pub struct SearchHit {
     pub end_line: Option<i64>,
     pub memory_type: Option<String>,
     pub score: f64,
+    /// Raw cross-encoder reranker score (set by rerank_hits, None if not reranked)
+    pub reranker_score: Option<f32>,
     // Cognitive fields (populated from chunks table)
     pub access_count: i64,
     pub last_accessed: Option<String>,
@@ -823,6 +825,7 @@ impl Store {
                         let raw: f64 = row.get(11)?;
                         -raw
                     },
+                    reranker_score: None,
                     access_count: row.get(12)?,
                     last_accessed: row.get(13)?,
                     salience: row.get(14)?,
@@ -880,6 +883,7 @@ impl Store {
                 title: row.get(9)?,
                 memory_type: row.get(10)?,
                 score,
+                reranker_score: None,
                 access_count: row.get(12)?,
                 last_accessed: row.get(13)?,
                 salience: row.get(14)?,
@@ -986,6 +990,7 @@ impl Store {
                 title: row.get(9)?,
                 memory_type: row.get(10)?,
                 score,
+                reranker_score: None,
                 access_count: row.get(12)?,
                 last_accessed: row.get(13)?,
                 salience: row.get(14)?,
@@ -2062,7 +2067,7 @@ mod tests {
         SearchHit {
             id, kind: "code".into(), file_path: None, symbol_name: None,
             symbol_kind: None, signature: None, title: title.into(), snippet: String::new(),
-            start_line: None, end_line: None, memory_type: None, score,
+            start_line: None, end_line: None, memory_type: None, score, reranker_score: None,
             access_count: 0, last_accessed: None, salience: 0.5,
             created_at: String::new(), archived: false, descriptors: String::new(),
         }

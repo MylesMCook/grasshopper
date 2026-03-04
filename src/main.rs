@@ -66,6 +66,18 @@ enum Commands {
         limit: usize,
     },
 
+    /// Proactive context surfacing with relevance gate
+    GetContext {
+        /// Conversation context or topic
+        query: String,
+        /// Minimum relevance threshold (0.0-1.0)
+        #[arg(long, default_value = "0.1")]
+        threshold: f32,
+        /// Maximum results
+        #[arg(long, default_value = "5")]
+        limit: usize,
+    },
+
     /// Identity snapshot: who am I, what am I working on
     Me,
 
@@ -273,6 +285,33 @@ fn main() -> Result<()> {
                 println!(
                     "{}. [{:.4}] [{}] {} (accessed: {}, salience: {:.2})",
                     i + 1, hit.score, mtype, hit.title, hit.access_count, hit.salience,
+                );
+                if !hit.snippet.is_empty() {
+                    let preview: String = hit.snippet.chars().take(120).collect();
+                    println!("   {preview}");
+                }
+            }
+        }
+
+        Commands::GetContext { query, threshold, limit } => {
+            let store = Store::open(&db_path)?;
+            let mut embedder = try_embedder();
+            let mut reranker = try_reranker();
+            let hnsw = try_hnsw(&db_path);
+            let result = memory::get_context(&store, embedder.as_mut(), reranker.as_mut(), &query, limit, threshold, hnsw.as_ref())?;
+
+            if result.hits.is_empty() {
+                println!("No relevant context found (threshold: {threshold}, filtered: {}).", result.filtered_count);
+                return Ok(());
+            }
+
+            println!("Context ({} results, {} filtered at threshold {threshold}):", result.hits.len(), result.filtered_count);
+            for (i, hit) in result.hits.iter().enumerate() {
+                let mtype = hit.memory_type.as_deref().unwrap_or("?");
+                let rerank = hit.reranker_score.map(|s| format!(" rerank={s:.4}")).unwrap_or_default();
+                println!(
+                    "{}. [{:.4}{}] [{}] {}",
+                    i + 1, hit.score, rerank, mtype, hit.title,
                 );
                 if !hit.snippet.is_empty() {
                     let preview: String = hit.snippet.chars().take(120).collect();
