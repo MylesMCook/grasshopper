@@ -108,6 +108,12 @@ pub struct ConsolidateParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ArchiveParams {
+    /// Numeric ID of the memory to archive (from search, recall, or other tool outputs)
+    pub id: i64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReflectParams {
     /// What aspect of memory to analyze. Values: "overview" (default), "growing" (recently active), "fading" (neglected), "connections" (Hebbian associations), "gaps" (missing coverage)
     pub focus: Option<String>,
@@ -166,8 +172,8 @@ impl GrasshopperMcp {
                 // Read-only: search, navigate, map, impact, me, pickup, reflect, get
                 "search" | "navigate" | "map" | "impact" | "me" | "pickup" | "reflect"
                 | "get" => read_only.clone(),
-                // Destructive: consolidate can archive/delete memories
-                "consolidate" => destructive_write.clone(),
+                // Destructive: consolidate and archive can remove memories
+                "consolidate" | "archive" => destructive_write.clone(),
                 // Write (non-destructive): index, remember, handoff
                 _ => write.clone(),
             };
@@ -296,7 +302,9 @@ impl GrasshopperMcp {
 
         let result = tokio::task::spawn_blocking(move || {
             let store = Store::open(&db_path)?;
-            let codebase_id = resolve_codebase(&store, params.dir.as_deref())?;
+            let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
+                .context("no codebases indexed — run index first")?;
+            let codebase_id = Some(codebase_id);
             let direction = params.direction.as_deref().unwrap_or("both");
 
             let (show_defs, show_refs) = match direction {
@@ -392,7 +400,9 @@ impl GrasshopperMcp {
 
         let result = tokio::task::spawn_blocking(move || {
             let store = Store::open(&db_path)?;
-            let codebase_id = resolve_codebase(&store, params.dir.as_deref())?;
+            let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
+                .context("no codebases indexed — run index first")?;
+            let codebase_id = Some(codebase_id);
             let max_depth = params.depth.unwrap_or(2).clamp(1, 5);
 
             let hits = store.find_impact(&params.symbol, codebase_id, max_depth)?;
@@ -511,6 +521,34 @@ impl GrasshopperMcp {
 
         match result {
             Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
+            Err(e) => Ok(error_result(format!("{e:#}"))),
+        }
+    }
+
+    #[tool(
+        name = "archive",
+        description = "Soft-delete a memory by ID. Use to remove bad, outdated, or redundant memories that degrade search quality. The memory is marked archived, not permanently deleted — it won't appear in recall or search results. Get the ID from search, recall, or reflect output."
+    )]
+    async fn archive(
+        &self,
+        Parameters(params): Parameters<ArchiveParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let db_path = self.db_path.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            let store = Store::open(&db_path)?;
+            let archived = store.archive_memory(params.id)?;
+            if archived {
+                Ok(format!("Archived memory #{}.", params.id))
+            } else {
+                anyhow::bail!("no active memory with ID {}. It may already be archived or not exist.", params.id)
+            }
+        })
+        .await
+        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
+
+        match result {
+            Ok(text) => Ok(CallToolResult::success(vec![Content::text(text)])),
             Err(e) => Ok(error_result(format!("{e:#}"))),
         }
     }
@@ -744,13 +782,14 @@ impl ServerHandler for GrasshopperMcp {
                  - During: use remember to save decisions, learnings, and preferences\n\
                  - End: call handoff to record progress and next steps\n\n\
                  CODE INTELLIGENCE (requires index first):\n\
-                 - search: find code or memories by natural language query\n\
+                 - search: find code or memories by raw hybrid-search score. Use for code lookups or broad cross-domain queries\n\
                  - navigate: jump to a symbol's definition or find its callers\n\
                  - map: get a token-budgeted overview of an entire codebase\n\
                  - impact: see what breaks if you change a symbol\n\n\
                  COGNITIVE MEMORY:\n\
+                 - recall: retrieve memories with cognitive scoring (recency, frequency, salience, decay). Use this for memory queries, not search\n\
                  - remember: store facts, decisions, preferences (auto-deduplicates)\n\
-                 - recall: cognitive-scored memory search (recency, frequency, salience, decay)\n\
+                 - archive: soft-delete a bad or outdated memory by ID\n\
                  - me: load identity and working context\n\
                  - pickup / handoff: session continuity\n\
                  - reflect: analyze memory health and patterns\n\
