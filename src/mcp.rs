@@ -224,7 +224,9 @@ impl GrasshopperMcp {
             let ann = match name.as_ref() {
                 // Read-only: search, navigate, map, impact, me, pickup, reflect, get
                 "search" | "navigate" | "map" | "impact" | "me" | "pickup" | "reflect"
-                | "get" | "get_context" => read_only.clone(),
+                | "get" => read_only.clone(),
+                // get_context has cognitive side effects (touch + association)
+                "get_context" => write.clone(),
                 // Destructive: consolidate and archive can remove memories
                 "consolidate" | "archive" => destructive_write.clone(),
                 // Write (non-destructive): index, remember, handoff
@@ -700,20 +702,28 @@ impl GrasshopperMcp {
             Self::init_nli_blocking(&nli, &nli_failed);
             let store = Store::open(&db_path)?;
             let limit = params.limit.unwrap_or(5).clamp(1, 20);
-            let threshold = params.threshold.unwrap_or(0.1);
-            let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let result = crate::memory::get_context(
-                &store, emb_guard.as_mut(), rr_guard.as_mut(), &params.query, limit, threshold,
-                hnsw_guard.as_ref(),
-            )?;
+            let threshold = params.threshold.unwrap_or(0.1).clamp(0.0, 1.0);
 
-            // Run NLI contradiction detection on results (annotation-only)
-            let contradictions = if result.hits.len() >= 2 {
+            // Retrieval: hold model locks only for the search pipeline
+            let result = {
+                let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                crate::memory::get_context(
+                    &store, emb_guard.as_mut(), rr_guard.as_mut(), &params.query, limit, threshold,
+                    hnsw_guard.as_ref(),
+                )?
+            }; // model locks released here
+
+            // Budget truncation + dedup (before NLI and side effects)
+            let budget = params.budget.unwrap_or(4000);
+            let budgeted = crate::memory::budget_context(result.hits, budget, true);
+
+            // NLI contradiction detection on budgeted hits only
+            let contradictions = if budgeted.hits.len() >= 2 {
                 let mut nli_guard = nli.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
                 if let Some(nli_model) = nli_guard.as_mut() {
-                    let entries: Vec<(i64, String, String)> = result.hits.iter()
+                    let entries: Vec<(i64, String, String)> = budgeted.hits.iter()
                         .map(|h| (h.id, h.title.clone(), h.snippet.clone()))
                         .collect();
                     let found = nli_model.find_contradictions(&entries);
@@ -729,9 +739,20 @@ impl GrasshopperMcp {
                 None
             };
 
-            // Apply token budget truncation + dedup
-            let budget = params.budget.unwrap_or(4000);
-            let budgeted = crate::memory::budget_context(result.hits, budget, true);
+            // Side effects: only touch/associate hits that are actually returned
+            let ids: Vec<i64> = budgeted.hits.iter().map(|h| h.id).collect();
+            for &id in &ids {
+                if let Err(e) = store.touch_memory(id) {
+                    tracing::warn!("Failed to touch memory #{id}: {e}");
+                }
+            }
+            for i in 0..ids.len() {
+                for j in (i + 1)..ids.len() {
+                    if let Err(e) = store.upsert_association(ids[i], ids[j]) {
+                        tracing::warn!("Failed to associate #{} <-> #{}: {e}", ids[i], ids[j]);
+                    }
+                }
+            }
 
             let mut output = serde_json::Map::new();
             output.insert("memories".to_string(), serde_json::to_value(format_search_hits(&budgeted.hits))?);

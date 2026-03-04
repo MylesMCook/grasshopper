@@ -238,8 +238,6 @@ pub fn get_context(
     threshold: f32,
     hnsw: Option<&ferret::hnsw::HnswIndex>,
 ) -> Result<GetContextResult> {
-    let has_reranker = reranker.is_some();
-
     // 1. Expanded FTS keyword candidates (multi-query for better recall)
     let fts = crate::search::expanded_fts_search(store, query, Some("memory"), 20)?;
 
@@ -275,10 +273,14 @@ pub fn get_context(
         hybrid_search(&fts, &vec_results, 20)
     };
 
-    // 3b. Rerank via cross-encoder
+    // 3b. Rerank via cross-encoder — track actual success, not just availability
+    let mut rerank_succeeded = false;
     let merged = if let Some(reranker) = reranker {
         match crate::search::rerank_hits(reranker, query, merged.clone(), 20) {
-            Ok(reranked) => reranked,
+            Ok(reranked) => {
+                rerank_succeeded = true;
+                reranked
+            }
             Err(e) => {
                 tracing::warn!("reranking failed in get_context, using unreranked results: {e}");
                 merged
@@ -294,13 +296,12 @@ pub fn get_context(
         .filter(|h| !h.archived && h.memory_type.as_deref() != Some("identity"))
         .collect();
 
-    // 5. Relevance gate: drop hits below threshold
+    // 5. Relevance gate: use reranker score only if reranking actually succeeded
     let pre_gate_count = filtered.len();
     let gated: Vec<SearchHit> = filtered
         .into_iter()
         .filter(|h| {
-            if has_reranker {
-                // Use cross-encoder score when available
+            if rerank_succeeded {
                 h.reranker_score.unwrap_or(0.0) >= threshold
             } else {
                 // Fall back to RRF score (different scale, use lower threshold)
@@ -321,20 +322,8 @@ pub fn get_context(
     scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     scored.truncate(limit);
 
-    // 7. Side effects: touch and create associations
-    let ids: Vec<i64> = scored.iter().map(|h| h.id).collect();
-    for &id in &ids {
-        if let Err(e) = store.touch_memory(id) {
-            tracing::warn!("Failed to touch memory #{id}: {e}");
-        }
-    }
-    for i in 0..ids.len() {
-        for j in (i + 1)..ids.len() {
-            if let Err(e) = store.upsert_association(ids[i], ids[j]) {
-                tracing::warn!("Failed to associate #{} <-> #{}: {e}", ids[i], ids[j]);
-            }
-        }
-    }
+    // Note: side effects (touch + associations) are handled by the caller
+    // after budget truncation, so only surfaced hits get boosted.
 
     Ok(GetContextResult {
         hits: scored,
@@ -1016,6 +1005,7 @@ mod tests {
         // With FTS-only (no embedder/reranker), threshold scales down by 0.05x
         // Even if FTS returns something, a 0.9 threshold (→ 0.045 RRF) should filter weak matches
         assert_eq!(result.threshold, 0.9);
+        assert!(result.hits.is_empty(), "should return empty for unrelated query with high threshold, got {} hits", result.hits.len());
     }
 
     #[test]

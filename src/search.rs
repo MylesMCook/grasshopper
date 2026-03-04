@@ -92,11 +92,15 @@ pub fn expanded_fts_search(
     }
 
     let mut all_results: Vec<Vec<SearchHit>> = Vec::new();
-    for variant in &variants {
+    for (i, variant) in variants.iter().enumerate() {
         match store.fts_search(variant, kind_filter, limit) {
             Ok(hits) if !hits.is_empty() => all_results.push(hits),
             Ok(_) => {}
             Err(e) => {
+                if i == 0 {
+                    // Original query failure is a real error — propagate it
+                    return Err(e);
+                }
                 tracing::debug!("Expanded FTS query failed for '{}': {e}", variant);
             }
         }
