@@ -73,6 +73,14 @@ pub struct RememberParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct RecallParams {
+    /// Natural language query to search memories (not code). Results are ranked by cognitive score: recency, frequency, salience, and type-specific decay
+    pub query: String,
+    /// Maximum results to return, 1-50 (default: 10)
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct MeParams {}
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -479,6 +487,35 @@ impl GrasshopperMcp {
     }
 
     #[tool(
+        name = "recall",
+        description = "Cognitive-scored memory search. Unlike search (which returns raw hybrid-search scores), recall applies the full cognitive scoring formula: recency boost, frequency boost, salience weighting, and type-specific exponential decay. Also has side effects: touched memories gain salience and co-retrieved memories form Hebbian associations. Use when you need the most relevant memories, not just keyword matches."
+    )]
+    async fn recall(
+        &self,
+        Parameters(params): Parameters<RecallParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let db_path = self.db_path.clone();
+        let embedder = Arc::clone(&self.embedder);
+
+        let result = tokio::task::spawn_blocking(move || {
+            Self::init_embedder_blocking(&embedder);
+            let store = Store::open(&db_path)?;
+            let limit = params.limit.unwrap_or(10).clamp(1, 50);
+            let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let result = crate::memory::recall(&store, guard.as_mut(), &params.query, limit)?;
+            let json = serde_json::to_string_pretty(&format_search_hits(&result.hits))?;
+            Ok::<_, anyhow::Error>(json)
+        })
+        .await
+        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
+
+        match result {
+            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
+            Err(e) => Ok(error_result(format!("{e:#}"))),
+        }
+    }
+
+    #[tool(
         name = "me",
         description = "Load identity and working context. Returns: who I am (identity memories), active projects (latest handoffs), most-accessed memories (working set), and memory counts. Call at session start to establish context."
     )]
@@ -713,6 +750,7 @@ impl ServerHandler for GrasshopperMcp {
                  - impact: see what breaks if you change a symbol\n\n\
                  COGNITIVE MEMORY:\n\
                  - remember: store facts, decisions, preferences (auto-deduplicates)\n\
+                 - recall: cognitive-scored memory search (recency, frequency, salience, decay)\n\
                  - me: load identity and working context\n\
                  - pickup / handoff: session continuity\n\
                  - reflect: analyze memory health and patterns\n\
