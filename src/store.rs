@@ -2884,4 +2884,144 @@ mod tests {
         assert_eq!(examples[0]["positive"].as_array().unwrap().len(), 1);
         assert_eq!(examples[0]["negative"].as_array().unwrap().len(), 1);
     }
+
+    #[test]
+    fn test_validate_feedback_rejects_invalid_chunk() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id1 = store.insert_memory(&MemoryParams {
+            title: "M1", content: "c1", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "vf1", agent_id: "test",
+        }).unwrap();
+        let id2 = store.insert_memory(&MemoryParams {
+            title: "M2", content: "c2", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "vf2", agent_id: "test",
+        }).unwrap();
+
+        // Log retrieval with only id1 in results
+        let log_id = store.log_retrieval("q", "recall", &[(id1, 0.9)], None).unwrap();
+
+        // id1 should validate
+        assert!(store.validate_feedback(log_id, id1).unwrap());
+        // id2 was NOT in the retrieval results — must be rejected
+        assert!(!store.validate_feedback(log_id, id2).unwrap());
+        // Non-existent chunk should also be rejected
+        assert!(!store.validate_feedback(log_id, 99999).unwrap());
+    }
+
+    #[test]
+    fn test_validate_feedback_bad_log_id() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        // Non-existent log_id should error
+        assert!(store.validate_feedback(99999, 1).is_err());
+    }
+
+    #[test]
+    fn test_summary_dedup_superset_not_matched() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id1 = store.insert_memory(&MemoryParams {
+            title: "A", content: "a", memory_type: "episode",
+            descriptors: "", salience: 0.5, content_hash: "sa", agent_id: "test",
+        }).unwrap();
+        let id2 = store.insert_memory(&MemoryParams {
+            title: "B", content: "b", memory_type: "episode",
+            descriptors: "", salience: 0.5, content_hash: "sb", agent_id: "test",
+        }).unwrap();
+        let id3 = store.insert_memory(&MemoryParams {
+            title: "C", content: "c", memory_type: "episode",
+            descriptors: "", salience: 0.5, content_hash: "sc", agent_id: "test",
+        }).unwrap();
+
+        // Summary covers [A, B, C]
+        let summary_id = store.insert_memory(&MemoryParams {
+            title: "Summary ABC", content: "summary", memory_type: "knowledge",
+            descriptors: "summary", salience: 0.5, content_hash: "sum_abc", agent_id: "test",
+        }).unwrap();
+        store.insert_summary_edges(summary_id, &[id1, id2, id3]).unwrap();
+
+        // Exact match [A, B, C] → found
+        let found = store.get_summaries_for_chunks(&[id1, id2, id3]).unwrap();
+        assert_eq!(found.len(), 1, "exact match should find summary");
+
+        // Subset [A, B] → NOT found (summary has 3 members, query has 2)
+        let found = store.get_summaries_for_chunks(&[id1, id2]).unwrap();
+        assert_eq!(found.len(), 0, "subset should not match — summary covers more members");
+
+        // Superset [A, B, C, D-nonexistent] → NOT found
+        let found = store.get_summaries_for_chunks(&[id1, id2, id3, 99999]).unwrap();
+        assert_eq!(found.len(), 0, "superset should not match — query has more members than summary");
+    }
+
+    #[test]
+    fn test_delete_entity_edges() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id = store.insert_memory(&MemoryParams {
+            title: "Test", content: "test", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "de1", agent_id: "test",
+        }).unwrap();
+
+        // Insert entity edges
+        let entities = vec![
+            ("foo.rs".to_string(), "file_path".to_string()),
+            ("SearchHit".to_string(), "identifier".to_string()),
+        ];
+        store.upsert_entity_edges(id, &entities).unwrap();
+        assert_eq!(store.find_memories_by_entity("foo.rs").unwrap().len(), 1);
+        assert_eq!(store.find_memories_by_entity("SearchHit").unwrap().len(), 1);
+
+        // Delete entity edges
+        let deleted = store.delete_entity_edges(id).unwrap();
+        assert_eq!(deleted, 2);
+
+        // Verify they're gone
+        assert_eq!(store.find_memories_by_entity("foo.rs").unwrap().len(), 0);
+        assert_eq!(store.find_memories_by_entity("SearchHit").unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_insert_memory_nestable_in_savepoint() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        // Simulate outer transaction wrapping multiple inserts
+        store.execute_batch("SAVEPOINT outer").unwrap();
+        let id1 = store.insert_memory(&MemoryParams {
+            title: "Nested1", content: "c1", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "nest1", agent_id: "test",
+        }).unwrap();
+        let id2 = store.insert_memory(&MemoryParams {
+            title: "Nested2", content: "c2", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "nest2", agent_id: "test",
+        }).unwrap();
+        store.execute_batch("RELEASE outer").unwrap();
+
+        // Both should exist
+        assert!(store.get_chunk(id1).unwrap().is_some());
+        assert!(store.get_chunk(id2).unwrap().is_some());
+    }
+
+    #[test]
+    fn test_insert_memory_rollback_in_savepoint() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        // Outer savepoint with rollback should undo nested insert_memory
+        store.execute_batch("SAVEPOINT outer").unwrap();
+        let _id = store.insert_memory(&MemoryParams {
+            title: "WillRollback", content: "c", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "rb1", agent_id: "test",
+        }).unwrap();
+        store.execute_batch("ROLLBACK TO outer").unwrap();
+        store.execute_batch("RELEASE outer").unwrap();
+
+        // Memory count should be 0 — the insert was rolled back
+        let (_, mem_count) = store.count_by_kind().unwrap();
+        assert_eq!(mem_count, 0, "insert_memory should be rollbackable from outer savepoint");
+    }
 }

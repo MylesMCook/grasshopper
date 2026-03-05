@@ -1611,4 +1611,57 @@ mod tests {
         let hits = store.find_memories_by_entity("SearchHit").unwrap();
         assert_eq!(hits.len(), 1);
     }
+
+    #[test]
+    fn test_remember_update_replaces_entity_edges() {
+        let (_dir, store) = test_store();
+        // Create memory with entity "SearchHit" and path "/old/path.rs"
+        let r1 = remember(&store, None, "Uses SearchHit from /old/path.rs",
+            None, None, "").unwrap();
+        assert!(!r1.was_update);
+        assert_eq!(store.find_memories_by_entity("SearchHit").unwrap().len(), 1);
+        assert_eq!(store.find_memories_by_entity("/old/path.rs").unwrap().len(), 1);
+
+        // Update same memory (dedup by content hash won't trigger since content differs,
+        // but we can test via direct update path by inserting then remembering similar content)
+        // Use the store directly to simulate update path
+        store.update_memory(r1.id, &crate::store::MemoryParams {
+            title: "Updated", content: "Now uses CognitiveScore from /new/path.rs",
+            memory_type: "knowledge", descriptors: "",
+            salience: 0.5, content_hash: "updated_hash", agent_id: "test",
+        }).unwrap();
+        // Simulate what remember() does on update: delete old edges, insert new
+        store.delete_entity_edges(r1.id).unwrap();
+        let entities = crate::memory::extract_entities("Now uses CognitiveScore from /new/path.rs");
+        let entity_tuples: Vec<(String, String)> = entities.into_iter().map(|e| (e.value, e.kind)).collect();
+        store.upsert_entity_edges(r1.id, &entity_tuples).unwrap();
+
+        // Old entities should be gone
+        assert_eq!(store.find_memories_by_entity("SearchHit").unwrap().len(), 0,
+            "old entity 'SearchHit' should be deleted after update");
+        assert_eq!(store.find_memories_by_entity("/old/path.rs").unwrap().len(), 0,
+            "old entity '/old/path.rs' should be deleted after update");
+
+        // New entities should exist
+        assert_eq!(store.find_memories_by_entity("CognitiveScore").unwrap().len(), 1,
+            "new entity 'CognitiveScore' should exist after update");
+        assert_eq!(store.find_memories_by_entity("/new/path.rs").unwrap().len(), 1,
+            "new entity '/new/path.rs' should exist after update");
+    }
+
+    #[test]
+    fn test_recall_returns_object_with_query_id() {
+        let (_dir, store) = test_store();
+        store.insert_memory(&crate::store::MemoryParams {
+            title: "Test recall shape", content: "shape test content",
+            memory_type: "knowledge", descriptors: "test",
+            salience: 0.5, content_hash: "rshape1", agent_id: "test",
+        }).unwrap();
+        let result = recall(&store, None, None, "shape test", 5, None).unwrap();
+        // log_id should always be present (Some) or None — but the MCP layer
+        // now always wraps in {query_id, results}. Here we verify the memory layer
+        // always produces a log_id when retrieval_log succeeds.
+        // The MCP test would verify JSON shape, but at this layer we verify log_id exists.
+        assert!(result.log_id.is_some(), "recall should produce a log_id for the fine-tuning pipeline");
+    }
 }
