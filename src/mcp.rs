@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::store::Store;
-use ferret::embed::Embedder;
+use crate::code::embed::Embedder;
 
 // --- Embedding cache ---
 
@@ -148,7 +148,7 @@ pub struct PickupParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct HandoffParams {
-    /// Project name this handoff belongs to (e.g. "grasshopper", "ferret")
+    /// Project name this handoff belongs to (e.g. "grasshopper", "beelink")
     pub project: String,
     /// What was accomplished in this session
     pub summary: String,
@@ -215,7 +215,7 @@ pub struct GrasshopperMcp {
     nli: Arc<Mutex<Option<crate::nli::NliModel>>>,
     /// Epoch seconds of last NLI init failure (0 = never failed). Retry after 60s cooldown.
     nli_failed_at: Arc<std::sync::atomic::AtomicI64>,
-    hnsw: Arc<Mutex<Option<ferret::hnsw::HnswIndex>>>,
+    hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>>,
     embed_cache: Arc<Mutex<EmbedCache>>,
     tool_router: ToolRouter<Self>,
 }
@@ -241,7 +241,7 @@ impl GrasshopperMcp {
         db_path: PathBuf,
         embedder: Arc<Mutex<Option<Embedder>>>,
         reranker: Arc<Mutex<Option<crate::rerank::Reranker>>>,
-        hnsw: Arc<Mutex<Option<ferret::hnsw::HnswIndex>>>,
+        hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>>,
     ) -> Self {
         Self {
             db_path,
@@ -256,10 +256,10 @@ impl GrasshopperMcp {
         }
     }
 
-    fn try_load_hnsw(db_path: &std::path::Path) -> Option<ferret::hnsw::HnswIndex> {
-        let hnsw_path = ferret::hnsw::hnsw_path(db_path);
+    fn try_load_hnsw(db_path: &std::path::Path) -> Option<crate::code::hnsw::HnswIndex> {
+        let hnsw_path = crate::code::hnsw::hnsw_path(db_path);
         if hnsw_path.exists() {
-            match ferret::hnsw::HnswIndex::load(&hnsw_path) {
+            match crate::code::hnsw::HnswIndex::load(&hnsw_path) {
                 Ok(idx) => {
                     tracing::info!("loaded HNSW index ({} points)", idx.len());
                     Some(idx)
@@ -318,7 +318,7 @@ impl GrasshopperMcp {
             }
         };
         if guard.is_none() {
-            let cache_dir = ferret::embed::default_cache_dir();
+            let cache_dir = crate::code::embed::default_cache_dir();
             match Embedder::new(&cache_dir) {
                 Ok(e) => *guard = Some(e),
                 Err(e) => tracing::warn!("embedder init failed (graceful degrade): {e}"),
@@ -464,6 +464,7 @@ impl GrasshopperMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
+        let hnsw = Arc::clone(&self.hnsw);
         let embed = params.embed.unwrap_or(false);
 
         let result = tokio::task::spawn_blocking(move || {
@@ -488,6 +489,28 @@ impl GrasshopperMcp {
                     let embedded =
                         crate::index::embed_codebase(&store, emb, result.codebase_id)?;
                     output["embedded"] = serde_json::json!(embedded);
+
+                    // Rebuild HNSW so searches immediately reflect new embeddings
+                    let rows = store.get_all_embeddings()?;
+                    if !rows.is_empty() {
+                        match crate::code::hnsw::HnswIndex::from_embeddings(&rows) {
+                            Ok(new_index) => {
+                                let hnsw_file = crate::code::hnsw::hnsw_path(&db_path);
+                                if let Err(e) = new_index.save(&hnsw_file) {
+                                    tracing::warn!("failed to save HNSW after index: {e}");
+                                }
+                                let mut hnsw_guard = hnsw.lock()
+                                    .map_err(|e| anyhow::anyhow!("hnsw lock: {e}"))?;
+                                *hnsw_guard = Some(new_index);
+                                output["hnsw_rebuilt"] = serde_json::json!(rows.len());
+                            }
+                            Err(e) => {
+                                tracing::warn!("failed to rebuild HNSW after index: {e}");
+                                output["hnsw_warning"] =
+                                    serde_json::json!(format!("rebuild failed: {e}"));
+                            }
+                        }
+                    }
                 } else {
                     output["embed_warning"] =
                         serde_json::json!("embedder not available, skipping");
@@ -1420,7 +1443,7 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
     let ct = tokio_util::sync::CancellationToken::new();
     let shared_embedder: Arc<Mutex<Option<Embedder>>> = Arc::new(Mutex::new(None));
     let shared_reranker: Arc<Mutex<Option<crate::rerank::Reranker>>> = Arc::new(Mutex::new(None));
-    let shared_hnsw: Arc<Mutex<Option<ferret::hnsw::HnswIndex>>> =
+    let shared_hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>> =
         Arc::new(Mutex::new(GrasshopperMcp::try_load_hnsw(&db_path)));
 
     let db = db_path.clone();

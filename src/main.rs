@@ -130,19 +130,19 @@ fn default_db_path() -> PathBuf {
     PathBuf::from(home).join(".grasshopper").join("brain.db")
 }
 
-fn try_embedder() -> Option<ferret::embed::Embedder> {
-    let cache_dir = ferret::embed::default_cache_dir();
-    ferret::embed::Embedder::new(&cache_dir).ok()
+fn try_embedder() -> Option<grasshopper::code::embed::Embedder> {
+    let cache_dir = grasshopper::code::embed::default_cache_dir();
+    grasshopper::code::embed::Embedder::new(&cache_dir).ok()
 }
 
 fn try_reranker() -> Option<grasshopper::rerank::Reranker> {
     grasshopper::rerank::Reranker::new().ok()
 }
 
-fn try_hnsw(db_path: &Path) -> Option<ferret::hnsw::HnswIndex> {
-    let hnsw_path = ferret::hnsw::hnsw_path(db_path);
+fn try_hnsw(db_path: &Path) -> Option<grasshopper::code::hnsw::HnswIndex> {
+    let hnsw_path = grasshopper::code::hnsw::hnsw_path(db_path);
     if hnsw_path.exists() {
-        ferret::hnsw::HnswIndex::load(&hnsw_path).ok()
+        grasshopper::code::hnsw::HnswIndex::load(&hnsw_path).ok()
     } else {
         None
     }
@@ -198,8 +198,8 @@ fn main() -> Result<()> {
             }
 
             if embed {
-                let cache_dir = ferret::embed::default_cache_dir();
-                let mut embedder = ferret::embed::Embedder::new(&cache_dir)?;
+                let cache_dir = grasshopper::code::embed::default_cache_dir();
+                let mut embedder = grasshopper::code::embed::Embedder::new(&cache_dir)?;
                 let embedded =
                     grasshopper::index::embed_codebase(&store, &mut embedder, result.codebase_id)?;
                 println!("Embedded: {} chunks", embedded);
@@ -596,8 +596,8 @@ fn rebuild_hnsw(store: &Store, db_path: &Path) -> Result<()> {
         println!("No embeddings found — skipping HNSW build.");
         return Ok(());
     }
-    let index = ferret::hnsw::HnswIndex::from_embeddings(&rows)?;
-    let hnsw_path = ferret::hnsw::hnsw_path(db_path);
+    let index = grasshopper::code::hnsw::HnswIndex::from_embeddings(&rows)?;
+    let hnsw_path = grasshopper::code::hnsw::hnsw_path(db_path);
     index.save(&hnsw_path)?;
     println!("HNSW index: {} points → {}", index.len(), hnsw_path.display());
     Ok(())

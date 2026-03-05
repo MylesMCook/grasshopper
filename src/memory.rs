@@ -227,11 +227,11 @@ pub struct RecallResult {
 /// Cognitive-scored memory search with side effects (touch + association).
 pub fn recall(
     store: &Store,
-    embedder: Option<&mut ferret::embed::Embedder>,
+    embedder: Option<&mut crate::code::embed::Embedder>,
     reranker: Option<&mut crate::rerank::Reranker>,
     query: &str,
     limit: usize,
-    hnsw: Option<&ferret::hnsw::HnswIndex>,
+    hnsw: Option<&crate::code::hnsw::HnswIndex>,
     precomputed_embedding: Option<&[f32]>,
 ) -> Result<RecallResult> {
     // 1. Expanded FTS keyword candidates (multi-query for better recall)
@@ -242,7 +242,7 @@ pub fn recall(
         if let Some(hnsw) = hnsw {
             store.vector_search_hnsw(hnsw, qvec, Some("memory"), 20)?
         } else {
-            store.vector_search(qvec, ferret::embed::MODEL_NAME, Some("memory"), 20)?
+            store.vector_search(qvec, crate::code::embed::MODEL_NAME, Some("memory"), 20)?
         }
     } else if let Some(emb) = embedder {
         match emb.embed_batch(&[query.to_string()]) {
@@ -250,7 +250,7 @@ pub fn recall(
                 if let Some(hnsw) = hnsw {
                     store.vector_search_hnsw(hnsw, &query_vec[0], Some("memory"), 20)?
                 } else {
-                    store.vector_search(&query_vec[0], ferret::embed::MODEL_NAME, Some("memory"), 20)?
+                    store.vector_search(&query_vec[0], crate::code::embed::MODEL_NAME, Some("memory"), 20)?
                 }
             }
             Ok(_) => vec![],
@@ -358,12 +358,12 @@ pub struct GetContextResult {
 #[allow(clippy::too_many_arguments)]
 pub fn get_context(
     store: &Store,
-    embedder: Option<&mut ferret::embed::Embedder>,
+    embedder: Option<&mut crate::code::embed::Embedder>,
     reranker: Option<&mut crate::rerank::Reranker>,
     query: &str,
     limit: usize,
     threshold: f32,
-    hnsw: Option<&ferret::hnsw::HnswIndex>,
+    hnsw: Option<&crate::code::hnsw::HnswIndex>,
     precomputed_embedding: Option<&[f32]>,
 ) -> Result<GetContextResult> {
     // 1. Expanded FTS keyword candidates (multi-query for better recall)
@@ -374,7 +374,7 @@ pub fn get_context(
         if let Some(hnsw) = hnsw {
             store.vector_search_hnsw(hnsw, qvec, Some("memory"), 20)?
         } else {
-            store.vector_search(qvec, ferret::embed::MODEL_NAME, Some("memory"), 20)?
+            store.vector_search(qvec, crate::code::embed::MODEL_NAME, Some("memory"), 20)?
         }
     } else if let Some(emb) = embedder {
         match emb.embed_batch(&[query.to_string()]) {
@@ -382,7 +382,7 @@ pub fn get_context(
                 if let Some(hnsw) = hnsw {
                     store.vector_search_hnsw(hnsw, &query_vec[0], Some("memory"), 20)?
                 } else {
-                    store.vector_search(&query_vec[0], ferret::embed::MODEL_NAME, Some("memory"), 20)?
+                    store.vector_search(&query_vec[0], crate::code::embed::MODEL_NAME, Some("memory"), 20)?
                 }
             }
             Ok(_) => vec![],
@@ -554,7 +554,7 @@ pub struct RememberResult {
 /// Store a memory with auto-classification and dedup.
 pub fn remember(
     store: &Store,
-    embedder: Option<&mut ferret::embed::Embedder>,
+    embedder: Option<&mut crate::code::embed::Embedder>,
     content: &str,
     title: Option<&str>,
     memory_type: Option<&str>,
@@ -592,7 +592,7 @@ pub fn remember(
         if let Some(query_vec) = vectors.first() {
             let similar = store.search_similar_memories(
                 query_vec,
-                ferret::embed::MODEL_NAME,
+                crate::code::embed::MODEL_NAME,
                 0.75,
                 1,
             )?;
@@ -607,7 +607,7 @@ pub fn remember(
                 store.batch_upsert_embeddings(&[(
                     existing_id,
                     query_vec.as_slice(),
-                    ferret::embed::MODEL_NAME,
+                    crate::code::embed::MODEL_NAME,
                 )])?;
                 // Replace entity edges: delete old, insert new
                 let entities: Vec<(String, String)> = extract_entities(content)
@@ -643,7 +643,7 @@ pub fn remember(
             store.batch_upsert_embeddings(&[(
                 id,
                 query_vec.as_slice(),
-                ferret::embed::MODEL_NAME,
+                crate::code::embed::MODEL_NAME,
             )])?;
             // Extract and store entity edges
             let entities: Vec<(String, String)> = extract_entities(content)
@@ -729,10 +729,10 @@ pub struct PickupResult {
 
 pub fn pickup(
     store: &Store,
-    embedder: Option<&mut ferret::embed::Embedder>,
+    embedder: Option<&mut crate::code::embed::Embedder>,
     reranker: Option<&mut crate::rerank::Reranker>,
     project: Option<&str>,
-    hnsw: Option<&ferret::hnsw::HnswIndex>,
+    hnsw: Option<&crate::code::hnsw::HnswIndex>,
 ) -> Result<PickupResult> {
     let handoff = store.get_latest_handoff(project)?;
 
@@ -871,7 +871,7 @@ fn build_summary_text(tag: &str, members: &[Chunk]) -> String {
 
 pub fn consolidate(
     store: &Store,
-    embedder: Option<&mut ferret::embed::Embedder>,
+    embedder: Option<&mut crate::code::embed::Embedder>,
     dry_run: bool,
     stale_days: i64,
 ) -> Result<ConsolidateResult> {
@@ -880,12 +880,12 @@ pub fn consolidate(
 
     // Phase 1: Near-duplicates (requires embedder)
     if let Some(emb) = embedder {
-        let all_embeddings = store.get_all_memory_embeddings(ferret::embed::MODEL_NAME)?;
+        let all_embeddings = store.get_all_memory_embeddings(crate::code::embed::MODEL_NAME)?;
         // Compare each pair — O(n²) but n is small (memory entries, not code chunks)
         for (src_id, src_emb) in &all_embeddings {
             let similar = store.search_similar_memories(
                 src_emb,
-                ferret::embed::MODEL_NAME,
+                crate::code::embed::MODEL_NAME,
                 0.9,
                 5,
             )?;

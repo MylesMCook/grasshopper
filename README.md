@@ -1,16 +1,22 @@
 # Grasshopper
 
-A unified agent brain that gives AI coding agents both code intelligence and cognitive memory through a single Rust binary and one SQLite database.
+A unified agent brain that gives AI coding agents both code intelligence and cognitive memory through a single self-contained Rust binary and one SQLite database.
 
 ## Why
 
 AI agents need two capabilities to work well across sessions: understanding codebases and remembering context. These are traditionally separate systems — a code search tool and a knowledge store — each with their own database, embedding pipeline, search index, and MCP server. Grasshopper merges them into one.
 
-**Before:** Ferret (code search, 3 tools) + Corpus MCP (knowledge store, 19 tools) = 2 binaries, 2 databases, 2 embedding pipelines, 22 tools, 2 systemd services.
-
-**After:** Grasshopper = 1 binary, 1 database, 1 embedding pipeline, 12 tools, 1 systemd service.
+**One binary, one database, one embedding pipeline, 18 MCP tools, one systemd service.**
 
 The merged architecture isn't just simpler to operate. It enables cross-domain search — a single query can find both the function definition and the design decision that explains why it exists.
+
+## Design Philosophy: "Store Raw, Retrieve Smart"
+
+Based on peer-reviewed research (Yuan et al. 2026, Maharana et al. 2024):
+- Retrieval method = 20pt accuracy swing. Write strategy = only 3-8pt.
+- Raw chunks + hybrid search + reranking = best config (81.1% accuracy on LoCoMo benchmark)
+- Invest compute in retrieval (reranker, query expansion), not write-time processing
+- All models run locally via ONNX — zero external API calls
 
 ## What It Does
 
@@ -18,7 +24,7 @@ The merged architecture isn't just simpler to operate. It enables cross-domain s
 
 Index source code directories and search them with keyword, semantic, or hybrid search. Navigate symbol definitions and references via a code graph extracted by tree-sitter. Get a token-budgeted overview of an entire codebase. Analyze the blast radius of changing a symbol.
 
-- **13 languages** supported via tree-sitter: Rust, TypeScript, JavaScript, Python, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin
+- **13 languages** supported via tree-sitter: Rust, TypeScript, JavaScript, Python, Go, Java, C, C++, C#, Ruby, PHP, Scala, TSX
 - **Hybrid search**: FTS5 keyword matching + Jina Code V2 semantic embeddings, merged via Reciprocal Rank Fusion (k=60)
 - **Incremental indexing**: content-hash diffing skips unchanged files, parallel chunking via Rayon
 - **Code graph**: tree-sitter extracts definitions and references, stored as edges for BFS traversal
@@ -56,19 +62,26 @@ Handoffs record what was accomplished and what comes next. Pickup loads the late
 ## Architecture
 
 ```
-grasshopper
-├── src/
-│   ├── main.rs    — CLI with 11 subcommands
-│   ├── lib.rs     — Module exports
-│   ├── store.rs   — Unified SQLite schema, all queries
-│   ├── memory.rs  — Cognitive layer: remember, recall, classify, score, reflect, consolidate
-│   ├── search.rs  — Hybrid search orchestration (FTS + vector + RRF merge)
-│   ├── index.rs   — Code indexing: scan → chunk → graph → FTS
-│   └── mcp.rs     — MCP server: 12 tools, HTTP + stdio transport
-└── Cargo.toml
+grasshopper/src/
+├── main.rs     — CLI with 14 subcommands
+├── lib.rs      — Module exports
+├── store.rs    — Unified SQLite schema, all queries, maintenance
+├── memory.rs   — Cognitive layer: remember, recall, classify, score, reflect, consolidate
+├── search.rs   — Hybrid search: FTS5 + vector → RRF fusion → query expansion → cross-encoder rerank
+├── index.rs    — Code indexing: scan → chunk → graph → FTS → embed
+├── mcp.rs      — MCP server: 18 tools, HTTP + stdio transport, embedding cache
+├── nli.rs      — NLI contradiction detection via ONNX Runtime
+├── rerank.rs   — Cross-encoder reranking via fastembed/ONNX
+└── code/       — Code intelligence primitives (self-contained)
+    ├── chunk.rs      — Tree-sitter code chunking (13 languages)
+    ├── embed.rs      — ONNX embeddings (Jina Code V2, 768-dim)
+    ├── scan.rs       — Directory walking + SHA-256 hashing
+    ├── tokenizer.rs  — CamelCase splitting for FTS5
+    ├── graph.rs      — Tag extraction via tree-sitter TAGS_QUERY
+    └── hnsw.rs       — HNSW approximate nearest neighbor (instant-distance)
 ```
 
-**Key dependency**: Ferret is imported as a library crate for its chunking, embedding, scanning, graph extraction, tokenizer, and HNSW modules. Grasshopper builds its own SQLite schema (`store.rs`) — it does not use Ferret's store or MCP modules.
+Fully self-contained — no external path dependencies. All code intelligence primitives are in the `code/` module.
 
 ### Database
 
@@ -81,7 +94,7 @@ Supporting tables:
 - `chunks_fts` — FTS5 virtual table with Porter stemming and Unicode tokenization
 - `handoffs` — session continuity records
 
-A custom `code_expand` SQL function (from Ferret's tokenizer) splits camelCase and PascalCase identifiers so `parseJSON` is searchable as `parse json`.
+A custom `code_expand` SQL function splits camelCase and PascalCase identifiers so `parseJSON` is searchable as `parse json`.
 
 ### Embedding
 
@@ -91,7 +104,7 @@ Embeddings are optional for code indexing (`--embed` flag) but always used for m
 
 ## Tools
 
-12 MCP tools, grouped by annotation:
+18 MCP tools, grouped by annotation:
 
 ### Read-only
 
@@ -103,8 +116,11 @@ Embeddings are optional for code indexing (`--embed` flag) but always used for m
 | `impact` | BFS traversal showing what breaks if you change a symbol. |
 | `me` | Identity snapshot: who am I, active projects, working set. |
 | `pickup` | Resume a session: loads latest handoff + related memories. |
+| `recall` | Cognitive-scored memory search with decay and salience. |
+| `get_context` | Proactive context surfacing with relevance gate. |
 | `reflect` | Meta-cognition: growing, fading, connections, gaps analysis. |
 | `get` | Retrieve the full content of any entry by numeric ID. |
+| `status` | System health: DB size, model status, counts. |
 
 ### Write
 
@@ -113,12 +129,15 @@ Embeddings are optional for code indexing (`--embed` flag) but always used for m
 | `index` | Index a source directory (with optional `--embed`). |
 | `remember` | Store a memory with auto-classification and dedup. |
 | `handoff` | Record session progress and next steps for a project. |
+| `archive` | Soft-delete a memory by ID. |
+| `feedback` | Rate retrieval quality for fine-tuning pipeline. |
 
 ### Destructive
 
 | Tool | Description |
 |------|-------------|
 | `consolidate` | Memory hygiene: find duplicates, archive stale entries, cluster episodes. Defaults to dry-run. |
+| `maintenance` | Database maintenance: VACUUM, integrity check, orphan cleanup. |
 
 ## CLI
 
@@ -193,16 +212,16 @@ Add this to any LLM system prompt, CLAUDE.md, or agent harness:
 
 ```sh
 cargo build                    # Build
-cargo test                     # 53 tests across all modules
+cargo test                     # 173 tests across all modules
 cargo run -- --help            # CLI help
 RUST_LOG=debug cargo run -- serve --port 8106  # Verbose server
 ```
 
 ### Conventions
 
-- Ferret is a path dependency: `ferret = { path = "../ferret", features = ["semantic"] }`
+- Fully self-contained — no external path dependencies
 - Database default: `~/.grasshopper/brain.db`
-- Embedding model cache: `~/.cache/ferret/models/`
+- Embedding model cache: `~/.cache/grasshopper/models/`
 - All blocking operations (DB, embedder) run inside `spawn_blocking` — never on the async runtime
 - Poisoned mutexes are recovered with a warning log, not panicked
 - Ambiguous codebase references error with suggestions instead of silently picking one

@@ -130,9 +130,9 @@ pub fn search(
     query: &str,
     kind_filter: Option<&str>,
     limit: usize,
-    embedder: Option<&mut ferret::embed::Embedder>,
+    embedder: Option<&mut crate::code::embed::Embedder>,
     reranker: Option<&mut Reranker>,
-    hnsw: Option<&ferret::hnsw::HnswIndex>,
+    hnsw: Option<&crate::code::hnsw::HnswIndex>,
 ) -> Result<Vec<SearchHit>> {
     let fts_results = store.fts_search(query, kind_filter, limit)?;
 
@@ -143,7 +143,7 @@ pub fn search(
         } else if let Some(hnsw) = hnsw {
             store.vector_search_hnsw(hnsw, &query_vec[0], kind_filter, limit)?
         } else {
-            store.vector_search(&query_vec[0], ferret::embed::MODEL_NAME, kind_filter, limit)?
+            store.vector_search(&query_vec[0], crate::code::embed::MODEL_NAME, kind_filter, limit)?
         }
     } else {
         vec![]

@@ -38,7 +38,7 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
     let codebase_id = store.get_or_create_codebase(&root_str, &dir_name)?;
 
     // 2. Scan directory
-    let scan_result = ferret::scan::scan_directory(&root)?;
+    let scan_result = crate::code::scan::scan_directory(&root)?;
     let mut errors = scan_result.errors;
     let total_files = scan_result.files.len();
 
@@ -63,12 +63,12 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
         let results: Vec<_> = batch
             .par_iter()
             .map(|file| {
-                let chunks = ferret::chunk::chunk_file(&file.rel_path, &file.content, &file.language);
-                let (tags, tag_err) = match ferret::graph::get_tags_query(&file.language)
+                let chunks = crate::code::chunk::chunk_file(&file.rel_path, &file.content, &file.language);
+                let (tags, tag_err) = match crate::code::graph::get_tags_query(&file.language)
                     .and_then(|q| {
-                        ferret::graph::get_language(&file.language).map(|lang| (lang, q))
+                        crate::code::graph::get_language(&file.language).map(|lang| (lang, q))
                     }) {
-                    Some((lang, q)) => match ferret::graph::extract_tags(&file.content, lang, q) {
+                    Some((lang, q)) => match crate::code::graph::extract_tags(&file.content, lang, q) {
                         Ok(t) => (t, None),
                         Err(e) => (vec![], Some(format!("{}: tag extraction failed: {e}", file.rel_path))),
                     },
@@ -142,10 +142,10 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
 /// Call after index_directory(). Opt-in via --embed flag.
 pub fn embed_codebase(
     store: &Store,
-    embedder: &mut ferret::embed::Embedder,
+    embedder: &mut crate::code::embed::Embedder,
     codebase_id: i64,
 ) -> Result<usize> {
-    let stale = store.get_stale_embeddings(codebase_id, ferret::embed::MODEL_NAME)?;
+    let stale = store.get_stale_embeddings(codebase_id, crate::code::embed::MODEL_NAME)?;
     if stale.is_empty() {
         return Ok(0);
     }
@@ -157,7 +157,7 @@ pub fn embed_codebase(
         let texts: Vec<String> = batch
             .iter()
             .map(|s| {
-                ferret::embed::build_embed_text(
+                crate::code::embed::build_embed_text(
                     &s.file_path,
                     &s.language,
                     &s.symbol_kind,
@@ -172,7 +172,7 @@ pub fn embed_codebase(
         let items: Vec<(i64, &[f32], &str)> = batch
             .iter()
             .zip(vectors.iter())
-            .map(|(s, v)| (s.id, v.as_slice(), ferret::embed::MODEL_NAME))
+            .map(|(s, v)| (s.id, v.as_slice(), crate::code::embed::MODEL_NAME))
             .collect();
         store.batch_upsert_embeddings(&items)?;
         embedded += batch.len();
@@ -183,8 +183,8 @@ pub fn embed_codebase(
 }
 
 fn parsed_to_params(
-    pc: ferret::chunk::ParsedChunk,
-    file: &ferret::scan::ScannedFile,
+    pc: crate::code::chunk::ParsedChunk,
+    file: &crate::code::scan::ScannedFile,
 ) -> CodeChunkParams {
     CodeChunkParams {
         chunk_key: pc.chunk_key,

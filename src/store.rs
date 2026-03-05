@@ -22,7 +22,7 @@ pub struct MemoryParams<'a> {
     pub agent_id: &'a str,
 }
 
-/// Parameters for a single code chunk, converted from ferret::chunk::ParsedChunk.
+/// Parameters for a single code chunk, converted from crate::code::chunk::ParsedChunk.
 pub struct CodeChunkParams {
     pub chunk_key: String,
     pub file_path: String,
@@ -116,7 +116,7 @@ impl Store {
             FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
             |ctx| {
                 let text: String = ctx.get(0)?;
-                Ok(ferret::tokenizer::expand_code_tokens(&text))
+                Ok(crate::code::tokenizer::expand_code_tokens(&text))
             },
         )
         .context("registering code_expand SQL function")?;
@@ -862,7 +862,7 @@ impl Store {
         &self,
         codebase_id: i64,
         file_path: &str,
-        tags: &[ferret::graph::Tag],
+        tags: &[crate::code::graph::Tag],
     ) -> Result<usize> {
         self.conn.execute(
             "DELETE FROM graph WHERE codebase_id = ?1 AND file_path = ?2 AND role != 'associates'",
@@ -1002,7 +1002,7 @@ impl Store {
         kind_filter: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>> {
-        let prepared = ferret::tokenizer::prepare_fts_query(query);
+        let prepared = crate::code::tokenizer::prepare_fts_query(query);
         if prepared.is_empty() {
             return Ok(vec![]);
         }
@@ -1153,19 +1153,19 @@ impl Store {
     /// Falls back to brute-force if HNSW returns no results.
     pub fn vector_search_hnsw(
         &self,
-        hnsw: &ferret::hnsw::HnswIndex,
+        hnsw: &crate::code::hnsw::HnswIndex,
         query_embedding: &[f32],
         kind_filter: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>> {
-        if hnsw.len() == 0 {
-            return self.vector_search(query_embedding, ferret::embed::MODEL_NAME, kind_filter, limit);
+        if hnsw.is_empty() {
+            return self.vector_search(query_embedding, crate::code::embed::MODEL_NAME, kind_filter, limit);
         }
 
         // Retrieve 2x candidates for re-scoring (HNSW is approximate)
         let candidates = hnsw.search(query_embedding, limit * 2);
         if candidates.is_empty() {
-            return self.vector_search(query_embedding, ferret::embed::MODEL_NAME, kind_filter, limit);
+            return self.vector_search(query_embedding, crate::code::embed::MODEL_NAME, kind_filter, limit);
         }
 
         let kind_clause = match kind_filter {
@@ -2285,9 +2285,9 @@ mod tests {
         let cb = store.get_or_create_codebase("/tmp/p", "p").unwrap();
 
         let tags = vec![
-            ferret::graph::Tag { symbol: "Store".into(), role: "definition".into(), kind: "struct".into(), line: 10 },
-            ferret::graph::Tag { symbol: "Store".into(), role: "reference".into(), kind: "call".into(), line: 25 },
-            ferret::graph::Tag { symbol: "open".into(), role: "definition".into(), kind: "function".into(), line: 14 },
+            crate::code::graph::Tag { symbol: "Store".into(), role: "definition".into(), kind: "struct".into(), line: 10 },
+            crate::code::graph::Tag { symbol: "Store".into(), role: "reference".into(), kind: "call".into(), line: 25 },
+            crate::code::graph::Tag { symbol: "open".into(), role: "definition".into(), kind: "function".into(), line: 14 },
         ];
         let count = store.upsert_graph_edges_for_file(cb, "src/store.rs", &tags).unwrap();
         assert_eq!(count, 3);
@@ -2471,7 +2471,7 @@ mod tests {
         assert_eq!(all.len(), 2);
 
         // Build HNSW and search
-        let hnsw = ferret::hnsw::HnswIndex::from_embeddings(&all).unwrap();
+        let hnsw = crate::code::hnsw::HnswIndex::from_embeddings(&all).unwrap();
         assert_eq!(hnsw.len(), 2);
 
         // Query close to x
@@ -2484,9 +2484,9 @@ mod tests {
         assert_eq!(results[0].symbol_name.as_deref(), Some("x")); // closer to query
 
         // Test persistence
-        let hnsw_path = ferret::hnsw::hnsw_path(&db_path);
+        let hnsw_path = crate::code::hnsw::hnsw_path(&db_path);
         hnsw.save(&hnsw_path).unwrap();
-        let loaded = ferret::hnsw::HnswIndex::load(&hnsw_path).unwrap();
+        let loaded = crate::code::hnsw::HnswIndex::load(&hnsw_path).unwrap();
         assert_eq!(loaded.len(), 2);
 
         let results2 = store.vector_search_hnsw(&loaded, &query, None, 10).unwrap();
@@ -2557,7 +2557,7 @@ mod tests {
 
         store.create_handoff("h1", "Finished Phase 0", "Start Phase 1", "grasshopper").unwrap();
         store.create_handoff("h2", "Finished Phase 1", "Start Phase 2", "grasshopper").unwrap();
-        store.create_handoff("h3", "Fixed bug in ferret", "Deploy", "ferret").unwrap();
+        store.create_handoff("h3", "Fixed search bug", "Deploy", "beelink").unwrap();
 
         let latest = store.get_latest_handoff(None).unwrap().unwrap();
         assert_eq!(latest.id, "h3");

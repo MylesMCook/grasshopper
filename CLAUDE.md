@@ -1,20 +1,21 @@
 # Grasshopper
 
-Unified agent brain — code intelligence (Ferret) + cognitive memory (Corpus) in one Rust binary.
+Unified agent brain — code intelligence + cognitive memory in one self-contained Rust binary.
 
 ## Design Philosophy: "Store Raw, Retrieve Smart"
 
-Based on Yuan et al. (March 2026, arXiv:2603.02473v1):
+Based on Yuan et al. (March 2026, arXiv:2603.02473v1) and Maharana et al. (2024, arXiv:2402.17753v1):
 - Retrieval method = 20pt accuracy swing. Write strategy = only 3-8pt.
 - Raw chunks + hybrid search + reranking = best config (81.1% accuracy on LoCoMo)
 - Invest compute in retrieval (reranker, query expansion), not write-time processing
 - All models run locally via ONNX — zero external API calls
+- Research papers in `/home/myles/misc/` (2402.17753v1.pdf = LoCoMo benchmark, 2603.02473v1.pdf = retrieval vs write)
 
 ## Key Commands
 
 ```sh
 cargo build                    # Build
-cargo test                     # 119 tests (+ 4 ignored NLI tests requiring model)
+cargo test                     # 173 tests (+ 4 ignored NLI tests requiring model)
 cargo run -- --help            # CLI help
 cargo run -- remember "text"   # Store a memory
 cargo run -- recall "query"    # Cognitive-scored memory search
@@ -29,19 +30,23 @@ cargo run -- serve --port 8106 # HTTP MCP server
 
 ```
 src/
-├── main.rs    — CLI with 14 subcommands (604 lines)
-├── lib.rs     — Module exports
-├── store.rs   — Unified SQLite schema, all queries, maintenance (3252 lines)
-├── memory.rs  — Cognitive layer: remember, recall, get_context, classify, score, reflect, consolidate, entity extraction, learned decay (1682 lines)
-├── search.rs  — Hybrid search: FTS5 + vector → RRF fusion → query expansion → cross-encoder rerank (274 lines)
-├── index.rs   — Code indexing: scan → chunk → graph → FTS → embed (286 lines)
-├── mcp.rs     — MCP server: 18 tools, HTTP + stdio transport, embedding cache (1744 lines)
-├── nli.rs     — NLI contradiction detection via ONNX Runtime (cross-encoder/nli-MiniLM2-L6-H768) (256 lines)
-└── rerank.rs  — Cross-encoder reranking via fastembed/ONNX (BAAI/bge-reranker-base)
+├── main.rs     — CLI with 14 subcommands
+├── lib.rs      — Module exports
+├── store.rs    — Unified SQLite schema, all queries, maintenance
+├── memory.rs   — Cognitive layer: remember, recall, get_context, classify, score, reflect, consolidate, entity extraction, learned decay
+├── search.rs   — Hybrid search: FTS5 + vector → RRF fusion → query expansion → cross-encoder rerank
+├── index.rs    — Code indexing: scan → chunk → graph → FTS → embed
+├── mcp.rs      — MCP server: 18 tools, HTTP + stdio transport, embedding cache
+├── nli.rs      — NLI contradiction detection via ONNX Runtime (cross-encoder/nli-MiniLM2-L6-H768)
+├── rerank.rs   — Cross-encoder reranking via fastembed/ONNX (BAAI/bge-reranker-base)
+└── code/       — Code intelligence primitives (self-contained)
+    ├── chunk.rs      — Tree-sitter code chunking (13 languages)
+    ├── embed.rs      — ONNX embeddings (Jina Code V2, 768-dim)
+    ├── scan.rs       — Directory walking + SHA-256 hashing
+    ├── tokenizer.rs  — CamelCase splitting for FTS5
+    ├── graph.rs      — Tag extraction via tree-sitter TAGS_QUERY
+    └── hnsw.rs       — HNSW approximate nearest neighbor (instant-distance)
 ```
-
-- Imports Ferret as library: chunk, embed, scan, graph, hnsw, tokenizer modules
-- Does NOT use Ferret's `store` (hardcoded schema) or `mcp` (Ferret-specific tools)
 
 ### Retrieval Pipeline
 
@@ -57,16 +62,18 @@ Supporting tables: `codebases`, `indexed_files`, `graph` (code refs + Hebbian as
 
 ## Key Dependencies
 
-- `ferret` (local `../ferret`, `semantic` feature) — code intelligence, ONNX embeddings (Jina Code V2, 768-dim)
+- `tree-sitter` 0.25 + 13 language grammars — code parsing and tag extraction
+- `ort` 2.0.0-rc.11 + `tokenizers` 0.22 — ONNX embeddings (Jina Code V2, 768-dim) and NLI contradiction detection
+- `instant-distance` 0.6 — HNSW approximate nearest neighbor search
 - `rusqlite` 0.32 — SQLite with FTS5 + bundled
 - `rmcp` 0.16 — MCP server (stdio + streamable HTTP)
 - `fastembed` — cross-encoder reranking via ONNX Runtime (BAAI/bge-reranker-base)
-- `ort` 2.0.0-rc.11 + `tokenizers` 0.22 — NLI contradiction detection (cross-encoder/nli-MiniLM2-L6-H768, 82M params)
 
 ## Conventions
 
 - Lazy model init: `Arc<Mutex<Option<T>>>` pattern in mcp.rs for embedder (and future reranker)
 - Database default: `~/.grasshopper/brain.db`
+- Model cache: `~/.cache/grasshopper/models/`
 - Clippy lints: `perf = deny`, `redundant_clone = deny`
 - All blocking operations (DB, embedder) run inside `spawn_blocking`
 - Poisoned mutexes are recovered with a warning log, not panicked
