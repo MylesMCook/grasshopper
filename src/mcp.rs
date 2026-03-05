@@ -158,11 +158,37 @@ impl GrasshopperMcp {
                 }
                 Err(e) => {
                     tracing::warn!("failed to load HNSW index: {e}");
-                    None
+                    // If load fails but embeddings exist, rebuild from scratch
+                    Self::try_rebuild_hnsw_from_db(db_path)
                 }
             }
         } else {
-            None
+            // If HNSW file doesn't exist but embeddings do, build automatically
+            Self::try_rebuild_hnsw_from_db(db_path)
+        }
+    }
+
+    /// Attempt to rebuild HNSW from database embeddings (used on startup if HNSW is missing/corrupt).
+    fn try_rebuild_hnsw_from_db(db_path: &std::path::Path) -> Option<crate::code::hnsw::HnswIndex> {
+        let store = Store::open(db_path).ok()?;
+        let rows = store.get_all_embeddings().ok()?;
+        if rows.is_empty() {
+            return None;
+        }
+        tracing::info!("rebuilding HNSW from {} embeddings (file missing or corrupt)", rows.len());
+        match crate::code::hnsw::HnswIndex::from_embeddings(&rows) {
+            Ok(index) => {
+                let hnsw_path = crate::code::hnsw::hnsw_path(db_path);
+                if let Err(e) = index.save(&hnsw_path) {
+                    tracing::warn!("failed to save rebuilt HNSW: {e}");
+                }
+                tracing::info!("rebuilt HNSW index ({} points)", index.len());
+                Some(index)
+            }
+            Err(e) => {
+                tracing::warn!("failed to rebuild HNSW from embeddings: {e}");
+                None
+            }
         }
     }
 
@@ -490,6 +516,7 @@ impl GrasshopperMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
+        let hnsw = Arc::clone(&self.hnsw);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
@@ -503,6 +530,28 @@ impl GrasshopperMcp {
                 params.title.as_deref(),
                 tags,
             )?;
+
+            // Rebuild HNSW after storing a memory with embedding
+            if guard.is_some() {
+                let rows = store.get_all_embeddings()?;
+                if !rows.is_empty() {
+                    match crate::code::hnsw::HnswIndex::from_embeddings(&rows) {
+                        Ok(new_index) => {
+                            let hnsw_file = crate::code::hnsw::hnsw_path(&db_path);
+                            if let Err(e) = new_index.save(&hnsw_file) {
+                                tracing::warn!("failed to save HNSW after store: {e}");
+                            }
+                            let mut hnsw_guard = hnsw.lock()
+                                .map_err(|e| anyhow::anyhow!("hnsw lock: {e}"))?;
+                            *hnsw_guard = Some(new_index);
+                        }
+                        Err(e) => {
+                            tracing::warn!("failed to rebuild HNSW after store: {e}");
+                        }
+                    }
+                }
+            }
+
             let output = serde_json::json!({
                 "id": result.id,
                 "title": result.title,
@@ -587,6 +636,25 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
     let shared_reranker: Arc<Mutex<Option<crate::rerank::Reranker>>> = Arc::new(Mutex::new(None));
     let shared_hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>> =
         Arc::new(Mutex::new(GrasshopperMcp::try_load_hnsw(&db_path)));
+
+    // Startup maintenance — log counts
+    {
+        match Store::open(&db_path) {
+            Ok(store) => {
+                let (code, memory) = store.count_by_kind().unwrap_or((0, 0));
+                let db_bytes = store.db_size_bytes().unwrap_or(0);
+                let codebases = store.count_codebases().unwrap_or(0);
+                tracing::info!(
+                    "startup: {} code chunks, {} memories, {:.1} KB, {} codebases",
+                    code, memory, db_bytes as f64 / 1024.0, codebases
+                );
+                if let Err(e) = store.optimize() {
+                    tracing::warn!("startup optimize failed: {e}");
+                }
+            }
+            Err(e) => tracing::warn!("startup diagnostics failed: {e}"),
+        }
+    }
 
     let db = db_path.clone();
     let embedder_for_mcp = shared_embedder.clone();
