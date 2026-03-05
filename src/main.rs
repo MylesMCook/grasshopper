@@ -200,8 +200,7 @@ fn main() -> Result<()> {
                     }
                 }
                 "navigate" => {
-                    let codebases = store.list_codebases()?;
-                    let codebase_id = resolve_codebase_cli(&codebases, dir.as_deref())?;
+                    let codebase_id = store.resolve_codebase(dir.as_deref())?;
 
                     let (show_defs, show_refs) = match direction.as_str() {
                         "both" => (true, true),
@@ -231,15 +230,13 @@ fn main() -> Result<()> {
                     }
                 }
                 "map" => {
-                    let codebases = store.list_codebases()?;
-                    let codebase_id = resolve_codebase_cli(&codebases, dir.as_deref())?
+                    let codebase_id = store.resolve_codebase(dir.as_deref())?
                         .ok_or_else(|| anyhow::anyhow!("no codebases indexed — run index first"))?;
-                    let output = grasshopper::mcp::generate_map_cli(&store, codebase_id, budget)?;
+                    let output = grasshopper::mcp::generate_map(&store, codebase_id, budget)?;
                     print!("{output}");
                 }
                 "impact" => {
-                    let codebases = store.list_codebases()?;
-                    let codebase_id = resolve_codebase_cli(&codebases, dir.as_deref())?;
+                    let codebase_id = store.resolve_codebase(dir.as_deref())?;
                     let max_depth = depth.clamp(1, 5);
                     let hits = store.find_impact(&query, codebase_id, max_depth)?;
 
@@ -341,37 +338,4 @@ fn rebuild_hnsw(store: &Store, db_path: &Path) -> Result<()> {
     index.save(&hnsw_path)?;
     println!("HNSW index: {} points → {}", index.len(), hnsw_path.display());
     Ok(())
-}
-
-/// CLI-specific codebase resolution (works with pre-fetched codebases list).
-fn resolve_codebase_cli(
-    codebases: &[(i64, String, String)],
-    dir: Option<&str>,
-) -> Result<Option<i64>> {
-    if let Some(dir) = dir {
-        let matches: Vec<_> = codebases
-            .iter()
-            .filter(|(_, root, name)| name == dir || root.ends_with(dir))
-            .collect();
-        match matches.len() {
-            0 => anyhow::bail!("no indexed codebase matching '{dir}'"),
-            1 => Ok(Some(matches[0].0)),
-            _ => {
-                let names: Vec<&str> = matches.iter().map(|(_, _, n)| n.as_str()).collect();
-                anyhow::bail!(
-                    "ambiguous dir '{dir}' matches {} codebases: {}",
-                    matches.len(),
-                    names.join(", ")
-                );
-            }
-        }
-    } else if codebases.len() <= 1 {
-        Ok(codebases.first().map(|(id, _, _)| *id))
-    } else {
-        let names: Vec<&str> = codebases.iter().map(|(_, _, n)| n.as_str()).collect();
-        anyhow::bail!(
-            "Multiple codebases indexed. Use --dir to select one: {}",
-            names.join(", ")
-        );
-    }
 }

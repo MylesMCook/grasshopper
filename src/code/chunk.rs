@@ -161,8 +161,8 @@ fn split_oversized(blocks: Vec<(usize, usize)>, lines: &[&str]) -> Vec<(usize, u
         let mid = start + MAX_CHUNK_LINES.min(line_count) / 2;
         let mut split_at = None;
 
-        for i in mid..=end {
-            if lines[i].trim().is_empty() || is_boundary(lines[i]) {
+        for (i, line) in lines.iter().enumerate().skip(mid).take(end - mid + 1) {
+            if line.trim().is_empty() || is_boundary(line) {
                 split_at = Some(i);
                 break;
             }
@@ -198,10 +198,10 @@ fn split_oversized(blocks: Vec<(usize, usize)>, lines: &[&str]) -> Vec<(usize, u
 fn extract_heuristic_name(snippet: &str) -> String {
     // Try the first few lines for a declaration keyword with a name
     for line in snippet.lines().take(3) {
-        if let Some(caps) = NAME_RE.captures(line) {
-            if let Some(m) = caps.get(1) {
-                return m.as_str().to_owned();
-            }
+        if let Some(caps) = NAME_RE.captures(line)
+            && let Some(m) = caps.get(1)
+        {
+            return m.as_str().to_owned();
         }
     }
     String::new()

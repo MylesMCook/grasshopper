@@ -12,53 +12,6 @@ use std::sync::{Arc, Mutex};
 use crate::store::Store;
 use crate::code::embed::Embedder;
 
-// --- Embedding cache ---
-
-#[allow(dead_code)]
-struct EmbedCache {
-    entries: std::collections::HashMap<String, (std::time::Instant, Vec<f32>)>,
-    ttl: std::time::Duration,
-    max_entries: usize,
-}
-
-#[allow(dead_code)]
-impl EmbedCache {
-    fn new(ttl_secs: u64, max_entries: usize) -> Self {
-        Self {
-            entries: std::collections::HashMap::new(),
-            ttl: std::time::Duration::from_secs(ttl_secs),
-            max_entries,
-        }
-    }
-
-    fn get(&self, query: &str) -> Option<Vec<f32>> {
-        self.entries.get(query).and_then(|(instant, vec)| {
-            if instant.elapsed() < self.ttl {
-                Some(vec.clone())
-            } else {
-                None
-            }
-        })
-    }
-
-    fn insert(&mut self, query: String, embedding: Vec<f32>) {
-        // Evict expired entries if at capacity
-        if self.entries.len() >= self.max_entries {
-            let ttl = self.ttl;
-            self.entries.retain(|_, (instant, _)| instant.elapsed() < ttl);
-        }
-        // If still at capacity, evict oldest
-        if self.entries.len() >= self.max_entries
-            && let Some(oldest_key) = self.entries.iter()
-                .min_by_key(|(_, (instant, _))| *instant)
-                .map(|(k, _)| k.clone())
-        {
-            self.entries.remove(&oldest_key);
-        }
-        self.entries.insert(query, (std::time::Instant::now(), embedding));
-    }
-}
-
 // --- Tool parameter types ---
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -111,8 +64,6 @@ pub struct GrasshopperMcp {
     /// Epoch seconds of last reranker init failure (0 = never failed). Retry after 60s cooldown.
     reranker_failed_at: Arc<std::sync::atomic::AtomicI64>,
     hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>>,
-    #[allow(dead_code)]
-    embed_cache: Arc<Mutex<EmbedCache>>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -126,7 +77,6 @@ impl GrasshopperMcp {
             reranker: Arc::new(Mutex::new(None)),
             reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             hnsw: Arc::new(Mutex::new(hnsw)),
-            embed_cache: Arc::new(Mutex::new(EmbedCache::new(60, 100))),
             tool_router: Self::annotated_router(),
         }
     }
@@ -143,7 +93,6 @@ impl GrasshopperMcp {
             reranker,
             reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             hnsw,
-            embed_cache: Arc::new(Mutex::new(EmbedCache::new(60, 100))),
             tool_router: Self::annotated_router(),
         }
     }
@@ -236,6 +185,13 @@ impl GrasshopperMcp {
         }
     }
 
+    fn epoch_secs() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0)
+    }
+
     /// Initialize reranker if not yet loaded. MUST be called inside spawn_blocking.
     /// Circuit breaker: skips retry for 60s after a failure, then allows retry.
     fn init_reranker_blocking(
@@ -244,14 +200,8 @@ impl GrasshopperMcp {
     ) {
         const COOLDOWN_SECS: i64 = 60;
         let last_fail = failed_at.load(std::sync::atomic::Ordering::Relaxed);
-        if last_fail > 0 {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
-            if now - last_fail < COOLDOWN_SECS {
-                return; // Still in cooldown
-            }
+        if last_fail > 0 && Self::epoch_secs() - last_fail < COOLDOWN_SECS {
+            return; // Still in cooldown
         }
         let mut guard = match reranker.lock() {
             Ok(g) => g,
@@ -267,12 +217,8 @@ impl GrasshopperMcp {
                     *guard = Some(r);
                 }
                 Err(e) => {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs() as i64)
-                        .unwrap_or(0);
                     tracing::warn!("reranker init failed (retry in {COOLDOWN_SECS}s): {e}");
-                    failed_at.store(now, std::sync::atomic::Ordering::Relaxed);
+                    failed_at.store(Self::epoch_secs(), std::sync::atomic::Ordering::Relaxed);
                 }
             }
         }
@@ -320,7 +266,7 @@ impl GrasshopperMcp {
                 }
                 "navigate" => {
                     let store = Store::open(&db_path)?;
-                    let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
+                    let codebase_id = store.resolve_codebase(params.dir.as_deref())?
                         .context("no codebases indexed — run index first")?;
                     let codebase_id = Some(codebase_id);
                     let direction = params.direction.as_deref().unwrap_or("both");
@@ -372,13 +318,13 @@ impl GrasshopperMcp {
                 "map" => {
                     let store = Store::open(&db_path)?;
                     let budget = params.budget.unwrap_or(4000).clamp(1, 200_000);
-                    let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
+                    let codebase_id = store.resolve_codebase(params.dir.as_deref())?
                         .context("no codebases indexed — run index first")?;
                     generate_map(&store, codebase_id, budget)
                 }
                 "impact" => {
                     let store = Store::open(&db_path)?;
-                    let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
+                    let codebase_id = store.resolve_codebase(params.dir.as_deref())?
                         .context("no codebases indexed — run index first")?;
                     let codebase_id = Some(codebase_id);
                     let max_depth = params.depth.unwrap_or(2).clamp(1, 5);
@@ -428,7 +374,11 @@ impl GrasshopperMcp {
 
         match result {
             Ok(text) => Ok(CallToolResult::success(vec![Content::text(text)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
+            Err(e) => {
+                    let mut result = CallToolResult::success(vec![Content::text(format!("{e:#}"))]);
+                    result.is_error = Some(true);
+                    Ok(result)
+                },
         }
     }
 
@@ -501,7 +451,11 @@ impl GrasshopperMcp {
 
         match result {
             Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
+            Err(e) => {
+                    let mut result = CallToolResult::success(vec![Content::text(format!("{e:#}"))]);
+                    result.is_error = Some(true);
+                    Ok(result)
+                },
         }
     }
 
@@ -542,7 +496,11 @@ impl GrasshopperMcp {
 
         match result {
             Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
+            Err(e) => {
+                    let mut result = CallToolResult::success(vec![Content::text(format!("{e:#}"))]);
+                    result.is_error = Some(true);
+                    Ok(result)
+                },
         }
     }
 }
@@ -769,46 +727,8 @@ fn format_search_hits(hits: &[crate::store::SearchHit]) -> Vec<serde_json::Value
         .collect()
 }
 
-/// Resolve a codebase directory filter to a codebase_id.
-/// If multiple codebases are indexed and no dir is specified, returns an error
-/// listing available codebases (consistent policy across all code-intel tools).
-fn resolve_codebase(store: &Store, dir: Option<&str>) -> Result<Option<i64>> {
-    let codebases = store.list_codebases()?;
-    if let Some(dir) = dir {
-        let matches: Vec<_> = codebases
-            .iter()
-            .filter(|(_, root, name)| name == dir || root.ends_with(dir))
-            .collect();
-        match matches.len() {
-            0 => anyhow::bail!("no indexed codebase matching '{dir}'"),
-            1 => Ok(Some(matches[0].0)),
-            _ => {
-                let names: Vec<&str> = matches.iter().map(|(_, _, n)| n.as_str()).collect();
-                anyhow::bail!(
-                    "ambiguous dir '{dir}' matches {} codebases: {}. Use a more specific path.",
-                    matches.len(),
-                    names.join(", ")
-                );
-            }
-        }
-    } else if codebases.len() <= 1 {
-        Ok(codebases.first().map(|(id, _, _)| *id))
-    } else {
-        let names: Vec<&str> = codebases.iter().map(|(_, _, n)| n.as_str()).collect();
-        anyhow::bail!(
-            "Multiple codebases indexed. Use dir parameter to select one: {}",
-            names.join(", ")
-        );
-    }
-}
-
-/// Public wrapper for CLI access to codebase map generation.
-pub fn generate_map_cli(store: &Store, codebase_id: i64, token_budget: usize) -> Result<String> {
-    generate_map(store, codebase_id, token_budget)
-}
-
 /// Generate a compact codebase map from definitions, ranked by definition density per file.
-fn generate_map(store: &Store, codebase_id: i64, token_budget: usize) -> Result<String> {
+pub fn generate_map(store: &Store, codebase_id: i64, token_budget: usize) -> Result<String> {
     let definitions = store.get_all_definitions(codebase_id)?;
     let def_counts = store.count_definitions_per_file(codebase_id)?;
 
@@ -841,12 +761,25 @@ fn generate_map(store: &Store, codebase_id: i64, token_budget: usize) -> Result<
     let mut chars_used = 0;
 
     for (file, _score) in &file_scores {
+        use std::fmt::Write;
         let defs = &by_file[file];
-        let mut section = format!("{file}\n");
+        let mut section = String::new();
+        let _ = writeln!(&mut section, "{file}");
         for def in defs {
-            let prefix = kind_prefix(&def.kind);
-            let line = format!("  {prefix} {}\n", def.symbol);
-            section.push_str(&line);
+            let prefix = match def.kind.as_str() {
+                "function" | "method" => "fn",
+                "class" | "struct" => "struct",
+                "interface" | "trait" => "trait",
+                "module" => "mod",
+                "macro" => "macro",
+                "constant" => "const",
+                "variable" => "let",
+                "type" => "type",
+                "implementation" => "impl",
+                "enum" => "enum",
+                other => other,
+            };
+            let _ = writeln!(&mut section, "  {prefix} {}", def.symbol);
         }
 
         if chars_used + section.len() > char_budget && chars_used > 0 {
@@ -860,68 +793,4 @@ fn generate_map(store: &Store, codebase_id: i64, token_budget: usize) -> Result<
     Ok(output)
 }
 
-fn kind_prefix(kind: &str) -> &str {
-    match kind {
-        "function" | "method" => "fn",
-        "class" | "struct" => "struct",
-        "interface" | "trait" => "trait",
-        "module" => "mod",
-        "macro" => "macro",
-        "constant" => "const",
-        "variable" => "let",
-        "type" => "type",
-        "implementation" => "impl",
-        "enum" => "enum",
-        other => other,
-    }
-}
 
-/// Create an error CallToolResult.
-fn error_result(msg: String) -> CallToolResult {
-    let mut result = CallToolResult::success(vec![Content::text(msg)]);
-    result.is_error = Some(true);
-    result
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_embed_cache_insert_and_get() {
-        let mut cache = EmbedCache::new(60, 10);
-        cache.insert("hello".to_string(), vec![1.0, 2.0, 3.0]);
-        let result = cache.get("hello");
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), vec![1.0, 2.0, 3.0]);
-    }
-
-    #[test]
-    fn test_embed_cache_miss() {
-        let cache = EmbedCache::new(60, 10);
-        assert!(cache.get("missing").is_none());
-    }
-
-    #[test]
-    fn test_embed_cache_expiry() {
-        let mut cache = EmbedCache::new(0, 10); // 0s TTL = immediate expiry
-        cache.insert("hello".to_string(), vec![1.0]);
-        // With 0s TTL, elapsed >= ttl immediately
-        std::thread::sleep(std::time::Duration::from_millis(1));
-        assert!(cache.get("hello").is_none());
-    }
-
-    #[test]
-    fn test_embed_cache_eviction_at_capacity() {
-        let mut cache = EmbedCache::new(60, 2);
-        cache.insert("first".to_string(), vec![1.0]);
-        std::thread::sleep(std::time::Duration::from_millis(1));
-        cache.insert("second".to_string(), vec![2.0]);
-        std::thread::sleep(std::time::Duration::from_millis(1));
-        // Third insert should evict "first" (oldest)
-        cache.insert("third".to_string(), vec![3.0]);
-        assert!(cache.get("first").is_none());
-        assert!(cache.get("second").is_some());
-        assert!(cache.get("third").is_some());
-    }
-}

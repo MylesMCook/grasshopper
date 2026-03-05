@@ -234,18 +234,10 @@ impl Store {
                 strength        REAL NOT NULL DEFAULT 1.0
             );
 
-            -- Code edges: one entry per (codebase, file, symbol, role, kind, line)
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_code_edge
-                ON graph(codebase_id, file_path, symbol, role, kind, line)
-                WHERE codebase_id IS NOT NULL;
             -- Hebbian associations: one edge per (source, target, role)
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_association
                 ON graph(source_chunk, target_chunk, role)
                 WHERE role = 'associates';
-            -- Entity edges: one edge per (chunk, entity_value, entity_kind)
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_entity
-                ON graph(source_chunk, symbol, role, kind)
-                WHERE role = 'entity';
 
             CREATE INDEX IF NOT EXISTS idx_graph_symbol
                 ON graph(codebase_id, symbol) WHERE symbol IS NOT NULL;
@@ -264,15 +256,6 @@ impl Store {
                 tokenize='porter unicode61'
             );
 
-            -- Access log for learned decay rates
-            CREATE TABLE IF NOT EXISTS access_log (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                chunk_id    INTEGER NOT NULL REFERENCES chunks(id),
-                accessed_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_access_log_chunk
-                ON access_log(chunk_id);
-
             -- Retrieval logging for fine-tuning pipeline
             CREATE TABLE IF NOT EXISTS retrieval_log (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -284,18 +267,6 @@ impl Store {
                 latency_ms      INTEGER,
                 created_at      TEXT NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_retrieval_log_created
-                ON retrieval_log(created_at);
-
-            -- Feedback on retrieval results
-            CREATE TABLE IF NOT EXISTS feedback (
-                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                retrieval_log_id    INTEGER REFERENCES retrieval_log(id),
-                chunk_id            INTEGER NOT NULL REFERENCES chunks(id),
-                signal              TEXT NOT NULL,
-                created_at          TEXT NOT NULL
-            );
-
             -- Session handoffs for continuity
             CREATE TABLE IF NOT EXISTS handoffs (
                 id          TEXT PRIMARY KEY,
@@ -519,41 +490,7 @@ impl Store {
              WHERE id = ?2 AND kind = 'memory'",
             params![now, id],
         )?;
-        // Record access event for learned decay rates
-        self.conn.execute(
-            "INSERT INTO access_log (chunk_id, accessed_at) VALUES (?1, ?2)",
-            params![id, now],
-        )?;
         Ok(())
-    }
-
-    /// Get intervals (in days) between successive accesses for a memory.
-    /// Returns an empty vec if fewer than 2 access events exist.
-    pub fn get_access_intervals(&self, chunk_id: i64) -> Result<Vec<f64>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT accessed_at FROM access_log WHERE chunk_id = ?1 ORDER BY accessed_at ASC",
-        )?;
-        let timestamps: Vec<String> = stmt
-            .query_map(params![chunk_id], |row| row.get(0))?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        if timestamps.len() < 2 {
-            return Ok(vec![]);
-        }
-
-        let mut intervals = Vec::with_capacity(timestamps.len() - 1);
-        for pair in timestamps.windows(2) {
-            let t0 = chrono::DateTime::parse_from_rfc3339(&pair[0])
-                .map(|dt| dt.with_timezone(&chrono::Utc));
-            let t1 = chrono::DateTime::parse_from_rfc3339(&pair[1])
-                .map(|dt| dt.with_timezone(&chrono::Utc));
-            if let (Ok(t0), Ok(t1)) = (t0, t1) {
-                let days = (t1 - t0).num_seconds() as f64 / 86400.0;
-                intervals.push(days.max(0.001)); // Floor at ~86s to avoid div-by-zero
-            }
-        }
-        Ok(intervals)
     }
 
     /// Log a retrieval event. Returns the log entry ID.
@@ -565,8 +502,7 @@ impl Store {
         latency_ms: Option<i64>,
     ) -> Result<i64> {
         let now = chrono::Utc::now().to_rfc3339();
-        let ids: Vec<i64> = results.iter().map(|(id, _)| *id).collect();
-        let scores: Vec<f64> = results.iter().map(|(_, s)| *s).collect();
+        let (ids, scores): (Vec<i64>, Vec<f64>) = results.iter().copied().unzip();
         self.conn.execute(
             "INSERT INTO retrieval_log (query, tool, result_ids, scores, result_count, latency_ms, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -581,122 +517,6 @@ impl Store {
             ],
         )?;
         Ok(self.conn.last_insert_rowid())
-    }
-
-    /// Validate that a chunk_id was in the results for a given retrieval log entry.
-    pub fn validate_feedback(&self, log_id: i64, chunk_id: i64) -> Result<bool> {
-        let result_ids_json: String = self.conn.query_row(
-            "SELECT result_ids FROM retrieval_log WHERE id = ?1",
-            params![log_id],
-            |row| row.get(0),
-        )?;
-        let result_ids: Vec<i64> = serde_json::from_str(&result_ids_json).unwrap_or_default();
-        Ok(result_ids.contains(&chunk_id))
-    }
-
-    /// Record feedback on a retrieval result.
-    pub fn log_feedback(&self, log_id: i64, chunk_id: i64, signal: &str) -> Result<()> {
-        let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute(
-            "INSERT INTO feedback (retrieval_log_id, chunk_id, signal, created_at)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![log_id, chunk_id, signal, now],
-        )?;
-        Ok(())
-    }
-
-    /// Adjust salience for a memory, clamped to [0.0, 1.0].
-    pub fn adjust_salience(&self, chunk_id: i64, delta: f64) -> Result<()> {
-        let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute(
-            "UPDATE chunks SET
-                salience = MIN(1.0, MAX(0.0, salience + ?1)),
-                updated_at = ?2
-             WHERE id = ?3 AND kind = 'memory'",
-            params![delta, now, chunk_id],
-        )?;
-        Ok(())
-    }
-
-    /// Export training data: retrieval logs joined with feedback and chunk content.
-    pub fn export_training_data(&self) -> Result<Vec<serde_json::Value>> {
-        let mut log_stmt = self.conn.prepare(
-            "SELECT id, query, result_ids FROM retrieval_log ORDER BY created_at ASC",
-        )?;
-        let logs: Vec<(i64, String, String)> = log_stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        let mut examples = Vec::new();
-        for (log_id, query, result_ids_json) in &logs {
-            let result_ids: Vec<i64> = serde_json::from_str(result_ids_json).unwrap_or_default();
-            if result_ids.is_empty() {
-                continue;
-            }
-
-            // Get feedback for this log entry
-            let mut fb_stmt = self.conn.prepare(
-                "SELECT chunk_id, signal FROM feedback WHERE retrieval_log_id = ?1",
-            )?;
-            let feedback: Vec<(i64, String)> = fb_stmt
-                .query_map(params![log_id], |row| Ok((row.get(0)?, row.get(1)?)))?
-                .filter_map(|r| r.ok())
-                .collect();
-
-            if feedback.is_empty() {
-                continue; // No signal, skip
-            }
-
-            let positive_ids: HashSet<i64> = feedback
-                .iter()
-                .filter(|(_, s)| s == "positive")
-                .map(|(id, _)| *id)
-                .collect();
-            let negative_ids: HashSet<i64> = feedback
-                .iter()
-                .filter(|(_, s)| s == "negative")
-                .map(|(id, _)| *id)
-                .collect();
-
-            // Fetch content for all result chunks
-            let mut positive = Vec::new();
-            let mut negative = Vec::new();
-            let mut hard_negatives = Vec::new();
-            for &cid in &result_ids {
-                let content: Option<String> = self.conn.prepare(
-                    "SELECT content FROM chunks WHERE id = ?1"
-                )?.query_row(params![cid], |row| row.get(0)).optional()?;
-                if let Some(content) = content {
-                    if positive_ids.contains(&cid) {
-                        positive.push(content);
-                    } else if negative_ids.contains(&cid) {
-                        negative.push(content);
-                    } else {
-                        hard_negatives.push(content);
-                    }
-                }
-            }
-
-            examples.push(serde_json::json!({
-                "query": query,
-                "positive": positive,
-                "negative": negative,
-                "hard_negatives": hard_negatives,
-            }));
-        }
-        Ok(examples)
-    }
-
-    /// Look up a memory by content hash. Returns the chunk ID if found.
-    pub fn get_memory_by_hash(&self, hash: &str) -> Result<Option<i64>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id FROM chunks WHERE content_hash = ?1 AND kind = 'memory' LIMIT 1",
-        )?;
-        let id = stmt
-            .query_row(params![hash], |row| row.get(0))
-            .optional()?;
-        Ok(id)
     }
 
     /// Find an active (non-archived) memory by content hash.
@@ -1224,13 +1044,9 @@ impl Store {
             Ok((id, blob))
         })?;
         for row in raw_rows {
-            match row {
-                Ok((id, blob)) => match blob_to_embedding(&blob) {
-                    Some(emb) => results.push((id, emb.to_vec())),
-                    None => dropped += 1,
-                },
-                Err(_) => dropped += 1,
-            }
+            let Ok((id, blob)) = row else { dropped += 1; continue };
+            let Some(emb) = blob_to_embedding(&blob) else { dropped += 1; continue };
+            results.push((id, emb.to_vec()));
         }
         if dropped > 0 {
             tracing::warn!("get_all_embeddings: dropped {dropped} rows with decode errors");
@@ -1264,7 +1080,7 @@ impl Store {
         };
 
         // Load full SearchHit data for HNSW candidates and rescore with exact embeddings
-        let placeholders: String = candidates.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let placeholders = vec!["?"; candidates.len()].join(",");
         let sql = format!(
             "SELECT id, kind, file_path, symbol_name, symbol_kind, signature,
                     CASE WHEN kind = 'memory' THEN COALESCE(NULLIF(snippet, ''), content, '')
@@ -1316,269 +1132,6 @@ impl Store {
         Ok(scored)
     }
 
-    // --- Cognitive memory queries ---
-
-    /// List memories ordered by access count (most accessed first).
-    pub fn list_memories_by_access(&self, limit: usize) -> Result<Vec<Chunk>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
-                    file_path, language, start_line, end_line, memory_type,
-                    descriptors, source, access_count, last_accessed, salience, archived,
-                    content_hash, agent_id, created_at, updated_at, codebase_id
-             FROM chunks WHERE kind = 'memory' AND archived = 0
-             ORDER BY access_count DESC LIMIT ?1",
-        )?;
-        let rows = stmt
-            .query_map(params![limit as i64], row_to_chunk)?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(rows)
-    }
-
-    /// Count memories, optionally filtering by archived status.
-    pub fn count_memories(&self, archived: bool) -> Result<i64> {
-        let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM chunks WHERE kind = 'memory' AND archived = ?1",
-            params![archived as i64],
-            |row| row.get(0),
-        )?;
-        Ok(count)
-    }
-
-    /// Count memories grouped by memory_type. Returns HashMap<type, count>.
-    pub fn count_memories_by_type(&self) -> Result<HashMap<String, i64>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT memory_type, COUNT(*) FROM chunks
-             WHERE kind = 'memory' AND archived = 0
-             GROUP BY memory_type",
-        )?;
-        let map = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, Option<String>>(0)?.unwrap_or_default(),
-                    row.get::<_, i64>(1)?,
-                ))
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(map)
-    }
-
-    /// List stale memories (not accessed within `older_than_days`).
-    /// Handles NULL last_accessed by treating those as stale if they're old enough.
-    pub fn list_memories_stale(&self, older_than_days: i64, limit: usize) -> Result<Vec<Chunk>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
-                    file_path, language, start_line, end_line, memory_type,
-                    descriptors, source, access_count, last_accessed, salience, archived,
-                    content_hash, agent_id, created_at, updated_at, codebase_id
-             FROM chunks WHERE kind = 'memory' AND archived = 0
-               AND (last_accessed IS NULL OR julianday('now') - julianday(last_accessed) > ?1)
-               AND julianday('now') - julianday(created_at) > ?1
-             ORDER BY COALESCE(last_accessed, created_at) ASC LIMIT ?2",
-        )?;
-        let rows = stmt
-            .query_map(params![older_than_days, limit as i64], row_to_chunk)?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(rows)
-    }
-
-    /// List growing memories: recently accessed with high access counts.
-    pub fn list_memories_growing(&self, since_days: i64, limit: usize) -> Result<Vec<Chunk>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
-                    file_path, language, start_line, end_line, memory_type,
-                    descriptors, source, access_count, last_accessed, salience, archived,
-                    content_hash, agent_id, created_at, updated_at, codebase_id
-             FROM chunks WHERE kind = 'memory' AND archived = 0
-               AND last_accessed IS NOT NULL
-               AND julianday('now') - julianday(last_accessed) <= ?1
-             ORDER BY access_count DESC LIMIT ?2",
-        )?;
-        let rows = stmt
-            .query_map(params![since_days, limit as i64], row_to_chunk)?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(rows)
-    }
-
-    /// List fading memories: previously accessed but not recently.
-    pub fn list_memories_fading(&self, before_days: i64, limit: usize) -> Result<Vec<Chunk>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
-                    file_path, language, start_line, end_line, memory_type,
-                    descriptors, source, access_count, last_accessed, salience, archived,
-                    content_hash, agent_id, created_at, updated_at, codebase_id
-             FROM chunks WHERE kind = 'memory' AND archived = 0
-               AND access_count > 0
-               AND last_accessed IS NOT NULL
-               AND julianday('now') - julianday(last_accessed) > ?1
-             ORDER BY last_accessed ASC LIMIT ?2",
-        )?;
-        let rows = stmt
-            .query_map(params![before_days, limit as i64], row_to_chunk)?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(rows)
-    }
-
-    /// List memories that have Hebbian associations (via graph table).
-    pub fn list_memories_with_associations(&self, limit: usize) -> Result<Vec<(Chunk, i64)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT c.id, c.kind, c.title, c.content, c.snippet, c.symbol_name, c.symbol_kind,
-                    c.signature, c.file_path, c.language, c.start_line, c.end_line, c.memory_type,
-                    c.descriptors, c.source, c.access_count, c.last_accessed, c.salience, c.archived,
-                    c.content_hash, c.agent_id, c.created_at, c.updated_at, c.codebase_id,
-                    COUNT(g.id) as assoc_count
-             FROM chunks c
-             JOIN graph g ON (g.source_chunk = c.id OR g.target_chunk = c.id) AND g.role = 'associates'
-             WHERE c.kind = 'memory' AND c.archived = 0
-             GROUP BY c.id
-             ORDER BY assoc_count DESC LIMIT ?1",
-        )?;
-        let rows = stmt
-            .query_map(params![limit as i64], |row| {
-                let chunk = row_to_chunk(row)?;
-                let count: i64 = row.get(24)?;
-                Ok((chunk, count))
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(rows)
-    }
-
-    /// Upsert a bidirectional Hebbian association between two memory chunks.
-    pub fn upsert_association(&self, source_id: i64, target_id: i64) -> Result<()> {
-        // Insert both directions (idempotent via unique index)
-        self.conn.execute(
-            "INSERT OR IGNORE INTO graph (source_chunk, target_chunk, role, strength)
-             VALUES (?1, ?2, 'associates', 1.0)",
-            params![source_id, target_id],
-        )?;
-        self.conn.execute(
-            "INSERT OR IGNORE INTO graph (source_chunk, target_chunk, role, strength)
-             VALUES (?1, ?2, 'associates', 1.0)",
-            params![target_id, source_id],
-        )?;
-        Ok(())
-    }
-
-    /// Delete all entity edges for a memory chunk (used before re-inserting on update).
-    pub fn delete_entity_edges(&self, chunk_id: i64) -> Result<usize> {
-        let count = self.conn.execute(
-            "DELETE FROM graph WHERE source_chunk = ?1 AND role = 'entity'",
-            params![chunk_id],
-        )?;
-        Ok(count)
-    }
-
-    /// Batch insert entity graph edges for a memory chunk.
-    /// Each entity is (value, kind). Idempotent via unique index.
-    pub fn upsert_entity_edges(&self, chunk_id: i64, entities: &[(String, String)]) -> Result<usize> {
-        let mut count = 0;
-        for (value, kind) in entities {
-            let rows = self.conn.execute(
-                "INSERT OR IGNORE INTO graph (source_chunk, target_chunk, role, kind, symbol, strength)
-                 VALUES (?1, NULL, 'entity', ?2, ?3, 1.0)",
-                params![chunk_id, kind, value],
-            )?;
-            count += rows;
-        }
-        Ok(count)
-    }
-
-    /// Find all memories that mention a specific entity value.
-    pub fn find_memories_by_entity(&self, entity_value: &str) -> Result<Vec<SearchHit>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT c.id, c.kind, c.file_path, c.symbol_name, c.symbol_kind,
-                    c.signature, c.title, c.snippet, c.start_line, c.end_line,
-                    c.memory_type, c.access_count, c.last_accessed, c.salience,
-                    c.created_at, c.archived, c.descriptors, c.content_hash
-             FROM graph g
-             JOIN chunks c ON c.id = g.source_chunk
-             WHERE g.role = 'entity' AND g.symbol = ?1
-               AND c.kind = 'memory' AND c.archived = 0",
-        )?;
-        let rows = stmt
-            .query_map(params![entity_value], |row| {
-                Ok(SearchHit {
-                    id: row.get(0)?,
-                    kind: row.get(1)?,
-                    file_path: row.get(2)?,
-                    symbol_name: row.get(3)?,
-                    symbol_kind: row.get(4)?,
-                    signature: row.get(5)?,
-                    title: row.get(6)?,
-                    snippet: row.get(7)?,
-                    start_line: row.get(8)?,
-                    end_line: row.get(9)?,
-                    memory_type: row.get(10)?,
-                    score: 0.0,
-                    reranker_score: None,
-                    access_count: row.get(11)?,
-                    last_accessed: row.get(12)?,
-                    salience: row.get(13)?,
-                    created_at: row.get(14)?,
-                    archived: row.get::<_, i64>(15)? != 0,
-                    descriptors: row.get(16)?,
-                })
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(rows)
-    }
-
-    /// Create summary graph edges linking a summary chunk to its member chunks.
-    pub fn insert_summary_edges(&self, summary_id: i64, member_ids: &[i64]) -> Result<()> {
-        for &member_id in member_ids {
-            self.conn.execute(
-                "INSERT OR IGNORE INTO graph (source_chunk, target_chunk, role, strength)
-                 VALUES (?1, ?2, 'summarizes', 1.0)",
-                params![summary_id, member_id],
-            )?;
-            self.conn.execute(
-                "INSERT OR IGNORE INTO graph (source_chunk, target_chunk, role, strength)
-                 VALUES (?1, ?2, 'summarized_by', 1.0)",
-                params![member_id, summary_id],
-            )?;
-        }
-        Ok(())
-    }
-
-    /// Check if a summary already exists for the given set of member chunk IDs.
-    /// Returns the summary chunk IDs if found.
-    pub fn get_summaries_for_chunks(&self, member_ids: &[i64]) -> Result<Vec<i64>> {
-        if member_ids.is_empty() {
-            return Ok(vec![]);
-        }
-        // Find chunks that have 'summarizes' edges to ALL the given member IDs
-        let placeholders: Vec<String> = member_ids.iter().map(|_| "?".to_string()).collect();
-        // Find summaries that contain ALL requested members AND have exactly that many edges
-        // (exact-set match, not superset match)
-        let sql = format!(
-            "SELECT g1.source_chunk FROM graph g1
-             WHERE g1.role = 'summarizes' AND g1.target_chunk IN ({})
-             GROUP BY g1.source_chunk
-             HAVING COUNT(DISTINCT g1.target_chunk) = ?
-               AND (SELECT COUNT(*) FROM graph g2
-                    WHERE g2.source_chunk = g1.source_chunk AND g2.role = 'summarizes') = ?",
-            placeholders.join(",")
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = member_ids
-            .iter()
-            .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
-            .collect();
-        params_vec.push(Box::new(member_ids.len() as i64));
-        params_vec.push(Box::new(member_ids.len() as i64));
-        let rows: Vec<i64> = stmt
-            .query_map(rusqlite::params_from_iter(params_vec.iter().map(|p| p.as_ref())), |row| row.get(0))?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(rows)
-    }
-
     /// Search for similar memories by embedding cosine similarity.
     /// Returns Vec<(chunk_id, similarity_score)> above threshold.
     pub fn search_similar_memories(
@@ -1609,38 +1162,6 @@ impl Store {
         Ok(scored)
     }
 
-    /// Get all non-archived memory embeddings for consolidation scanning.
-    pub fn get_all_memory_embeddings(&self, model_name: &str) -> Result<Vec<(i64, Vec<f32>)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, embedding FROM chunks
-             WHERE kind = 'memory' AND archived = 0
-               AND embedding IS NOT NULL AND embedding_model = ?1",
-        )?;
-        let mut results = Vec::new();
-        let mut rows = stmt.query(params![model_name])?;
-        while let Some(row) = rows.next()? {
-            let id: i64 = row.get(0)?;
-            let blob: Vec<u8> = row.get(1)?;
-            if let Some(emb) = blob_to_embedding(&blob) {
-                results.push((id, emb.to_vec()));
-            }
-        }
-        Ok(results)
-    }
-
-    /// List recent handoffs (for `me` active_projects).
-    pub fn list_recent_handoffs(&self, limit: usize) -> Result<Vec<Handoff>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, summary, next_steps, project, created_at
-             FROM handoffs ORDER BY created_at DESC LIMIT ?1",
-        )?;
-        let rows = stmt
-            .query_map(params![limit as i64], row_to_handoff)?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(rows)
-    }
-
     // --- Graph query methods (for navigate/map/impact MCP tools) ---
 
     /// List all indexed codebases.
@@ -1652,6 +1173,38 @@ impl Store {
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    /// Resolve a codebase by directory name. Returns None if no codebases exist.
+    /// Errors if the dir doesn't match or is ambiguous.
+    pub fn resolve_codebase(&self, dir: Option<&str>) -> Result<Option<i64>> {
+        let codebases = self.list_codebases()?;
+        if let Some(dir) = dir {
+            let matches: Vec<_> = codebases
+                .iter()
+                .filter(|(_, root, name)| name == dir || root.ends_with(dir))
+                .collect();
+            match matches.len() {
+                0 => anyhow::bail!("no indexed codebase matching '{dir}'"),
+                1 => Ok(Some(matches[0].0)),
+                _ => {
+                    let names: Vec<&str> = matches.iter().map(|(_, _, n)| n.as_str()).collect();
+                    anyhow::bail!(
+                        "ambiguous dir '{dir}' matches {} codebases: {}. Use a more specific path.",
+                        matches.len(),
+                        names.join(", ")
+                    );
+                }
+            }
+        } else if codebases.len() <= 1 {
+            Ok(codebases.first().map(|(id, _, _)| *id))
+        } else {
+            let names: Vec<&str> = codebases.iter().map(|(_, _, n)| n.as_str()).collect();
+            anyhow::bail!(
+                "Multiple codebases indexed. Use dir to select one: {}",
+                names.join(", ")
+            );
+        }
     }
 
     /// Get all definitions for a codebase (used by map). Derived from chunks table.
@@ -1796,16 +1349,6 @@ impl Store {
         self.conn.query_row("SELECT COUNT(*) FROM retrieval_log", [], |r| r.get(0)).map_err(Into::into)
     }
 
-    /// Count feedback entries.
-    pub fn count_feedback(&self) -> Result<i64> {
-        self.conn.query_row("SELECT COUNT(*) FROM feedback", [], |r| r.get(0)).map_err(Into::into)
-    }
-
-    /// Count access log entries.
-    pub fn count_access_log(&self) -> Result<i64> {
-        self.conn.query_row("SELECT COUNT(*) FROM access_log", [], |r| r.get(0)).map_err(Into::into)
-    }
-
     /// Get the timestamp of the latest handoff (if any).
     pub fn latest_handoff_timestamp(&self) -> Result<Option<String>> {
         use rusqlite::OptionalExtension;
@@ -1838,14 +1381,6 @@ impl Store {
             "DELETE FROM retrieval_log WHERE created_at < ?1",
             params![cutoff],
         )?;
-        let feedback_pruned = tx.execute(
-            "DELETE FROM feedback WHERE created_at < ?1",
-            params![cutoff],
-        )?;
-        let access_log_pruned = tx.execute(
-            "DELETE FROM access_log WHERE accessed_at < ?1",
-            params![cutoff],
-        )?;
         tx.commit()?;
 
         // WAL checkpoint
@@ -1860,8 +1395,6 @@ impl Store {
 
         Ok(MaintenanceReport {
             retrieval_logs_pruned,
-            feedback_pruned,
-            access_log_pruned,
             wal_pages_before,
             wal_pages_after,
         })
@@ -1880,8 +1413,6 @@ impl Store {
 #[derive(Debug, serde::Serialize)]
 pub struct MaintenanceReport {
     pub retrieval_logs_pruned: usize,
-    pub feedback_pruned: usize,
-    pub access_log_pruned: usize,
     pub wal_pages_before: i64,
     pub wal_pages_after: i64,
 }
@@ -2685,105 +2216,6 @@ mod tests {
     }
 
     #[test]
-    fn test_list_memories_by_access() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id1 = store.insert_memory(&MemoryParams {
-            title: "Rarely used", content: "c1", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-        let id2 = store.insert_memory(&MemoryParams {
-            title: "Often used", content: "c2", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-
-        store.touch_memory(id2).unwrap();
-        store.touch_memory(id2).unwrap();
-        store.touch_memory(id1).unwrap();
-
-        let result = store.list_memories_by_access(10).unwrap();
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].id, id2); // 2 accesses
-        assert_eq!(result[1].id, id1); // 1 access
-    }
-
-    #[test]
-    fn test_count_memories() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id = store.insert_memory(&MemoryParams {
-            title: "A", content: "c", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-        store.insert_memory(&MemoryParams {
-            title: "B", content: "c", memory_type: "episode",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-
-        assert_eq!(store.count_memories(false).unwrap(), 2);
-        assert_eq!(store.count_memories(true).unwrap(), 0);
-
-        store.archive_memory(id).unwrap();
-        assert_eq!(store.count_memories(false).unwrap(), 1);
-        assert_eq!(store.count_memories(true).unwrap(), 1);
-    }
-
-    #[test]
-    fn test_count_memories_by_type() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        store.insert_memory(&MemoryParams {
-            title: "A", content: "c", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-        store.insert_memory(&MemoryParams {
-            title: "B", content: "c", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-        store.insert_memory(&MemoryParams {
-            title: "C", content: "c", memory_type: "identity",
-            descriptors: "", salience: 1.0, content_hash: "", agent_id: "test",
-        }).unwrap();
-
-        let counts = store.count_memories_by_type().unwrap();
-        assert_eq!(counts.get("knowledge"), Some(&2));
-        assert_eq!(counts.get("identity"), Some(&1));
-        assert_eq!(counts.get("episode"), None);
-    }
-
-    #[test]
-    fn test_upsert_association() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id1 = store.insert_memory(&MemoryParams {
-            title: "A", content: "c1", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-        let id2 = store.insert_memory(&MemoryParams {
-            title: "B", content: "c2", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-
-        // First upsert — creates bidirectional edges
-        store.upsert_association(id1, id2).unwrap();
-        let count: i64 = store.conn().query_row(
-            "SELECT COUNT(*) FROM graph WHERE role = 'associates'", [], |r| r.get(0),
-        ).unwrap();
-        assert_eq!(count, 2);
-
-        // Second upsert — idempotent
-        store.upsert_association(id1, id2).unwrap();
-        let count2: i64 = store.conn().query_row(
-            "SELECT COUNT(*) FROM graph WHERE role = 'associates'", [], |r| r.get(0),
-        ).unwrap();
-        assert_eq!(count2, 2);
-    }
-
-    #[test]
     fn test_search_similar_memories() {
         let dir = TempDir::new().unwrap();
         let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -2815,49 +2247,6 @@ mod tests {
     }
 
     #[test]
-    fn test_list_recent_handoffs() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        store.create_handoff("h1", "S1", "N1", "p1").unwrap();
-        store.create_handoff("h2", "S2", "N2", "p2").unwrap();
-        store.create_handoff("h3", "S3", "N3", "p1").unwrap();
-
-        let recent = store.list_recent_handoffs(2).unwrap();
-        assert_eq!(recent.len(), 2);
-        assert_eq!(recent[0].id, "h3"); // most recent first
-    }
-
-    #[test]
-    fn test_list_memories_with_associations() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id1 = store.insert_memory(&MemoryParams {
-            title: "A", content: "c1", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-        let id2 = store.insert_memory(&MemoryParams {
-            title: "B", content: "c2", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-        let id3 = store.insert_memory(&MemoryParams {
-            title: "C", content: "c3", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-
-        // id1 <-> id2, id1 <-> id3 (id1 has 2 associations, id2 and id3 have 1 each)
-        store.upsert_association(id1, id2).unwrap();
-        store.upsert_association(id1, id3).unwrap();
-
-        let connected = store.list_memories_with_associations(10).unwrap();
-        assert!(!connected.is_empty());
-        // id1 should have highest count (bidirectional: 2 outgoing + 2 incoming edges)
-        assert_eq!(connected[0].0.id, id1);
-        assert!(connected[0].1 >= 2);
-    }
-
-    #[test]
     fn test_fts_search_includes_cognitive_fields() {
         let dir = TempDir::new().unwrap();
         let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -2878,133 +2267,6 @@ mod tests {
     }
 
     #[test]
-    fn test_touch_creates_access_log() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id = store.insert_memory(&MemoryParams {
-            title: "Test", content: "test content",
-            memory_type: "knowledge", descriptors: "",
-            salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-
-        store.touch_memory(id).unwrap();
-        store.touch_memory(id).unwrap();
-
-        let count: i64 = store.conn.query_row(
-            "SELECT COUNT(*) FROM access_log WHERE chunk_id = ?1",
-            params![id], |row| row.get(0),
-        ).unwrap();
-        assert_eq!(count, 2);
-    }
-
-    #[test]
-    fn test_get_access_intervals() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id = store.insert_memory(&MemoryParams {
-            title: "Test", content: "test content",
-            memory_type: "knowledge", descriptors: "",
-            salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-
-        // No accesses → empty intervals
-        let intervals = store.get_access_intervals(id).unwrap();
-        assert!(intervals.is_empty());
-
-        // 1 access → still empty (need 2+ for intervals)
-        store.touch_memory(id).unwrap();
-        let intervals = store.get_access_intervals(id).unwrap();
-        assert!(intervals.is_empty());
-
-        // 2 accesses → 1 interval
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        store.touch_memory(id).unwrap();
-        let intervals = store.get_access_intervals(id).unwrap();
-        assert_eq!(intervals.len(), 1);
-        assert!(intervals[0] > 0.0);
-    }
-
-    #[test]
-    fn test_upsert_entity_edges() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id = store.insert_memory(&MemoryParams {
-            title: "Test", content: "test",
-            memory_type: "knowledge", descriptors: "",
-            salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-
-        let entities = vec![
-            ("SearchHit".to_string(), "identifier".to_string()),
-            ("/home/foo.rs".to_string(), "file_path".to_string()),
-        ];
-        let count = store.upsert_entity_edges(id, &entities).unwrap();
-        assert_eq!(count, 2);
-
-        // Idempotent — second insert returns 0
-        let count = store.upsert_entity_edges(id, &entities).unwrap();
-        assert_eq!(count, 0);
-    }
-
-    #[test]
-    fn test_find_memories_by_entity() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id1 = store.insert_memory(&MemoryParams {
-            title: "Memory A", content: "about foo",
-            memory_type: "knowledge", descriptors: "",
-            salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-        let id2 = store.insert_memory(&MemoryParams {
-            title: "Memory B", content: "about bar",
-            memory_type: "knowledge", descriptors: "",
-            salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-
-        store.upsert_entity_edges(id1, &[("SearchHit".into(), "identifier".into())]).unwrap();
-        store.upsert_entity_edges(id2, &[("SearchHit".into(), "identifier".into())]).unwrap();
-
-        let hits = store.find_memories_by_entity("SearchHit").unwrap();
-        assert_eq!(hits.len(), 2);
-
-        let hits = store.find_memories_by_entity("NonExistent").unwrap();
-        assert!(hits.is_empty());
-    }
-
-    #[test]
-    fn test_insert_and_query_summary_edges() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id1 = store.insert_memory(&MemoryParams {
-            title: "M1", content: "c1", memory_type: "episode",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-        let id2 = store.insert_memory(&MemoryParams {
-            title: "M2", content: "c2", memory_type: "episode",
-            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-        let summary_id = store.insert_memory(&MemoryParams {
-            title: "Summary", content: "summary text", memory_type: "knowledge",
-            descriptors: "summary", salience: 0.5, content_hash: "sum_hash", agent_id: "test",
-        }).unwrap();
-
-        store.insert_summary_edges(summary_id, &[id1, id2]).unwrap();
-
-        let summaries = store.get_summaries_for_chunks(&[id1, id2]).unwrap();
-        assert_eq!(summaries.len(), 1);
-        assert_eq!(summaries[0], summary_id);
-
-        // Partial match should NOT find the summary (exact-set match required)
-        let summaries = store.get_summaries_for_chunks(&[id1]).unwrap();
-        assert_eq!(summaries.len(), 0, "partial match should not find summary with exact-set matching");
-    }
-
-    #[test]
     fn test_log_retrieval() {
         let dir = TempDir::new().unwrap();
         let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -3016,186 +2278,6 @@ mod tests {
             "SELECT COUNT(*) FROM retrieval_log", [], |row| row.get(0),
         ).unwrap();
         assert_eq!(count, 1);
-    }
-
-    #[test]
-    fn test_log_feedback() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id = store.insert_memory(&MemoryParams {
-            title: "Test", content: "test content",
-            memory_type: "knowledge", descriptors: "",
-            salience: 0.5, content_hash: "", agent_id: "test",
-        }).unwrap();
-
-        let log_id = store.log_retrieval("test", "recall", &[(id, 0.9)], None).unwrap();
-        store.log_feedback(log_id, id, "positive").unwrap();
-
-        let count: i64 = store.conn.query_row(
-            "SELECT COUNT(*) FROM feedback", [], |row| row.get(0),
-        ).unwrap();
-        assert_eq!(count, 1);
-    }
-
-    #[test]
-    fn test_adjust_salience_clamp() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id = store.insert_memory(&MemoryParams {
-            title: "Test", content: "test",
-            memory_type: "knowledge", descriptors: "",
-            salience: 0.9, content_hash: "", agent_id: "test",
-        }).unwrap();
-
-        // Bump up — should clamp at 1.0
-        store.adjust_salience(id, 0.5).unwrap();
-        let sal: f64 = store.conn.query_row(
-            "SELECT salience FROM chunks WHERE id = ?1", params![id], |row| row.get(0),
-        ).unwrap();
-        assert!((sal - 1.0).abs() < 1e-10, "should clamp at 1.0: {sal}");
-
-        // Reduce below 0 — should clamp at 0.0
-        store.adjust_salience(id, -2.0).unwrap();
-        let sal: f64 = store.conn.query_row(
-            "SELECT salience FROM chunks WHERE id = ?1", params![id], |row| row.get(0),
-        ).unwrap();
-        assert!((sal - 0.0).abs() < 1e-10, "should clamp at 0.0: {sal}");
-    }
-
-    #[test]
-    fn test_export_training_data_empty() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-        let examples = store.export_training_data().unwrap();
-        assert!(examples.is_empty());
-    }
-
-    #[test]
-    fn test_export_training_data_with_feedback() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id1 = store.insert_memory(&MemoryParams {
-            title: "Good", content: "good content",
-            memory_type: "knowledge", descriptors: "",
-            salience: 0.5, content_hash: "h1", agent_id: "test",
-        }).unwrap();
-        let id2 = store.insert_memory(&MemoryParams {
-            title: "Bad", content: "bad content",
-            memory_type: "knowledge", descriptors: "",
-            salience: 0.5, content_hash: "h2", agent_id: "test",
-        }).unwrap();
-
-        let log_id = store.log_retrieval("test query", "recall", &[(id1, 0.9), (id2, 0.5)], None).unwrap();
-        store.log_feedback(log_id, id1, "positive").unwrap();
-        store.log_feedback(log_id, id2, "negative").unwrap();
-
-        let examples = store.export_training_data().unwrap();
-        assert_eq!(examples.len(), 1);
-        assert_eq!(examples[0]["query"], "test query");
-        assert_eq!(examples[0]["positive"].as_array().unwrap().len(), 1);
-        assert_eq!(examples[0]["negative"].as_array().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn test_validate_feedback_rejects_invalid_chunk() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id1 = store.insert_memory(&MemoryParams {
-            title: "M1", content: "c1", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "vf1", agent_id: "test",
-        }).unwrap();
-        let id2 = store.insert_memory(&MemoryParams {
-            title: "M2", content: "c2", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "vf2", agent_id: "test",
-        }).unwrap();
-
-        // Log retrieval with only id1 in results
-        let log_id = store.log_retrieval("q", "recall", &[(id1, 0.9)], None).unwrap();
-
-        // id1 should validate
-        assert!(store.validate_feedback(log_id, id1).unwrap());
-        // id2 was NOT in the retrieval results — must be rejected
-        assert!(!store.validate_feedback(log_id, id2).unwrap());
-        // Non-existent chunk should also be rejected
-        assert!(!store.validate_feedback(log_id, 99999).unwrap());
-    }
-
-    #[test]
-    fn test_validate_feedback_bad_log_id() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-        // Non-existent log_id should error
-        assert!(store.validate_feedback(99999, 1).is_err());
-    }
-
-    #[test]
-    fn test_summary_dedup_superset_not_matched() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id1 = store.insert_memory(&MemoryParams {
-            title: "A", content: "a", memory_type: "episode",
-            descriptors: "", salience: 0.5, content_hash: "sa", agent_id: "test",
-        }).unwrap();
-        let id2 = store.insert_memory(&MemoryParams {
-            title: "B", content: "b", memory_type: "episode",
-            descriptors: "", salience: 0.5, content_hash: "sb", agent_id: "test",
-        }).unwrap();
-        let id3 = store.insert_memory(&MemoryParams {
-            title: "C", content: "c", memory_type: "episode",
-            descriptors: "", salience: 0.5, content_hash: "sc", agent_id: "test",
-        }).unwrap();
-
-        // Summary covers [A, B, C]
-        let summary_id = store.insert_memory(&MemoryParams {
-            title: "Summary ABC", content: "summary", memory_type: "knowledge",
-            descriptors: "summary", salience: 0.5, content_hash: "sum_abc", agent_id: "test",
-        }).unwrap();
-        store.insert_summary_edges(summary_id, &[id1, id2, id3]).unwrap();
-
-        // Exact match [A, B, C] → found
-        let found = store.get_summaries_for_chunks(&[id1, id2, id3]).unwrap();
-        assert_eq!(found.len(), 1, "exact match should find summary");
-
-        // Subset [A, B] → NOT found (summary has 3 members, query has 2)
-        let found = store.get_summaries_for_chunks(&[id1, id2]).unwrap();
-        assert_eq!(found.len(), 0, "subset should not match — summary covers more members");
-
-        // Superset [A, B, C, D-nonexistent] → NOT found
-        let found = store.get_summaries_for_chunks(&[id1, id2, id3, 99999]).unwrap();
-        assert_eq!(found.len(), 0, "superset should not match — query has more members than summary");
-    }
-
-    #[test]
-    fn test_delete_entity_edges() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id = store.insert_memory(&MemoryParams {
-            title: "Test", content: "test", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "de1", agent_id: "test",
-        }).unwrap();
-
-        // Insert entity edges
-        let entities = vec![
-            ("foo.rs".to_string(), "file_path".to_string()),
-            ("SearchHit".to_string(), "identifier".to_string()),
-        ];
-        store.upsert_entity_edges(id, &entities).unwrap();
-        assert_eq!(store.find_memories_by_entity("foo.rs").unwrap().len(), 1);
-        assert_eq!(store.find_memories_by_entity("SearchHit").unwrap().len(), 1);
-
-        // Delete entity edges
-        let deleted = store.delete_entity_edges(id).unwrap();
-        assert_eq!(deleted, 2);
-
-        // Verify they're gone
-        assert_eq!(store.find_memories_by_entity("foo.rs").unwrap().len(), 0);
-        assert_eq!(store.find_memories_by_entity("SearchHit").unwrap().len(), 0);
     }
 
     #[test]
@@ -3269,25 +2351,11 @@ mod tests {
             params![old_date],
         ).unwrap();
 
-        // Insert old access log
-        store.conn.execute(
-            "INSERT INTO access_log (chunk_id, accessed_at) VALUES (?1, ?2)",
-            params![id, old_date],
-        ).unwrap();
-
         // Insert recent retrieval log (today)
-        let log_id = store.log_retrieval("q", "recall", &[(id, 0.9)], None).unwrap();
-
-        // Insert old feedback
-        store.conn.execute(
-            "INSERT INTO feedback (retrieval_log_id, chunk_id, signal, created_at) VALUES (?1, ?2, 'positive', ?3)",
-            params![log_id, id, old_date],
-        ).unwrap();
+        store.log_retrieval("q", "recall", &[(id, 0.9)], None).unwrap();
 
         let report = store.maintenance(90).unwrap();
         assert_eq!(report.retrieval_logs_pruned, 1, "should prune 1 old retrieval log");
-        assert_eq!(report.access_log_pruned, 1, "should prune 1 old access log");
-        assert_eq!(report.feedback_pruned, 1, "should prune 1 old feedback");
 
         // Recent retrieval log should still exist
         let count: i64 = store.conn.query_row(
@@ -3333,8 +2401,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = Store::open(&dir.path().join("test.db")).unwrap();
         assert_eq!(store.count_retrieval_logs().unwrap(), 0);
-        assert_eq!(store.count_feedback().unwrap(), 0);
-        assert_eq!(store.count_access_log().unwrap(), 0);
         assert_eq!(store.count_codebases().unwrap(), 0);
         assert!(store.latest_handoff_timestamp().unwrap().is_none());
     }
@@ -3350,10 +2416,8 @@ mod tests {
         }).unwrap();
 
         store.log_retrieval("q", "recall", &[(id, 0.9)], None).unwrap();
-        store.touch_memory(id).unwrap(); // creates access_log entry
 
         assert_eq!(store.count_retrieval_logs().unwrap(), 1);
-        assert_eq!(store.count_access_log().unwrap(), 1);
     }
 
     #[test]

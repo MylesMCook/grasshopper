@@ -266,13 +266,10 @@ fn download_model(model_dir: &Path) -> Result<()> {
 
 /// Return the default cache directory for embedding models.
 pub fn default_cache_dir() -> PathBuf {
-    dirs_or_home().join(".cache").join("grasshopper")
-}
-
-fn dirs_or_home() -> PathBuf {
-    std::env::var_os("HOME")
+    let home = std::env::var_os("HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
+        .unwrap_or_else(|| PathBuf::from("."));
+    home.join(".cache").join("grasshopper")
 }
 
 #[cfg(test)]

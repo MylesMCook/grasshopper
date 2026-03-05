@@ -112,7 +112,7 @@ pub fn prepare_fts_query(query: &str) -> String {
     }
 
     if words.len() == 1 {
-        return words[0].clone();
+        return words.into_iter().next().unwrap();
     }
 
     words.join(" OR ")

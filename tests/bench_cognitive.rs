@@ -26,6 +26,7 @@ use tempfile::TempDir;
 // ---------------------------------------------------------------------------
 
 /// Build a SearchHit with full control over cognitive fields.
+#[allow(clippy::too_many_arguments)]
 fn make_hit(
     id: i64,
     title: &str,
@@ -104,7 +105,7 @@ fn score_decay_only(hit: &SearchHit) -> f64 {
     let days_la = hit
         .last_accessed
         .as_deref()
-        .map(|d| days_since(d))
+        .map(days_since)
         .unwrap_or_else(|| days_since(&hit.created_at));
     let decay = (-lambda * days_la).exp();
     hit.score * decay

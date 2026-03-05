@@ -56,7 +56,7 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
     if let Ok(meta) = std::fs::metadata(&lock_path) {
         let is_stale = meta.modified().ok()
             .and_then(|m| m.elapsed().ok())
-            .map_or(false, |age| age > std::time::Duration::from_secs(1800));
+            .is_some_and(|age| age > std::time::Duration::from_secs(1800));
         if is_stale {
             tracing::warn!("removing stale index lock: {}", lock_path.display());
             let _ = std::fs::remove_file(&lock_path);

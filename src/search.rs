@@ -221,13 +221,11 @@ pub fn rerank_hits(
 
     // Append remaining un-reranked hits to preserve limit contract
     if result.len() < limit && n < hits.len() {
-        let reranked_ids: std::collections::HashSet<i64> =
-            result.iter().map(|h| h.id).collect();
         for hit in &hits[n..] {
             if result.len() >= limit {
                 break;
             }
-            if !reranked_ids.contains(&hit.id) {
+            if !result.iter().any(|r| r.id == hit.id) {
                 result.push(hit.clone());
             }
         }
@@ -315,17 +313,15 @@ pub fn unified_search(
     // For memory results: filter archived + identity, apply relevance gate, cognitive scoring
     if is_memory_only || kind_filter.is_none() {
         // Apply cognitive scoring to memory hits in-place, pass code hits through unchanged
-        let pre_gate_count_ref = &mut 0usize;
+        let mut pre_gate_count = 0usize;
         let mut all_hits: Vec<SearchHit> = merged
             .into_iter()
             .filter_map(|mut h| {
                 if h.kind == "memory" {
-                    // Filter archived and identity memories
                     if h.archived || h.memory_type.as_deref() == Some("identity") {
                         return None;
                     }
-                    *pre_gate_count_ref += 1;
-                    // Relevance gate (if threshold provided)
+                    pre_gate_count += 1;
                     if let Some(threshold) = threshold {
                         let passes = if rerank_succeeded {
                             h.reranker_score.unwrap_or(0.0) >= threshold
@@ -336,13 +332,11 @@ pub fn unified_search(
                             return None;
                         }
                     }
-                    // Apply cognitive scoring
                     h.score = crate::memory::cognitive_score(&h);
                 }
                 Some(h)
             })
             .collect();
-        let pre_gate_count = *pre_gate_count_ref;
 
         // Count filtered (pre_gate_count includes those that passed + were gated)
         let memory_count_after = all_hits.iter().filter(|h| h.kind == "memory").count();
