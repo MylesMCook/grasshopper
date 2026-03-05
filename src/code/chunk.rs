@@ -1,21 +1,13 @@
-use anyhow::{bail, Result};
-use tree_sitter::{Language, Parser};
+use regex::Regex;
+use std::sync::LazyLock;
 
 const MAX_CHUNK_LINES: usize = 150;
-const MAX_CHUNK_CHARS: usize = 1500; // non-whitespace characters
+const MAX_CHUNK_CHARS: usize = 1500;
+const MIN_MERGE_LINES: usize = 5;
 
 /// Count non-whitespace characters in a string.
 fn non_ws_chars(s: &str) -> usize {
     s.chars().filter(|c| !c.is_whitespace()).count()
-}
-
-/// Configuration for a supported language.
-struct LangConfig {
-    language: Language,
-    /// AST node types to extract as top-level chunks.
-    top_level_nodes: &'static [&'static str],
-    /// Node types that can be split into sub-items if too large.
-    split_nodes: &'static [&'static str],
 }
 
 /// A parsed code chunk ready for storage.
@@ -30,305 +22,189 @@ pub struct ParsedChunk {
     pub end_line: usize,
 }
 
-/// Check if the chunker supports a given language name.
-pub fn supports_language(lang: &str) -> bool {
-    get_lang_config(lang).is_some()
-}
+/// Regex matching lines that typically start a new declaration/definition.
+/// Language-agnostic: covers keywords from many languages without detecting which one.
+static DECL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?m)^[ \t]*(pub\s+|export\s+|public\s+|private\s+|protected\s+|static\s+|async\s+|abstract\s+|virtual\s+|override\s+|inline\s+|extern\s+)*(fn |def |func |function |class |module |struct |enum |trait |impl |interface |type |package |import |const |let |var |sub |procedure |program |defmodule |defp? |describe |it |test |macro )"
+    ).unwrap()
+});
 
-/// Get the tree-sitter Language for a language name.
-fn get_lang_config(lang: &str) -> Option<LangConfig> {
-    match lang {
-        "rust" => Some(LangConfig {
-            language: tree_sitter_rust::LANGUAGE.into(),
-            top_level_nodes: &[
-                "function_item", "struct_item", "enum_item", "impl_item",
-                "trait_item", "type_item", "const_item", "static_item",
-                "macro_definition", "mod_item",
-            ],
-            split_nodes: &["impl_item", "trait_item", "mod_item"],
-        }),
-        "javascript" => Some(LangConfig {
-            language: tree_sitter_javascript::LANGUAGE.into(),
-            top_level_nodes: &[
-                "function_declaration", "generator_function_declaration",
-                "class_declaration", "variable_declaration", "lexical_declaration",
-                "export_statement",
-            ],
-            split_nodes: &["class_declaration"],
-        }),
-        "typescript" => Some(LangConfig {
-            language: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-            top_level_nodes: &[
-                "function_declaration", "generator_function_declaration",
-                "class_declaration", "abstract_class_declaration",
-                "interface_declaration", "type_alias_declaration",
-                "enum_declaration", "variable_declaration", "lexical_declaration",
-                "export_statement",
-            ],
-            split_nodes: &["class_declaration", "abstract_class_declaration", "interface_declaration"],
-        }),
-        "tsx" => Some(LangConfig {
-            language: tree_sitter_typescript::LANGUAGE_TSX.into(),
-            top_level_nodes: &[
-                "function_declaration", "generator_function_declaration",
-                "class_declaration", "abstract_class_declaration",
-                "interface_declaration", "type_alias_declaration",
-                "enum_declaration", "variable_declaration", "lexical_declaration",
-                "export_statement",
-            ],
-            split_nodes: &["class_declaration", "abstract_class_declaration", "interface_declaration"],
-        }),
-        "python" => Some(LangConfig {
-            language: tree_sitter_python::LANGUAGE.into(),
-            top_level_nodes: &[
-                "function_definition", "class_definition", "decorated_definition",
-            ],
-            split_nodes: &["class_definition"],
-        }),
-        "go" => Some(LangConfig {
-            language: tree_sitter_go::LANGUAGE.into(),
-            top_level_nodes: &[
-                "function_declaration", "method_declaration", "type_declaration",
-                "const_declaration", "var_declaration",
-            ],
-            split_nodes: &[],
-        }),
-        "java" => Some(LangConfig {
-            language: tree_sitter_java::LANGUAGE.into(),
-            top_level_nodes: &[
-                "class_declaration", "interface_declaration", "enum_declaration",
-                "annotation_type_declaration", "method_declaration",
-            ],
-            split_nodes: &["class_declaration", "interface_declaration"],
-        }),
-        "c" => Some(LangConfig {
-            language: tree_sitter_c::LANGUAGE.into(),
-            top_level_nodes: &[
-                "function_definition", "struct_specifier", "enum_specifier",
-                "type_definition", "declaration",
-            ],
-            split_nodes: &[],
-        }),
-        "cpp" => Some(LangConfig {
-            language: tree_sitter_cpp::LANGUAGE.into(),
-            top_level_nodes: &[
-                "function_definition", "class_specifier", "struct_specifier",
-                "enum_specifier", "namespace_definition", "template_declaration",
-                "type_definition", "declaration",
-            ],
-            split_nodes: &["class_specifier", "namespace_definition"],
-        }),
-        "c_sharp" => Some(LangConfig {
-            language: tree_sitter_c_sharp::LANGUAGE.into(),
-            top_level_nodes: &[
-                "class_declaration", "interface_declaration", "struct_declaration",
-                "enum_declaration", "method_declaration", "namespace_declaration",
-            ],
-            split_nodes: &["class_declaration", "namespace_declaration"],
-        }),
-        "ruby" => Some(LangConfig {
-            language: tree_sitter_ruby::LANGUAGE.into(),
-            top_level_nodes: &[
-                "method", "singleton_method", "class", "module",
-            ],
-            split_nodes: &["class", "module"],
-        }),
-        "php" => Some(LangConfig {
-            language: tree_sitter_php::LANGUAGE_PHP.into(),
-            top_level_nodes: &[
-                "function_definition", "class_declaration", "interface_declaration",
-                "trait_declaration", "enum_declaration", "method_declaration",
-            ],
-            split_nodes: &["class_declaration"],
-        }),
-        "scala" => Some(LangConfig {
-            language: tree_sitter_scala::LANGUAGE.into(),
-            top_level_nodes: &[
-                "function_definition", "class_definition", "trait_definition",
-                "object_definition", "val_definition", "var_definition",
-            ],
-            split_nodes: &["class_definition", "trait_definition", "object_definition"],
-        }),
-        _ => None,
+/// Regex to extract a name-like identifier after a declaration keyword.
+/// Covers function/class-style (`fn foo`) and binding-style (`const FOO =`).
+static NAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?:fn |def |func |function |class |module |struct |enum |trait |impl |interface |type |sub |procedure |program |defmodule |defp |macro |const |let |var |package |import )([A-Za-z_][A-Za-z0-9_.]*)"
+    ).unwrap()
+});
+
+/// Check if a line is a structural boundary (declaration or dedent to column 0).
+fn is_boundary(line: &str) -> bool {
+    if line.trim().is_empty() {
+        return false;
     }
+    DECL_RE.is_match(line)
 }
 
-/// Parse a source file into semantic chunks using tree-sitter.
-pub fn chunk_file(
-    file_path: &str,
-    content: &str,
-    lang: &str,
-) -> Result<Vec<ParsedChunk>> {
-    let config = match get_lang_config(lang) {
-        Some(c) => c,
-        None => bail!("unsupported language: {lang}"),
-    };
+/// Parse any source file into semantic chunks using structural heuristics.
+/// Works identically for all languages — no tree-sitter, no language-specific logic.
+///
+/// Cannot fail: empty content returns empty vec.
+pub fn chunk_content(file_path: &str, content: &str, language_hint: &str) -> Vec<ParsedChunk> {
+    if content.trim().is_empty() {
+        return Vec::new();
+    }
 
-    let mut parser = Parser::new();
-    parser.set_language(&config.language)?;
+    let lines: Vec<&str> = content.lines().collect();
+    let raw_blocks = split_into_blocks(&lines);
+    let merged = merge_small_blocks(raw_blocks, &lines);
+    let sized = split_oversized(merged, &lines);
 
-    let tree = match parser.parse(content, None) {
-        Some(t) => t,
-        None => bail!("failed to parse {file_path}"),
-    };
+    sized
+        .into_iter()
+        .map(|(start, end)| {
+            let snippet: String = lines[start..=end].join("\n");
+            let name = extract_heuristic_name(&snippet);
+            let signature = lines[start].trim_end().to_owned();
 
-    let source = content.as_bytes();
-    let mut chunks = Vec::new();
-    let top_set: std::collections::HashSet<&str> = config.top_level_nodes.iter().copied().collect();
-    let split_set: std::collections::HashSet<&str> = config.split_nodes.iter().copied().collect();
+            ParsedChunk {
+                chunk_key: format!("{file_path}:block:{name}:{}:{}", start + 1, end + 1),
+                language: language_hint.to_owned(),
+                kind: "block".to_owned(),
+                name,
+                signature,
+                snippet,
+                start_line: start + 1, // 1-indexed
+                end_line: end + 1,
+            }
+        })
+        .collect()
+}
 
-    let root = tree.root_node();
-    let mut cursor = root.walk();
+/// Split lines into blocks at blank-line boundaries and structural boundaries.
+/// Returns (start_idx, end_idx) pairs (0-indexed, inclusive).
+fn split_into_blocks(lines: &[&str]) -> Vec<(usize, usize)> {
+    let mut blocks = Vec::new();
+    let mut block_start: Option<usize> = None;
 
-    for child in root.children(&mut cursor) {
-        let kind = child.kind();
-
-        if !top_set.contains(kind) {
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim().is_empty() {
+            // End current block at blank line
+            if let Some(start) = block_start.take() {
+                blocks.push((start, i.saturating_sub(1).max(start)));
+            }
             continue;
         }
 
-        let start_line = child.start_position().row + 1;
-        let end_line = child.end_position().row + 1;
-        let line_count = end_line - start_line + 1;
-        let snippet = child.utf8_text(source).unwrap_or("").to_owned();
+        if block_start.is_none() {
+            block_start = Some(i);
+        } else if is_boundary(line) && i > block_start.unwrap() {
+            // Structural boundary mid-block: end previous, start new
+            let start = block_start.unwrap();
+            blocks.push((start, i - 1));
+            block_start = Some(i);
+        }
+    }
+
+    // Close final block
+    if let Some(start) = block_start {
+        let end = lines.len() - 1;
+        blocks.push((start, end));
+    }
+
+    blocks
+}
+
+/// Merge adjacent small blocks (< MIN_MERGE_LINES) into their neighbor.
+/// Blocks that start with a declaration keyword are never merged into a previous block.
+fn merge_small_blocks(blocks: Vec<(usize, usize)>, lines: &[&str]) -> Vec<(usize, usize)> {
+    if blocks.is_empty() {
+        return blocks;
+    }
+
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    let mut current = blocks[0];
+
+    for &(start, end) in &blocks[1..] {
+        let current_lines = current.1 - current.0 + 1;
+        let next_lines = end - start + 1;
+        let next_is_decl = DECL_RE.is_match(lines[start]);
+
+        if !next_is_decl && (current_lines < MIN_MERGE_LINES || next_lines < MIN_MERGE_LINES) {
+            // Merge: extend current to cover next block
+            current.1 = end;
+        } else {
+            merged.push(current);
+            current = (start, end);
+        }
+    }
+    merged.push(current);
+
+    merged
+}
+
+/// Split blocks that exceed MAX_CHUNK_LINES or MAX_CHUNK_CHARS.
+fn split_oversized(blocks: Vec<(usize, usize)>, lines: &[&str]) -> Vec<(usize, usize)> {
+    let mut result = Vec::new();
+
+    for (start, end) in blocks {
+        let line_count = end - start + 1;
+        let snippet: String = lines[start..=end].join("\n");
         let char_count = non_ws_chars(&snippet);
 
-        // Try to split large nodes (either metric can trigger)
-        if (char_count > MAX_CHUNK_CHARS || line_count > MAX_CHUNK_LINES) && split_set.contains(kind) {
-            let parent_name = extract_name(&child, source);
-            let sub_chunks = split_large_node(&child, source, file_path, lang, &parent_name);
-            if !sub_chunks.is_empty() {
-                chunks.extend(sub_chunks);
-                continue;
+        if line_count <= MAX_CHUNK_LINES && char_count <= MAX_CHUNK_CHARS {
+            result.push((start, end));
+            continue;
+        }
+
+        // Split at next blank line or boundary after midpoint
+        let mid = start + MAX_CHUNK_LINES.min(line_count) / 2;
+        let mut split_at = None;
+
+        for i in mid..=end {
+            if lines[i].trim().is_empty() || is_boundary(lines[i]) {
+                split_at = Some(i);
+                break;
             }
         }
 
-        let name = extract_name(&child, source);
-        let signature = extract_signature(&child, source);
-
-        chunks.push(ParsedChunk {
-            chunk_key: format!("{file_path}:{kind}:{name}:{start_line}:{end_line}"),
-            language: lang.to_owned(),
-            kind: kind.to_owned(),
-            name,
-            signature,
-            snippet,
-            start_line,
-            end_line,
-        });
-    }
-
-    Ok(chunks)
-}
-
-/// Split a large node (class, impl, module) into its child items.
-/// Child names are qualified with the parent name (e.g., "Store::open").
-fn split_large_node(
-    node: &tree_sitter::Node<'_>,
-    source: &[u8],
-    file_path: &str,
-    lang: &str,
-    parent_name: &str,
-) -> Vec<ParsedChunk> {
-    let mut chunks = Vec::new();
-
-    // Find the body/block child that contains sub-items
-    let body = find_body_node(node);
-    let container = body.unwrap_or(*node);
-
-    let mut cursor = container.walk();
-    for child in container.children(&mut cursor) {
-        let kind = child.kind();
-
-        // Skip punctuation, comments, whitespace-like nodes
-        if !is_meaningful_node(kind) {
-            continue;
-        }
-
-        let start_line = child.start_position().row + 1;
-        let end_line = child.end_position().row + 1;
-        let snippet = child.utf8_text(source).unwrap_or("").to_owned();
-        let child_name = extract_name(&child, source);
-        let signature = extract_signature(&child, source);
-
-        // Qualify with parent: "Store::open" instead of just "open"
-        let name = if !parent_name.is_empty() && !child_name.is_empty() {
-            format!("{parent_name}::{child_name}")
-        } else {
-            child_name
-        };
-
-        chunks.push(ParsedChunk {
-            chunk_key: format!("{file_path}:{kind}:{name}:{start_line}:{end_line}"),
-            language: lang.to_owned(),
-            kind: kind.to_owned(),
-            name,
-            signature,
-            snippet,
-            start_line,
-            end_line,
-        });
-    }
-
-    chunks
-}
-
-/// Find the body/block child of a node (class_body, declaration_list, block, etc.).
-fn find_body_node<'a>(node: &'a tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
-    let body_kinds = &[
-        "class_body", "declaration_list", "block", "body",
-        "interface_body", "enum_body", "trait_body", "field_declaration_list",
-    ];
-
-    let mut cursor = node.walk();
-    node.children(&mut cursor).find(|&child| body_kinds.contains(&child.kind()))
-}
-
-/// Check if a node kind is meaningful (not just syntax sugar).
-fn is_meaningful_node(kind: &str) -> bool {
-    !matches!(
-        kind,
-        "{" | "}" | "(" | ")" | "[" | "]" | ";" | "," | "comment"
-            | "line_comment" | "block_comment" | "attribute_item"
-    )
-}
-
-/// Extract the name from an AST node.
-fn extract_name(node: &tree_sitter::Node<'_>, source: &[u8]) -> String {
-    // Look for named children that typically hold the identifier.
-    // "type" handles Rust `impl Foo` where the type field holds the name.
-    let name_fields = &["name", "declarator", "pattern", "type"];
-
-    for field in name_fields {
-        if let Some(child) = node.child_by_field_name(field) {
-            let text = child.utf8_text(source).unwrap_or("");
-            // For declarators, get just the identifier part
-            if (child.kind() == "function_declarator" || child.kind() == "init_declarator")
-                && let Some(id) = child.child_by_field_name("declarator") {
-                    return id.utf8_text(source).unwrap_or("").to_owned();
+        match split_at {
+            Some(sp) if sp > start && sp < end => {
+                // Recurse on both halves
+                let left = vec![(start, sp.saturating_sub(1).max(start))];
+                // Skip blank line at split point
+                let right_start = if lines[sp].trim().is_empty() { sp + 1 } else { sp };
+                result.extend(split_oversized(left, lines));
+                if right_start <= end {
+                    result.extend(split_oversized(vec![(right_start, end)], lines));
                 }
-            return text.to_owned();
+            }
+            _ => {
+                // No structural boundary found — hard split at MAX_CHUNK_LINES
+                let mut pos = start;
+                while pos <= end {
+                    let chunk_end = (pos + MAX_CHUNK_LINES - 1).min(end);
+                    result.push((pos, chunk_end));
+                    pos = chunk_end + 1;
+                }
+            }
         }
     }
 
-    String::new()
+    result
 }
 
-/// Extract a type signature from an AST node.
-fn extract_signature(node: &tree_sitter::Node<'_>, source: &[u8]) -> String {
-    let text = node.utf8_text(source).unwrap_or("");
-
-    // Take the first line as signature (function declaration line, struct header, etc.)
-    let first_line = text.lines().next().unwrap_or("");
-
-    // Trim trailing opening braces
-    let sig = first_line.trim_end_matches(|c: char| c == '{' || c.is_whitespace());
-
-    if sig.len() > 200 {
-        format!("{}...", &sig[..200])
-    } else {
-        sig.to_owned()
+/// Extract a name from a chunk using heuristic regex matching.
+fn extract_heuristic_name(snippet: &str) -> String {
+    // Try the first few lines for a declaration keyword with a name
+    for line in snippet.lines().take(3) {
+        if let Some(caps) = NAME_RE.captures(line) {
+            if let Some(m) = caps.get(1) {
+                return m.as_str().to_owned();
+            }
+        }
     }
+    String::new()
 }
 
 #[cfg(test)]
@@ -336,7 +212,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn chunk_rust_function() {
+    fn chunk_rust_functions() {
         let code = r#"
 fn hello(name: &str) -> String {
     format!("Hello, {name}!")
@@ -346,11 +222,11 @@ fn goodbye() {
     println!("bye");
 }
 "#;
-        let chunks = chunk_file("test.rs", code, "rust").unwrap();
-        assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0].name, "hello");
-        assert_eq!(chunks[0].kind, "function_item");
-        assert_eq!(chunks[1].name, "goodbye");
+        let chunks = chunk_content("test.rs", code, "rust");
+        assert!(chunks.len() >= 2, "expected >=2 chunks, got {}", chunks.len());
+        let names: Vec<&str> = chunks.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"hello"), "should find 'hello'");
+        assert!(names.contains(&"goodbye"), "should find 'goodbye'");
     }
 
     #[test]
@@ -366,174 +242,138 @@ class Dog:
 def standalone():
     pass
 "#;
-        let chunks = chunk_file("test.py", code, "python").unwrap();
-        assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0].kind, "class_definition");
-        assert_eq!(chunks[1].name, "standalone");
-    }
-
-    #[test]
-    fn chunk_typescript_exports() {
-        let code = r#"
-export function greet(name: string): string {
-    return `Hello, ${name}!`;
-}
-
-export const PI = 3.14;
-"#;
-        let chunks = chunk_file("test.ts", code, "typescript").unwrap();
-        assert!(chunks.len() >= 2);
-    }
-
-    #[test]
-    fn unsupported_language_returns_error() {
-        let result = chunk_file("test.yaml", "key: value", "yaml");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn chunk_javascript_function() {
-        let code = r#"
-function greet(name) {
-    return "Hello, " + name;
-}
-
-const add = (a, b) => a + b;
-
-class Animal {
-    constructor(name) {
-        this.name = name;
-    }
-}
-"#;
-        let chunks = chunk_file("test.js", code, "javascript").unwrap();
-        assert!(chunks.len() >= 3, "expected function, const, and class; got {}", chunks.len());
+        let chunks = chunk_content("test.py", code, "python");
+        assert!(!chunks.is_empty());
         let names: Vec<&str> = chunks.iter().map(|c| c.name.as_str()).collect();
-        assert!(names.contains(&"greet"), "should find 'greet' function");
+        assert!(names.contains(&"Dog") || names.iter().any(|n| n.contains("Dog")));
     }
 
     #[test]
-    fn chunk_go_function_and_struct() {
+    fn chunk_elixir_module() {
         let code = r#"
-package main
+defmodule MyApp.Worker do
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, opts)
+  end
 
-func Hello(name string) string {
-    return "Hello, " + name
-}
-
-type Server struct {
-    Port int
-    Host string
-}
-
-func (s *Server) Start() error {
-    return nil
-}
+  def handle_call(:status, _from, state) do
+    {:reply, :ok, state}
+  end
+end
 "#;
-        let chunks = chunk_file("main.go", code, "go").unwrap();
-        assert!(chunks.len() >= 2, "expected func + type; got {}", chunks.len());
-        let names: Vec<&str> = chunks.iter().map(|c| c.name.as_str()).collect();
-        assert!(names.contains(&"Hello"), "should find 'Hello' function");
+        let chunks = chunk_content("worker.ex", code, "elixir");
+        assert!(!chunks.is_empty(), "should chunk Elixir code");
+        assert_eq!(chunks[0].language, "elixir");
     }
 
     #[test]
-    fn chunk_java_class() {
+    fn chunk_cobol_code() {
         let code = r#"
-public class Dog {
-    private String name;
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. HELLO-WORLD.
 
-    public Dog(String name) {
-        this.name = name;
-    }
-
-    public String bark() {
-        return "woof";
-    }
-}
+       PROCEDURE DIVISION.
+           DISPLAY "Hello, World!".
+           STOP RUN.
 "#;
-        let chunks = chunk_file("Dog.java", code, "java").unwrap();
-        assert!(!chunks.is_empty(), "should find at least the class");
-        assert_eq!(chunks[0].kind, "class_declaration");
+        let chunks = chunk_content("hello.cob", code, "cobol");
+        assert!(!chunks.is_empty(), "should chunk COBOL code");
+        assert_eq!(chunks[0].language, "cobol");
     }
 
     #[test]
-    fn chunk_c_function() {
+    fn chunk_yaml_config() {
         let code = r#"
-int add(int a, int b) {
-    return a + b;
-}
+services:
+  web:
+    image: nginx
+    ports:
+      - "80:80"
 
-struct Point {
-    int x;
-    int y;
-};
+  db:
+    image: postgres
+    environment:
+      POSTGRES_DB: mydb
 "#;
-        let chunks = chunk_file("math.c", code, "c").unwrap();
-        assert!(chunks.len() >= 1, "should find at least the function");
-        let kinds: Vec<&str> = chunks.iter().map(|c| c.kind.as_str()).collect();
-        assert!(kinds.contains(&"function_definition"), "should find function_definition");
+        let chunks = chunk_content("compose.yaml", code, "yaml");
+        assert!(!chunks.is_empty(), "should chunk YAML");
+    }
+
+    #[test]
+    fn chunk_dockerfile() {
+        let code = r#"FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine
+COPY --from=builder /app/dist /app
+CMD ["node", "/app/index.js"]
+"#;
+        let chunks = chunk_content("Dockerfile", code, "dockerfile");
+        assert!(!chunks.is_empty(), "should chunk Dockerfile");
     }
 
     #[test]
     fn chunk_empty_file() {
-        // Empty content should return empty chunks, not panic
-        let chunks = chunk_file("empty.rs", "", "rust").unwrap();
+        let chunks = chunk_content("empty.rs", "", "rust");
         assert!(chunks.is_empty());
 
-        let chunks = chunk_file("blank.py", "   \n\n  ", "python").unwrap();
+        let chunks = chunk_content("blank.py", "   \n\n  ", "python");
         assert!(chunks.is_empty());
     }
 
     #[test]
-    fn chunk_large_node_splits() {
-        // Generate a Rust impl block with >150 lines that should trigger splitting
-        let mut code = String::from("struct Big;\n\nimpl Big {\n");
-        for i in 0..20 {
-            code.push_str(&format!(
-                "    fn method_{i}(&self) -> i32 {{\n        // line 1\n        // line 2\n        // line 3\n        // line 4\n        // line 5\n        // line 6\n        // line 7\n        {i}\n    }}\n\n",
-            ));
+    fn chunk_large_file_splits() {
+        // Generate a file with >150 lines that should trigger splitting
+        let mut code = String::new();
+        for i in 0..200 {
+            code.push_str(&format!("fn method_{i}() {{ /* body */ }}\n"));
         }
-        code.push_str("}\n");
-
-        let chunks = chunk_file("big.rs", &code, "rust").unwrap();
-        // The impl has >150 lines, so it should be split into individual methods
+        let chunks = chunk_content("big.rs", &code, "rust");
         assert!(
             chunks.len() > 1,
-            "large impl should split into sub-items; got {} chunks",
+            "large file should produce multiple chunks; got {}",
             chunks.len()
         );
-        // Each chunk should be a method, not the whole impl
+    }
+
+    #[test]
+    fn all_chunks_have_language_hint() {
+        let code = "fn main() {}\n";
+        let chunks = chunk_content("test.rs", code, "rust");
+        for chunk in &chunks {
+            assert_eq!(chunk.language, "rust");
+        }
+
+        let code = "defmodule Foo do\nend\n";
+        let chunks = chunk_content("foo.ex", code, "elixir");
+        for chunk in &chunks {
+            assert_eq!(chunk.language, "elixir");
+        }
+    }
+
+    #[test]
+    fn chunks_respect_max_lines() {
+        // Generate a dense file with no blank lines — should hard-split
+        let mut code = String::new();
+        for i in 0..300 {
+            code.push_str(&format!("line_{i} = value_{i}\n"));
+        }
+        let chunks = chunk_content("dense.txt", &code, "unknown");
+        assert!(chunks.len() >= 2, "300-line file should produce multiple chunks");
         for chunk in &chunks {
             let lines = chunk.end_line - chunk.start_line + 1;
             assert!(
                 lines <= MAX_CHUNK_LINES,
-                "chunk '{}' has {} lines, exceeding MAX_CHUNK_LINES",
-                chunk.name,
-                lines
-            );
-        }
-    }
-
-    #[test]
-    fn split_children_have_parent_name() {
-        // Generate a Rust impl that triggers splitting
-        let mut code = String::from("struct Foo;\n\nimpl Foo {\n");
-        for i in 0..20 {
-            code.push_str(&format!(
-                "    fn do_{i}(&self) -> i32 {{\n        // filler line 1\n        // filler line 2\n        // filler line 3\n        // filler line 4\n        // filler line 5\n        // filler line 6\n        // filler line 7\n        {i}\n    }}\n\n",
-            ));
-        }
-        code.push_str("}\n");
-
-        let chunks = chunk_file("foo.rs", &code, "rust").unwrap();
-        // Methods from the split impl should be qualified with "Foo::"
-        let method_chunks: Vec<_> = chunks.iter().filter(|c| c.kind == "function_item").collect();
-        assert!(!method_chunks.is_empty());
-        for chunk in &method_chunks {
-            assert!(
-                chunk.name.starts_with("Foo::"),
-                "expected parent-qualified name, got '{}'",
-                chunk.name,
+                "chunk has {} lines, exceeds MAX_CHUNK_LINES ({})",
+                lines,
+                MAX_CHUNK_LINES,
             );
         }
     }
@@ -542,34 +382,16 @@ struct Point {
     fn non_ws_chars_counts_correctly() {
         assert_eq!(non_ws_chars(""), 0);
         assert_eq!(non_ws_chars("   \n\t  "), 0);
-        assert_eq!(non_ws_chars("fn main() {}"), 10); // no spaces counted
+        assert_eq!(non_ws_chars("fn main() {}"), 10);
         assert_eq!(non_ws_chars("  hello  world  "), 10);
     }
 
     #[test]
-    fn char_based_split_triggers_on_dense_code() {
-        // A compact impl with many one-liner methods — low line count but high non-ws chars
-        let mut code = String::from("struct Dense;\n\nimpl Dense {\n");
-        // Each method is ~3 lines but densely packed
-        for i in 0..80 {
-            code.push_str(&format!(
-                "    fn m{i}(&self) -> String {{ format!(\"aaaaaaaaaaaaaaaa{i}\") }}\n",
-            ));
-        }
-        code.push_str("}\n");
-
-        let char_count = non_ws_chars(&code);
-        assert!(
-            char_count > MAX_CHUNK_CHARS,
-            "test code should exceed char limit; got {char_count} non-ws chars",
-        );
-
-        let chunks = chunk_file("dense.rs", &code, "rust").unwrap();
-        // Should split because non-ws chars exceed MAX_CHUNK_CHARS
-        assert!(
-            chunks.len() > 2,
-            "dense impl should split; got {} chunks",
-            chunks.len(),
-        );
+    fn heuristic_name_extraction() {
+        assert_eq!(extract_heuristic_name("fn hello(name: &str) {"), "hello");
+        assert_eq!(extract_heuristic_name("def bark(self):"), "bark");
+        assert_eq!(extract_heuristic_name("class Dog:"), "Dog");
+        assert_eq!(extract_heuristic_name("defmodule MyApp.Worker do"), "MyApp.Worker");
+        assert_eq!(extract_heuristic_name("  key: value"), "");
     }
 }

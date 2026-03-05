@@ -47,7 +47,7 @@ The `search` tool's `mode` parameter:
 | Mode | What it does |
 |------|-------------|
 | *(default)* | Hybrid search: FTS5 + vector + RRF fusion + reranking |
-| `navigate` | Find a symbol's definition and all its references via the code graph |
+| `navigate` | Find a symbol's definition and references (language-agnostic, via chunks + FTS5) |
 | `map` | Token-budgeted overview of an entire codebase |
 | `impact` | BFS traversal showing what breaks if you change a symbol |
 
@@ -79,15 +79,14 @@ grasshopper/src/
 ├── store.rs    -- Unified SQLite schema, all queries, auto-maintenance
 ├── memory.rs   -- Cognitive layer: store, recall, cognitive_score (salience + decay)
 ├── search.rs   -- Hybrid search: FTS5 + vector -> RRF fusion -> query expansion -> cross-encoder rerank -> unified_search
-├── index.rs    -- Code indexing: scan -> chunk -> graph -> FTS -> embed
+├── index.rs    -- Code indexing: scan -> chunk -> FTS -> embed (per-directory atomic locking)
 ├── mcp.rs      -- MCP server: 3 tools, HTTP + stdio transport, embedding cache
 ├── rerank.rs   -- Cross-encoder reranking via fastembed/ONNX
-└── code/       -- Code intelligence primitives (self-contained)
-    ├── chunk.rs      -- Tree-sitter code chunking (13 languages)
+└── code/       -- Code intelligence primitives (self-contained, language-agnostic)
+    ├── chunk.rs      -- Universal structural chunking (all text files)
     ├── embed.rs      -- ONNX embeddings (Jina Code V2, 768-dim)
     ├── scan.rs       -- Directory walking + SHA-256 hashing
     ├── tokenizer.rs  -- CamelCase splitting for FTS5
-    ├── graph.rs      -- Tag extraction via tree-sitter TAGS_QUERY
     └── hnsw.rs       -- HNSW approximate nearest neighbor (instant-distance)
 ```
 
@@ -99,10 +98,11 @@ Query Expansion -> FTS5 (BM25) -> Vector (cosine, HNSW) -> RRF fusion (k=60) -> 
 
 ### Code Intelligence
 
-- **13 languages** via tree-sitter: Rust, TypeScript, JavaScript, Python, Go, Java, C, C++, C#, Ruby, PHP, Scala, TSX
+- **Language-agnostic**: indexes all non-hidden text files (<1MB) regardless of language — no tree-sitter, no language-specific code
+- **Structural chunking**: blank-line boundaries + indentation changes + keyword regex for symbol names
+- **Symbol navigation**: definitions derived from chunk names, references found via FTS5 at query time
 - **Hybrid search**: FTS5 keyword matching + Jina Code V2 semantic embeddings, merged via Reciprocal Rank Fusion
-- **Incremental indexing**: content-hash diffing skips unchanged files, parallel chunking via Rayon
-- **Code graph**: tree-sitter extracts definitions and references for navigate/impact queries
+- **Incremental indexing**: content-hash diffing skips unchanged files, parallel chunking via Rayon, per-directory atomic locks for concurrent safety
 
 ### Cognitive Memory
 
@@ -158,16 +158,17 @@ Or use stdio mode: `grasshopper serve --stdio`.
 
 ```sh
 cargo build                    # Build
-cargo test                     # ~157 tests across all modules
+cargo test                     # ~151 tests across all modules
 cargo run -- --help            # CLI help
 RUST_LOG=debug cargo run -- serve --port 8106  # Verbose server
 ```
 
 ### Conventions
 
-- Fully self-contained -- no external path dependencies
-- Database default: `~/.grasshopper/brain.db`
+- Fully self-contained -- no external path dependencies, zero language-specific code
+- Database default: `~/.grasshopper/brain.db` (SQLite WAL mode, concurrent-safe)
 - Embedding model cache: `~/.cache/grasshopper/models/`
 - All blocking operations (DB, embedder) run inside `spawn_blocking`
 - Poisoned mutexes are recovered with a warning log, not panicked
 - Ambiguous codebase references error with suggestions instead of silently picking one
+- Per-directory atomic lockfile prevents concurrent index runs on the same directory

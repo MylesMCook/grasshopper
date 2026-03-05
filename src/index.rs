@@ -9,6 +9,14 @@ use crate::store::{CodeChunkParams, FileChunks, Store};
 const FILE_BATCH: usize = 200;
 const EMBED_BATCH: usize = 32;
 
+/// RAII guard that removes a lockfile on drop.
+struct LockGuard(std::path::PathBuf);
+impl Drop for LockGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 /// Result of an indexing operation.
 #[derive(Debug)]
 pub struct IndexResult {
@@ -17,19 +25,69 @@ pub struct IndexResult {
     pub files_skipped: usize,
     pub files_removed: usize,
     pub chunks_written: usize,
-    pub edges_written: usize,
     pub errors: Vec<String>,
     pub duration_ms: u64,
     pub codebase_id: i64,
 }
 
-/// Index a directory: scan → chunk → graph → FTS.
+/// Index a directory: scan → chunk → FTS.
 /// Embedding is separate (call embed_codebase after this).
+/// Uses a lockfile to prevent concurrent indexing of the same directory.
 pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
     let start = Instant::now();
 
     // 1. Resolve and register codebase
     let root = dir.canonicalize().with_context(|| format!("resolving {}", dir.display()))?;
+
+    // Acquire per-directory lock to prevent concurrent index of same codebase.
+    // Uses OpenOptions::create_new for atomic lock acquisition (fails if file exists).
+    // Stale locks (>30 min) are cleaned up automatically.
+    let lock_path = std::env::temp_dir().join(format!(
+        "grasshopper-index-{:016x}.lock",
+        {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            root.hash(&mut h);
+            h.finish()
+        }
+    ));
+
+    // Clean up stale locks (older than 30 minutes — no index should take this long)
+    if let Ok(meta) = std::fs::metadata(&lock_path) {
+        let is_stale = meta.modified().ok()
+            .and_then(|m| m.elapsed().ok())
+            .map_or(false, |age| age > std::time::Duration::from_secs(1800));
+        if is_stale {
+            tracing::warn!("removing stale index lock: {}", lock_path.display());
+            let _ = std::fs::remove_file(&lock_path);
+        }
+    }
+
+    // Try to acquire lock atomically
+    match std::fs::OpenOptions::new().write(true).create_new(true).open(&lock_path) {
+        Ok(mut f) => {
+            // Write PID for debugging stale locks
+            use std::io::Write;
+            let _ = write!(f, "{}", std::process::id());
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            tracing::info!("skipping index of {} — another index is in progress", root.display());
+            return Ok(IndexResult {
+                files_scanned: 0,
+                files_changed: 0,
+                files_skipped: 0,
+                files_removed: 0,
+                chunks_written: 0,
+                errors: vec![],
+                duration_ms: start.elapsed().as_millis() as u64,
+                codebase_id: 0,
+            });
+        }
+        Err(e) => return Err(e).context("creating index lock file"),
+    }
+
+    // Ensure lock file is removed when we're done (even on error)
+    let _lock_guard = LockGuard(lock_path);
     let root_str = root.to_string_lossy();
     let dir_name = root
         .file_name()
@@ -39,7 +97,7 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
 
     // 2. Scan directory
     let scan_result = crate::code::scan::scan_directory(&root)?;
-    let mut errors = scan_result.errors;
+    let errors = scan_result.errors;
     let total_files = scan_result.files.len();
 
     // 3. Diff against stored hashes
@@ -54,54 +112,36 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
         }
     }
 
-    // 4. Chunk and extract graph tags in parallel batches
+    // 4. Chunk in parallel batches
     let mut total_chunks = 0usize;
-    let mut total_edges = 0usize;
     let mut changed_files = Vec::new();
 
     for batch in files_to_process.chunks(FILE_BATCH) {
         let results: Vec<_> = batch
             .par_iter()
             .map(|file| {
-                let chunks = crate::code::chunk::chunk_file(&file.rel_path, &file.content, &file.language);
-                let (tags, tag_err) = match crate::code::graph::get_tags_query(&file.language)
-                    .and_then(|q| {
-                        crate::code::graph::get_language(&file.language).map(|lang| (lang, q))
-                    }) {
-                    Some((lang, q)) => match crate::code::graph::extract_tags(&file.content, lang, q) {
-                        Ok(t) => (t, None),
-                        Err(e) => (vec![], Some(format!("{}: tag extraction failed: {e}", file.rel_path))),
-                    },
-                    None => (vec![], None),
-                };
-                (file, chunks, tags, tag_err)
+                let chunks = crate::code::chunk::chunk_content(
+                    &file.rel_path,
+                    &file.content,
+                    &file.language,
+                );
+                (file, chunks)
             })
             .collect();
 
         let mut file_chunks_batch = Vec::new();
-        for (file, chunk_result, tags, tag_err) in results {
-            if let Some(te) = tag_err {
-                errors.push(te);
-            }
-            match chunk_result {
-                Ok(parsed) => {
-                    let params: Vec<CodeChunkParams> = parsed
-                        .into_iter()
-                        .map(|pc| parsed_to_params(pc, file))
-                        .collect();
-                    total_chunks += params.len();
-                    changed_files.push(file.rel_path.clone());
-                    file_chunks_batch.push(FileChunks {
-                        file_path: file.rel_path.clone(),
-                        file_hash: file.hash.clone(),
-                        chunks: params,
-                    });
-                    // Always upsert graph edges (even empty) to clear stale edges
-                    total_edges += tags.len();
-                    store.upsert_graph_edges_for_file(codebase_id, &file.rel_path, &tags)?;
-                }
-                Err(e) => errors.push(format!("{}: {e}", file.rel_path)),
-            }
+        for (file, chunks) in results {
+            let params: Vec<CodeChunkParams> = chunks
+                .into_iter()
+                .map(|pc| parsed_to_params(pc, file))
+                .collect();
+            total_chunks += params.len();
+            changed_files.push(file.rel_path.clone());
+            file_chunks_batch.push(FileChunks {
+                file_path: file.rel_path.clone(),
+                file_hash: file.hash.clone(),
+                chunks: params,
+            });
         }
         if !file_chunks_batch.is_empty() {
             store.batch_upsert_chunks(codebase_id, &file_chunks_batch)?;
@@ -131,7 +171,6 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
         files_skipped: skipped,
         files_removed: removed,
         chunks_written: total_chunks,
-        edges_written: total_edges,
         errors,
         duration_ms: start.elapsed().as_millis() as u64,
         codebase_id,
@@ -236,7 +275,6 @@ mod tests {
         let result = index_directory(&store, &src_dir).unwrap();
         assert_eq!(result.files_scanned, 1);
         assert!(result.chunks_written >= 2, "expected >=2 chunks, got {}", result.chunks_written);
-        assert!(result.edges_written > 0, "expected graph edges");
 
         // Verify FTS works
         let hits = store.fts_search("hello", None, 10).unwrap();

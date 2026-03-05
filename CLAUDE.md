@@ -15,7 +15,7 @@ Based on Yuan et al. (March 2026, arXiv:2603.02473v1) and Maharana et al. (2024,
 
 ```sh
 cargo build                                  # Build
-cargo test                                   # ~157 tests
+cargo test                                   # ~151 tests
 cargo run -- --help                          # CLI help
 cargo run -- index ./path                    # Index code
 cargo run -- store "text"                    # Store a memory
@@ -36,15 +36,14 @@ src/
 ├── store.rs    — Unified SQLite schema, all queries, auto-maintenance
 ├── memory.rs   — Cognitive layer: store, recall, cognitive_score (salience + decay)
 ├── search.rs   — Hybrid search: FTS5 + vector → RRF fusion → query expansion → cross-encoder rerank → unified_search
-├── index.rs    — Code indexing: scan → chunk → graph → FTS → embed
+├── index.rs    — Code indexing: scan → chunk → FTS → embed
 ├── mcp.rs      — MCP server: 3 tools (index, store, search), HTTP + stdio transport, embedding cache
 ├── rerank.rs   — Cross-encoder reranking via fastembed/ONNX (BAAI/bge-reranker-base)
-└── code/       — Code intelligence primitives (self-contained)
-    ├── chunk.rs      — Tree-sitter code chunking (13 languages)
+└── code/       — Code intelligence primitives (self-contained, language-agnostic)
+    ├── chunk.rs      — Universal structural chunking (all text files, no language-specific code)
     ├── embed.rs      — ONNX embeddings (Jina Code V2, 768-dim)
     ├── scan.rs       — Directory walking + SHA-256 hashing
     ├── tokenizer.rs  — CamelCase splitting for FTS5
-    ├── graph.rs      — Tag extraction via tree-sitter TAGS_QUERY
     └── hnsw.rs       — HNSW approximate nearest neighbor (instant-distance)
 ```
 
@@ -58,11 +57,19 @@ Query Expansion → FTS5 (BM25) → Vector (cosine, HNSW) → RRF fusion (k=60) 
 
 Single `chunks` table with `kind` discriminator ('code' | 'memory'). Code chunks have file_path, language, symbol_name. Memory entries have memory_type, salience, access_count. Both share embeddings, content_hash, and graph edges.
 
-Supporting tables: `codebases`, `indexed_files`, `graph` (code refs), `chunks_fts` (FTS5), `handoffs`, `access_log`, `retrieval_log` (query logging), `feedback` (user signal on retrieval quality).
+Supporting tables: `codebases`, `indexed_files`, `graph` (memory associations only), `chunks_fts` (FTS5), `handoffs`, `access_log`, `retrieval_log` (query logging), `feedback` (user signal on retrieval quality).
+
+### Symbol Navigation (language-agnostic)
+
+- **Definitions**: Derived from `chunks.symbol_name` — any chunk with a non-empty name IS a definition
+- **References**: Found at query time via FTS5 search on chunk content (excludes definition chunks)
+- **Map**: All definitions from chunks table, ranked by definition count per file
+- **Impact**: BFS using chunk-derived definitions + FTS-based references
+
+Zero language-specific code. One path for everything.
 
 ## Key Dependencies
 
-- `tree-sitter` 0.25 + 13 language grammars — code parsing and tag extraction
 - `ort` 2.0.0-rc.11 + `tokenizers` 0.22 — ONNX embeddings (Jina Code V2, 768-dim)
 - `instant-distance` 0.6 — HNSW approximate nearest neighbor search
 - `rusqlite` 0.32 — SQLite with FTS5 + bundled

@@ -133,11 +133,10 @@ fn main() -> Result<()> {
             let result = grasshopper::index::index_directory(&store, &dir)?;
 
             println!(
-                "Indexed {} ({} files, {} chunks, {} edges)",
+                "Indexed {} ({} files, {} chunks)",
                 dir.display(),
                 result.files_scanned,
                 result.chunks_written,
-                result.edges_written,
             );
             println!(
                 "  Changed: {}  Skipped: {}  Removed: {}",

@@ -1,13 +1,13 @@
 pub mod chunk;
 pub mod embed;
-pub mod graph;
 pub mod hnsw;
 pub mod scan;
 pub mod tokenizer;
 
-/// Canonical file extension → language name mapping.
-/// All other modules (chunk, graph) must handle every language listed here.
-pub static EXT_MAP: &[(&str, &str)] = &[
+/// Extension → language hint mapping. Covers common languages for metadata.
+/// This is NOT a gate — files with extensions not listed here still get indexed
+/// with the extension itself as the language hint.
+pub static LANG_HINTS: &[(&str, &str)] = &[
     ("rs", "rust"),
     ("js", "javascript"),
     ("jsx", "javascript"),
@@ -16,6 +16,7 @@ pub static EXT_MAP: &[(&str, &str)] = &[
     ("mts", "typescript"),
     ("cts", "typescript"),
     ("py", "python"),
+    ("pyi", "python"),
     ("go", "go"),
     ("java", "java"),
     ("c", "c"),
@@ -30,34 +31,118 @@ pub static EXT_MAP: &[(&str, &str)] = &[
     ("php", "php"),
     ("scala", "scala"),
     ("sc", "scala"),
+    ("ex", "elixir"),
+    ("exs", "elixir"),
+    ("erl", "erlang"),
+    ("hrl", "erlang"),
+    ("kt", "kotlin"),
+    ("kts", "kotlin"),
+    ("swift", "swift"),
+    ("dart", "dart"),
+    ("r", "r"),
+    ("R", "r"),
+    ("jl", "julia"),
+    ("clj", "clojure"),
+    ("cljs", "clojure"),
+    ("cljc", "clojure"),
+    ("hs", "haskell"),
+    ("lhs", "haskell"),
+    ("ml", "ocaml"),
+    ("mli", "ocaml"),
+    ("fs", "fsharp"),
+    ("fsi", "fsharp"),
+    ("fsx", "fsharp"),
+    ("lua", "lua"),
+    ("zig", "zig"),
+    ("nim", "nim"),
+    ("cr", "crystal"),
+    ("v", "vlang"),
+    ("pl", "perl"),
+    ("pm", "perl"),
+    ("cob", "cobol"),
+    ("cbl", "cobol"),
+    ("f90", "fortran"),
+    ("f95", "fortran"),
+    ("f03", "fortran"),
+    ("pas", "pascal"),
+    ("d", "dlang"),
+    ("ada", "ada"),
+    ("adb", "ada"),
+    ("ads", "ada"),
+    ("groovy", "groovy"),
+    ("gradle", "groovy"),
+    ("tf", "terraform"),
+    ("hcl", "hcl"),
+    ("yaml", "yaml"),
+    ("yml", "yaml"),
+    ("toml", "toml"),
+    ("json", "json"),
+    ("jsonc", "json"),
+    ("xml", "xml"),
+    ("html", "html"),
+    ("htm", "html"),
+    ("css", "css"),
+    ("scss", "scss"),
+    ("sass", "sass"),
+    ("less", "less"),
+    ("sql", "sql"),
+    ("graphql", "graphql"),
+    ("gql", "graphql"),
+    ("proto", "protobuf"),
+    ("md", "markdown"),
+    ("mdx", "markdown"),
+    ("rst", "restructuredtext"),
+    ("tex", "latex"),
+    ("csv", "csv"),
+    ("sh", "shell"),
+    ("bash", "shell"),
+    ("zsh", "shell"),
+    ("fish", "fish"),
+    ("ps1", "powershell"),
+    ("psm1", "powershell"),
+    ("bat", "batch"),
+    ("cmd", "batch"),
+    ("cmake", "cmake"),
+    ("mk", "make"),
+    ("nix", "nix"),
+    ("dhall", "dhall"),
+    ("prisma", "prisma"),
 ];
 
-/// All unique language names from EXT_MAP.
-pub fn supported_languages() -> Vec<&'static str> {
-    let mut langs: Vec<&str> = EXT_MAP.iter().map(|(_, lang)| *lang).collect();
-    langs.sort_unstable();
-    langs.dedup();
-    langs
+/// Filename → language hint mapping for files without extensions.
+pub static FILENAME_HINTS: &[(&str, &str)] = &[
+    ("Dockerfile", "dockerfile"),
+    ("Makefile", "make"),
+    ("Rakefile", "ruby"),
+    ("Gemfile", "ruby"),
+    ("Justfile", "just"),
+    ("CMakeLists.txt", "cmake"),
+    ("Vagrantfile", "ruby"),
+    ("Procfile", "procfile"),
+    ("Taskfile.yml", "taskfile"),
+];
+
+/// Look up language hint from file extension.
+pub fn lang_hint_from_ext(ext: &str) -> Option<&'static str> {
+    LANG_HINTS.iter().find(|(e, _)| *e == ext).map(|(_, lang)| *lang)
+}
+
+/// Look up language hint from filename.
+pub fn lang_hint_from_filename(name: &str) -> Option<&'static str> {
+    FILENAME_HINTS.iter().find(|(n, _)| *n == name).map(|(_, lang)| *lang)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
     #[test]
-    fn all_languages_have_chunk_and_graph_support() {
-        let langs: HashSet<&str> = EXT_MAP.iter().map(|(_, lang)| *lang).collect();
-        for lang in &langs {
-            assert!(
-                chunk::supports_language(lang),
-                "chunk.rs missing config for language: {lang}"
-            );
-            assert!(
-                graph::get_language(lang).is_some(),
-                "graph.rs missing Language for: {lang}"
-            );
-            // tags queries are optional (some languages use built-in TAGS_QUERY)
-        }
+    fn lang_hint_lookups() {
+        assert_eq!(lang_hint_from_ext("rs"), Some("rust"));
+        assert_eq!(lang_hint_from_ext("ex"), Some("elixir"));
+        assert_eq!(lang_hint_from_ext("cob"), Some("cobol"));
+        assert_eq!(lang_hint_from_ext("xyz"), None);
+        assert_eq!(lang_hint_from_filename("Dockerfile"), Some("dockerfile"));
+        assert_eq!(lang_hint_from_filename("random.txt"), None);
     }
 }

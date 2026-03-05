@@ -123,6 +123,7 @@ impl Store {
 
         let store = Self { conn };
         store.init_schema()?;
+        store.migrate_clear_code_graph_edges()?;
         Ok(store)
     }
 
@@ -215,17 +216,17 @@ impl Store {
                 UNIQUE(codebase_id, file_path)
             );
 
-            -- Graph: code refs + Hebbian associations
+            -- Graph: memory associations (Hebbian links, entities)
             CREATE TABLE IF NOT EXISTS graph (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 source_chunk    INTEGER REFERENCES chunks(id),
                 target_chunk    INTEGER REFERENCES chunks(id),
 
-                -- For code edges from tree-sitter
+                -- Legacy columns (kept for schema compat, no longer written for code)
                 codebase_id     INTEGER REFERENCES codebases(id),
                 file_path       TEXT,
                 symbol          TEXT,
-                role            TEXT NOT NULL,        -- 'definition' | 'reference' | 'associates'
+                role            TEXT NOT NULL,        -- 'associates' | 'entity'
                 kind            TEXT DEFAULT '',
                 line            INTEGER,
 
@@ -304,6 +305,25 @@ impl Store {
                 created_at  TEXT NOT NULL
             );",
         )?;
+        Ok(())
+    }
+
+    /// One-time migration: clear stale tree-sitter code edges from the graph table.
+    /// Code definitions and references are now derived from the chunks table.
+    /// Graph table retains only memory associations (role='associates' and role='entity').
+    fn migrate_clear_code_graph_edges(&self) -> Result<()> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM graph WHERE role IN ('definition', 'reference')",
+            [],
+            |row| row.get(0),
+        )?;
+        if count > 0 {
+            self.conn.execute(
+                "DELETE FROM graph WHERE role IN ('definition', 'reference')",
+                [],
+            )?;
+            tracing::info!("Migrated: cleared {count} stale tree-sitter code edges from graph table");
+        }
         Ok(())
     }
 
@@ -882,10 +902,6 @@ impl Store {
                 params![codebase_id, file_path],
             )?;
             self.conn.execute(
-                "DELETE FROM graph WHERE codebase_id = ?1 AND file_path = ?2 AND role != 'associates'",
-                params![codebase_id, file_path],
-            )?;
-            self.conn.execute(
                 "DELETE FROM indexed_files WHERE codebase_id = ?1 AND file_path = ?2",
                 params![codebase_id, file_path],
             )?;
@@ -894,63 +910,97 @@ impl Store {
         Ok(stale.len())
     }
 
-    // --- Graph operations ---
+    // --- Symbol navigation (chunk-derived) ---
 
-    /// Replace all code graph edges for a file. Preserves Hebbian associations.
-    pub fn upsert_graph_edges_for_file(
-        &self,
-        codebase_id: i64,
-        file_path: &str,
-        tags: &[crate::code::graph::Tag],
-    ) -> Result<usize> {
-        self.conn.execute(
-            "DELETE FROM graph WHERE codebase_id = ?1 AND file_path = ?2 AND role != 'associates'",
-            params![codebase_id, file_path],
-        )?;
-        for tag in tags {
-            self.conn.execute(
-                "INSERT OR IGNORE INTO graph (codebase_id, file_path, symbol, role, kind, line, strength)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1.0)",
-                params![codebase_id, file_path, tag.symbol, tag.role, tag.kind, tag.line as i64],
-            )?;
-        }
-        Ok(tags.len())
-    }
-
-    /// Find all definitions of a symbol.
+    /// Find all definitions of a symbol by querying chunks with matching symbol_name.
     pub fn find_definitions(&self, symbol: &str, codebase_id: Option<i64>) -> Result<Vec<GraphEdge>> {
-        self.query_graph_edges(symbol, "definition", codebase_id)
-    }
-
-    /// Find all references to a symbol.
-    pub fn find_references(&self, symbol: &str, codebase_id: Option<i64>) -> Result<Vec<GraphEdge>> {
-        self.query_graph_edges(symbol, "reference", codebase_id)
-    }
-
-    fn query_graph_edges(&self, symbol: &str, role: &str, codebase_id: Option<i64>) -> Result<Vec<GraphEdge>> {
         if let Some(cb) = codebase_id {
-            let mut stmt = self.conn.prepare(
-                "SELECT file_path, symbol, role, kind, line FROM graph
-                 WHERE symbol = ?1 AND role = ?2 AND codebase_id = ?3
-                 ORDER BY file_path, line",
+            let mut stmt = self.conn.prepare_cached(
+                "SELECT file_path, symbol_name, 'definition', symbol_kind, start_line
+                 FROM chunks
+                 WHERE kind = 'code' AND symbol_name = ?1 AND codebase_id = ?2
+                 ORDER BY file_path, start_line",
             )?;
             let edges = stmt
-                .query_map(params![symbol, role, cb], row_to_graph_edge)?
+                .query_map(params![symbol, cb], row_to_graph_edge)?
                 .filter_map(|r| r.ok())
                 .collect();
             Ok(edges)
         } else {
-            let mut stmt = self.conn.prepare(
-                "SELECT file_path, symbol, role, kind, line FROM graph
-                 WHERE symbol = ?1 AND role = ?2
-                 ORDER BY file_path, line",
+            let mut stmt = self.conn.prepare_cached(
+                "SELECT file_path, symbol_name, 'definition', symbol_kind, start_line
+                 FROM chunks
+                 WHERE kind = 'code' AND symbol_name = ?1
+                 ORDER BY file_path, start_line",
             )?;
             let edges = stmt
-                .query_map(params![symbol, role], row_to_graph_edge)?
+                .query_map(params![symbol], row_to_graph_edge)?
                 .filter_map(|r| r.ok())
                 .collect();
             Ok(edges)
         }
+    }
+
+    /// Find references to a symbol using FTS5 on chunk content.
+    /// Excludes chunks where the symbol is defined (avoids self-references).
+    pub fn find_references(&self, symbol: &str, codebase_id: Option<i64>) -> Result<Vec<GraphEdge>> {
+        use std::collections::HashSet;
+        // Get definition chunk IDs to exclude
+        let def_ids: HashSet<i64> = if let Some(cb) = codebase_id {
+            let mut stmt = self.conn.prepare_cached(
+                "SELECT id FROM chunks WHERE kind = 'code' AND symbol_name = ?1 AND codebase_id = ?2",
+            )?;
+            stmt.query_map(params![symbol, cb], |row| row.get(0))?
+                .filter_map(|r| r.ok())
+                .collect()
+        } else {
+            let mut stmt = self.conn.prepare_cached(
+                "SELECT id FROM chunks WHERE kind = 'code' AND symbol_name = ?1",
+            )?;
+            stmt.query_map(params![symbol], |row| row.get(0))?
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+
+        // FTS5 search for the symbol in chunk content, excluding definition chunks
+        let fts_query = format!("\"{}\"", symbol.replace('"', "\"\""));
+
+        let raw_rows: Vec<(i64, String, String, i64)> = if let Some(cb) = codebase_id {
+            let mut stmt = self.conn.prepare_cached(
+                "SELECT c.id, c.file_path, c.symbol_kind, c.start_line
+                 FROM chunks_fts f
+                 JOIN chunks c ON c.id = f.rowid
+                 WHERE chunks_fts MATCH ?1 AND c.kind = 'code' AND c.codebase_id = ?2
+                 ORDER BY c.file_path, c.start_line",
+            )?;
+            stmt.query_map(params![fts_query, cb], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?.filter_map(|r| r.ok()).collect()
+        } else {
+            let mut stmt = self.conn.prepare_cached(
+                "SELECT c.id, c.file_path, c.symbol_kind, c.start_line
+                 FROM chunks_fts f
+                 JOIN chunks c ON c.id = f.rowid
+                 WHERE chunks_fts MATCH ?1 AND c.kind = 'code'
+                 ORDER BY c.file_path, c.start_line",
+            )?;
+            stmt.query_map(params![fts_query], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?.filter_map(|r| r.ok()).collect()
+        };
+
+        let edges = raw_rows.into_iter()
+            .filter(|(id, _, _, _)| !def_ids.contains(id))
+            .map(|(_, file_path, kind, line)| GraphEdge {
+                file_path,
+                symbol: symbol.to_owned(),
+                role: "reference".to_owned(),
+                kind,
+                line,
+            })
+            .collect();
+
+        Ok(edges)
     }
 
     // --- FTS sync for code ---
@@ -1604,14 +1654,13 @@ impl Store {
         Ok(rows)
     }
 
-    /// Get all definition edges for a codebase (used by map).
+    /// Get all definitions for a codebase (used by map). Derived from chunks table.
     pub fn get_all_definitions(&self, codebase_id: i64) -> Result<Vec<GraphEdge>> {
         let mut stmt = self.conn.prepare(
-            "SELECT file_path, symbol, 'definition' AS role, MAX(kind) AS kind, line
-             FROM graph
-             WHERE codebase_id = ?1 AND role = 'definition'
-             GROUP BY file_path, symbol, line
-             ORDER BY file_path, line",
+            "SELECT file_path, symbol_name, 'definition', symbol_kind, start_line
+             FROM chunks
+             WHERE codebase_id = ?1 AND kind = 'code' AND symbol_name != ''
+             ORDER BY file_path, start_line",
         )?;
         let rows = stmt
             .query_map(params![codebase_id], row_to_graph_edge)?
@@ -1619,25 +1668,27 @@ impl Store {
         Ok(rows)
     }
 
-    /// Count reference occurrences per symbol (used by map for ranking).
-    pub fn count_graph_references(&self, codebase_id: i64) -> Result<HashMap<String, usize>> {
+    /// Count definitions per file (used by map for ranking).
+    /// Files with more definitions are likely more important.
+    pub fn count_definitions_per_file(&self, codebase_id: i64) -> Result<HashMap<String, usize>> {
         let mut stmt = self.conn.prepare(
-            "SELECT symbol, COUNT(*) FROM graph
-             WHERE codebase_id = ?1 AND role = 'reference'
-             GROUP BY symbol",
+            "SELECT file_path, COUNT(*) FROM chunks
+             WHERE codebase_id = ?1 AND kind = 'code' AND symbol_name != ''
+             GROUP BY file_path",
         )?;
         let mut counts = HashMap::new();
         let rows = stmt.query_map(params![codebase_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
         })?;
         for row in rows {
-            let (symbol, count) = row?;
-            counts.insert(symbol, count);
+            let (file, count) = row?;
+            counts.insert(file, count);
         }
         Ok(counts)
     }
 
     /// Get unique symbol names defined in a specific file (used by impact BFS).
+    /// Derived from chunks table.
     pub fn get_definitions_in_file(
         &self,
         file_path: &str,
@@ -1645,8 +1696,8 @@ impl Store {
     ) -> Result<Vec<String>> {
         if let Some(cid) = codebase_id {
             let mut stmt = self.conn.prepare_cached(
-                "SELECT DISTINCT symbol FROM graph
-                 WHERE codebase_id = ?1 AND file_path = ?2 AND role = 'definition'",
+                "SELECT DISTINCT symbol_name FROM chunks
+                 WHERE codebase_id = ?1 AND file_path = ?2 AND kind = 'code' AND symbol_name != ''",
             )?;
             let rows = stmt
                 .query_map(params![cid, file_path], |row| row.get(0))?
@@ -1654,8 +1705,8 @@ impl Store {
             Ok(rows)
         } else {
             let mut stmt = self.conn.prepare_cached(
-                "SELECT DISTINCT symbol FROM graph
-                 WHERE file_path = ?1 AND role = 'definition'",
+                "SELECT DISTINCT symbol_name FROM chunks
+                 WHERE file_path = ?1 AND kind = 'code' AND symbol_name != ''",
             )?;
             let rows = stmt
                 .query_map(params![file_path], |row| row.get(0))?
@@ -2318,26 +2369,54 @@ mod tests {
     }
 
     #[test]
-    fn test_graph_edges() {
+    fn test_chunk_derived_definitions() {
         let dir = TempDir::new().unwrap();
         let store = Store::open(&dir.path().join("test.db")).unwrap();
         let cb = store.get_or_create_codebase("/tmp/p", "p").unwrap();
 
-        let tags = vec![
-            crate::code::graph::Tag { symbol: "Store".into(), role: "definition".into(), kind: "struct".into(), line: 10 },
-            crate::code::graph::Tag { symbol: "Store".into(), role: "reference".into(), kind: "call".into(), line: 25 },
-            crate::code::graph::Tag { symbol: "open".into(), role: "definition".into(), kind: "function".into(), line: 14 },
-        ];
-        let count = store.upsert_graph_edges_for_file(cb, "src/store.rs", &tags).unwrap();
-        assert_eq!(count, 3);
+        let fc = FileChunks {
+            file_path: "src/store.rs".into(),
+            file_hash: "abc123".into(),
+            chunks: vec![
+                CodeChunkParams {
+                    chunk_key: "src/store.rs:block:Store:1:10".into(),
+                    file_path: "src/store.rs".into(),
+                    language: "rust".into(),
+                    symbol_kind: "block".into(),
+                    symbol_name: "Store".into(),
+                    signature: "pub struct Store {".into(),
+                    snippet: "pub struct Store {\n    conn: Connection,\n}".into(),
+                    start_line: 1,
+                    end_line: 10,
+                    file_hash: "abc123".into(),
+                },
+                CodeChunkParams {
+                    chunk_key: "src/store.rs:block:open:12:20".into(),
+                    file_path: "src/store.rs".into(),
+                    language: "rust".into(),
+                    symbol_kind: "block".into(),
+                    symbol_name: "open".into(),
+                    signature: "pub fn open(path: &Path) -> Result<Self> {".into(),
+                    snippet: "pub fn open(path: &Path) -> Result<Self> {\n    let conn = Store::new();\n}".into(),
+                    start_line: 12,
+                    end_line: 20,
+                    file_hash: "abc123".into(),
+                },
+            ],
+        };
+        store.batch_upsert_chunks(cb, &[fc]).unwrap();
+        store.rebuild_fts_for_codebase(cb).unwrap();
 
+        // Definitions come from chunks table
         let defs = store.find_definitions("Store", Some(cb)).unwrap();
         assert_eq!(defs.len(), 1);
-        assert_eq!(defs[0].line, 10);
+        assert_eq!(defs[0].line, 1);
+        assert_eq!(defs[0].file_path, "src/store.rs");
 
+        // References found via FTS — "open" chunk mentions "Store" in its snippet
         let refs = store.find_references("Store", Some(cb)).unwrap();
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].line, 25);
+        assert!(!refs.is_empty(), "FTS should find 'Store' reference in open's snippet");
+        assert!(refs.iter().all(|r| r.role == "reference"));
     }
 
     #[test]

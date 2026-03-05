@@ -434,7 +434,7 @@ impl GrasshopperMcp {
 
     #[tool(
         name = "index",
-        description = "Index a source code directory for search and navigation. Parses 13 languages (Rust, TypeScript, Python, Go, etc.) using tree-sitter, extracts symbols and references. Incremental — only re-indexes changed files. Run once per codebase, then use search/navigate/map/impact."
+        description = "Index a source code directory for search and navigation. Indexes all non-hidden text files (<1MB) regardless of language — extracts symbols and structure using universal heuristics. Respects .gitignore. Incremental — only re-indexes changed files. Run once per codebase, then use search/navigate/map/impact."
     )]
     async fn index_dir(
         &self,
@@ -455,7 +455,6 @@ impl GrasshopperMcp {
                 "files_skipped": result.files_skipped,
                 "files_removed": result.files_removed,
                 "chunks_written": result.chunks_written,
-                "edges_written": result.edges_written,
                 "duration_ms": result.duration_ms,
                 "errors": result.errors,
             });
@@ -808,10 +807,10 @@ pub fn generate_map_cli(store: &Store, codebase_id: i64, token_budget: usize) ->
     generate_map(store, codebase_id, token_budget)
 }
 
-/// Generate a compact codebase map from definitions, ranked by reference frequency.
+/// Generate a compact codebase map from definitions, ranked by definition density per file.
 fn generate_map(store: &Store, codebase_id: i64, token_budget: usize) -> Result<String> {
     let definitions = store.get_all_definitions(codebase_id)?;
-    let ref_counts = store.count_graph_references(codebase_id)?;
+    let def_counts = store.count_definitions_per_file(codebase_id)?;
 
     if definitions.is_empty() {
         return Ok("No definitions found. Run index first.".into());
@@ -823,14 +822,11 @@ fn generate_map(store: &Store, codebase_id: i64, token_budget: usize) -> Result<
         by_file.entry(&edge.file_path).or_default().push(edge);
     }
 
-    // Score each file by total reference count of its defined symbols
+    // Score each file by definition count (more definitions = likely more important)
     let mut file_scores: Vec<(&str, i64)> = by_file
         .keys()
         .map(|&file| {
-            let score: i64 = by_file[file]
-                .iter()
-                .map(|e| *ref_counts.get(&e.symbol).unwrap_or(&0) as i64)
-                .sum();
+            let score = *def_counts.get(file).unwrap_or(&0) as i64;
             (file, score)
         })
         .collect();
