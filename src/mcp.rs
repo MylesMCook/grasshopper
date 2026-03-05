@@ -106,20 +106,18 @@ pub struct ImpactParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct RememberParams {
-    /// The information to remember. Can be a fact, decision, preference, observation, or procedure
+pub struct StoreParams {
+    /// The information to store. Raw content — facts, decisions, preferences, observations, anything worth persisting
     pub content: String,
-    /// Short title for this memory. Auto-generated from content if omitted
+    /// Short title for this memory. Truncated from content if omitted
     pub title: Option<String>,
-    /// Memory type. Values: "identity" (who I am), "knowledge" (facts/decisions), "episode" (events), "procedure" (how-to). Auto-classified if omitted
-    pub r#type: Option<String>,
     /// Comma-separated tags for organization (e.g. "rust,grasshopper,architecture")
     pub tags: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RecallParams {
-    /// Natural language query to search memories (not code). Results are ranked by cognitive score: recency, frequency, salience, and type-specific decay
+    /// Natural language query to search memories (not code). Results are ranked by cognitive score: salience and type-specific decay
     pub query: String,
     /// Maximum results to return, 1-50 (default: 10)
     pub limit: Option<usize>,
@@ -212,9 +210,6 @@ pub struct GrasshopperMcp {
     reranker: Arc<Mutex<Option<crate::rerank::Reranker>>>,
     /// Epoch seconds of last reranker init failure (0 = never failed). Retry after 60s cooldown.
     reranker_failed_at: Arc<std::sync::atomic::AtomicI64>,
-    nli: Arc<Mutex<Option<crate::nli::NliModel>>>,
-    /// Epoch seconds of last NLI init failure (0 = never failed). Retry after 60s cooldown.
-    nli_failed_at: Arc<std::sync::atomic::AtomicI64>,
     hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>>,
     embed_cache: Arc<Mutex<EmbedCache>>,
     tool_router: ToolRouter<Self>,
@@ -229,8 +224,6 @@ impl GrasshopperMcp {
             embedder: Arc::new(Mutex::new(None)),
             reranker: Arc::new(Mutex::new(None)),
             reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
-            nli: Arc::new(Mutex::new(None)),
-            nli_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             hnsw: Arc::new(Mutex::new(hnsw)),
             embed_cache: Arc::new(Mutex::new(EmbedCache::new(60, 100))),
             tool_router: Self::annotated_router(),
@@ -248,8 +241,6 @@ impl GrasshopperMcp {
             embedder,
             reranker,
             reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
-            nli: Arc::new(Mutex::new(None)),
-            nli_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             hnsw,
             embed_cache: Arc::new(Mutex::new(EmbedCache::new(60, 100))),
             tool_router: Self::annotated_router(),
@@ -298,7 +289,7 @@ impl GrasshopperMcp {
                 "get_context" | "feedback" => write.clone(),
                 // Destructive: consolidate and archive can remove memories
                 "consolidate" | "archive" => destructive_write.clone(),
-                // Write (non-destructive): index, remember, handoff
+                // Write (non-destructive): index, store, handoff
                 _ => write.clone(),
             };
             route.attr.annotations = Some(ann);
@@ -362,46 +353,6 @@ impl GrasshopperMcp {
                         .map(|d| d.as_secs() as i64)
                         .unwrap_or(0);
                     tracing::warn!("reranker init failed (retry in {COOLDOWN_SECS}s): {e}");
-                    failed_at.store(now, std::sync::atomic::Ordering::Relaxed);
-                }
-            }
-        }
-    }
-
-    fn init_nli_blocking(
-        nli: &Arc<Mutex<Option<crate::nli::NliModel>>>,
-        failed_at: &Arc<std::sync::atomic::AtomicI64>,
-    ) {
-        const COOLDOWN_SECS: i64 = 60;
-        let last_fail = failed_at.load(std::sync::atomic::Ordering::Relaxed);
-        if last_fail > 0 {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
-            if now - last_fail < COOLDOWN_SECS {
-                return;
-            }
-        }
-        let mut guard = match nli.lock() {
-            Ok(g) => g,
-            Err(poisoned) => {
-                tracing::warn!("nli mutex poisoned, recovering: {poisoned}");
-                poisoned.into_inner()
-            }
-        };
-        if guard.is_none() {
-            match crate::nli::NliModel::new() {
-                Ok(model) => {
-                    failed_at.store(0, std::sync::atomic::Ordering::Relaxed);
-                    *guard = Some(model);
-                }
-                Err(e) => {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs() as i64)
-                        .unwrap_or(0);
-                    tracing::info!("NLI model not available (retry in {COOLDOWN_SECS}s): {e}");
                     failed_at.store(now, std::sync::atomic::Ordering::Relaxed);
                 }
             }
@@ -692,12 +643,12 @@ impl GrasshopperMcp {
     // --- Cognitive Memory Tools ---
 
     #[tool(
-        name = "remember",
-        description = "Store a fact, decision, preference, or observation as a persistent memory. Auto-classifies the memory type and deduplicates — if a near-duplicate exists, it updates the existing entry instead of creating a new one. Use proactively to save anything worth remembering across sessions."
+        name = "store",
+        description = "Store raw content as a persistent memory. Deduplicates — if a near-duplicate exists, it updates the existing entry instead of creating a new one. Use proactively to save anything worth persisting across sessions: facts, decisions, preferences, observations."
     )]
-    async fn remember(
+    async fn store(
         &self,
-        Parameters(params): Parameters<RememberParams>,
+        Parameters(params): Parameters<StoreParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
@@ -707,19 +658,16 @@ impl GrasshopperMcp {
             let store = Store::open(&db_path)?;
             let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let tags = params.tags.as_deref().unwrap_or("");
-            let result = crate::memory::remember(
+            let result = crate::memory::store(
                 &store,
                 guard.as_mut(),
                 &params.content,
                 params.title.as_deref(),
-                params.r#type.as_deref(),
                 tags,
             )?;
             let output = serde_json::json!({
                 "id": result.id,
                 "title": result.title,
-                "memory_type": result.memory_type,
-                "salience": result.salience,
                 "was_update": result.was_update,
                 "similar_id": result.similar_id,
             });
@@ -736,7 +684,7 @@ impl GrasshopperMcp {
 
     #[tool(
         name = "recall",
-        description = "Cognitive-scored memory search. Unlike search (which returns raw hybrid-search scores), recall applies the full cognitive scoring formula: recency boost, frequency boost, salience weighting, and type-specific exponential decay. Also has side effects: touched memories gain salience and co-retrieved memories form Hebbian associations. Use when you need the most relevant memories, not just keyword matches."
+        description = "Cognitive-scored memory search. Unlike search (which returns raw hybrid-search scores), recall applies cognitive scoring: salience weighting and type-specific exponential decay. Touched memories gain salience. Use when you need the most relevant memories, not just keyword matches."
     )]
     async fn recall(
         &self,
@@ -746,15 +694,12 @@ impl GrasshopperMcp {
         let embedder = Arc::clone(&self.embedder);
         let reranker = Arc::clone(&self.reranker);
         let rr_failed = Arc::clone(&self.reranker_failed_at);
-        let nli = Arc::clone(&self.nli);
-        let nli_failed = Arc::clone(&self.nli_failed_at);
         let hnsw = Arc::clone(&self.hnsw);
         let embed_cache = Arc::clone(&self.embed_cache);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
             Self::init_reranker_blocking(&reranker, &rr_failed);
-            Self::init_nli_blocking(&nli, &nli_failed);
             let store = Store::open(&db_path)?;
             let limit = params.limit.unwrap_or(10).clamp(1, 50);
 
@@ -796,33 +741,10 @@ impl GrasshopperMcp {
                 hnsw_guard.as_ref(), precomputed,
             )?;
 
-            // NLI contradiction detection on recall results
-            let contradictions = if result.hits.len() >= 2 {
-                let mut nli_guard = nli.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-                if let Some(nli_model) = nli_guard.as_mut() {
-                    let entries: Vec<(i64, String, String)> = result.hits.iter()
-                        .map(|h| (h.id, h.title.clone(), h.snippet.clone()))
-                        .collect();
-                    let found = nli_model.find_contradictions(&entries);
-                    if !found.is_empty() {
-                        Some(serde_json::to_value(&found)?)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            let mut output = serde_json::json!({
+            let output = serde_json::json!({
                 "query_id": result.log_id,
                 "results": format_search_hits(&result.hits),
             });
-            if let Some(contradictions) = contradictions {
-                output["contradictions"] = contradictions;
-            }
             let json = serde_json::to_string_pretty(&output)?;
             Ok::<_, anyhow::Error>(json)
         })
@@ -847,15 +769,12 @@ impl GrasshopperMcp {
         let embedder = Arc::clone(&self.embedder);
         let reranker = Arc::clone(&self.reranker);
         let rr_failed = Arc::clone(&self.reranker_failed_at);
-        let nli = Arc::clone(&self.nli);
-        let nli_failed = Arc::clone(&self.nli_failed_at);
         let hnsw = Arc::clone(&self.hnsw);
         let embed_cache = Arc::clone(&self.embed_cache);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
             Self::init_reranker_blocking(&reranker, &rr_failed);
-            Self::init_nli_blocking(&nli, &nli_failed);
             let store = Store::open(&db_path)?;
             let limit = params.limit.unwrap_or(5).clamp(1, 20);
             let threshold = params.threshold.unwrap_or(0.1).clamp(0.0, 1.0);
@@ -899,58 +818,25 @@ impl GrasshopperMcp {
                 )?
             }; // model locks released here
 
-            // Budget truncation + dedup (before NLI and side effects)
+            // Budget truncation + dedup (before side effects)
             let budget = params.budget.unwrap_or(4000);
             let budgeted = crate::memory::budget_context(result.hits, budget, true);
 
-            // NLI contradiction detection on budgeted hits only
-            let contradictions = if budgeted.hits.len() >= 2 {
-                let mut nli_guard = nli.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-                if let Some(nli_model) = nli_guard.as_mut() {
-                    let entries: Vec<(i64, String, String)> = budgeted.hits.iter()
-                        .map(|h| (h.id, h.title.clone(), h.snippet.clone()))
-                        .collect();
-                    let found = nli_model.find_contradictions(&entries);
-                    if !found.is_empty() {
-                        Some(serde_json::to_value(&found)?)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            // Side effects: only touch/associate hits that are actually returned
-            let ids: Vec<i64> = budgeted.hits.iter().map(|h| h.id).collect();
-            for &id in &ids {
-                if let Err(e) = store.touch_memory(id) {
-                    tracing::warn!("Failed to touch memory #{id}: {e}");
-                }
-            }
-            for i in 0..ids.len() {
-                for j in (i + 1)..ids.len() {
-                    if let Err(e) = store.upsert_association(ids[i], ids[j]) {
-                        tracing::warn!("Failed to associate #{} <-> #{}: {e}", ids[i], ids[j]);
-                    }
+            // Side effects: only touch hits that are actually returned
+            for hit in &budgeted.hits {
+                if let Err(e) = store.touch_memory(hit.id) {
+                    tracing::warn!("Failed to touch memory #{}: {e}", hit.id);
                 }
             }
 
-            let mut output = serde_json::Map::new();
-            output.insert("memories".to_string(), serde_json::to_value(format_search_hits(&budgeted.hits))?);
-            output.insert("threshold".to_string(), serde_json::Value::from(result.threshold));
-            output.insert("filtered_count".to_string(), serde_json::Value::from(result.filtered_count));
-            output.insert("budget_dropped".to_string(), serde_json::Value::from(budgeted.dropped_count));
-            output.insert("estimated_tokens".to_string(), serde_json::Value::from(budgeted.estimated_tokens));
-            output.insert("query_id".to_string(), match result.log_id {
-                Some(id) => serde_json::Value::from(id),
-                None => serde_json::Value::Null,
+            let output = serde_json::json!({
+                "memories": format_search_hits(&budgeted.hits),
+                "threshold": result.threshold,
+                "filtered_count": result.filtered_count,
+                "budget_dropped": budgeted.dropped_count,
+                "estimated_tokens": budgeted.estimated_tokens,
+                "query_id": result.log_id,
             });
-            if let Some(contradictions) = contradictions {
-                output.insert("contradictions".to_string(), contradictions);
-            }
             let json = serde_json::to_string_pretty(&output)?;
             Ok::<_, anyhow::Error>(json)
         })
@@ -1246,7 +1132,6 @@ impl GrasshopperMcp {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
         let reranker = Arc::clone(&self.reranker);
-        let nli = Arc::clone(&self.nli);
         let hnsw = Arc::clone(&self.hnsw);
 
         let result = tokio::task::spawn_blocking(move || {
@@ -1262,7 +1147,6 @@ impl GrasshopperMcp {
 
             let embedder_loaded = embedder.lock().map(|g| g.is_some()).unwrap_or(false);
             let reranker_loaded = reranker.lock().map(|g| g.is_some()).unwrap_or(false);
-            let nli_loaded = nli.lock().map(|g| g.is_some()).unwrap_or(false);
             let hnsw_points = hnsw.lock().ok()
                 .and_then(|g| g.as_ref().map(|h| h.len()));
 
@@ -1284,7 +1168,6 @@ impl GrasshopperMcp {
                 "models": {
                     "embedder": embedder_loaded,
                     "reranker": reranker_loaded,
-                    "nli": nli_loaded,
                 },
                 "hnsw_points": hnsw_points,
                 "logs": {
@@ -1378,7 +1261,7 @@ impl ServerHandler for GrasshopperMcp {
                 "Grasshopper is a unified agent brain combining code intelligence and cognitive memory.\n\n\
                  SESSION WORKFLOW:\n\
                  - Start: call me then pickup to load identity and resume context\n\
-                 - During: use remember to save decisions, learnings, and preferences\n\
+                 - During: use store to save decisions, learnings, and preferences\n\
                  - End: call handoff to record progress and next steps\n\n\
                  CODE INTELLIGENCE (requires index first):\n\
                  - search: find code or memories by raw hybrid-search score. Use for code lookups or broad cross-domain queries\n\
@@ -1386,8 +1269,8 @@ impl ServerHandler for GrasshopperMcp {
                  - map: get a token-budgeted overview of an entire codebase\n\
                  - impact: see what breaks if you change a symbol\n\n\
                  COGNITIVE MEMORY:\n\
-                 - recall: retrieve memories with cognitive scoring (recency, frequency, salience, decay). Use this for memory queries, not search\n\
-                 - remember: store facts, decisions, preferences (auto-deduplicates)\n\
+                 - recall: retrieve memories with cognitive scoring (salience, decay). Use this for memory queries, not search\n\
+                 - store: persist facts, decisions, preferences (auto-deduplicates)\n\
                  - archive: soft-delete a bad or outdated memory by ID\n\
                  - me: load identity and working context\n\
                  - pickup / handoff: session continuity\n\

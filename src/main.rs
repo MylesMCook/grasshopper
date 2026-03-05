@@ -42,16 +42,13 @@ enum Commands {
         limit: usize,
     },
 
-    /// Store a memory (with auto-classification and dedup)
-    Remember {
+    /// Store raw content as a persistent memory (with dedup)
+    Store {
         /// Memory content
         content: String,
-        /// Optional title (auto-generated if omitted)
+        /// Optional title (truncated from content if omitted)
         #[arg(long)]
         title: Option<String>,
-        /// Memory type (auto-classified if omitted)
-        #[arg(long, value_parser = ["identity", "knowledge", "episode", "procedure"])]
-        r#type: Option<String>,
         /// Descriptors (comma-separated tags)
         #[arg(long, default_value = "")]
         tags: String,
@@ -241,32 +238,30 @@ fn main() -> Result<()> {
             }
         }
 
-        Commands::Remember {
+        Commands::Store {
             content,
             title,
-            r#type,
             tags,
         } => {
             let store = Store::open(&db_path)?;
             let mut embedder = try_embedder();
-            let result = memory::remember(
+            let result = memory::store(
                 &store,
                 embedder.as_mut(),
                 &content,
                 title.as_deref(),
-                r#type.as_deref(),
                 &tags,
             )?;
 
             if result.was_update {
                 println!(
-                    "Updated memory #{} (type: {}, salience: {:.2})",
-                    result.id, result.memory_type, result.salience,
+                    "Updated memory #{} \"{}\"",
+                    result.id, result.title,
                 );
             } else {
                 println!(
-                    "Stored memory #{} (type: {}, salience: {:.2})",
-                    result.id, result.memory_type, result.salience,
+                    "Stored memory #{} \"{}\"",
+                    result.id, result.title,
                 );
             }
         }

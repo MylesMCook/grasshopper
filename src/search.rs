@@ -237,6 +237,161 @@ pub fn rerank_hits(
     Ok(result)
 }
 
+/// Result of unified search across code and memory.
+pub struct UnifiedSearchResult {
+    pub hits: Vec<SearchHit>,
+    /// Retrieval log ID for feedback correlation (only for memory queries).
+    pub log_id: Option<i64>,
+    /// How many candidates were filtered by the relevance threshold.
+    pub filtered_count: usize,
+}
+
+/// Unified search: searches code and/or memory with a single entry point.
+/// For memory results (kind != "code"), automatically applies cognitive scoring
+/// (salience + decay) and optional relevance gating.
+/// For code results, returns raw hybrid-search scores.
+///
+/// This replaces the separate search/recall/get_context read paths with one function.
+#[allow(clippy::too_many_arguments)]
+pub fn unified_search(
+    store: &Store,
+    query: &str,
+    kind_filter: Option<&str>,
+    limit: usize,
+    threshold: Option<f32>,
+    embedder: Option<&mut crate::code::embed::Embedder>,
+    reranker: Option<&mut crate::rerank::Reranker>,
+    hnsw: Option<&crate::code::hnsw::HnswIndex>,
+) -> Result<UnifiedSearchResult> {
+    let is_memory_only = kind_filter == Some("memory");
+
+    // For memory-only queries, use expanded FTS for better recall (like recall() does)
+    let fts_results = if is_memory_only {
+        expanded_fts_search(store, query, kind_filter, limit.max(20))?
+    } else {
+        store.fts_search(query, kind_filter, limit.max(20))?
+    };
+
+    // Vector search (runs once on original query)
+    let vec_results = if let Some(emb) = embedder {
+        let query_vec = emb.embed_batch(&[query.to_string()])?;
+        if query_vec.is_empty() {
+            vec![]
+        } else if let Some(hnsw) = hnsw {
+            store.vector_search_hnsw(hnsw, &query_vec[0], kind_filter, limit.max(20))?
+        } else {
+            store.vector_search(&query_vec[0], crate::code::embed::MODEL_NAME, kind_filter, limit.max(20))?
+        }
+    } else {
+        vec![]
+    };
+
+    // RRF fusion
+    let merged = if fts_results.is_empty() {
+        vec_results
+    } else if vec_results.is_empty() {
+        fts_results
+    } else {
+        hybrid_search(&fts_results, &vec_results, limit.max(20))
+    };
+
+    // Rerank via cross-encoder if available
+    let mut rerank_succeeded = false;
+    let merged = if let Some(reranker) = reranker {
+        match rerank_hits(reranker, query, merged.clone(), limit.max(20)) {
+            Ok(reranked) => {
+                rerank_succeeded = true;
+                reranked
+            }
+            Err(e) => {
+                tracing::warn!("reranking failed, returning unreranked results: {e}");
+                merged
+            }
+        }
+    } else {
+        merged
+    };
+
+    // For memory results: filter archived + identity, apply relevance gate, cognitive scoring
+    if is_memory_only || kind_filter.is_none() {
+        let (memory_hits, code_hits): (Vec<_>, Vec<_>) = merged
+            .into_iter()
+            .partition(|h| h.kind == "memory");
+
+        // Filter archived and identity memories
+        let filtered_memories: Vec<SearchHit> = memory_hits
+            .into_iter()
+            .filter(|h| !h.archived && h.memory_type.as_deref() != Some("identity"))
+            .collect();
+
+        // Relevance gate (if threshold provided)
+        let pre_gate_count = filtered_memories.len();
+        let gated: Vec<SearchHit> = if let Some(threshold) = threshold {
+            filtered_memories
+                .into_iter()
+                .filter(|h| {
+                    if rerank_succeeded {
+                        h.reranker_score.unwrap_or(0.0) >= threshold
+                    } else {
+                        h.score >= (threshold * 0.05) as f64
+                    }
+                })
+                .collect()
+        } else {
+            filtered_memories
+        };
+        let filtered_count = pre_gate_count - gated.len();
+
+        // Apply cognitive scoring to memory hits
+        let mut scored: Vec<SearchHit> = gated
+            .into_iter()
+            .map(|mut h| {
+                h.score = crate::memory::cognitive_score(&h);
+                h
+            })
+            .collect();
+        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Touch memory side effects
+        for hit in &scored {
+            if let Err(e) = store.touch_memory(hit.id) {
+                tracing::warn!("Failed to touch memory #{}: {e}", hit.id);
+            }
+        }
+
+        // Merge memory + code hits back, memory first (already scored)
+        let mut all_hits = scored;
+        all_hits.extend(code_hits);
+        all_hits.truncate(limit);
+
+        // Log retrieval
+        let log_id = store
+            .log_retrieval(
+                query,
+                "unified_search",
+                &all_hits.iter().map(|h| (h.id, h.score)).collect::<Vec<_>>(),
+                None,
+            )
+            .map_err(|e| { tracing::warn!("Failed to log retrieval: {e}"); e })
+            .ok();
+
+        Ok(UnifiedSearchResult {
+            hits: all_hits,
+            log_id,
+            filtered_count,
+        })
+    } else {
+        // Code-only: no cognitive scoring, no side effects
+        let mut hits = merged;
+        hits.truncate(limit);
+        Ok(UnifiedSearchResult {
+            hits,
+            log_id: None,
+            filtered_count: 0,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
