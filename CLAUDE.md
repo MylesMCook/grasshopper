@@ -14,7 +14,7 @@ Based on Yuan et al. (March 2026, arXiv:2603.02473v1):
 
 ```sh
 cargo build                    # Build
-cargo test                     # 69 tests (+ 4 ignored NLI tests requiring model)
+cargo test                     # 107 tests (+ 4 ignored NLI tests requiring model)
 cargo run -- --help            # CLI help
 cargo run -- remember "text"   # Store a memory
 cargo run -- recall "query"    # Cognitive-scored memory search
@@ -29,13 +29,13 @@ cargo run -- serve --port 8106 # HTTP MCP server
 
 ```
 src/
-├── main.rs    — CLI with 12 subcommands (577 lines)
+├── main.rs    — CLI with 14 subcommands (604 lines)
 ├── lib.rs     — Module exports
-├── store.rs   — Unified SQLite schema, all queries (2331 lines)
-├── memory.rs  — Cognitive layer: remember, recall, get_context, classify, score, reflect, consolidate, budget (1125 lines)
-├── search.rs  — Hybrid search: FTS5 + vector → RRF fusion → query expansion → cross-encoder rerank (270 lines)
+├── store.rs   — Unified SQLite schema, all queries (3027 lines)
+├── memory.rs  — Cognitive layer: remember, recall, get_context, classify, score, reflect, consolidate, entity extraction, learned decay (1667 lines)
+├── search.rs  — Hybrid search: FTS5 + vector → RRF fusion → query expansion → cross-encoder rerank (274 lines)
 ├── index.rs   — Code indexing: scan → chunk → graph → FTS → embed (286 lines)
-├── mcp.rs     — MCP server: 13 tools, HTTP + stdio transport (1336 lines)
+├── mcp.rs     — MCP server: 16 tools, HTTP + stdio transport (1421 lines)
 ├── nli.rs     — NLI contradiction detection via ONNX Runtime (cross-encoder/nli-MiniLM2-L6-H768) (256 lines)
 └── rerank.rs  — Cross-encoder reranking via fastembed/ONNX (BAAI/bge-reranker-base)
 ```
@@ -46,16 +46,14 @@ src/
 ### Retrieval Pipeline
 
 ```
-Query Expansion → FTS5 (BM25) → Vector (cosine, HNSW) → RRF fusion (k=60) → Cross-encoder rerank → Relevance gate → Cognitive scoring → NLI contradiction check → Budget truncation → Return
+Query Expansion → FTS5 (BM25) → Vector (cosine, HNSW) → Entity graph augmentation → RRF fusion (k=60) → Cross-encoder rerank → Relevance gate → Cognitive scoring (learned decay) → NLI contradiction check → Budget truncation → Return
 ```
-
-**Known limitation:** HNSW index is loaded once at startup. New embeddings added after startup are searchable via FTS and brute-force vector, but not via HNSW until `rebuild-hnsw` + restart. Track for Phase 2 auto-refresh.
 
 ### Schema
 
 Single `chunks` table with `kind` discriminator ('code' | 'memory'). Code chunks have file_path, language, symbol_name. Memory entries have memory_type, salience, access_count. Both share embeddings, content_hash, and graph edges.
 
-Supporting tables: `codebases`, `indexed_files`, `graph` (code refs + Hebbian associations), `chunks_fts` (FTS5), `handoffs`.
+Supporting tables: `codebases`, `indexed_files`, `graph` (code refs + Hebbian associations + entity edges + summary edges), `chunks_fts` (FTS5), `handoffs`, `access_log` (per-access events for learned decay), `retrieval_log` (query logging for fine-tuning), `feedback` (user signal on retrieval quality).
 
 ## Key Dependencies
 
@@ -89,4 +87,4 @@ Supporting tables: `codebases`, `indexed_files`, `graph` (code refs + Hebbian as
 - Completed: LAB-26 (scaffold), LAB-27 (code intelligence), LAB-28 (cognitive memory), LAB-29 (MCP server), LAB-30 (hook-driven consolidation)
 - Phase 1 — Retrieval Excellence: LAB-45 → LAB-32 → LAB-33, LAB-34 (parallel), LAB-35 (eval)
 - Phase 2 — Proactive Intelligence: LAB-36 (parent), LAB-38 (relevance gate) ✓, LAB-39 (query expander) ✓, LAB-40 (contradiction detector) ✓, LAB-46 (working memory) ✓
-- Phase 3 — Learning & Evolution: LAB-37 (parent), LAB-41 (decay scorer), LAB-42 (consolidation), LAB-43 (entity graph), LAB-44 (fine-tuning pipeline)
+- Phase 3 — Learning & Evolution: LAB-37 (parent) ✓, LAB-41 (decay scorer) ✓, LAB-42 (consolidation) ✓, LAB-43 (entity graph) ✓, LAB-44 (fine-tuning pipeline) ✓
