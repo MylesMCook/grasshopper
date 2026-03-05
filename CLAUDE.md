@@ -1,6 +1,6 @@
 # Grasshopper
 
-Unified agent brain — code intelligence + cognitive memory in one self-contained Rust binary.
+Persistent retrieval engine for AI agents — code intelligence + cognitive memory in one self-contained Rust binary.
 
 ## Design Philosophy: "Store Raw, Retrieve Smart"
 
@@ -14,30 +14,30 @@ Based on Yuan et al. (March 2026, arXiv:2603.02473v1) and Maharana et al. (2024,
 ## Key Commands
 
 ```sh
-cargo build                    # Build
-cargo test                     # 173 tests (+ 4 ignored NLI tests requiring model)
-cargo run -- --help            # CLI help
-cargo run -- remember "text"   # Store a memory
-cargo run -- recall "query"    # Cognitive-scored memory search
-cargo run -- get-context "q"   # Proactive context surfacing with relevance gate
-cargo run -- stats             # Show counts
-cargo run -- search "query"    # Hybrid search (code + memory)
-cargo run -- index ./path      # Index code
-cargo run -- serve --port 8106 # HTTP MCP server
+cargo build                                  # Build
+cargo test                                   # ~157 tests
+cargo run -- --help                          # CLI help
+cargo run -- index ./path                    # Index code
+cargo run -- store "text"                    # Store a memory
+cargo run -- search "query"                  # Hybrid search (code + memory)
+cargo run -- search "query" --mode navigate  # Symbol definitions + references
+cargo run -- search "query" --mode map       # Token-budgeted codebase overview
+cargo run -- search "query" --mode impact    # Blast radius analysis
+cargo run -- serve --port 8106               # HTTP MCP server
+cargo run -- serve --stdio                   # stdio MCP (for Claude Code)
 ```
 
 ## Architecture
 
 ```
 src/
-├── main.rs     — CLI with 14 subcommands
+├── main.rs     — CLI with 4 subcommands (index, store, search, serve)
 ├── lib.rs      — Module exports
-├── store.rs    — Unified SQLite schema, all queries, maintenance
-├── memory.rs   — Cognitive layer: remember, recall, get_context, classify, score, reflect, consolidate, entity extraction, learned decay
-├── search.rs   — Hybrid search: FTS5 + vector → RRF fusion → query expansion → cross-encoder rerank
+├── store.rs    — Unified SQLite schema, all queries, auto-maintenance
+├── memory.rs   — Cognitive layer: store, recall, cognitive_score (salience + decay)
+├── search.rs   — Hybrid search: FTS5 + vector → RRF fusion → query expansion → cross-encoder rerank → unified_search
 ├── index.rs    — Code indexing: scan → chunk → graph → FTS → embed
-├── mcp.rs      — MCP server: 18 tools, HTTP + stdio transport, embedding cache
-├── nli.rs      — NLI contradiction detection via ONNX Runtime (cross-encoder/nli-MiniLM2-L6-H768)
+├── mcp.rs      — MCP server: 3 tools (index, store, search), HTTP + stdio transport, embedding cache
 ├── rerank.rs   — Cross-encoder reranking via fastembed/ONNX (BAAI/bge-reranker-base)
 └── code/       — Code intelligence primitives (self-contained)
     ├── chunk.rs      — Tree-sitter code chunking (13 languages)
@@ -51,19 +51,19 @@ src/
 ### Retrieval Pipeline
 
 ```
-Query Expansion → FTS5 (BM25) → Vector (cosine, HNSW) → Entity graph augmentation → RRF fusion (k=60) → Cross-encoder rerank → Relevance gate → Cognitive scoring (learned decay) → NLI contradiction check → Budget truncation → Return
+Query Expansion → FTS5 (BM25) → Vector (cosine, HNSW) → RRF fusion (k=60) → Cross-encoder rerank → Relevance gate → Cognitive scoring (salience × decay) → Budget truncation → Return
 ```
 
 ### Schema
 
 Single `chunks` table with `kind` discriminator ('code' | 'memory'). Code chunks have file_path, language, symbol_name. Memory entries have memory_type, salience, access_count. Both share embeddings, content_hash, and graph edges.
 
-Supporting tables: `codebases`, `indexed_files`, `graph` (code refs + Hebbian associations + entity edges + summary edges), `chunks_fts` (FTS5), `handoffs`, `access_log` (per-access events for learned decay), `retrieval_log` (query logging for fine-tuning), `feedback` (user signal on retrieval quality).
+Supporting tables: `codebases`, `indexed_files`, `graph` (code refs), `chunks_fts` (FTS5), `handoffs`, `access_log`, `retrieval_log` (query logging), `feedback` (user signal on retrieval quality).
 
 ## Key Dependencies
 
 - `tree-sitter` 0.25 + 13 language grammars — code parsing and tag extraction
-- `ort` 2.0.0-rc.11 + `tokenizers` 0.22 — ONNX embeddings (Jina Code V2, 768-dim) and NLI contradiction detection
+- `ort` 2.0.0-rc.11 + `tokenizers` 0.22 — ONNX embeddings (Jina Code V2, 768-dim)
 - `instant-distance` 0.6 — HNSW approximate nearest neighbor search
 - `rusqlite` 0.32 — SQLite with FTS5 + bundled
 - `rmcp` 0.16 — MCP server (stdio + streamable HTTP)
@@ -78,7 +78,7 @@ Supporting tables: `codebases`, `indexed_files`, `graph` (code refs + Hebbian as
 - All blocking operations (DB, embedder) run inside `spawn_blocking`
 - Poisoned mutexes are recovered with a warning log, not panicked
 - Ambiguous codebase references error with suggestions instead of silently picking one
-- Design doc: Craft > Projects > Grasshopper: Unified Agent Brain
+- Design doc: Craft > Projects > Grasshopper: Persistent Retrieval Engine
 
 ## Deployment
 
@@ -90,9 +90,6 @@ Supporting tables: `codebases`, `indexed_files`, `graph` (code refs + Hebbian as
 
 ## Linear
 
-- Project: **Grasshopper Next-Gen** (LAB-31+)
-- Completed: LAB-26 (scaffold), LAB-27 (code intelligence), LAB-28 (cognitive memory), LAB-29 (MCP server), LAB-30 (hook-driven consolidation)
-- Phase 1 — Retrieval Excellence: LAB-45 → LAB-32 → LAB-33, LAB-34 (parallel), LAB-35 (eval)
-- Phase 2 — Proactive Intelligence: LAB-36 (parent), LAB-38 (relevance gate) ✓, LAB-39 (query expander) ✓, LAB-40 (contradiction detector) ✓, LAB-46 (working memory) ✓
-- Phase 3 — Learning & Evolution: LAB-37 (parent) ✓, LAB-41 (decay scorer) ✓, LAB-42 (consolidation) ✓, LAB-43 (entity graph) ✓, LAB-44 (fine-tuning pipeline) ✓
-- Phase 4 — Production Hardening: LAB-77 (parent) ✓, LAB-78 (NLI wiring) ✓, LAB-79 (DB maintenance) ✓, LAB-80 (observability) ✓, LAB-81 (embedding cache) ✓
+- Project: **Grasshopper** (Lab team)
+- v1 phases complete: Retrieval Excellence, Proactive Intelligence, Learning & Evolution, Production Hardening (LAB-26 through LAB-81)
+- v2 redesign: LAB-82 (parent) — tool collapse (18→3), CLI collapse (14→4), simplified cognitive scoring, auto maintenance

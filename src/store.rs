@@ -445,6 +445,33 @@ impl Store {
         }
     }
 
+    /// Update a memory entry's content fields only, preserving memory_type and salience.
+    pub fn update_memory_content(&self, id: i64, title: &str, content: &str, descriptors: &str, content_hash: &str) -> Result<bool> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute_batch("SAVEPOINT update_memory_content")?;
+        let result = (|| -> Result<bool> {
+            let rows = self.conn.execute(
+                "UPDATE chunks SET title = ?1, content = ?2, descriptors = ?3,
+                                   content_hash = ?4, updated_at = ?5
+                 WHERE id = ?6 AND kind = 'memory'",
+                params![title, content, descriptors, content_hash, now, id],
+            )?;
+            if rows > 0 {
+                self.conn.execute("DELETE FROM chunks_fts WHERE rowid = ?1", params![id])?;
+                self.conn.execute(
+                    "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
+                     VALUES (?1, ?2, ?3, '', '', ?4)",
+                    params![id, title, content, descriptors],
+                )?;
+            }
+            Ok(rows > 0)
+        })();
+        match result {
+            Ok(updated) => { self.conn.execute_batch("RELEASE update_memory_content")?; Ok(updated) }
+            Err(e) => { let _ = self.conn.execute_batch("ROLLBACK TO update_memory_content"); Err(e) }
+        }
+    }
+
     /// Count chunks by kind.
     pub fn count_by_kind(&self) -> Result<(i64, i64)> {
         let code: i64 = self.conn.query_row(
@@ -650,6 +677,18 @@ impl Store {
             .query_row(params![hash], |row| row.get(0))
             .optional()?;
         Ok(id)
+    }
+
+    /// Find an active (non-archived) memory by content hash.
+    pub fn find_memory_by_hash(&self, hash: &str) -> Result<Option<i64>> {
+        self.conn
+            .query_row(
+                "SELECT id FROM chunks WHERE kind = 'memory' AND content_hash = ?1 AND archived = 0 LIMIT 1",
+                params![hash],
+                |row| row.get(0),
+            )
+            .optional()
+            .context("find_memory_by_hash")
     }
 
     /// Archive a memory (soft delete). Returns false if ID not found or not a memory.

@@ -1,6 +1,5 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use grasshopper::memory::{self, ReflectFocus};
 use grasshopper::store::{SearchHit, Store};
 use std::path::{Path, PathBuf};
 
@@ -8,7 +7,7 @@ use std::path::{Path, PathBuf};
 #[command(
     name = "grasshopper",
     version,
-    about = "Unified agent brain — code intelligence + cognitive memory"
+    about = "Persistent retrieval engine for AI agents"
 )]
 struct Cli {
     /// Database file path (default: ~/.grasshopper/brain.db)
@@ -30,99 +29,57 @@ enum Commands {
         embed: bool,
     },
 
-    /// Search code and memory
+    /// Search code and memory, navigate symbols, map codebases, or analyze impact
     Search {
         /// Search query
         query: String,
+        /// Search mode: search (default), navigate, map, impact
+        #[arg(long, default_value = "search")]
+        mode: String,
         /// Filter: code, memory, or all
         #[arg(long, default_value = "all")]
         kind: String,
         /// Maximum results
         #[arg(long, default_value = "10")]
         limit: usize,
+        /// Minimum relevance threshold (0.0-1.0) for memory results
+        #[arg(long)]
+        threshold: Option<f32>,
+        /// Token budget for map mode
+        #[arg(long, default_value = "4000")]
+        budget: usize,
+        /// BFS depth for impact mode (1-5)
+        #[arg(long, default_value = "2")]
+        depth: usize,
+        /// Scope to a codebase directory
+        #[arg(long)]
+        dir: Option<String>,
+        /// Edge direction for navigate mode: both, defs, refs
+        #[arg(long, default_value = "both")]
+        direction: String,
     },
 
-    /// Store a memory (with auto-classification and dedup)
-    Remember {
+    /// Store raw content as a persistent memory (with dedup)
+    Store {
         /// Memory content
         content: String,
-        /// Optional title (auto-generated if omitted)
+        /// Optional title (truncated from content if omitted)
         #[arg(long)]
         title: Option<String>,
-        /// Memory type (auto-classified if omitted)
-        #[arg(long, value_parser = ["identity", "knowledge", "episode", "procedure"])]
-        r#type: Option<String>,
         /// Descriptors (comma-separated tags)
         #[arg(long, default_value = "")]
         tags: String,
     },
 
-    /// Cognitive-scored memory search
-    Recall {
-        /// Search query
-        query: String,
-        /// Maximum results
-        #[arg(long, default_value = "10")]
-        limit: usize,
-    },
-
-    /// Proactive context surfacing with relevance gate
-    GetContext {
-        /// Conversation context or topic
-        query: String,
-        /// Minimum relevance threshold (0.0-1.0)
-        #[arg(long, default_value = "0.1")]
-        threshold: f32,
-        /// Maximum results
-        #[arg(long, default_value = "5")]
-        limit: usize,
-    },
-
-    /// Identity snapshot: who am I, what am I working on
-    Me,
-
-    /// Resume a previous session (load latest handoff + related memories)
-    Pickup {
-        /// Filter by project name
-        #[arg(long)]
-        project: Option<String>,
-    },
-
-    /// Meta-cognition analytics: growing, fading, connections, gaps
-    Reflect {
-        /// Focus area
-        #[arg(long, default_value = "overview", value_parser = ["overview", "growing", "fading", "connections", "gaps"])]
-        focus: String,
-    },
-
-    /// Memory hygiene: find duplicates, archive stale, cluster episodes
-    Consolidate {
-        /// Preview only, don't archive anything
-        #[arg(long)]
-        dry_run: bool,
-        /// Days of inactivity before considering stale
-        #[arg(long, default_value = "90")]
-        stale_days: i64,
-    },
-
-    /// Rebuild the HNSW vector index from all embeddings
-    RebuildHnsw,
-
-    /// Show memory statistics
-    Stats,
-
-    /// Start the MCP server (HTTP daemon mode)
+    /// Start the MCP server (HTTP by default, or stdio with --stdio)
     Serve {
         /// Port to listen on
         #[arg(long, default_value = "8106")]
         port: u16,
+        /// Use stdio transport instead of HTTP (for direct Claude Code integration)
+        #[arg(long)]
+        stdio: bool,
     },
-
-    /// Start the MCP server (stdio, for direct Claude Code integration)
-    Mcp,
-
-    /// Export retrieval logs + feedback as JSONL training data
-    ExportTraining,
 }
 
 fn default_db_path() -> PathBuf {
@@ -152,17 +109,14 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let db_path = cli.db.unwrap_or_else(default_db_path);
 
-    // MCP commands init their own tracing — handle before CLI tracing
-    match cli.command {
-        Commands::Serve { port } => {
-            let rt = tokio::runtime::Runtime::new()?;
+    // MCP/Serve commands init their own tracing — handle before CLI tracing
+    if let Commands::Serve { port, stdio } = cli.command {
+        let rt = tokio::runtime::Runtime::new()?;
+        if stdio {
+            return rt.block_on(grasshopper::mcp::run_stdio(db_path));
+        } else {
             return rt.block_on(grasshopper::mcp::run_http(db_path, port));
         }
-        Commands::Mcp => {
-            let rt = tokio::runtime::Runtime::new()?;
-            return rt.block_on(grasshopper::mcp::run_stdio(db_path));
-        }
-        _ => {}
     }
 
     // CLI tracing
@@ -211,351 +165,147 @@ fn main() -> Result<()> {
             println!("Done in {}ms", result.duration_ms);
         }
 
-        Commands::Search { query, kind, limit } => {
+        Commands::Search {
+            query, mode, kind, limit, threshold, budget, depth, dir, direction,
+        } => {
             let store = Store::open(&db_path)?;
-            let kind_filter = match kind.as_str() {
-                "all" => None,
-                k => Some(k),
-            };
 
-            let mut embedder = try_embedder();
-            let mut reranker = try_reranker();
-            let hnsw = try_hnsw(&db_path);
-            let results = grasshopper::search::search(
-                &store,
-                &query,
-                kind_filter,
-                limit,
-                embedder.as_mut(),
-                reranker.as_mut(),
-                hnsw.as_ref(),
-            )?;
+            match mode.as_str() {
+                "search" => {
+                    let kind_filter = match kind.as_str() {
+                        "all" => None,
+                        k => Some(k),
+                    };
 
-            if results.is_empty() {
-                println!("No results found.");
-                return Ok(());
-            }
+                    let mut embedder = try_embedder();
+                    let mut reranker = try_reranker();
+                    let hnsw = try_hnsw(&db_path);
+                    let result = grasshopper::search::unified_search(
+                        &store,
+                        &query,
+                        kind_filter,
+                        limit,
+                        threshold,
+                        embedder.as_mut(),
+                        reranker.as_mut(),
+                        hnsw.as_ref(),
+                    )?;
 
-            for (i, hit) in results.iter().enumerate() {
-                println!("{}. [{:.4}] {}", i + 1, hit.score, format_hit(hit));
+                    if result.hits.is_empty() {
+                        println!("No results found.");
+                        return Ok(());
+                    }
+
+                    for (i, hit) in result.hits.iter().enumerate() {
+                        println!("{}. [{:.4}] {}", i + 1, hit.score, format_hit(hit));
+                    }
+                }
+                "navigate" => {
+                    let codebases = store.list_codebases()?;
+                    let codebase_id = resolve_codebase_cli(&codebases, dir.as_deref())?;
+
+                    let (show_defs, show_refs) = match direction.as_str() {
+                        "both" => (true, true),
+                        "defs" | "def" => (true, false),
+                        "refs" | "ref" => (false, true),
+                        d => anyhow::bail!("invalid direction '{d}': must be 'both', 'defs', or 'refs'"),
+                    };
+
+                    if show_defs {
+                        let defs = store.find_definitions(&query, codebase_id)?;
+                        if !defs.is_empty() {
+                            println!("Definitions of '{query}':");
+                            for d in &defs {
+                                println!("  {}:{} ({} {})", d.file_path, d.line, d.kind, d.symbol);
+                            }
+                        }
+                    }
+
+                    if show_refs {
+                        let refs = store.find_references(&query, codebase_id)?;
+                        if !refs.is_empty() {
+                            println!("References to '{query}':");
+                            for r in &refs {
+                                println!("  {}:{} ({} {})", r.file_path, r.line, r.kind, r.symbol);
+                            }
+                        }
+                    }
+                }
+                "map" => {
+                    let codebases = store.list_codebases()?;
+                    let codebase_id = resolve_codebase_cli(&codebases, dir.as_deref())?
+                        .ok_or_else(|| anyhow::anyhow!("no codebases indexed — run index first"))?;
+                    let output = grasshopper::mcp::generate_map_cli(&store, codebase_id, budget)?;
+                    print!("{output}");
+                }
+                "impact" => {
+                    let codebases = store.list_codebases()?;
+                    let codebase_id = resolve_codebase_cli(&codebases, dir.as_deref())?;
+                    let max_depth = depth.clamp(1, 5);
+                    let hits = store.find_impact(&query, codebase_id, max_depth)?;
+
+                    if hits.is_empty() {
+                        println!("No impact found for '{query}'.");
+                        return Ok(());
+                    }
+
+                    let defs = store.find_definitions(&query, codebase_id)?;
+                    if !defs.is_empty() {
+                        let locs: Vec<String> =
+                            defs.iter().map(|d| format!("{}:{}", d.file_path, d.line)).collect();
+                        println!("Impact of changing '{}' (defined at {}):", query, locs.join(", "));
+                    } else {
+                        println!("Impact of changing '{query}':");
+                    }
+
+                    let mut current_depth = 0;
+                    for h in &hits {
+                        if h.depth != current_depth {
+                            current_depth = h.depth;
+                            println!(
+                                "\n  Depth {} ({}):",
+                                current_depth,
+                                if current_depth == 1 { "direct" } else { "transitive" },
+                            );
+                        }
+                        println!("    {} (via {})", h.file_path, h.via_symbol);
+                    }
+
+                    println!("\n{} file(s) affected.", hits.len());
+                }
+                m => anyhow::bail!("invalid mode '{m}': must be 'search', 'navigate', 'map', or 'impact'"),
             }
         }
 
-        Commands::Remember {
+        Commands::Store {
             content,
             title,
-            r#type,
             tags,
         } => {
             let store = Store::open(&db_path)?;
             let mut embedder = try_embedder();
-            let result = memory::remember(
+            let result = grasshopper::memory::store(
                 &store,
                 embedder.as_mut(),
                 &content,
                 title.as_deref(),
-                r#type.as_deref(),
                 &tags,
             )?;
 
             if result.was_update {
                 println!(
-                    "Updated memory #{} (type: {}, salience: {:.2})",
-                    result.id, result.memory_type, result.salience,
+                    "Updated memory #{} \"{}\"",
+                    result.id, result.title,
                 );
             } else {
                 println!(
-                    "Stored memory #{} (type: {}, salience: {:.2})",
-                    result.id, result.memory_type, result.salience,
+                    "Stored memory #{} \"{}\"",
+                    result.id, result.title,
                 );
             }
         }
 
-        Commands::Recall { query, limit } => {
-            let store = Store::open(&db_path)?;
-            let mut embedder = try_embedder();
-            let mut reranker = try_reranker();
-            let hnsw = try_hnsw(&db_path);
-            let result = memory::recall(&store, embedder.as_mut(), reranker.as_mut(), &query, limit, hnsw.as_ref(), None)?;
-
-            if result.hits.is_empty() {
-                println!("No memories found.");
-                return Ok(());
-            }
-
-            for (i, hit) in result.hits.iter().enumerate() {
-                let mtype = hit.memory_type.as_deref().unwrap_or("?");
-                println!(
-                    "{}. [{:.4}] [{}] {} (accessed: {}, salience: {:.2})",
-                    i + 1, hit.score, mtype, hit.title, hit.access_count, hit.salience,
-                );
-                if !hit.snippet.is_empty() {
-                    let preview: String = hit.snippet.chars().take(120).collect();
-                    println!("   {preview}");
-                }
-            }
-        }
-
-        Commands::GetContext { query, threshold, limit } => {
-            let store = Store::open(&db_path)?;
-            let mut embedder = try_embedder();
-            let mut reranker = try_reranker();
-            let hnsw = try_hnsw(&db_path);
-            let result = memory::get_context(&store, embedder.as_mut(), reranker.as_mut(), &query, limit, threshold, hnsw.as_ref(), None)?;
-
-            if result.hits.is_empty() {
-                println!("No relevant context found (threshold: {threshold}, filtered: {}).", result.filtered_count);
-                return Ok(());
-            }
-
-            println!("Context ({} results, {} filtered at threshold {threshold}):", result.hits.len(), result.filtered_count);
-            for (i, hit) in result.hits.iter().enumerate() {
-                let mtype = hit.memory_type.as_deref().unwrap_or("?");
-                let rerank = hit.reranker_score.map(|s| format!(" rerank={s:.4}")).unwrap_or_default();
-                println!(
-                    "{}. [{:.4}{}] [{}] {}",
-                    i + 1, hit.score, rerank, mtype, hit.title,
-                );
-                if !hit.snippet.is_empty() {
-                    let preview: String = hit.snippet.chars().take(120).collect();
-                    println!("   {preview}");
-                }
-            }
-        }
-
-        Commands::Me => {
-            let store = Store::open(&db_path)?;
-            let result = memory::me(&store)?;
-
-            if !result.identity.is_empty() {
-                println!("## Identity");
-                for entry in &result.identity {
-                    println!("  - {}: {}", entry.title, truncate(&entry.content, 100));
-                }
-                println!();
-            }
-
-            if !result.active_projects.is_empty() {
-                println!("## Active Projects");
-                for h in &result.active_projects {
-                    println!("  - [{}] {} → {}", h.project, h.summary, h.next_steps);
-                }
-                println!();
-            }
-
-            if !result.working_set.is_empty() {
-                println!("## Working Set (most accessed)");
-                for entry in &result.working_set {
-                    let mtype = entry.memory_type.as_deref().unwrap_or("?");
-                    println!(
-                        "  - [{}] {} (accessed: {}, salience: {:.2})",
-                        mtype, entry.title, entry.access_count, entry.salience,
-                    );
-                }
-                println!();
-            }
-
-            println!(
-                "## Stats: {} active, {} archived",
-                result.active_count, result.archived_count,
-            );
-        }
-
-        Commands::Pickup { project } => {
-            let store = Store::open(&db_path)?;
-            let mut embedder = try_embedder();
-            let mut reranker = try_reranker();
-            let hnsw = try_hnsw(&db_path);
-            let result = memory::pickup(&store, embedder.as_mut(), reranker.as_mut(), project.as_deref(), hnsw.as_ref())?;
-
-            match result.handoff {
-                Some(h) => {
-                    println!("## Last Handoff ({})", h.project);
-                    println!("Summary: {}", h.summary);
-                    println!("Next steps: {}", h.next_steps);
-                    println!("Created: {}", h.created_at);
-                }
-                None => println!("No handoff found."),
-            }
-
-            if !result.related_memories.is_empty() {
-                println!("\n## Related Memories");
-                for (i, hit) in result.related_memories.iter().enumerate() {
-                    let mtype = hit.memory_type.as_deref().unwrap_or("?");
-                    println!("  {}. [{}] {}", i + 1, mtype, hit.title);
-                }
-            }
-        }
-
-        Commands::Reflect { focus } => {
-            let store = Store::open(&db_path)?;
-            let focus = match focus.as_str() {
-                "growing" => ReflectFocus::Growing,
-                "fading" => ReflectFocus::Fading,
-                "connections" => ReflectFocus::Connections,
-                "gaps" => ReflectFocus::Gaps,
-                _ => ReflectFocus::Overview,
-            };
-
-            let result = memory::reflect(&store, &focus)?;
-
-            if !result.growing.is_empty() {
-                println!("## Growing (recently active)");
-                for entry in &result.growing {
-                    println!(
-                        "  - {} (accessed: {}, salience: {:.2})",
-                        entry.title, entry.access_count, entry.salience,
-                    );
-                }
-                println!();
-            }
-
-            if !result.fading.is_empty() {
-                println!("## Fading (need attention)");
-                for entry in &result.fading {
-                    let last = entry.last_accessed.as_deref().unwrap_or("never");
-                    println!("  - {} (last: {})", entry.title, last);
-                }
-                println!();
-            }
-
-            if !result.connections.is_empty() {
-                println!("## Connected (Hebbian links)");
-                for (entry, count) in &result.connections {
-                    println!("  - {} ({} associations)", entry.title, count);
-                }
-                println!();
-            }
-
-            if !result.type_counts.is_empty() {
-                println!("## Memory Types");
-                for (mtype, count) in &result.type_counts {
-                    println!("  - {}: {}", mtype, count);
-                }
-                println!();
-            }
-
-            for obs in &result.observations {
-                println!("! {obs}");
-            }
-
-            println!(
-                "\n{} active, {} archived",
-                result.active_count, result.archived_count,
-            );
-        }
-
-        Commands::Consolidate {
-            dry_run,
-            stale_days,
-        } => {
-            let store = Store::open(&db_path)?;
-            let mut embedder = try_embedder();
-            let result =
-                memory::consolidate(&store, embedder.as_mut(), dry_run, stale_days)?;
-
-            if dry_run {
-                println!("(dry run — no changes made)\n");
-            }
-
-            if !result.near_duplicates.is_empty() {
-                println!("## Near-Duplicates ({} pairs)", result.near_duplicates.len());
-                for (id_a, id_b, sim) in &result.near_duplicates {
-                    println!("  #{id_a} <-> #{id_b} (similarity: {sim:.4})");
-                }
-                println!();
-            }
-
-            if !result.auto_archived.is_empty() {
-                println!(
-                    "## Auto-Archived ({} entries with zero accesses)",
-                    result.auto_archived.len(),
-                );
-                for id in &result.auto_archived {
-                    println!("  #{id}");
-                }
-                println!();
-            }
-
-            if !result.stale_for_review.is_empty() {
-                println!(
-                    "## Stale (review needed, {} entries)",
-                    result.stale_for_review.len(),
-                );
-                for entry in &result.stale_for_review {
-                    let last = entry.last_accessed.as_deref().unwrap_or("never");
-                    println!(
-                        "  - #{} {} (accessed: {}, last: {})",
-                        entry.id, entry.title, entry.access_count, last,
-                    );
-                }
-                println!();
-            }
-
-            if !result.episode_clusters.is_empty() {
-                println!(
-                    "## Episode Clusters ({} tags with 3+ episodes)",
-                    result.episode_clusters.len(),
-                );
-                for (tag, entries) in &result.episode_clusters {
-                    println!("  [{}] {} episodes", tag, entries.len());
-                }
-            }
-
-            if !result.summaries_created.is_empty() {
-                println!(
-                    "## Summaries Created ({})",
-                    result.summaries_created.len(),
-                );
-                for s in &result.summaries_created {
-                    println!("  [#{}] {} ({} members)", s.id, s.title, s.member_count);
-                }
-            }
-
-            if result.near_duplicates.is_empty()
-                && result.auto_archived.is_empty()
-                && result.stale_for_review.is_empty()
-                && result.episode_clusters.is_empty()
-                && result.summaries_created.is_empty()
-            {
-                println!("Memory is clean — nothing to consolidate.");
-            }
-        }
-
-        Commands::RebuildHnsw => {
-            let store = Store::open(&db_path)?;
-            rebuild_hnsw(&store, &db_path)?;
-        }
-
-        Commands::Stats => {
-            let store = Store::open(&db_path)?;
-            let (code, memory) = store.count_by_kind()?;
-            let types = store.count_memories_by_type()?;
-
-            println!("Code chunks:  {}", code);
-            println!("Memories:     {}", memory);
-            if !types.is_empty() {
-                for (mtype, count) in &types {
-                    println!("  {}: {}", mtype, count);
-                }
-            }
-            println!("Database:     {}", db_path.display());
-        }
-
-        Commands::ExportTraining => {
-            let store = Store::open(&db_path)?;
-            let examples = store.export_training_data()?;
-            if examples.is_empty() {
-                eprintln!("No training data available (need retrieval logs with feedback).");
-            } else {
-                for example in &examples {
-                    println!("{}", serde_json::to_string(example)?);
-                }
-                eprintln!("Exported {} training examples.", examples.len());
-            }
-        }
-
-        Commands::Serve { .. } | Commands::Mcp => unreachable!(),
+        Commands::Serve { .. } => unreachable!(),
     }
 
     Ok(())
@@ -581,15 +331,6 @@ fn format_hit(hit: &SearchHit) -> String {
     }
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        let truncated: String = s.chars().take(max.saturating_sub(3)).collect();
-        format!("{truncated}...")
-    }
-}
-
 fn rebuild_hnsw(store: &Store, db_path: &Path) -> Result<()> {
     let rows = store.get_all_embeddings()?;
     if rows.is_empty() {
@@ -601,4 +342,37 @@ fn rebuild_hnsw(store: &Store, db_path: &Path) -> Result<()> {
     index.save(&hnsw_path)?;
     println!("HNSW index: {} points → {}", index.len(), hnsw_path.display());
     Ok(())
+}
+
+/// CLI-specific codebase resolution (works with pre-fetched codebases list).
+fn resolve_codebase_cli(
+    codebases: &[(i64, String, String)],
+    dir: Option<&str>,
+) -> Result<Option<i64>> {
+    if let Some(dir) = dir {
+        let matches: Vec<_> = codebases
+            .iter()
+            .filter(|(_, root, name)| name == dir || root.ends_with(dir))
+            .collect();
+        match matches.len() {
+            0 => anyhow::bail!("no indexed codebase matching '{dir}'"),
+            1 => Ok(Some(matches[0].0)),
+            _ => {
+                let names: Vec<&str> = matches.iter().map(|(_, _, n)| n.as_str()).collect();
+                anyhow::bail!(
+                    "ambiguous dir '{dir}' matches {} codebases: {}",
+                    matches.len(),
+                    names.join(", ")
+                );
+            }
+        }
+    } else if codebases.len() <= 1 {
+        Ok(codebases.first().map(|(id, _, _)| *id))
+    } else {
+        let names: Vec<&str> = codebases.iter().map(|(_, _, n)| n.as_str()).collect();
+        anyhow::bail!(
+            "Multiple codebases indexed. Use --dir to select one: {}",
+            names.join(", ")
+        );
+    }
 }
