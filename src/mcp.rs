@@ -120,6 +120,16 @@ pub struct ConsolidateParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct FeedbackParams {
+    /// Retrieval log ID (from recall or get_context query_id field)
+    pub query_id: i64,
+    /// Chunk ID to provide feedback on
+    pub chunk_id: i64,
+    /// Feedback signal: "positive" (relevant/helpful) or "negative" (irrelevant/unhelpful)
+    pub signal: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ArchiveParams {
     /// Numeric ID of the memory to archive (from search, recall, or other tool outputs)
     pub id: i64,
@@ -225,8 +235,8 @@ impl GrasshopperMcp {
                 // Read-only: search, navigate, map, impact, me, pickup, reflect, get
                 "search" | "navigate" | "map" | "impact" | "me" | "pickup" | "reflect"
                 | "get" => read_only.clone(),
-                // get_context has cognitive side effects (touch + association)
-                "get_context" => write.clone(),
+                // get_context has cognitive side effects, feedback adjusts salience
+                "get_context" | "feedback" => write.clone(),
                 // Destructive: consolidate and archive can remove memories
                 "consolidate" | "archive" => destructive_write.clone(),
                 // Write (non-destructive): index, remember, handoff
@@ -668,7 +678,17 @@ impl GrasshopperMcp {
                 &store, emb_guard.as_mut(), rr_guard.as_mut(), &params.query, limit,
                 hnsw_guard.as_ref(),
             )?;
-            let json = serde_json::to_string_pretty(&format_search_hits(&result.hits))?;
+            let mut output = serde_json::json!(format_search_hits(&result.hits));
+            if let Some(log_id) = result.log_id
+                && let Some(arr) = output.as_array_mut()
+            {
+                let wrapped = serde_json::json!({
+                    "query_id": log_id,
+                    "results": arr.clone(),
+                });
+                return Ok(serde_json::to_string_pretty(&wrapped)?);
+            }
+            let json = serde_json::to_string_pretty(&output)?;
             Ok::<_, anyhow::Error>(json)
         })
         .await
@@ -760,6 +780,9 @@ impl GrasshopperMcp {
             output.insert("filtered_count".to_string(), serde_json::Value::from(result.filtered_count));
             output.insert("budget_dropped".to_string(), serde_json::Value::from(budgeted.dropped_count));
             output.insert("estimated_tokens".to_string(), serde_json::Value::from(budgeted.estimated_tokens));
+            if let Some(log_id) = result.log_id {
+                output.insert("query_id".to_string(), serde_json::Value::from(log_id));
+            }
             if let Some(contradictions) = contradictions {
                 output.insert("contradictions".to_string(), contradictions);
             }
@@ -939,6 +962,9 @@ impl GrasshopperMcp {
                 "episode_clusters": result.episode_clusters.iter().map(|(tag, entries)| {
                     serde_json::json!({"tag": tag, "count": entries.len()})
                 }).collect::<Vec<_>>(),
+                "summaries_created": result.summaries_created.iter().map(|s| {
+                    serde_json::json!({"id": s.id, "title": s.title, "member_count": s.member_count, "member_ids": s.member_ids})
+                }).collect::<Vec<_>>(),
             });
             Ok::<_, anyhow::Error>(serde_json::to_string_pretty(&output)?)
         })
@@ -990,6 +1016,41 @@ impl GrasshopperMcp {
                 "archived_count": result.archived_count,
             });
             Ok::<_, anyhow::Error>(serde_json::to_string_pretty(&output)?)
+        })
+        .await
+        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
+
+        match result {
+            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
+            Err(e) => Ok(error_result(format!("{e:#}"))),
+        }
+    }
+
+    #[tool(
+        name = "feedback",
+        description = "Provide feedback on a retrieval result. Use the query_id from recall/get_context output. Signal 'positive' boosts the memory's salience, 'negative' reduces it. This teaches the system which memories are helpful."
+    )]
+    async fn feedback(
+        &self,
+        Parameters(params): Parameters<FeedbackParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let db_path = self.db_path.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            let store = Store::open(&db_path)?;
+            let signal = params.signal.as_str();
+            if signal != "positive" && signal != "negative" {
+                anyhow::bail!("signal must be 'positive' or 'negative'");
+            }
+            store.log_feedback(params.query_id, params.chunk_id, signal)?;
+            let delta = if signal == "positive" { 0.1 } else { -0.1 };
+            store.adjust_salience(params.chunk_id, delta)?;
+            Ok::<_, anyhow::Error>(serde_json::json!({
+                "ok": true,
+                "chunk_id": params.chunk_id,
+                "signal": signal,
+                "salience_delta": delta,
+            }).to_string())
         })
         .await
         .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;

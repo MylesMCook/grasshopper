@@ -64,6 +64,64 @@ fn auto_title(content: &str) -> String {
     }
 }
 
+// --- Entity extraction ---
+
+/// An extracted entity from text content.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Entity {
+    pub value: String,
+    pub kind: String,
+}
+
+fn entity_patterns() -> &'static Vec<(Regex, &'static str)> {
+    static PATTERNS: OnceLock<Vec<(Regex, &str)>> = OnceLock::new();
+    PATTERNS.get_or_init(|| {
+        vec![
+            (Regex::new(r"[/~][\w/.\-]+\.\w+").unwrap(), "file_path"),
+            (Regex::new(r"https?://[^\s)>\]]+").unwrap(), "url"),
+            (Regex::new(r"\b[A-Z][a-z]+(?:[A-Z][a-z]*)+\b").unwrap(), "identifier"),
+            (Regex::new(r"\b[a-z]+(?:_[a-z_]+)+\b").unwrap(), "identifier"),
+            (Regex::new(r"\b\d{4}-\d{2}-\d{2}\b").unwrap(), "date"),
+            (Regex::new(r"@\w+").unwrap(), "mention"),
+        ]
+    })
+}
+
+/// Extract entities from text content using regex NER.
+/// Deduplicates by (value, kind) pair.
+pub fn extract_entities(text: &str) -> Vec<Entity> {
+    let mut seen = std::collections::HashSet::new();
+    let mut entities = Vec::new();
+    for (re, kind) in entity_patterns() {
+        for m in re.find_iter(text) {
+            let value = m.as_str().to_string();
+            let key = (value.clone(), kind.to_string());
+            if seen.insert(key) {
+                entities.push(Entity { value, kind: kind.to_string() });
+            }
+        }
+    }
+    entities
+}
+
+/// Look up memories connected to entities found in the query text.
+/// Returns candidates for RRF merging into the main search pipeline.
+pub fn entity_augmented_candidates(store: &Store, query: &str) -> Vec<SearchHit> {
+    let entities = extract_entities(query);
+    let mut candidates = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+    for entity in &entities {
+        if let Ok(hits) = store.find_memories_by_entity(&entity.value) {
+            for hit in hits {
+                if seen_ids.insert(hit.id) {
+                    candidates.push(hit);
+                }
+            }
+        }
+    }
+    candidates
+}
+
 // --- Cognitive scoring ---
 
 fn decay_rate(memory_type: &str) -> f64 {
@@ -74,6 +132,30 @@ fn decay_rate(memory_type: &str) -> f64 {
         "procedure" => 0.01,
         _ => 0.015,
     }
+}
+
+/// EWA smoothing factor for learned decay rates.
+const DECAY_EWA_ALPHA: f64 = 0.3;
+
+/// Compute a per-memory decay rate from actual access intervals.
+/// Uses exponential weighted average of intervals, then derives lambda = ln(2) / avg_interval.
+/// Falls back to static `decay_rate()` when insufficient data (< 2 intervals).
+pub fn learned_decay_rate(memory_type: &str, intervals: &[f64]) -> f64 {
+    if memory_type == "identity" {
+        return 0.0;
+    }
+    if intervals.is_empty() {
+        return decay_rate(memory_type);
+    }
+
+    // EWA of access intervals
+    let mut ewa = intervals[0];
+    for &interval in &intervals[1..] {
+        ewa = DECAY_EWA_ALPHA * interval + (1.0 - DECAY_EWA_ALPHA) * ewa;
+    }
+
+    // lambda = ln(2) / avg_interval, clamped to [0.0, 0.1]
+    (0.693 / ewa).clamp(0.0, 0.1)
 }
 
 fn days_since(iso_date: &str) -> f64 {
@@ -87,7 +169,8 @@ fn days_since(iso_date: &str) -> f64 {
 
 /// Cognitive scoring formula ported from TypeScript tools.ts:cognitiveScore.
 /// score = rrf × (1 + recencyBoost) × (1 + frequencyBoost) × salienceFactor × decayFactor
-pub fn cognitive_score(hit: &SearchHit) -> f64 {
+/// When `learned_lambda` is Some, uses the per-memory learned decay rate instead of static.
+pub fn cognitive_score(hit: &SearchHit, learned_lambda: Option<f64>) -> f64 {
     let rrf_score = hit.score;
 
     // Recency boost: higher for recently created entries
@@ -106,7 +189,7 @@ pub fn cognitive_score(hit: &SearchHit) -> f64 {
 
     // Exponential decay based on time since last access
     let mtype = hit.memory_type.as_deref().unwrap_or("knowledge");
-    let lambda = decay_rate(mtype);
+    let lambda = learned_lambda.unwrap_or_else(|| decay_rate(mtype));
     let days_last_access = hit
         .last_accessed
         .as_deref()
@@ -117,11 +200,28 @@ pub fn cognitive_score(hit: &SearchHit) -> f64 {
     rrf_score * (1.0 + recency_boost) * (1.0 + frequency_boost) * salience_factor * decay_factor
 }
 
+/// Compute cognitive score with learned decay rate from access history.
+pub fn cognitive_score_with_history(store: &crate::store::Store, hit: &SearchHit) -> f64 {
+    let mtype = hit.memory_type.as_deref().unwrap_or("knowledge");
+    let learned_lambda = store
+        .get_access_intervals(hit.id)
+        .ok()
+        .and_then(|intervals| {
+            if intervals.is_empty() {
+                None
+            } else {
+                Some(learned_decay_rate(mtype, &intervals))
+            }
+        });
+    cognitive_score(hit, learned_lambda)
+}
+
 // --- Cognitive tools ---
 
 /// Result of the `recall` command.
 pub struct RecallResult {
     pub hits: Vec<SearchHit>,
+    pub log_id: Option<i64>,
 }
 
 /// Cognitive-scored memory search with side effects (touch + association).
@@ -158,7 +258,7 @@ pub fn recall(
 
     // 3. Merge via RRF — always normalize through RRF for consistent score scale
     let empty: Vec<SearchHit> = vec![];
-    let merged = if fts.is_empty() && vec_results.is_empty() {
+    let mut merged = if fts.is_empty() && vec_results.is_empty() {
         vec![]
     } else if fts.is_empty() {
         hybrid_search(&empty, &vec_results, 20)
@@ -167,6 +267,12 @@ pub fn recall(
     } else {
         hybrid_search(&fts, &vec_results, 20)
     };
+
+    // 3a. Entity-augmented retrieval: inject memories matching entities in query
+    let entity_candidates = entity_augmented_candidates(store, query);
+    if !entity_candidates.is_empty() {
+        merged = hybrid_search(&merged, &entity_candidates, 20);
+    }
 
     // 3b. Rerank via cross-encoder if available (between RRF and cognitive scoring)
     let merged = if let Some(reranker) = reranker {
@@ -191,7 +297,7 @@ pub fn recall(
     let mut scored: Vec<SearchHit> = filtered
         .into_iter()
         .map(|mut h| {
-            h.score = cognitive_score(&h);
+            h.score = cognitive_score_with_history(store, &h);
             h
         })
         .collect();
@@ -213,7 +319,17 @@ pub fn recall(
         }
     }
 
-    Ok(RecallResult { hits: scored })
+    // 7. Log retrieval for fine-tuning pipeline
+    let log_id = store
+        .log_retrieval(
+            query,
+            "recall",
+            &scored.iter().map(|h| (h.id, h.score)).collect::<Vec<_>>(),
+            None,
+        )
+        .ok();
+
+    Ok(RecallResult { hits: scored, log_id })
 }
 
 /// Result of proactive context retrieval.
@@ -223,6 +339,8 @@ pub struct GetContextResult {
     pub filtered_count: usize,
     /// The threshold that was applied.
     pub threshold: f32,
+    /// Retrieval log ID for feedback correlation.
+    pub log_id: Option<i64>,
 }
 
 /// Proactive memory surfacing with relevance threshold.
@@ -263,7 +381,7 @@ pub fn get_context(
 
     // 3. Merge via RRF
     let empty: Vec<SearchHit> = vec![];
-    let merged = if fts.is_empty() && vec_results.is_empty() {
+    let mut merged = if fts.is_empty() && vec_results.is_empty() {
         vec![]
     } else if fts.is_empty() {
         hybrid_search(&empty, &vec_results, 20)
@@ -272,6 +390,12 @@ pub fn get_context(
     } else {
         hybrid_search(&fts, &vec_results, 20)
     };
+
+    // 3a. Entity-augmented retrieval
+    let entity_candidates = entity_augmented_candidates(store, query);
+    if !entity_candidates.is_empty() {
+        merged = hybrid_search(&merged, &entity_candidates, 20);
+    }
 
     // 3b. Rerank via cross-encoder — track actual success, not just availability
     let mut rerank_succeeded = false;
@@ -315,7 +439,7 @@ pub fn get_context(
     let mut scored: Vec<SearchHit> = gated
         .into_iter()
         .map(|mut h| {
-            h.score = cognitive_score(&h);
+            h.score = cognitive_score_with_history(store, &h);
             h
         })
         .collect();
@@ -325,10 +449,21 @@ pub fn get_context(
     // Note: side effects (touch + associations) are handled by the caller
     // after budget truncation, so only surfaced hits get boosted.
 
+    // 7. Log retrieval for fine-tuning pipeline
+    let log_id = store
+        .log_retrieval(
+            query,
+            "get_context",
+            &scored.iter().map(|h| (h.id, h.score)).collect::<Vec<_>>(),
+            None,
+        )
+        .ok();
+
     Ok(GetContextResult {
         hits: scored,
         filtered_count,
         threshold,
+        log_id,
     })
 }
 
@@ -457,6 +592,12 @@ pub fn remember(
                     query_vec.as_slice(),
                     ferret::embed::MODEL_NAME,
                 )])?;
+                // Extract and store entity edges
+                let entities: Vec<(String, String)> = extract_entities(content)
+                    .into_iter().map(|e| (e.value, e.kind)).collect();
+                if !entities.is_empty() {
+                    store.upsert_entity_edges(existing_id, &entities).ok();
+                }
                 return Ok(RememberResult {
                     id: existing_id,
                     title,
@@ -482,6 +623,12 @@ pub fn remember(
                 query_vec.as_slice(),
                 ferret::embed::MODEL_NAME,
             )])?;
+            // Extract and store entity edges
+            let entities: Vec<(String, String)> = extract_entities(content)
+                .into_iter().map(|e| (e.value, e.kind)).collect();
+            if !entities.is_empty() {
+                store.upsert_entity_edges(id, &entities).ok();
+            }
             return Ok(RememberResult {
                 id,
                 title,
@@ -503,6 +650,12 @@ pub fn remember(
         content_hash: &hash,
         agent_id: "cli",
     })?;
+    // Extract and store entity edges
+    let entities: Vec<(String, String)> = extract_entities(content)
+        .into_iter().map(|e| (e.value, e.kind)).collect();
+    if !entities.is_empty() {
+        store.upsert_entity_edges(id, &entities).ok();
+    }
     Ok(RememberResult {
         id,
         title,
@@ -651,11 +804,43 @@ pub fn reflect(store: &Store, focus: &ReflectFocus) -> Result<ReflectResult> {
 
 // --- Consolidate ---
 
+pub struct ConsolidateSummary {
+    pub id: i64,
+    pub title: String,
+    pub member_count: usize,
+    pub member_ids: Vec<i64>,
+}
+
 pub struct ConsolidateResult {
     pub near_duplicates: Vec<(i64, i64, f64)>, // (id_a, id_b, similarity)
     pub auto_archived: Vec<i64>,
     pub stale_for_review: Vec<Chunk>,
     pub episode_clusters: Vec<(String, Vec<Chunk>)>, // (tag, episodes)
+    pub summaries_created: Vec<ConsolidateSummary>,
+}
+
+/// Build a template-based summary for a cluster of memories.
+fn build_summary_text(tag: &str, members: &[Chunk]) -> String {
+    let mut lines = vec![format!("Summary: {} entries about \"{}\"", members.len(), tag)];
+    lines.push("Entries:".to_string());
+    for m in members {
+        lines.push(format!("- [#{}] {}", m.id, m.title));
+    }
+    let all_descriptors: std::collections::BTreeSet<String> = members
+        .iter()
+        .flat_map(|m| m.descriptors.split(',').map(|t| t.trim().to_lowercase()))
+        .filter(|t| !t.is_empty())
+        .collect();
+    if !all_descriptors.is_empty() {
+        lines.push(format!("Descriptors: {}", all_descriptors.into_iter().collect::<Vec<_>>().join(", ")));
+    }
+    if let (Some(earliest), Some(latest)) = (
+        members.iter().map(|m| &m.created_at).min(),
+        members.iter().map(|m| &m.created_at).max(),
+    ) {
+        lines.push(format!("Period: {} to {}", &earliest[..10.min(earliest.len())], &latest[..10.min(latest.len())]));
+    }
+    lines.join("\n")
 }
 
 pub fn consolidate(
@@ -727,11 +912,67 @@ pub fn consolidate(
     }
     episode_clusters.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
 
+    // Phase 4: Create summary memories for episode clusters
+    let mut summaries_created = Vec::new();
+    if !dry_run {
+        for (tag, members) in &episode_clusters {
+            let member_ids: Vec<i64> = members.iter().map(|m| m.id).collect();
+            // Check if summary already exists for this exact member set
+            if let Ok(existing) = store.get_summaries_for_chunks(&member_ids)
+                && !existing.is_empty()
+            {
+                continue; // Already summarized
+            }
+            let summary_text = build_summary_text(tag, members);
+            let summary_title = format!("Summary: {} entries about \"{}\"", members.len(), tag);
+            // Content hash from sorted member IDs for dedup
+            let mut sorted_ids = member_ids.clone();
+            sorted_ids.sort();
+            let hash = format!(
+                "{:x}",
+                Sha256::new()
+                    .chain_update(format!("summary:{sorted_ids:?}").as_bytes())
+                    .finalize()
+            );
+            // Check content hash dedup
+            if store.get_memory_by_hash(&hash)?.is_some() {
+                continue;
+            }
+            let max_salience = members.iter().map(|m| m.salience).fold(0.5_f64, f64::max);
+            let all_desc: std::collections::BTreeSet<String> = members
+                .iter()
+                .flat_map(|m| m.descriptors.split(',').map(|t| t.trim().to_lowercase()))
+                .filter(|t| !t.is_empty())
+                .collect();
+            let mut desc_list: Vec<String> = all_desc.into_iter().collect();
+            desc_list.push("summary".to_string());
+            let descriptors = desc_list.join(", ");
+
+            let summary_id = store.insert_memory(&MemoryParams {
+                title: &summary_title,
+                content: &summary_text,
+                memory_type: "knowledge",
+                descriptors: &descriptors,
+                salience: max_salience,
+                content_hash: &hash,
+                agent_id: "consolidate",
+            })?;
+            store.insert_summary_edges(summary_id, &member_ids)?;
+            summaries_created.push(ConsolidateSummary {
+                id: summary_id,
+                title: summary_title,
+                member_count: members.len(),
+                member_ids,
+            });
+        }
+    }
+
     Ok(ConsolidateResult {
         near_duplicates,
         auto_archived,
         stale_for_review,
         episode_clusters,
+        summaries_created,
     })
 }
 
@@ -805,7 +1046,7 @@ mod tests {
             archived: false,
             descriptors: String::new(),
         };
-        let score = cognitive_score(&hit);
+        let score = cognitive_score(&hit, None);
         // Identity has decay_rate=0, so decay_factor=1.0 regardless of age
         // The old created_at means recency_boost=0
         // salience_factor = 0.5 + 1.0 = 1.5
@@ -837,8 +1078,8 @@ mod tests {
             ..recent_hit.clone()
         };
 
-        let recent_score = cognitive_score(&recent_hit);
-        let old_score = cognitive_score(&old_hit);
+        let recent_score = cognitive_score(&recent_hit, None);
+        let old_score = cognitive_score(&old_hit, None);
         assert!(recent_score > old_score, "recent episode ({recent_score}) should score higher than old ({old_score})");
     }
 
@@ -1111,5 +1352,237 @@ mod tests {
         assert!(result.hits.is_empty());
         assert_eq!(result.dropped_count, 0);
         assert_eq!(result.estimated_tokens, 0);
+    }
+
+    #[test]
+    fn test_learned_decay_rate_identity_zero() {
+        assert_eq!(learned_decay_rate("identity", &[1.0, 2.0, 3.0]), 0.0);
+    }
+
+    #[test]
+    fn test_learned_decay_rate_insufficient_data() {
+        // Empty intervals → falls back to static rate
+        let rate = learned_decay_rate("knowledge", &[]);
+        assert!((rate - 0.005).abs() < 1e-10, "should match static knowledge rate: {rate}");
+    }
+
+    #[test]
+    fn test_learned_decay_rate_frequent_access() {
+        // Daily access → high lambda (fast decay when unused)
+        let rate = learned_decay_rate("knowledge", &[1.0, 1.0, 1.0]);
+        // EWA converges to ~1.0, so lambda = ln(2)/1.0 ≈ 0.693, clamped to 0.1
+        assert!((rate - 0.1).abs() < 1e-10, "should clamp at 0.1: {rate}");
+    }
+
+    #[test]
+    fn test_learned_decay_rate_infrequent_access() {
+        // Monthly access → low lambda (gentle decay)
+        let rate = learned_decay_rate("knowledge", &[30.0, 30.0, 30.0]);
+        // EWA converges to ~30.0, lambda = ln(2)/30 ≈ 0.023
+        assert!(rate > 0.02 && rate < 0.03, "should be ~0.023: {rate}");
+    }
+
+    #[test]
+    fn test_learned_decay_rate_clamp_max() {
+        // Very short intervals → clamped at 0.1
+        let rate = learned_decay_rate("episode", &[0.01, 0.01]);
+        assert!((rate - 0.1).abs() < 1e-10, "should clamp at 0.1: {rate}");
+    }
+
+    #[test]
+    fn test_cognitive_score_with_learned_lambda() {
+        let now = chrono::Utc::now().to_rfc3339();
+        let hit = SearchHit {
+            id: 1, kind: "memory".into(), file_path: None, symbol_name: None,
+            symbol_kind: None, signature: None, title: "test".into(), snippet: String::new(),
+            start_line: None, end_line: None,
+            memory_type: Some("knowledge".into()),
+            score: 1.0,
+            reranker_score: None,
+            access_count: 0,
+            last_accessed: Some(now.clone()),
+            salience: 0.5,
+            created_at: now,
+            archived: false,
+            descriptors: String::new(),
+        };
+
+        let score_static = cognitive_score(&hit, None);
+        let score_learned = cognitive_score(&hit, Some(0.05));
+        // Both should be positive; learned lambda changes the decay factor
+        assert!(score_static > 0.0);
+        assert!(score_learned > 0.0);
+        // With very recent last_accessed, both should be similar (decay is minimal)
+        assert!((score_static - score_learned).abs() < 0.1,
+            "recent access means similar scores: static={score_static}, learned={score_learned}");
+    }
+
+    // --- Entity extraction tests ---
+
+    #[test]
+    fn test_extract_entities_file_path() {
+        let entities = extract_entities("Config at /home/myles/foo.rs");
+        assert!(entities.iter().any(|e| e.kind == "file_path" && e.value == "/home/myles/foo.rs"),
+            "should find file_path: {entities:?}");
+    }
+
+    #[test]
+    fn test_extract_entities_url() {
+        let entities = extract_entities("Visit https://example.com/page for info");
+        assert!(entities.iter().any(|e| e.kind == "url" && e.value.starts_with("https://example.com")),
+            "should find url: {entities:?}");
+    }
+
+    #[test]
+    fn test_extract_entities_identifier_camel() {
+        let entities = extract_entities("Use SearchHit for results");
+        assert!(entities.iter().any(|e| e.kind == "identifier" && e.value == "SearchHit"),
+            "should find CamelCase identifier: {entities:?}");
+    }
+
+    #[test]
+    fn test_extract_entities_identifier_snake() {
+        let entities = extract_entities("Call cognitive_score for ranking");
+        assert!(entities.iter().any(|e| e.kind == "identifier" && e.value == "cognitive_score"),
+            "should find snake_case identifier: {entities:?}");
+    }
+
+    #[test]
+    fn test_extract_entities_date() {
+        let entities = extract_entities("Created on 2026-03-04");
+        assert!(entities.iter().any(|e| e.kind == "date" && e.value == "2026-03-04"),
+            "should find date: {entities:?}");
+    }
+
+    #[test]
+    fn test_extract_entities_mention() {
+        let entities = extract_entities("Ask @myles about this");
+        assert!(entities.iter().any(|e| e.kind == "mention" && e.value == "@myles"),
+            "should find mention: {entities:?}");
+    }
+
+    #[test]
+    fn test_extract_entities_dedup() {
+        let entities = extract_entities("Use SearchHit and also SearchHit again");
+        let search_hit_count = entities.iter().filter(|e| e.value == "SearchHit").count();
+        assert_eq!(search_hit_count, 1, "should dedup same entity: {entities:?}");
+    }
+
+    // --- Consolidation tests ---
+
+    fn make_chunk(id: i64, title: &str, descriptors: &str) -> Chunk {
+        let now = chrono::Utc::now().to_rfc3339();
+        Chunk {
+            id, kind: "memory".into(), title: title.into(), content: format!("content for {title}"),
+            snippet: String::new(), symbol_name: None, symbol_kind: None, signature: None,
+            file_path: None, language: None, start_line: None, end_line: None,
+            memory_type: Some("episode".into()), descriptors: descriptors.into(),
+            source: String::new(), access_count: 0, last_accessed: None, salience: 0.5,
+            archived: false, content_hash: String::new(), agent_id: "test".into(),
+            created_at: now.clone(), updated_at: now, codebase_id: None,
+        }
+    }
+
+    #[test]
+    fn test_build_summary_text() {
+        let members = vec![
+            make_chunk(1, "First", "tag-a, tag-b"),
+            make_chunk(2, "Second", "tag-a"),
+        ];
+        let text = build_summary_text("tag-a", &members);
+        assert!(text.contains("2 entries about \"tag-a\""), "should have count and tag: {text}");
+        assert!(text.contains("[#1] First"), "should list member titles: {text}");
+        assert!(text.contains("[#2] Second"), "should list all members: {text}");
+    }
+
+    #[test]
+    fn test_consolidate_creates_summary_for_cluster() {
+        let (_dir, store) = test_store();
+        // Create 3 episodes with shared tag
+        for i in 0..3 {
+            store.insert_memory(&MemoryParams {
+                title: &format!("Episode {i}"), content: &format!("content {i}"),
+                memory_type: "episode", descriptors: "shared-tag",
+                salience: 0.5, content_hash: &format!("hash{i}"), agent_id: "test",
+            }).unwrap();
+        }
+        let result = consolidate(&store, None, false, 90).unwrap();
+        assert!(!result.episode_clusters.is_empty(), "should find episode clusters");
+        assert!(!result.summaries_created.is_empty(), "should create summaries");
+        assert_eq!(result.summaries_created[0].member_count, 3);
+    }
+
+    #[test]
+    fn test_consolidate_summary_idempotent() {
+        let (_dir, store) = test_store();
+        for i in 0..3 {
+            store.insert_memory(&MemoryParams {
+                title: &format!("Episode {i}"), content: &format!("content {i}"),
+                memory_type: "episode", descriptors: "shared-tag",
+                salience: 0.5, content_hash: &format!("hash{i}"), agent_id: "test",
+            }).unwrap();
+        }
+        let r1 = consolidate(&store, None, false, 90).unwrap();
+        assert!(!r1.summaries_created.is_empty());
+
+        // Second run should not create duplicates
+        let r2 = consolidate(&store, None, false, 90).unwrap();
+        assert!(r2.summaries_created.is_empty(), "should not create duplicate summaries");
+    }
+
+    #[test]
+    fn test_consolidate_preserves_originals() {
+        let (_dir, store) = test_store();
+        for i in 0..3 {
+            store.insert_memory(&MemoryParams {
+                title: &format!("Episode {i}"), content: &format!("content {i}"),
+                memory_type: "episode", descriptors: "tag-x",
+                salience: 0.5, content_hash: &format!("hash{i}"), agent_id: "test",
+            }).unwrap();
+        }
+        consolidate(&store, None, false, 90).unwrap();
+        // All originals still active (not archived)
+        let episodes = store.list_memories(Some("episode"), false, 100).unwrap();
+        assert_eq!(episodes.len(), 3, "all originals should still be active");
+    }
+
+    // --- Retrieval logging tests ---
+
+    #[test]
+    fn test_recall_returns_log_id() {
+        let (_dir, store) = test_store();
+        store.insert_memory(&MemoryParams {
+            title: "Test memory", content: "some searchable content about Rust",
+            memory_type: "knowledge", descriptors: "rust",
+            salience: 0.5, content_hash: "rc1", agent_id: "test",
+        }).unwrap();
+        let result = recall(&store, None, None, "Rust", 5, None).unwrap();
+        assert!(result.log_id.is_some(), "recall should return a log_id");
+    }
+
+    #[test]
+    fn test_get_context_returns_log_id() {
+        let (_dir, store) = test_store();
+        store.insert_memory(&MemoryParams {
+            title: "Test memory", content: "some searchable content about Rust",
+            memory_type: "knowledge", descriptors: "rust",
+            salience: 0.5, content_hash: "gc1", agent_id: "test",
+        }).unwrap();
+        let result = get_context(&store, None, None, "Rust", 5, 0.0, None).unwrap();
+        assert!(result.log_id.is_some(), "get_context should return a log_id");
+    }
+
+    #[test]
+    fn test_remember_creates_entity_edges() {
+        let (_dir, store) = test_store();
+        let result = remember(&store, None, "Config at /home/myles/foo.rs for SearchHit",
+            None, None, "").unwrap();
+        // Check entity edges were created
+        let hits = store.find_memories_by_entity("/home/myles/foo.rs").unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, result.id);
+
+        let hits = store.find_memories_by_entity("SearchHit").unwrap();
+        assert_eq!(hits.len(), 1);
     }
 }

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use rusqlite::functions::FunctionFlags;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -232,6 +232,10 @@ impl Store {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_association
                 ON graph(source_chunk, target_chunk, role)
                 WHERE role = 'associates';
+            -- Entity edges: one edge per (chunk, entity_value, entity_kind)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_entity
+                ON graph(source_chunk, symbol, role, kind)
+                WHERE role = 'entity';
 
             CREATE INDEX IF NOT EXISTS idx_graph_symbol
                 ON graph(codebase_id, symbol) WHERE symbol IS NOT NULL;
@@ -248,6 +252,38 @@ impl Store {
                 symbol_name,
                 descriptors,
                 tokenize='porter unicode61'
+            );
+
+            -- Access log for learned decay rates
+            CREATE TABLE IF NOT EXISTS access_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                chunk_id    INTEGER NOT NULL REFERENCES chunks(id),
+                accessed_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_access_log_chunk
+                ON access_log(chunk_id);
+
+            -- Retrieval logging for fine-tuning pipeline
+            CREATE TABLE IF NOT EXISTS retrieval_log (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                query           TEXT NOT NULL,
+                tool            TEXT NOT NULL,
+                result_ids      TEXT NOT NULL,
+                scores          TEXT NOT NULL,
+                result_count    INTEGER NOT NULL,
+                latency_ms      INTEGER,
+                created_at      TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_retrieval_log_created
+                ON retrieval_log(created_at);
+
+            -- Feedback on retrieval results
+            CREATE TABLE IF NOT EXISTS feedback (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                retrieval_log_id    INTEGER REFERENCES retrieval_log(id),
+                chunk_id            INTEGER NOT NULL REFERENCES chunks(id),
+                signal              TEXT NOT NULL,
+                created_at          TEXT NOT NULL
             );
 
             -- Session handoffs for continuity
@@ -427,7 +463,174 @@ impl Store {
              WHERE id = ?2 AND kind = 'memory'",
             params![now, id],
         )?;
+        // Record access event for learned decay rates
+        self.conn.execute(
+            "INSERT INTO access_log (chunk_id, accessed_at) VALUES (?1, ?2)",
+            params![id, now],
+        )?;
         Ok(())
+    }
+
+    /// Get intervals (in days) between successive accesses for a memory.
+    /// Returns an empty vec if fewer than 2 access events exist.
+    /// Includes created_at as the first timestamp for the initial interval.
+    pub fn get_access_intervals(&self, chunk_id: i64) -> Result<Vec<f64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT accessed_at FROM access_log WHERE chunk_id = ?1 ORDER BY accessed_at ASC",
+        )?;
+        let timestamps: Vec<String> = stmt
+            .query_map(params![chunk_id], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        if timestamps.len() < 2 {
+            return Ok(vec![]);
+        }
+
+        let mut intervals = Vec::with_capacity(timestamps.len() - 1);
+        for pair in timestamps.windows(2) {
+            let t0 = chrono::DateTime::parse_from_rfc3339(&pair[0])
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+            let t1 = chrono::DateTime::parse_from_rfc3339(&pair[1])
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+            if let (Ok(t0), Ok(t1)) = (t0, t1) {
+                let days = (t1 - t0).num_seconds() as f64 / 86400.0;
+                intervals.push(days.max(0.001)); // Floor at ~86s to avoid div-by-zero
+            }
+        }
+        Ok(intervals)
+    }
+
+    /// Log a retrieval event. Returns the log entry ID.
+    pub fn log_retrieval(
+        &self,
+        query: &str,
+        tool: &str,
+        results: &[(i64, f64)],
+        latency_ms: Option<i64>,
+    ) -> Result<i64> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let ids: Vec<i64> = results.iter().map(|(id, _)| *id).collect();
+        let scores: Vec<f64> = results.iter().map(|(_, s)| *s).collect();
+        self.conn.execute(
+            "INSERT INTO retrieval_log (query, tool, result_ids, scores, result_count, latency_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                query,
+                tool,
+                serde_json::to_string(&ids)?,
+                serde_json::to_string(&scores)?,
+                results.len() as i64,
+                latency_ms,
+                now,
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Record feedback on a retrieval result.
+    pub fn log_feedback(&self, log_id: i64, chunk_id: i64, signal: &str) -> Result<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO feedback (retrieval_log_id, chunk_id, signal, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![log_id, chunk_id, signal, now],
+        )?;
+        Ok(())
+    }
+
+    /// Adjust salience for a memory, clamped to [0.0, 1.0].
+    pub fn adjust_salience(&self, chunk_id: i64, delta: f64) -> Result<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE chunks SET
+                salience = MIN(1.0, MAX(0.0, salience + ?1)),
+                updated_at = ?2
+             WHERE id = ?3 AND kind = 'memory'",
+            params![delta, now, chunk_id],
+        )?;
+        Ok(())
+    }
+
+    /// Export training data: retrieval logs joined with feedback and chunk content.
+    pub fn export_training_data(&self) -> Result<Vec<serde_json::Value>> {
+        let mut log_stmt = self.conn.prepare(
+            "SELECT id, query, result_ids FROM retrieval_log ORDER BY created_at ASC",
+        )?;
+        let logs: Vec<(i64, String, String)> = log_stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut examples = Vec::new();
+        for (log_id, query, result_ids_json) in &logs {
+            let result_ids: Vec<i64> = serde_json::from_str(result_ids_json).unwrap_or_default();
+            if result_ids.is_empty() {
+                continue;
+            }
+
+            // Get feedback for this log entry
+            let mut fb_stmt = self.conn.prepare(
+                "SELECT chunk_id, signal FROM feedback WHERE retrieval_log_id = ?1",
+            )?;
+            let feedback: Vec<(i64, String)> = fb_stmt
+                .query_map(params![log_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            if feedback.is_empty() {
+                continue; // No signal, skip
+            }
+
+            let positive_ids: HashSet<i64> = feedback
+                .iter()
+                .filter(|(_, s)| s == "positive")
+                .map(|(id, _)| *id)
+                .collect();
+            let negative_ids: HashSet<i64> = feedback
+                .iter()
+                .filter(|(_, s)| s == "negative")
+                .map(|(id, _)| *id)
+                .collect();
+
+            // Fetch content for all result chunks
+            let mut positive = Vec::new();
+            let mut negative = Vec::new();
+            let mut hard_negatives = Vec::new();
+            for &cid in &result_ids {
+                let content: Option<String> = self.conn.prepare(
+                    "SELECT content FROM chunks WHERE id = ?1"
+                )?.query_row(params![cid], |row| row.get(0)).optional()?;
+                if let Some(content) = content {
+                    if positive_ids.contains(&cid) {
+                        positive.push(content);
+                    } else if negative_ids.contains(&cid) {
+                        negative.push(content);
+                    } else {
+                        hard_negatives.push(content);
+                    }
+                }
+            }
+
+            examples.push(serde_json::json!({
+                "query": query,
+                "positive": positive,
+                "negative": negative,
+                "hard_negatives": hard_negatives,
+            }));
+        }
+        Ok(examples)
+    }
+
+    /// Look up a memory by content hash. Returns the chunk ID if found.
+    pub fn get_memory_by_hash(&self, hash: &str) -> Result<Option<i64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id FROM chunks WHERE content_hash = ?1 AND kind = 'memory' LIMIT 1",
+        )?;
+        let id = stmt
+            .query_row(params![hash], |row| row.get(0))
+            .optional()?;
+        Ok(id)
     }
 
     /// Archive a memory (soft delete). Returns false if ID not found or not a memory.
@@ -1151,6 +1354,107 @@ impl Store {
             params![target_id, source_id],
         )?;
         Ok(())
+    }
+
+    /// Batch insert entity graph edges for a memory chunk.
+    /// Each entity is (value, kind). Idempotent via unique index.
+    pub fn upsert_entity_edges(&self, chunk_id: i64, entities: &[(String, String)]) -> Result<usize> {
+        let mut count = 0;
+        for (value, kind) in entities {
+            let rows = self.conn.execute(
+                "INSERT OR IGNORE INTO graph (source_chunk, target_chunk, role, kind, symbol, strength)
+                 VALUES (?1, NULL, 'entity', ?2, ?3, 1.0)",
+                params![chunk_id, kind, value],
+            )?;
+            count += rows;
+        }
+        Ok(count)
+    }
+
+    /// Find all memories that mention a specific entity value.
+    pub fn find_memories_by_entity(&self, entity_value: &str) -> Result<Vec<SearchHit>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.kind, c.file_path, c.symbol_name, c.symbol_kind,
+                    c.signature, c.title, c.snippet, c.start_line, c.end_line,
+                    c.memory_type, c.access_count, c.last_accessed, c.salience,
+                    c.created_at, c.archived, c.descriptors, c.content_hash
+             FROM graph g
+             JOIN chunks c ON c.id = g.source_chunk
+             WHERE g.role = 'entity' AND g.symbol = ?1
+               AND c.kind = 'memory' AND c.archived = 0",
+        )?;
+        let rows = stmt
+            .query_map(params![entity_value], |row| {
+                Ok(SearchHit {
+                    id: row.get(0)?,
+                    kind: row.get(1)?,
+                    file_path: row.get(2)?,
+                    symbol_name: row.get(3)?,
+                    symbol_kind: row.get(4)?,
+                    signature: row.get(5)?,
+                    title: row.get(6)?,
+                    snippet: row.get(7)?,
+                    start_line: row.get(8)?,
+                    end_line: row.get(9)?,
+                    memory_type: row.get(10)?,
+                    score: 0.0,
+                    reranker_score: None,
+                    access_count: row.get(11)?,
+                    last_accessed: row.get(12)?,
+                    salience: row.get(13)?,
+                    created_at: row.get(14)?,
+                    archived: row.get::<_, i64>(15)? != 0,
+                    descriptors: row.get(16)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// Create summary graph edges linking a summary chunk to its member chunks.
+    pub fn insert_summary_edges(&self, summary_id: i64, member_ids: &[i64]) -> Result<()> {
+        for &member_id in member_ids {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO graph (source_chunk, target_chunk, role, strength)
+                 VALUES (?1, ?2, 'summarizes', 1.0)",
+                params![summary_id, member_id],
+            )?;
+            self.conn.execute(
+                "INSERT OR IGNORE INTO graph (source_chunk, target_chunk, role, strength)
+                 VALUES (?1, ?2, 'summarized_by', 1.0)",
+                params![member_id, summary_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Check if a summary already exists for the given set of member chunk IDs.
+    /// Returns the summary chunk IDs if found.
+    pub fn get_summaries_for_chunks(&self, member_ids: &[i64]) -> Result<Vec<i64>> {
+        if member_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        // Find chunks that have 'summarizes' edges to ALL the given member IDs
+        let placeholders: Vec<String> = member_ids.iter().map(|_| "?".to_string()).collect();
+        let sql = format!(
+            "SELECT source_chunk FROM graph
+             WHERE role = 'summarizes' AND target_chunk IN ({})
+             GROUP BY source_chunk
+             HAVING COUNT(DISTINCT target_chunk) = ?",
+            placeholders.join(",")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = member_ids
+            .iter()
+            .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
+        params_vec.push(Box::new(member_ids.len() as i64));
+        let rows: Vec<i64> = stmt
+            .query_map(rusqlite::params_from_iter(params_vec.iter().map(|p| p.as_ref())), |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
     }
 
     /// Search for similar memories by embedding cosine similarity.
@@ -2327,5 +2631,227 @@ mod tests {
         assert!(!hits[0].created_at.is_empty());
         assert!(!hits[0].archived);
         assert_eq!(hits[0].descriptors, "tools");
+    }
+
+    #[test]
+    fn test_touch_creates_access_log() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id = store.insert_memory(&MemoryParams {
+            title: "Test", content: "test content",
+            memory_type: "knowledge", descriptors: "",
+            salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        store.touch_memory(id).unwrap();
+        store.touch_memory(id).unwrap();
+
+        let count: i64 = store.conn.query_row(
+            "SELECT COUNT(*) FROM access_log WHERE chunk_id = ?1",
+            params![id], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_get_access_intervals() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id = store.insert_memory(&MemoryParams {
+            title: "Test", content: "test content",
+            memory_type: "knowledge", descriptors: "",
+            salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        // No accesses → empty intervals
+        let intervals = store.get_access_intervals(id).unwrap();
+        assert!(intervals.is_empty());
+
+        // 1 access → still empty (need 2+ for intervals)
+        store.touch_memory(id).unwrap();
+        let intervals = store.get_access_intervals(id).unwrap();
+        assert!(intervals.is_empty());
+
+        // 2 accesses → 1 interval
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        store.touch_memory(id).unwrap();
+        let intervals = store.get_access_intervals(id).unwrap();
+        assert_eq!(intervals.len(), 1);
+        assert!(intervals[0] > 0.0);
+    }
+
+    #[test]
+    fn test_upsert_entity_edges() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id = store.insert_memory(&MemoryParams {
+            title: "Test", content: "test",
+            memory_type: "knowledge", descriptors: "",
+            salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        let entities = vec![
+            ("SearchHit".to_string(), "identifier".to_string()),
+            ("/home/foo.rs".to_string(), "file_path".to_string()),
+        ];
+        let count = store.upsert_entity_edges(id, &entities).unwrap();
+        assert_eq!(count, 2);
+
+        // Idempotent — second insert returns 0
+        let count = store.upsert_entity_edges(id, &entities).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_find_memories_by_entity() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id1 = store.insert_memory(&MemoryParams {
+            title: "Memory A", content: "about foo",
+            memory_type: "knowledge", descriptors: "",
+            salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        let id2 = store.insert_memory(&MemoryParams {
+            title: "Memory B", content: "about bar",
+            memory_type: "knowledge", descriptors: "",
+            salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        store.upsert_entity_edges(id1, &[("SearchHit".into(), "identifier".into())]).unwrap();
+        store.upsert_entity_edges(id2, &[("SearchHit".into(), "identifier".into())]).unwrap();
+
+        let hits = store.find_memories_by_entity("SearchHit").unwrap();
+        assert_eq!(hits.len(), 2);
+
+        let hits = store.find_memories_by_entity("NonExistent").unwrap();
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn test_insert_and_query_summary_edges() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id1 = store.insert_memory(&MemoryParams {
+            title: "M1", content: "c1", memory_type: "episode",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        let id2 = store.insert_memory(&MemoryParams {
+            title: "M2", content: "c2", memory_type: "episode",
+            descriptors: "", salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+        let summary_id = store.insert_memory(&MemoryParams {
+            title: "Summary", content: "summary text", memory_type: "knowledge",
+            descriptors: "summary", salience: 0.5, content_hash: "sum_hash", agent_id: "test",
+        }).unwrap();
+
+        store.insert_summary_edges(summary_id, &[id1, id2]).unwrap();
+
+        let summaries = store.get_summaries_for_chunks(&[id1, id2]).unwrap();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0], summary_id);
+
+        // Partial match still finds the summary (covers a superset)
+        let summaries = store.get_summaries_for_chunks(&[id1]).unwrap();
+        assert_eq!(summaries.len(), 1, "partial match should still find summary");
+    }
+
+    #[test]
+    fn test_log_retrieval() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let log_id = store.log_retrieval("test query", "recall", &[(1, 0.9), (2, 0.5)], Some(42)).unwrap();
+        assert!(log_id > 0);
+
+        let count: i64 = store.conn.query_row(
+            "SELECT COUNT(*) FROM retrieval_log", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_log_feedback() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id = store.insert_memory(&MemoryParams {
+            title: "Test", content: "test content",
+            memory_type: "knowledge", descriptors: "",
+            salience: 0.5, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        let log_id = store.log_retrieval("test", "recall", &[(id, 0.9)], None).unwrap();
+        store.log_feedback(log_id, id, "positive").unwrap();
+
+        let count: i64 = store.conn.query_row(
+            "SELECT COUNT(*) FROM feedback", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_adjust_salience_clamp() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id = store.insert_memory(&MemoryParams {
+            title: "Test", content: "test",
+            memory_type: "knowledge", descriptors: "",
+            salience: 0.9, content_hash: "", agent_id: "test",
+        }).unwrap();
+
+        // Bump up — should clamp at 1.0
+        store.adjust_salience(id, 0.5).unwrap();
+        let sal: f64 = store.conn.query_row(
+            "SELECT salience FROM chunks WHERE id = ?1", params![id], |row| row.get(0),
+        ).unwrap();
+        assert!((sal - 1.0).abs() < 1e-10, "should clamp at 1.0: {sal}");
+
+        // Reduce below 0 — should clamp at 0.0
+        store.adjust_salience(id, -2.0).unwrap();
+        let sal: f64 = store.conn.query_row(
+            "SELECT salience FROM chunks WHERE id = ?1", params![id], |row| row.get(0),
+        ).unwrap();
+        assert!((sal - 0.0).abs() < 1e-10, "should clamp at 0.0: {sal}");
+    }
+
+    #[test]
+    fn test_export_training_data_empty() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let examples = store.export_training_data().unwrap();
+        assert!(examples.is_empty());
+    }
+
+    #[test]
+    fn test_export_training_data_with_feedback() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id1 = store.insert_memory(&MemoryParams {
+            title: "Good", content: "good content",
+            memory_type: "knowledge", descriptors: "",
+            salience: 0.5, content_hash: "h1", agent_id: "test",
+        }).unwrap();
+        let id2 = store.insert_memory(&MemoryParams {
+            title: "Bad", content: "bad content",
+            memory_type: "knowledge", descriptors: "",
+            salience: 0.5, content_hash: "h2", agent_id: "test",
+        }).unwrap();
+
+        let log_id = store.log_retrieval("test query", "recall", &[(id1, 0.9), (id2, 0.5)], None).unwrap();
+        store.log_feedback(log_id, id1, "positive").unwrap();
+        store.log_feedback(log_id, id2, "negative").unwrap();
+
+        let examples = store.export_training_data().unwrap();
+        assert_eq!(examples.len(), 1);
+        assert_eq!(examples[0]["query"], "test query");
+        assert_eq!(examples[0]["positive"].as_array().unwrap().len(), 1);
+        assert_eq!(examples[0]["negative"].as_array().unwrap().len(), 1);
     }
 }

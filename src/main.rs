@@ -120,6 +120,9 @@ enum Commands {
 
     /// Start the MCP server (stdio, for direct Claude Code integration)
     Mcp,
+
+    /// Export retrieval logs + feedback as JSONL training data
+    ExportTraining,
 }
 
 fn default_db_path() -> PathBuf {
@@ -499,10 +502,21 @@ fn main() -> Result<()> {
                 }
             }
 
+            if !result.summaries_created.is_empty() {
+                println!(
+                    "## Summaries Created ({})",
+                    result.summaries_created.len(),
+                );
+                for s in &result.summaries_created {
+                    println!("  [#{}] {} ({} members)", s.id, s.title, s.member_count);
+                }
+            }
+
             if result.near_duplicates.is_empty()
                 && result.auto_archived.is_empty()
                 && result.stale_for_review.is_empty()
                 && result.episode_clusters.is_empty()
+                && result.summaries_created.is_empty()
             {
                 println!("Memory is clean — nothing to consolidate.");
             }
@@ -526,6 +540,19 @@ fn main() -> Result<()> {
                 }
             }
             println!("Database:     {}", db_path.display());
+        }
+
+        Commands::ExportTraining => {
+            let store = Store::open(&db_path)?;
+            let examples = store.export_training_data()?;
+            if examples.is_empty() {
+                eprintln!("No training data available (need retrieval logs with feedback).");
+            } else {
+                for example in &examples {
+                    println!("{}", serde_json::to_string(example)?);
+                }
+                eprintln!("Exported {} training examples.", examples.len());
+            }
         }
 
         Commands::Serve { .. } | Commands::Mcp => unreachable!(),
