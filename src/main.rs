@@ -218,22 +218,23 @@ fn main() -> Result<()> {
             let mut embedder = try_embedder();
             let mut reranker = try_reranker();
             let hnsw = try_hnsw(&db_path);
-            let results = grasshopper::search::search(
+            let result = grasshopper::search::unified_search(
                 &store,
                 &query,
                 kind_filter,
                 limit,
+                None, // no relevance gate for general search
                 embedder.as_mut(),
                 reranker.as_mut(),
                 hnsw.as_ref(),
             )?;
 
-            if results.is_empty() {
+            if result.hits.is_empty() {
                 println!("No results found.");
                 return Ok(());
             }
 
-            for (i, hit) in results.iter().enumerate() {
+            for (i, hit) in result.hits.iter().enumerate() {
                 println!("{}. [{:.4}] {}", i + 1, hit.score, format_hit(hit));
             }
         }
@@ -271,7 +272,11 @@ fn main() -> Result<()> {
             let mut embedder = try_embedder();
             let mut reranker = try_reranker();
             let hnsw = try_hnsw(&db_path);
-            let result = memory::recall(&store, embedder.as_mut(), reranker.as_mut(), &query, limit, hnsw.as_ref(), None)?;
+            let result = grasshopper::search::unified_search(
+                &store, &query, Some("memory"), limit,
+                None, // no relevance gate for recall
+                embedder.as_mut(), reranker.as_mut(), hnsw.as_ref(),
+            )?;
 
             if result.hits.is_empty() {
                 println!("No memories found.");
@@ -296,7 +301,11 @@ fn main() -> Result<()> {
             let mut embedder = try_embedder();
             let mut reranker = try_reranker();
             let hnsw = try_hnsw(&db_path);
-            let result = memory::get_context(&store, embedder.as_mut(), reranker.as_mut(), &query, limit, threshold, hnsw.as_ref(), None)?;
+            let result = grasshopper::search::unified_search(
+                &store, &query, Some("memory"), limit,
+                Some(threshold),
+                embedder.as_mut(), reranker.as_mut(), hnsw.as_ref(),
+            )?;
 
             if result.hits.is_empty() {
                 println!("No relevant context found (threshold: {threshold}, filtered: {}).", result.filtered_count);

@@ -397,7 +397,19 @@ pub fn store(
             .finalize()
     );
 
-    // 3. Dedup via embedding similarity (if embedder available, graceful fallback on error)
+    // 3. Quick exact-match dedup via content hash (before embedding similarity)
+    if let Some(existing_id) = db.find_memory_by_hash(&hash)? {
+        // Update existing without changing memory_type or salience
+        db.update_memory_content(existing_id, &title, content, tags, &hash)?;
+        return Ok(StoreResult {
+            id: existing_id,
+            title,
+            was_update: true,
+            similar_id: Some(existing_id),
+        });
+    }
+
+    // 4. Dedup via embedding similarity (if embedder available, graceful fallback on error)
     if let Some(emb) = embedder {
         let embed_text = format!("{}\n{}", title, content);
         let vectors = match emb.embed_batch(&[embed_text]) {
@@ -416,11 +428,8 @@ pub fn store(
             )?;
 
             if let Some(&(existing_id, _sim)) = similar.first() {
-                // Update existing entry
-                db.update_memory(existing_id, &MemoryParams {
-                    title: &title, content, memory_type: "knowledge", descriptors: tags,
-                    salience: 0.5, content_hash: &hash, agent_id: "cli",
-                })?;
+                // Update existing entry — preserve memory_type and salience
+                db.update_memory_content(existing_id, &title, content, tags, &hash)?;
                 // Re-embed the updated entry
                 db.batch_upsert_embeddings(&[(
                     existing_id,
@@ -459,7 +468,7 @@ pub fn store(
         }
     }
 
-    // 4. No embedder — always create new (skip dedup)
+    // 5. No embedder — always create new (skip dedup)
     let id = db.insert_memory(&MemoryParams {
         title: &title,
         content,
@@ -595,7 +604,7 @@ pub fn reflect(store: &Store, focus: &ReflectFocus) -> Result<ReflectResult> {
             observations.push("High episode:knowledge ratio. Consider consolidating episodes into knowledge.".into());
         }
         if type_counts.values().sum::<i64>() == 0 {
-            observations.push("Memory is empty. Start with 'remember' to build your knowledge base.".into());
+            observations.push("Memory is empty. Start with 'store' to build your knowledge base.".into());
         }
     }
 

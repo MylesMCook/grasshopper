@@ -314,55 +314,52 @@ pub fn unified_search(
 
     // For memory results: filter archived + identity, apply relevance gate, cognitive scoring
     if is_memory_only || kind_filter.is_none() {
-        let (memory_hits, code_hits): (Vec<_>, Vec<_>) = merged
+        // Apply cognitive scoring to memory hits in-place, pass code hits through unchanged
+        let pre_gate_count_ref = &mut 0usize;
+        let mut all_hits: Vec<SearchHit> = merged
             .into_iter()
-            .partition(|h| h.kind == "memory");
-
-        // Filter archived and identity memories
-        let filtered_memories: Vec<SearchHit> = memory_hits
-            .into_iter()
-            .filter(|h| !h.archived && h.memory_type.as_deref() != Some("identity"))
-            .collect();
-
-        // Relevance gate (if threshold provided)
-        let pre_gate_count = filtered_memories.len();
-        let gated: Vec<SearchHit> = if let Some(threshold) = threshold {
-            filtered_memories
-                .into_iter()
-                .filter(|h| {
-                    if rerank_succeeded {
-                        h.reranker_score.unwrap_or(0.0) >= threshold
-                    } else {
-                        h.score >= (threshold * 0.05) as f64
+            .filter_map(|mut h| {
+                if h.kind == "memory" {
+                    // Filter archived and identity memories
+                    if h.archived || h.memory_type.as_deref() == Some("identity") {
+                        return None;
                     }
-                })
-                .collect()
-        } else {
-            filtered_memories
-        };
-        let filtered_count = pre_gate_count - gated.len();
-
-        // Apply cognitive scoring to memory hits
-        let mut scored: Vec<SearchHit> = gated
-            .into_iter()
-            .map(|mut h| {
-                h.score = crate::memory::cognitive_score(&h);
-                h
+                    *pre_gate_count_ref += 1;
+                    // Relevance gate (if threshold provided)
+                    if let Some(threshold) = threshold {
+                        let passes = if rerank_succeeded {
+                            h.reranker_score.unwrap_or(0.0) >= threshold
+                        } else {
+                            h.score >= (threshold * 0.05) as f64
+                        };
+                        if !passes {
+                            return None;
+                        }
+                    }
+                    // Apply cognitive scoring
+                    h.score = crate::memory::cognitive_score(&h);
+                }
+                Some(h)
             })
             .collect();
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        let pre_gate_count = *pre_gate_count_ref;
 
-        // Touch memory side effects
-        for hit in &scored {
-            if let Err(e) = store.touch_memory(hit.id) {
+        // Count filtered (pre_gate_count includes those that passed + were gated)
+        let memory_count_after = all_hits.iter().filter(|h| h.kind == "memory").count();
+        let filtered_count = pre_gate_count - memory_count_after;
+
+        // Sort all hits (memory + code) by score, interleaved
+        all_hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        all_hits.truncate(limit);
+
+        // Touch memory side effects AFTER truncation (only returned hits get salience boost)
+        for hit in &all_hits {
+            if hit.kind == "memory"
+                && let Err(e) = store.touch_memory(hit.id)
+            {
                 tracing::warn!("Failed to touch memory #{}: {e}", hit.id);
             }
         }
-
-        // Merge memory + code hits back, memory first (already scored)
-        let mut all_hits = scored;
-        all_hits.extend(code_hits);
-        all_hits.truncate(limit);
 
         // Log retrieval
         let log_id = store

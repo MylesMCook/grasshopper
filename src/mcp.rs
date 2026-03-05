@@ -14,12 +14,14 @@ use crate::code::embed::Embedder;
 
 // --- Embedding cache ---
 
+#[allow(dead_code)]
 struct EmbedCache {
     entries: std::collections::HashMap<String, (std::time::Instant, Vec<f32>)>,
     ttl: std::time::Duration,
     max_entries: usize,
 }
 
+#[allow(dead_code)]
 impl EmbedCache {
     fn new(ttl_secs: u64, max_entries: usize) -> Self {
         Self {
@@ -211,6 +213,7 @@ pub struct GrasshopperMcp {
     /// Epoch seconds of last reranker init failure (0 = never failed). Retry after 60s cooldown.
     reranker_failed_at: Arc<std::sync::atomic::AtomicI64>,
     hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>>,
+    #[allow(dead_code)]
     embed_cache: Arc<Mutex<EmbedCache>>,
     tool_router: ToolRouter<Self>,
 }
@@ -388,12 +391,13 @@ impl GrasshopperMcp {
             let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let results = crate::search::search(
+            let result = crate::search::unified_search(
                 &store, &params.query, kind_filter, limit,
+                None, // no relevance gate for general search
                 emb_guard.as_mut(), rr_guard.as_mut(),
                 hnsw_guard.as_ref(),
             )?;
-            let json = serde_json::to_string_pretty(&format_search_hits(&results))?;
+            let json = serde_json::to_string_pretty(&format_search_hits(&result.hits))?;
             Ok::<_, anyhow::Error>(json)
         })
         .await
@@ -695,7 +699,6 @@ impl GrasshopperMcp {
         let reranker = Arc::clone(&self.reranker);
         let rr_failed = Arc::clone(&self.reranker_failed_at);
         let hnsw = Arc::clone(&self.hnsw);
-        let embed_cache = Arc::clone(&self.embed_cache);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
@@ -703,42 +706,14 @@ impl GrasshopperMcp {
             let store = Store::open(&db_path)?;
             let limit = params.limit.unwrap_or(10).clamp(1, 50);
 
-            // Check embedding cache
-            let cached_emb = embed_cache.lock().ok().and_then(|c| c.get(&params.query));
-            let fresh_emb = if cached_emb.is_none() {
-                // Embed and cache
-                let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-                if let Some(emb) = emb_guard.as_mut() {
-                    match emb.embed_batch(std::slice::from_ref(&params.query)) {
-                        Ok(vecs) if !vecs.is_empty() => {
-                            if let Ok(mut cache) = embed_cache.lock() {
-                                cache.insert(params.query.clone(), vecs[0].clone());
-                            }
-                            Some(vecs.into_iter().next().unwrap())
-                        }
-                        _ => None,
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            let precomputed = cached_emb.as_deref().or(fresh_emb.as_deref());
-
-            // When we have a precomputed embedding, skip locking the embedder
-            let mut emb_guard = if precomputed.is_none() {
-                Some(embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?)
-            } else {
-                None
-            };
+            let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let result = crate::memory::recall(
-                &store,
-                emb_guard.as_mut().and_then(|g| g.as_mut()),
-                rr_guard.as_mut(), &params.query, limit,
-                hnsw_guard.as_ref(), precomputed,
+            let result = crate::search::unified_search(
+                &store, &params.query, Some("memory"), limit,
+                None, // no relevance gate for recall
+                emb_guard.as_mut(), rr_guard.as_mut(),
+                hnsw_guard.as_ref(),
             )?;
 
             let output = serde_json::json!({
@@ -770,7 +745,6 @@ impl GrasshopperMcp {
         let reranker = Arc::clone(&self.reranker);
         let rr_failed = Arc::clone(&self.reranker_failed_at);
         let hnsw = Arc::clone(&self.hnsw);
-        let embed_cache = Arc::clone(&self.embed_cache);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
@@ -779,59 +753,23 @@ impl GrasshopperMcp {
             let limit = params.limit.unwrap_or(5).clamp(1, 20);
             let threshold = params.threshold.unwrap_or(0.1).clamp(0.0, 1.0);
 
-            // Check embedding cache
-            let cached_emb = embed_cache.lock().ok().and_then(|c| c.get(&params.query));
-            let fresh_emb = if cached_emb.is_none() {
-                let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-                if let Some(emb) = emb_guard.as_mut() {
-                    match emb.embed_batch(std::slice::from_ref(&params.query)) {
-                        Ok(vecs) if !vecs.is_empty() => {
-                            if let Ok(mut cache) = embed_cache.lock() {
-                                cache.insert(params.query.clone(), vecs[0].clone());
-                            }
-                            Some(vecs.into_iter().next().unwrap())
-                        }
-                        _ => None,
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            let precomputed = cached_emb.as_deref().or(fresh_emb.as_deref());
+            let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let result = crate::search::unified_search(
+                &store, &params.query, Some("memory"), limit,
+                Some(threshold),
+                emb_guard.as_mut(), rr_guard.as_mut(),
+                hnsw_guard.as_ref(),
+            )?;
 
-            // Retrieval: hold model locks only for the search pipeline
-            let result = {
-                let mut emb_guard = if precomputed.is_none() {
-                    Some(embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?)
-                } else {
-                    None
-                };
-                let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-                let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-                crate::memory::get_context(
-                    &store,
-                    emb_guard.as_mut().and_then(|g| g.as_mut()),
-                    rr_guard.as_mut(), &params.query, limit, threshold,
-                    hnsw_guard.as_ref(), precomputed,
-                )?
-            }; // model locks released here
-
-            // Budget truncation + dedup (before side effects)
+            // Budget truncation + dedup (unified_search already handles touch_memory)
             let budget = params.budget.unwrap_or(4000);
             let budgeted = crate::memory::budget_context(result.hits, budget, true);
 
-            // Side effects: only touch hits that are actually returned
-            for hit in &budgeted.hits {
-                if let Err(e) = store.touch_memory(hit.id) {
-                    tracing::warn!("Failed to touch memory #{}: {e}", hit.id);
-                }
-            }
-
             let output = serde_json::json!({
                 "memories": format_search_hits(&budgeted.hits),
-                "threshold": result.threshold,
+                "threshold": threshold,
                 "filtered_count": result.filtered_count,
                 "budget_dropped": budgeted.dropped_count,
                 "estimated_tokens": budgeted.estimated_tokens,
