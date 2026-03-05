@@ -331,16 +331,6 @@ fn format_hit(hit: &SearchHit) -> String {
     }
 }
 
-#[allow(dead_code)]
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        let truncated: String = s.chars().take(max.saturating_sub(3)).collect();
-        format!("{truncated}...")
-    }
-}
-
 fn rebuild_hnsw(store: &Store, db_path: &Path) -> Result<()> {
     let rows = store.get_all_embeddings()?;
     if rows.is_empty() {

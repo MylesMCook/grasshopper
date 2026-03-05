@@ -6,7 +6,7 @@ use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::store::Store;
@@ -516,7 +516,6 @@ impl GrasshopperMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
-        let hnsw = Arc::clone(&self.hnsw);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
@@ -530,27 +529,6 @@ impl GrasshopperMcp {
                 params.title.as_deref(),
                 tags,
             )?;
-
-            // Rebuild HNSW after storing a memory with embedding
-            if guard.is_some() {
-                let rows = store.get_all_embeddings()?;
-                if !rows.is_empty() {
-                    match crate::code::hnsw::HnswIndex::from_embeddings(&rows) {
-                        Ok(new_index) => {
-                            let hnsw_file = crate::code::hnsw::hnsw_path(&db_path);
-                            if let Err(e) = new_index.save(&hnsw_file) {
-                                tracing::warn!("failed to save HNSW after store: {e}");
-                            }
-                            let mut hnsw_guard = hnsw.lock()
-                                .map_err(|e| anyhow::anyhow!("hnsw lock: {e}"))?;
-                            *hnsw_guard = Some(new_index);
-                        }
-                        Err(e) => {
-                            tracing::warn!("failed to rebuild HNSW after store: {e}");
-                        }
-                    }
-                }
-            }
 
             let output = serde_json::json!({
                 "id": result.id,
@@ -595,6 +573,25 @@ impl ServerHandler for GrasshopperMcp {
 
 // --- Transport entry points ---
 
+/// Run startup maintenance: log DB stats, PRAGMA optimize.
+fn startup_maintenance(db_path: &Path) {
+    match Store::open(db_path) {
+        Ok(store) => {
+            let (code, memory) = store.count_by_kind().unwrap_or((0, 0));
+            let db_bytes = store.db_size_bytes().unwrap_or(0);
+            let codebases = store.count_codebases().unwrap_or(0);
+            tracing::info!(
+                "startup: {} code chunks, {} memories, {:.1} KB, {} codebases",
+                code, memory, db_bytes as f64 / 1024.0, codebases
+            );
+            if let Err(e) = store.optimize() {
+                tracing::warn!("startup optimize failed: {e}");
+            }
+        }
+        Err(e) => tracing::warn!("startup diagnostics failed: {e}"),
+    }
+}
+
 /// Run the MCP server over stdio (for direct Claude Code integration).
 pub async fn run_stdio(db_path: PathBuf) -> Result<()> {
     let _ = tracing_subscriber::fmt()
@@ -609,6 +606,7 @@ pub async fn run_stdio(db_path: PathBuf) -> Result<()> {
         .try_init();
 
     tracing::info!("starting grasshopper MCP server (stdio)");
+    startup_maintenance(&db_path);
     let server = GrasshopperMcp::new(db_path);
     let service = rmcp::ServiceExt::serve(server, rmcp::transport::stdio()).await?;
     service.waiting().await?;
@@ -637,24 +635,7 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
     let shared_hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>> =
         Arc::new(Mutex::new(GrasshopperMcp::try_load_hnsw(&db_path)));
 
-    // Startup maintenance — log counts
-    {
-        match Store::open(&db_path) {
-            Ok(store) => {
-                let (code, memory) = store.count_by_kind().unwrap_or((0, 0));
-                let db_bytes = store.db_size_bytes().unwrap_or(0);
-                let codebases = store.count_codebases().unwrap_or(0);
-                tracing::info!(
-                    "startup: {} code chunks, {} memories, {:.1} KB, {} codebases",
-                    code, memory, db_bytes as f64 / 1024.0, codebases
-                );
-                if let Err(e) = store.optimize() {
-                    tracing::warn!("startup optimize failed: {e}");
-                }
-            }
-            Err(e) => tracing::warn!("startup diagnostics failed: {e}"),
-        }
-    }
+    startup_maintenance(&db_path);
 
     let db = db_path.clone();
     let embedder_for_mcp = shared_embedder.clone();
@@ -787,20 +768,6 @@ fn format_search_hits(hits: &[crate::store::SearchHit]) -> Vec<serde_json::Value
             v
         })
         .collect()
-}
-
-/// Summarize a Chunk for JSON output (used by reflect, consolidate).
-#[allow(dead_code)]
-fn chunk_summary(c: &crate::store::Chunk) -> serde_json::Value {
-    serde_json::json!({
-        "id": c.id,
-        "title": c.title,
-        "memory_type": c.memory_type,
-        "access_count": c.access_count,
-        "salience": c.salience,
-        "last_accessed": c.last_accessed,
-        "created_at": c.created_at,
-    })
 }
 
 /// Resolve a codebase directory filter to a codebase_id.
