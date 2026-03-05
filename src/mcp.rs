@@ -65,10 +65,22 @@ impl EmbedCache {
 pub struct SearchParams {
     /// Natural language query or keyword to search for
     pub query: String,
+    /// Search mode. Values: "search" (default), "navigate", "map", "impact"
+    pub mode: Option<String>,
     /// Filter by entry type. Values: "all" (default), "code", "memory"
     pub kind: Option<String>,
     /// Maximum results to return, 1-100 (default: 10)
     pub limit: Option<usize>,
+    /// Minimum relevance threshold (0.0-1.0). Only for mode=search with kind=memory
+    pub threshold: Option<f32>,
+    /// Token budget for output (default: 4000). Only for mode=map
+    pub budget: Option<usize>,
+    /// BFS depth for impact analysis, 1-5 (default: 2). Only for mode=impact
+    pub depth: Option<usize>,
+    /// Scope to a codebase by directory name. Required when multiple codebases indexed
+    pub dir: Option<String>,
+    /// Which edges to follow for navigate. Values: "both" (default), "defs", "refs"
+    pub direction: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -80,34 +92,6 @@ pub struct IndexParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct NavigateParams {
-    /// Exact symbol name to look up (e.g. "SearchParams", "run_http", "Store")
-    pub symbol: String,
-    /// Which edges to follow. Values: "both" (default), "defs", "refs"
-    pub direction: Option<String>,
-    /// Scope to a codebase by directory name or path suffix. Required when multiple codebases are indexed
-    pub dir: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct MapParams {
-    /// Scope to a codebase by directory name or path suffix. Required when multiple codebases are indexed
-    pub dir: Option<String>,
-    /// Approximate token budget for output, 1-200000 (default: 4000). Larger budget = more detail
-    pub budget: Option<usize>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct ImpactParams {
-    /// Exact symbol name to analyze (e.g. "Store", "search")
-    pub symbol: String,
-    /// Maximum BFS traversal depth, 1-5 (default: 2). Depth 1 = direct callers only
-    pub depth: Option<usize>,
-    /// Scope to a codebase by directory name or path suffix. Required when multiple codebases are indexed
-    pub dir: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
 pub struct StoreParams {
     /// The information to store. Raw content — facts, decisions, preferences, observations, anything worth persisting
     pub content: String,
@@ -115,92 +99,6 @@ pub struct StoreParams {
     pub title: Option<String>,
     /// Comma-separated tags for organization (e.g. "rust,grasshopper,architecture")
     pub tags: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct RecallParams {
-    /// Natural language query to search memories (not code). Results are ranked by cognitive score: salience and type-specific decay
-    pub query: String,
-    /// Maximum results to return, 1-50 (default: 10)
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct GetContextParams {
-    /// Conversation context or topic to find relevant memories for. Can be the user's latest message, a summary of recent turns, or a specific question
-    pub query: String,
-    /// Minimum relevance score to surface (0.0-1.0, default: 0.1). Higher = stricter filtering. Set to 0.0 to return all results
-    pub threshold: Option<f32>,
-    /// Maximum memories to return, 1-20 (default: 5)
-    pub limit: Option<usize>,
-    /// Token budget for returned context (default: 4000). Results are truncated to fit within this budget
-    pub budget: Option<usize>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct MeParams {}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct PickupParams {
-    /// Filter to a specific project's handoff (e.g. "grasshopper"). Returns latest handoff if omitted
-    pub project: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct HandoffParams {
-    /// Project name this handoff belongs to (e.g. "grasshopper", "beelink")
-    pub project: String,
-    /// What was accomplished in this session
-    pub summary: String,
-    /// Concrete next steps for whoever picks up this project
-    pub next_steps: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct ConsolidateParams {
-    /// Preview changes without applying them. Default: true (safe preview mode)
-    pub dry_run: Option<bool>,
-    /// Days of inactivity before a memory is considered stale, minimum 1 (default: 90)
-    pub stale_days: Option<i64>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct FeedbackParams {
-    /// Retrieval log ID (from recall or get_context query_id field)
-    pub query_id: i64,
-    /// Chunk ID to provide feedback on
-    pub chunk_id: i64,
-    /// Feedback signal: "positive" (relevant/helpful) or "negative" (irrelevant/unhelpful)
-    pub signal: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct StatusParams {}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct MaintenanceParams {
-    /// Number of days to retain retrieval logs, feedback, and access logs. Default: 90.
-    pub retention_days: Option<i64>,
-    /// Also run VACUUM (slow, rebuilds entire database file). Default: false.
-    pub vacuum: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct ArchiveParams {
-    /// Numeric ID of the memory to archive (from search, recall, or other tool outputs)
-    pub id: i64,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct ReflectParams {
-    /// What aspect of memory to analyze. Values: "overview" (default), "growing" (recently active), "fading" (neglected), "connections" (Hebbian associations), "gaps" (missing coverage)
-    pub focus: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct GetParams {
-    /// Numeric ID of the entry to retrieve (from search results or other tool outputs)
-    pub id: i64,
 }
 
 // --- MCP server handler ---
@@ -279,20 +177,12 @@ impl GrasshopperMcp {
         let write = ToolAnnotations::new()
             .read_only(false)
             .destructive(false);
-        let destructive_write = ToolAnnotations::new()
-            .read_only(false)
-            .destructive(true);
 
         for (name, route) in router.map.iter_mut() {
             let ann = match name.as_ref() {
-                // Read-only: search, navigate, map, impact, me, pickup, reflect, get
-                "search" | "navigate" | "map" | "impact" | "me" | "pickup" | "reflect"
-                | "get" => read_only.clone(),
-                // get_context has cognitive side effects, feedback adjusts salience
-                "get_context" | "feedback" => write.clone(),
-                // Destructive: consolidate and archive can remove memories
-                "consolidate" | "archive" => destructive_write.clone(),
-                // Write (non-destructive): index, store, handoff
+                // Read-only: search (touch_memory side effects are acceptable)
+                "search" => read_only.clone(),
+                // Write (non-destructive): index, store
                 _ => write.clone(),
             };
             route.attr.annotations = Some(ann);
@@ -362,11 +252,9 @@ impl GrasshopperMcp {
         }
     }
 
-    // --- Code Intelligence Tools ---
-
     #[tool(
         name = "search",
-        description = "Search across code and memory with a single query. Returns ranked results using hybrid search (keyword matching + semantic similarity). Use kind='code' to search only indexed source files, kind='memory' to search only stored memories, or omit for both. Start here when looking for anything."
+        description = "Search across code and memory, navigate symbols, map codebases, or analyze impact. Default mode searches with hybrid retrieval (keywords + semantics + reranking). Use mode='navigate' to find symbol definitions/references, mode='map' for codebase overview, mode='impact' to analyze change blast radius."
     )]
     async fn search(
         &self,
@@ -379,32 +267,141 @@ impl GrasshopperMcp {
         let hnsw = Arc::clone(&self.hnsw);
 
         let result = tokio::task::spawn_blocking(move || {
-            Self::init_embedder_blocking(&embedder);
-            Self::init_reranker_blocking(&reranker, &rr_failed);
-            let store = Store::open(&db_path)?;
-            let kind_filter = match params.kind.as_deref() {
-                Some("all") | None => None,
-                Some(k @ ("code" | "memory")) => Some(k),
-                Some(k) => anyhow::bail!("invalid kind '{k}': must be 'all', 'code', or 'memory'"),
-            };
-            let limit = params.limit.unwrap_or(10).clamp(1, 100);
-            let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let result = crate::search::unified_search(
-                &store, &params.query, kind_filter, limit,
-                None, // no relevance gate for general search
-                emb_guard.as_mut(), rr_guard.as_mut(),
-                hnsw_guard.as_ref(),
-            )?;
-            let json = serde_json::to_string_pretty(&format_search_hits(&result.hits))?;
-            Ok::<_, anyhow::Error>(json)
+            let mode = params.mode.as_deref().unwrap_or("search");
+            match mode {
+                "search" => {
+                    Self::init_embedder_blocking(&embedder);
+                    Self::init_reranker_blocking(&reranker, &rr_failed);
+                    let store = Store::open(&db_path)?;
+                    let kind_filter = match params.kind.as_deref() {
+                        Some("all") | None => None,
+                        Some(k @ ("code" | "memory")) => Some(k),
+                        Some(k) => anyhow::bail!("invalid kind '{k}': must be 'all', 'code', or 'memory'"),
+                    };
+                    let limit = params.limit.unwrap_or(10).clamp(1, 100);
+                    let threshold = params.threshold;
+                    let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                    let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                    let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                    let result = crate::search::unified_search(
+                        &store, &params.query, kind_filter, limit,
+                        threshold,
+                        emb_guard.as_mut(), rr_guard.as_mut(),
+                        hnsw_guard.as_ref(),
+                    )?;
+                    let json = serde_json::to_string_pretty(&format_search_hits(&result.hits))?;
+                    Ok::<_, anyhow::Error>(json)
+                }
+                "navigate" => {
+                    let store = Store::open(&db_path)?;
+                    let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
+                        .context("no codebases indexed — run index first")?;
+                    let codebase_id = Some(codebase_id);
+                    let direction = params.direction.as_deref().unwrap_or("both");
+
+                    let (show_defs, show_refs) = match direction {
+                        "both" => (true, true),
+                        "defs" | "def" => (true, false),
+                        "refs" | "ref" => (false, true),
+                        d => anyhow::bail!("invalid direction '{d}': must be 'both', 'defs', or 'refs'"),
+                    };
+
+                    let mut output = String::new();
+
+                    if show_defs {
+                        let defs = store.find_definitions(&params.query, codebase_id)?;
+                        if !defs.is_empty() {
+                            output.push_str(&format!("Definitions of '{}':\n", params.query));
+                            for d in &defs {
+                                output.push_str(&format!(
+                                    "  {}:{} ({} {})\n",
+                                    d.file_path, d.line, d.kind, d.symbol
+                                ));
+                            }
+                        }
+                    }
+
+                    if show_refs {
+                        let refs = store.find_references(&params.query, codebase_id)?;
+                        if !refs.is_empty() {
+                            if !output.is_empty() {
+                                output.push('\n');
+                            }
+                            output.push_str(&format!("References to '{}':\n", params.query));
+                            for r in &refs {
+                                output.push_str(&format!(
+                                    "  {}:{} ({} {})\n",
+                                    r.file_path, r.line, r.kind, r.symbol
+                                ));
+                            }
+                        }
+                    }
+
+                    if output.is_empty() {
+                        output = format!("No results found for '{}'.", params.query);
+                    }
+
+                    Ok(output)
+                }
+                "map" => {
+                    let store = Store::open(&db_path)?;
+                    let budget = params.budget.unwrap_or(4000).clamp(1, 200_000);
+                    let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
+                        .context("no codebases indexed — run index first")?;
+                    generate_map(&store, codebase_id, budget)
+                }
+                "impact" => {
+                    let store = Store::open(&db_path)?;
+                    let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
+                        .context("no codebases indexed — run index first")?;
+                    let codebase_id = Some(codebase_id);
+                    let max_depth = params.depth.unwrap_or(2).clamp(1, 5);
+
+                    let hits = store.find_impact(&params.query, codebase_id, max_depth)?;
+
+                    if hits.is_empty() {
+                        return Ok(format!("No impact found for '{}'.", params.query));
+                    }
+
+                    let mut output = String::new();
+                    let defs = store.find_definitions(&params.query, codebase_id)?;
+                    if !defs.is_empty() {
+                        let locs: Vec<String> =
+                            defs.iter().map(|d| format!("{}:{}", d.file_path, d.line)).collect();
+                        output.push_str(&format!(
+                            "Impact of changing '{}' (defined at {}):\n",
+                            params.query,
+                            locs.join(", ")
+                        ));
+                    } else {
+                        output.push_str(&format!("Impact of changing '{}':\n", params.query));
+                    }
+
+                    let mut current_depth = 0;
+                    for h in &hits {
+                        if h.depth != current_depth {
+                            current_depth = h.depth;
+                            output.push_str(&format!(
+                                "\n  Depth {} ({}):\n",
+                                current_depth,
+                                if current_depth == 1 { "direct" } else { "transitive" },
+                            ));
+                        }
+                        output.push_str(&format!("    {} (via {})\n", h.file_path, h.via_symbol));
+                    }
+
+                    let file_count = hits.len();
+                    output.push_str(&format!("\n{file_count} file(s) affected."));
+                    Ok(output)
+                }
+                m => anyhow::bail!("invalid mode '{m}': must be 'search', 'navigate', 'map', or 'impact'"),
+            }
         })
         .await
         .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
 
         match result {
-            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
+            Ok(text) => Ok(CallToolResult::success(vec![Content::text(text)])),
             Err(e) => Ok(error_result(format!("{e:#}"))),
         }
     }
@@ -484,169 +481,6 @@ impl GrasshopperMcp {
     }
 
     #[tool(
-        name = "navigate",
-        description = "Find where a symbol is defined and what references it. Returns file:line locations. Use when you know the exact symbol name and need to find its definition or callers."
-    )]
-    async fn navigate(
-        &self,
-        Parameters(params): Parameters<NavigateParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-
-        let result = tokio::task::spawn_blocking(move || {
-            let store = Store::open(&db_path)?;
-            let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
-                .context("no codebases indexed — run index first")?;
-            let codebase_id = Some(codebase_id);
-            let direction = params.direction.as_deref().unwrap_or("both");
-
-            let (show_defs, show_refs) = match direction {
-                "both" => (true, true),
-                "defs" | "def" => (true, false),
-                "refs" | "ref" => (false, true),
-                d => anyhow::bail!("invalid direction '{d}': must be 'both', 'defs', or 'refs'"),
-            };
-
-            let mut output = String::new();
-
-            if show_defs {
-                let defs = store.find_definitions(&params.symbol, codebase_id)?;
-                if !defs.is_empty() {
-                    output.push_str(&format!("Definitions of '{}':\n", params.symbol));
-                    for d in &defs {
-                        output.push_str(&format!(
-                            "  {}:{} ({} {})\n",
-                            d.file_path, d.line, d.kind, d.symbol
-                        ));
-                    }
-                }
-            }
-
-            if show_refs {
-                let refs = store.find_references(&params.symbol, codebase_id)?;
-                if !refs.is_empty() {
-                    if !output.is_empty() {
-                        output.push('\n');
-                    }
-                    output.push_str(&format!("References to '{}':\n", params.symbol));
-                    for r in &refs {
-                        output.push_str(&format!(
-                            "  {}:{} ({} {})\n",
-                            r.file_path, r.line, r.kind, r.symbol
-                        ));
-                    }
-                }
-            }
-
-            if output.is_empty() {
-                output = format!("No results found for '{}'.", params.symbol);
-            }
-
-            Ok::<_, anyhow::Error>(output)
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(text) => Ok(CallToolResult::success(vec![Content::text(text)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    #[tool(
-        name = "map",
-        description = "Get a high-level overview of a codebase. Returns all symbols (functions, structs, traits, etc.) grouped by file, ranked by how frequently they're referenced. Output is token-budgeted to fit in context. Use to orient yourself in an unfamiliar codebase."
-    )]
-    async fn map(
-        &self,
-        Parameters(params): Parameters<MapParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-
-        let result = tokio::task::spawn_blocking(move || {
-            let store = Store::open(&db_path)?;
-            let budget = params.budget.unwrap_or(4000).clamp(1, 200_000);
-
-            let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
-                .context("no codebases indexed — run index first")?;
-
-            generate_map(&store, codebase_id, budget)
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(text) => Ok(CallToolResult::success(vec![Content::text(text)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    #[tool(
-        name = "impact",
-        description = "Analyze what would break if a symbol were changed. Walks the reference graph outward: depth 1 shows direct callers, depth 2+ shows transitive dependents. Use before refactoring to understand blast radius."
-    )]
-    async fn impact(
-        &self,
-        Parameters(params): Parameters<ImpactParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-
-        let result = tokio::task::spawn_blocking(move || {
-            let store = Store::open(&db_path)?;
-            let codebase_id = resolve_codebase(&store, params.dir.as_deref())?
-                .context("no codebases indexed — run index first")?;
-            let codebase_id = Some(codebase_id);
-            let max_depth = params.depth.unwrap_or(2).clamp(1, 5);
-
-            let hits = store.find_impact(&params.symbol, codebase_id, max_depth)?;
-
-            if hits.is_empty() {
-                return Ok(format!("No impact found for '{}'.", params.symbol));
-            }
-
-            let mut output = String::new();
-            let defs = store.find_definitions(&params.symbol, codebase_id)?;
-            if !defs.is_empty() {
-                let locs: Vec<String> =
-                    defs.iter().map(|d| format!("{}:{}", d.file_path, d.line)).collect();
-                output.push_str(&format!(
-                    "Impact of changing '{}' (defined at {}):\n",
-                    params.symbol,
-                    locs.join(", ")
-                ));
-            } else {
-                output.push_str(&format!("Impact of changing '{}':\n", params.symbol));
-            }
-
-            let mut current_depth = 0;
-            for h in &hits {
-                if h.depth != current_depth {
-                    current_depth = h.depth;
-                    output.push_str(&format!(
-                        "\n  Depth {} ({}):\n",
-                        current_depth,
-                        if current_depth == 1 { "direct" } else { "transitive" },
-                    ));
-                }
-                output.push_str(&format!("    {} (via {})\n", h.file_path, h.via_symbol));
-            }
-
-            let file_count = hits.len();
-            output.push_str(&format!("\n{file_count} file(s) affected."));
-            Ok::<_, anyhow::Error>(output)
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(text) => Ok(CallToolResult::success(vec![Content::text(text)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    // --- Cognitive Memory Tools ---
-
-    #[tool(
         name = "store",
         description = "Store raw content as a persistent memory. Deduplicates — if a near-duplicate exists, it updates the existing entry instead of creating a new one. Use proactively to save anything worth persisting across sessions: facts, decisions, preferences, observations."
     )]
@@ -685,510 +519,6 @@ impl GrasshopperMcp {
             Err(e) => Ok(error_result(format!("{e:#}"))),
         }
     }
-
-    #[tool(
-        name = "recall",
-        description = "Cognitive-scored memory search. Unlike search (which returns raw hybrid-search scores), recall applies cognitive scoring: salience weighting and type-specific exponential decay. Touched memories gain salience. Use when you need the most relevant memories, not just keyword matches."
-    )]
-    async fn recall(
-        &self,
-        Parameters(params): Parameters<RecallParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-        let embedder = Arc::clone(&self.embedder);
-        let reranker = Arc::clone(&self.reranker);
-        let rr_failed = Arc::clone(&self.reranker_failed_at);
-        let hnsw = Arc::clone(&self.hnsw);
-
-        let result = tokio::task::spawn_blocking(move || {
-            Self::init_embedder_blocking(&embedder);
-            Self::init_reranker_blocking(&reranker, &rr_failed);
-            let store = Store::open(&db_path)?;
-            let limit = params.limit.unwrap_or(10).clamp(1, 50);
-
-            let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let result = crate::search::unified_search(
-                &store, &params.query, Some("memory"), limit,
-                None, // no relevance gate for recall
-                emb_guard.as_mut(), rr_guard.as_mut(),
-                hnsw_guard.as_ref(),
-            )?;
-
-            let output = serde_json::json!({
-                "query_id": result.log_id,
-                "results": format_search_hits(&result.hits),
-            });
-            let json = serde_json::to_string_pretty(&output)?;
-            Ok::<_, anyhow::Error>(json)
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    #[tool(
-        name = "get_context",
-        description = "Proactive memory surfacing — call before answering to surface relevant background knowledge. Unlike recall (which always returns results), get_context applies a relevance gate and returns EMPTY when nothing is relevant. This is the correct behavior — don't treat empty results as failure. Memories below the threshold are silently dropped."
-    )]
-    async fn get_context(
-        &self,
-        Parameters(params): Parameters<GetContextParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-        let embedder = Arc::clone(&self.embedder);
-        let reranker = Arc::clone(&self.reranker);
-        let rr_failed = Arc::clone(&self.reranker_failed_at);
-        let hnsw = Arc::clone(&self.hnsw);
-
-        let result = tokio::task::spawn_blocking(move || {
-            Self::init_embedder_blocking(&embedder);
-            Self::init_reranker_blocking(&reranker, &rr_failed);
-            let store = Store::open(&db_path)?;
-            let limit = params.limit.unwrap_or(5).clamp(1, 20);
-            let threshold = params.threshold.unwrap_or(0.1).clamp(0.0, 1.0);
-
-            let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let result = crate::search::unified_search(
-                &store, &params.query, Some("memory"), limit,
-                Some(threshold),
-                emb_guard.as_mut(), rr_guard.as_mut(),
-                hnsw_guard.as_ref(),
-            )?;
-
-            // Budget truncation + dedup (unified_search already handles touch_memory)
-            let budget = params.budget.unwrap_or(4000);
-            let budgeted = crate::memory::budget_context(result.hits, budget, true);
-
-            let output = serde_json::json!({
-                "memories": format_search_hits(&budgeted.hits),
-                "threshold": threshold,
-                "filtered_count": result.filtered_count,
-                "budget_dropped": budgeted.dropped_count,
-                "estimated_tokens": budgeted.estimated_tokens,
-                "query_id": result.log_id,
-            });
-            let json = serde_json::to_string_pretty(&output)?;
-            Ok::<_, anyhow::Error>(json)
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    #[tool(
-        name = "archive",
-        description = "Soft-delete a memory by ID. Use to remove bad, outdated, or redundant memories that degrade search quality. The memory is marked archived, not permanently deleted — it won't appear in recall or search results. Get the ID from search, recall, or reflect output."
-    )]
-    async fn archive(
-        &self,
-        Parameters(params): Parameters<ArchiveParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-
-        let result = tokio::task::spawn_blocking(move || {
-            let store = Store::open(&db_path)?;
-            let archived = store.archive_memory(params.id)?;
-            if archived {
-                Ok(format!("Archived memory #{}.", params.id))
-            } else {
-                anyhow::bail!("no active memory with ID {}. It may already be archived or not exist.", params.id)
-            }
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(text) => Ok(CallToolResult::success(vec![Content::text(text)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    #[tool(
-        name = "me",
-        description = "Load identity and working context. Returns: who I am (identity memories), active projects (latest handoffs), most-accessed memories (working set), and memory counts. Call at session start to establish context."
-    )]
-    async fn me(
-        &self,
-        Parameters(_params): Parameters<MeParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-
-        let result = tokio::task::spawn_blocking(move || {
-            let store = Store::open(&db_path)?;
-            let me = crate::memory::me(&store)?;
-            let output = serde_json::json!({
-                "identity": me.identity.iter().map(|c| serde_json::json!({
-                    "title": c.title, "content": c.content,
-                })).collect::<Vec<_>>(),
-                "active_projects": me.active_projects,
-                "working_set": me.working_set.iter().map(|c| serde_json::json!({
-                    "id": c.id, "title": c.title, "memory_type": c.memory_type,
-                    "access_count": c.access_count, "salience": c.salience,
-                })).collect::<Vec<_>>(),
-                "active_count": me.active_count,
-                "archived_count": me.archived_count,
-            });
-            Ok::<_, anyhow::Error>(serde_json::to_string_pretty(&output)?)
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    #[tool(
-        name = "pickup",
-        description = "Resume where a previous session left off. Loads the latest handoff (summary + next steps) and retrieves related memories via cognitive search. Call at session start after me for continuity."
-    )]
-    async fn pickup(
-        &self,
-        Parameters(params): Parameters<PickupParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-        let embedder = Arc::clone(&self.embedder);
-        let reranker = Arc::clone(&self.reranker);
-        let rr_failed = Arc::clone(&self.reranker_failed_at);
-        let hnsw = Arc::clone(&self.hnsw);
-
-        let result = tokio::task::spawn_blocking(move || {
-            Self::init_embedder_blocking(&embedder);
-            Self::init_reranker_blocking(&reranker, &rr_failed);
-            let store = Store::open(&db_path)?;
-            let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let result = crate::memory::pickup(
-                &store, emb_guard.as_mut(), rr_guard.as_mut(), params.project.as_deref(),
-                hnsw_guard.as_ref(),
-            )?;
-            let output = serde_json::json!({
-                "handoff": result.handoff,
-                "related_memories": format_search_hits(&result.related_memories),
-            });
-            Ok::<_, anyhow::Error>(serde_json::to_string_pretty(&output)?)
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    #[tool(
-        name = "handoff",
-        description = "Save a session handoff before ending work. Records what was accomplished and what should happen next. The next session retrieves this via pickup. Call at session end."
-    )]
-    async fn handoff(
-        &self,
-        Parameters(params): Parameters<HandoffParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-
-        let result = tokio::task::spawn_blocking(move || {
-            let store = Store::open(&db_path)?;
-            let id = uuid::Uuid::new_v4().to_string();
-            store.create_handoff(&id, &params.summary, &params.next_steps, &params.project)?;
-            let output = serde_json::json!({
-                "id": id,
-                "project": params.project,
-                "summary": params.summary,
-                "next_steps": params.next_steps,
-            });
-            Ok::<_, anyhow::Error>(serde_json::to_string_pretty(&output)?)
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    #[tool(
-        name = "consolidate",
-        description = "Clean up memory: find near-duplicate entries, auto-archive stale memories, and cluster episodes by tag. Defaults to dry_run=true (preview only). Run periodically to keep memory lean."
-    )]
-    async fn consolidate(
-        &self,
-        Parameters(params): Parameters<ConsolidateParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-        let embedder = Arc::clone(&self.embedder);
-
-        let result = tokio::task::spawn_blocking(move || {
-            Self::init_embedder_blocking(&embedder);
-            let store = Store::open(&db_path)?;
-            let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-            let dry_run = params.dry_run.unwrap_or(true);
-            let stale_days = params.stale_days.unwrap_or(90).max(1);
-            let result =
-                crate::memory::consolidate(&store, guard.as_mut(), dry_run, stale_days)?;
-            let output = serde_json::json!({
-                "dry_run": dry_run,
-                "near_duplicates": result.near_duplicates.iter().map(|(a, b, sim)| {
-                    serde_json::json!({"id_a": a, "id_b": b, "similarity": sim})
-                }).collect::<Vec<_>>(),
-                "auto_archived": result.auto_archived,
-                "stale_for_review": result.stale_for_review.iter().map(chunk_summary).collect::<Vec<_>>(),
-                "episode_clusters": result.episode_clusters.iter().map(|(tag, entries)| {
-                    serde_json::json!({"tag": tag, "count": entries.len()})
-                }).collect::<Vec<_>>(),
-                "summaries_created": result.summaries_created.iter().map(|s| {
-                    serde_json::json!({"id": s.id, "title": s.title, "member_count": s.member_count, "member_ids": s.member_ids})
-                }).collect::<Vec<_>>(),
-            });
-            Ok::<_, anyhow::Error>(serde_json::to_string_pretty(&output)?)
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    #[tool(
-        name = "reflect",
-        description = "Analyze the state of memory. Shows which memories are growing (recently active), fading (neglected), strongly connected (Hebbian associations), and overall distribution. Use to understand what's well-remembered and what needs attention."
-    )]
-    async fn reflect(
-        &self,
-        Parameters(params): Parameters<ReflectParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-
-        let result = tokio::task::spawn_blocking(move || {
-            let store = Store::open(&db_path)?;
-            let focus = match params.focus.as_deref() {
-                Some("overview") | None => crate::memory::ReflectFocus::Overview,
-                Some("growing") => crate::memory::ReflectFocus::Growing,
-                Some("fading") => crate::memory::ReflectFocus::Fading,
-                Some("connections") => crate::memory::ReflectFocus::Connections,
-                Some("gaps") => crate::memory::ReflectFocus::Gaps,
-                Some(f) => anyhow::bail!(
-                    "invalid focus '{f}': must be 'overview', 'growing', 'fading', 'connections', or 'gaps'"
-                ),
-            };
-            let result = crate::memory::reflect(&store, &focus)?;
-            let output = serde_json::json!({
-                "growing": result.growing.iter().map(chunk_summary).collect::<Vec<_>>(),
-                "fading": result.fading.iter().map(chunk_summary).collect::<Vec<_>>(),
-                "connections": result.connections.iter().map(|(c, count)| {
-                    let mut s = chunk_summary(c);
-                    s.as_object_mut().unwrap().insert(
-                        "association_count".into(), serde_json::json!(count),
-                    );
-                    s
-                }).collect::<Vec<_>>(),
-                "type_counts": result.type_counts,
-                "observations": result.observations,
-                "active_count": result.active_count,
-                "archived_count": result.archived_count,
-            });
-            Ok::<_, anyhow::Error>(serde_json::to_string_pretty(&output)?)
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    #[tool(
-        name = "feedback",
-        description = "Provide feedback on a retrieval result. Use the query_id from recall/get_context output. Signal 'positive' boosts the memory's salience, 'negative' reduces it. This teaches the system which memories are helpful."
-    )]
-    async fn feedback(
-        &self,
-        Parameters(params): Parameters<FeedbackParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-
-        let result = tokio::task::spawn_blocking(move || {
-            let store = Store::open(&db_path)?;
-            let signal = params.signal.as_str();
-            if signal != "positive" && signal != "negative" {
-                anyhow::bail!("signal must be 'positive' or 'negative'");
-            }
-            // Validate chunk_id was in the retrieval results
-            if !store.validate_feedback(params.query_id, params.chunk_id)? {
-                anyhow::bail!(
-                    "chunk_id {} was not in the results for query_id {}",
-                    params.chunk_id,
-                    params.query_id
-                );
-            }
-            store.log_feedback(params.query_id, params.chunk_id, signal)?;
-            let delta = if signal == "positive" { 0.1 } else { -0.1 };
-            store.adjust_salience(params.chunk_id, delta)?;
-            Ok::<_, anyhow::Error>(serde_json::json!({
-                "ok": true,
-                "chunk_id": params.chunk_id,
-                "signal": signal,
-                "salience_delta": delta,
-            }).to_string())
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    #[tool(
-        name = "status",
-        description = "System health check and overview. Reports database size, chunk/memory counts, model availability (embedder, reranker, NLI), HNSW index stats, retrieval/feedback/access log counts, codebase count, and last handoff timestamp."
-    )]
-    async fn status(
-        &self,
-        #[allow(unused_variables)]
-        Parameters(_params): Parameters<StatusParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-        let embedder = Arc::clone(&self.embedder);
-        let reranker = Arc::clone(&self.reranker);
-        let hnsw = Arc::clone(&self.hnsw);
-
-        let result = tokio::task::spawn_blocking(move || {
-            let store = Store::open(&db_path)?;
-            let (code_count, memory_count) = store.count_by_kind()?;
-            let mem_by_type = store.count_memories_by_type()?;
-            let db_bytes = store.db_size_bytes()?;
-            let retrieval_logs = store.count_retrieval_logs()?;
-            let feedback_count = store.count_feedback()?;
-            let access_log_count = store.count_access_log()?;
-            let codebases = store.count_codebases()?;
-            let last_handoff = store.latest_handoff_timestamp()?;
-
-            let embedder_loaded = embedder.lock().map(|g| g.is_some()).unwrap_or(false);
-            let reranker_loaded = reranker.lock().map(|g| g.is_some()).unwrap_or(false);
-            let hnsw_points = hnsw.lock().ok()
-                .and_then(|g| g.as_ref().map(|h| h.len()));
-
-            let db_size_str = if db_bytes > 1_048_576 {
-                format!("{:.1} MB", db_bytes as f64 / 1_048_576.0)
-            } else {
-                format!("{:.1} KB", db_bytes as f64 / 1024.0)
-            };
-
-            Ok::<_, anyhow::Error>(serde_json::to_string_pretty(&serde_json::json!({
-                "database": {
-                    "size": db_size_str,
-                    "size_bytes": db_bytes,
-                    "code_chunks": code_count,
-                    "memories": memory_count,
-                    "memories_by_type": mem_by_type,
-                    "codebases": codebases,
-                },
-                "models": {
-                    "embedder": embedder_loaded,
-                    "reranker": reranker_loaded,
-                },
-                "hnsw_points": hnsw_points,
-                "logs": {
-                    "retrieval_logs": retrieval_logs,
-                    "feedback": feedback_count,
-                    "access_log": access_log_count,
-                },
-                "last_handoff": last_handoff,
-            }))?)
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    #[tool(
-        name = "maintenance",
-        description = "Run database maintenance: prune old logs, WAL checkpoint, ANALYZE, optimize. Optionally VACUUM (slow). Run periodically to keep the database lean. Default retention: 90 days."
-    )]
-    async fn maintenance(
-        &self,
-        Parameters(params): Parameters<MaintenanceParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-
-        let result = tokio::task::spawn_blocking(move || {
-            let store = Store::open(&db_path)?;
-            let retention_days = params.retention_days.unwrap_or(90);
-            let report = store.maintenance(retention_days)?;
-            if params.vacuum.unwrap_or(false) {
-                store.vacuum()?;
-            }
-            Ok::<_, anyhow::Error>(serde_json::to_string_pretty(&serde_json::json!({
-                "ok": true,
-                "retention_days": retention_days,
-                "retrieval_logs_pruned": report.retrieval_logs_pruned,
-                "feedback_pruned": report.feedback_pruned,
-                "access_log_pruned": report.access_log_pruned,
-                "wal_pages_before": report.wal_pages_before,
-                "wal_pages_after": report.wal_pages_after,
-                "vacuumed": params.vacuum.unwrap_or(false),
-            }))?)
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
-
-    // --- Data Management Tools ---
-
-    #[tool(
-        name = "get",
-        description = "Retrieve the full content of an entry by its numeric ID. Returns all fields including content, metadata, and cognitive state. Use when search results show a relevant entry and you need the complete text."
-    )]
-    async fn get(
-        &self,
-        Parameters(params): Parameters<GetParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let db_path = self.db_path.clone();
-
-        let result = tokio::task::spawn_blocking(move || {
-            let store = Store::open(&db_path)?;
-            match store.get_chunk(params.id)? {
-                Some(chunk) => Ok::<_, anyhow::Error>(serde_json::to_string_pretty(&chunk)?),
-                None => Ok(format!("No entry found with id {}.", params.id)),
-            }
-        })
-        .await
-        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
-
-        match result {
-            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
-            Err(e) => Ok(error_result(format!("{e:#}"))),
-        }
-    }
 }
 
 #[tool_handler]
@@ -1196,25 +526,16 @@ impl ServerHandler for GrasshopperMcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "Grasshopper is a unified agent brain combining code intelligence and cognitive memory.\n\n\
-                 SESSION WORKFLOW:\n\
-                 - Start: call me then pickup to load identity and resume context\n\
-                 - During: use store to save decisions, learnings, and preferences\n\
-                 - End: call handoff to record progress and next steps\n\n\
-                 CODE INTELLIGENCE (requires index first):\n\
-                 - search: find code or memories by raw hybrid-search score. Use for code lookups or broad cross-domain queries\n\
-                 - navigate: jump to a symbol's definition or find its callers\n\
-                 - map: get a token-budgeted overview of an entire codebase\n\
-                 - impact: see what breaks if you change a symbol\n\n\
-                 COGNITIVE MEMORY:\n\
-                 - recall: retrieve memories with cognitive scoring (salience, decay). Use this for memory queries, not search\n\
-                 - store: persist facts, decisions, preferences (auto-deduplicates)\n\
-                 - archive: soft-delete a bad or outdated memory by ID\n\
-                 - me: load identity and working context\n\
-                 - pickup / handoff: session continuity\n\
-                 - reflect: analyze memory health and patterns\n\
-                 - consolidate: clean up duplicates and stale entries\n\n\
-                 get retrieves the full content of any entry by ID."
+                "Grasshopper is a persistent retrieval engine for AI agents.\n\n\
+                 3 TOOLS:\n\
+                 - search: find code, memories, symbols, codebase maps, or impact analysis (use mode parameter)\n\
+                 - index: index a source code directory for search and navigation\n\
+                 - store: persist facts, decisions, preferences (auto-deduplicates)\n\n\
+                 SEARCH MODES:\n\
+                 - mode=search (default): hybrid retrieval across code and memory\n\
+                 - mode=navigate: find symbol definitions/references (query = symbol name)\n\
+                 - mode=map: get a token-budgeted codebase overview\n\
+                 - mode=impact: analyze change blast radius (query = symbol name)"
                     .into(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
@@ -1330,25 +651,6 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
     tracing::info!("starting grasshopper MCP server on http://{addr}/mcp");
     tracing::info!("health check at http://{addr}/healthz");
 
-    // Startup diagnostics
-    {
-        match Store::open(&db_path) {
-            Ok(store) => {
-                let (code, memory) = store.count_by_kind().unwrap_or((0, 0));
-                let db_bytes = store.db_size_bytes().unwrap_or(0);
-                let codebases = store.count_codebases().unwrap_or(0);
-                tracing::info!(
-                    "database: {} code chunks, {} memories, {:.1} KB, {} codebases",
-                    code, memory, db_bytes as f64 / 1024.0, codebases
-                );
-                if let Err(e) = store.optimize() {
-                    tracing::warn!("startup optimize failed: {e}");
-                }
-            }
-            Err(e) => tracing::warn!("startup diagnostics failed: {e}"),
-        }
-    }
-
     let db_path_for_shutdown = db_path.clone();
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
@@ -1420,6 +722,7 @@ fn format_search_hits(hits: &[crate::store::SearchHit]) -> Vec<serde_json::Value
 }
 
 /// Summarize a Chunk for JSON output (used by reflect, consolidate).
+#[allow(dead_code)]
 fn chunk_summary(c: &crate::store::Chunk) -> serde_json::Value {
     serde_json::json!({
         "id": c.id,
@@ -1463,6 +766,11 @@ fn resolve_codebase(store: &Store, dir: Option<&str>) -> Result<Option<i64>> {
             names.join(", ")
         );
     }
+}
+
+/// Public wrapper for CLI access to codebase map generation.
+pub fn generate_map_cli(store: &Store, codebase_id: i64, token_budget: usize) -> Result<String> {
+    generate_map(store, codebase_id, token_budget)
 }
 
 /// Generate a compact codebase map from definitions, ranked by reference frequency.
