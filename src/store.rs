@@ -125,6 +125,12 @@ impl Store {
         Ok(store)
     }
 
+    /// Execute raw SQL batch (e.g. BEGIN/COMMIT/ROLLBACK).
+    pub fn execute_batch(&self, sql: &str) -> Result<()> {
+        self.conn.execute_batch(sql)?;
+        Ok(())
+    }
+
     fn init_schema(&self) -> Result<()> {
         self.conn.execute_batch(
             "-- Indexed codebases (directories of source code)
@@ -303,7 +309,7 @@ impl Store {
     /// Insert a memory entry. Returns the new row ID.
     pub fn insert_memory(&self, p: &MemoryParams) -> Result<i64> {
         let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute_batch("BEGIN")?;
+        self.conn.execute_batch("SAVEPOINT insert_memory")?;
         let result = (|| -> Result<i64> {
             self.conn.execute(
                 "INSERT INTO chunks (kind, title, content, memory_type, descriptors, salience,
@@ -320,8 +326,8 @@ impl Store {
             Ok(id)
         })();
         match result {
-            Ok(id) => { self.conn.execute_batch("COMMIT")?; Ok(id) }
-            Err(e) => { let _ = self.conn.execute_batch("ROLLBACK"); Err(e) }
+            Ok(id) => { self.conn.execute_batch("RELEASE insert_memory")?; Ok(id) }
+            Err(e) => { let _ = self.conn.execute_batch("ROLLBACK TO insert_memory"); Err(e) }
         }
     }
 
@@ -412,7 +418,7 @@ impl Store {
     /// Update a memory entry's content and metadata.
     pub fn update_memory(&self, id: i64, p: &MemoryParams) -> Result<bool> {
         let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute_batch("BEGIN")?;
+        self.conn.execute_batch("SAVEPOINT update_memory")?;
         let result = (|| -> Result<bool> {
             let rows = self.conn.execute(
                 "UPDATE chunks SET title = ?1, content = ?2, memory_type = ?3, descriptors = ?4,
@@ -431,8 +437,8 @@ impl Store {
             Ok(rows > 0)
         })();
         match result {
-            Ok(updated) => { self.conn.execute_batch("COMMIT")?; Ok(updated) }
-            Err(e) => { let _ = self.conn.execute_batch("ROLLBACK"); Err(e) }
+            Ok(updated) => { self.conn.execute_batch("RELEASE update_memory")?; Ok(updated) }
+            Err(e) => { let _ = self.conn.execute_batch("ROLLBACK TO update_memory"); Err(e) }
         }
     }
 
@@ -473,7 +479,6 @@ impl Store {
 
     /// Get intervals (in days) between successive accesses for a memory.
     /// Returns an empty vec if fewer than 2 access events exist.
-    /// Includes created_at as the first timestamp for the initial interval.
     pub fn get_access_intervals(&self, chunk_id: i64) -> Result<Vec<f64>> {
         let mut stmt = self.conn.prepare(
             "SELECT accessed_at FROM access_log WHERE chunk_id = ?1 ORDER BY accessed_at ASC",
@@ -526,6 +531,17 @@ impl Store {
             ],
         )?;
         Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Validate that a chunk_id was in the results for a given retrieval log entry.
+    pub fn validate_feedback(&self, log_id: i64, chunk_id: i64) -> Result<bool> {
+        let result_ids_json: String = self.conn.query_row(
+            "SELECT result_ids FROM retrieval_log WHERE id = ?1",
+            params![log_id],
+            |row| row.get(0),
+        )?;
+        let result_ids: Vec<i64> = serde_json::from_str(&result_ids_json).unwrap_or_default();
+        Ok(result_ids.contains(&chunk_id))
     }
 
     /// Record feedback on a retrieval result.
@@ -1356,6 +1372,15 @@ impl Store {
         Ok(())
     }
 
+    /// Delete all entity edges for a memory chunk (used before re-inserting on update).
+    pub fn delete_entity_edges(&self, chunk_id: i64) -> Result<usize> {
+        let count = self.conn.execute(
+            "DELETE FROM graph WHERE source_chunk = ?1 AND role = 'entity'",
+            params![chunk_id],
+        )?;
+        Ok(count)
+    }
+
     /// Batch insert entity graph edges for a memory chunk.
     /// Each entity is (value, kind). Idempotent via unique index.
     pub fn upsert_entity_edges(&self, chunk_id: i64, entities: &[(String, String)]) -> Result<usize> {
@@ -1437,11 +1462,15 @@ impl Store {
         }
         // Find chunks that have 'summarizes' edges to ALL the given member IDs
         let placeholders: Vec<String> = member_ids.iter().map(|_| "?".to_string()).collect();
+        // Find summaries that contain ALL requested members AND have exactly that many edges
+        // (exact-set match, not superset match)
         let sql = format!(
-            "SELECT source_chunk FROM graph
-             WHERE role = 'summarizes' AND target_chunk IN ({})
-             GROUP BY source_chunk
-             HAVING COUNT(DISTINCT target_chunk) = ?",
+            "SELECT g1.source_chunk FROM graph g1
+             WHERE g1.role = 'summarizes' AND g1.target_chunk IN ({})
+             GROUP BY g1.source_chunk
+             HAVING COUNT(DISTINCT g1.target_chunk) = ?
+               AND (SELECT COUNT(*) FROM graph g2
+                    WHERE g2.source_chunk = g1.source_chunk AND g2.role = 'summarizes') = ?",
             placeholders.join(",")
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -1449,6 +1478,7 @@ impl Store {
             .iter()
             .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
             .collect();
+        params_vec.push(Box::new(member_ids.len() as i64));
         params_vec.push(Box::new(member_ids.len() as i64));
         let rows: Vec<i64> = stmt
             .query_map(rusqlite::params_from_iter(params_vec.iter().map(|p| p.as_ref())), |row| row.get(0))?
@@ -2755,9 +2785,9 @@ mod tests {
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0], summary_id);
 
-        // Partial match still finds the summary (covers a superset)
+        // Partial match should NOT find the summary (exact-set match required)
         let summaries = store.get_summaries_for_chunks(&[id1]).unwrap();
-        assert_eq!(summaries.len(), 1, "partial match should still find summary");
+        assert_eq!(summaries.len(), 0, "partial match should not find summary with exact-set matching");
     }
 
     #[test]

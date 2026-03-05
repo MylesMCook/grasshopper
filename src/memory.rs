@@ -144,7 +144,7 @@ pub fn learned_decay_rate(memory_type: &str, intervals: &[f64]) -> f64 {
     if memory_type == "identity" {
         return 0.0;
     }
-    if intervals.is_empty() {
+    if intervals.len() < 2 {
         return decay_rate(memory_type);
     }
 
@@ -327,6 +327,7 @@ pub fn recall(
             &scored.iter().map(|h| (h.id, h.score)).collect::<Vec<_>>(),
             None,
         )
+        .map_err(|e| { tracing::warn!("Failed to log recall retrieval: {e}"); e })
         .ok();
 
     Ok(RecallResult { hits: scored, log_id })
@@ -457,6 +458,7 @@ pub fn get_context(
             &scored.iter().map(|h| (h.id, h.score)).collect::<Vec<_>>(),
             None,
         )
+        .map_err(|e| { tracing::warn!("Failed to log get_context retrieval: {e}"); e })
         .ok();
 
     Ok(GetContextResult {
@@ -592,11 +594,16 @@ pub fn remember(
                     query_vec.as_slice(),
                     ferret::embed::MODEL_NAME,
                 )])?;
-                // Extract and store entity edges
+                // Replace entity edges: delete old, insert new
                 let entities: Vec<(String, String)> = extract_entities(content)
                     .into_iter().map(|e| (e.value, e.kind)).collect();
-                if !entities.is_empty() {
-                    store.upsert_entity_edges(existing_id, &entities).ok();
+                if let Err(e) = store.delete_entity_edges(existing_id) {
+                    tracing::warn!("Failed to delete entity edges for #{existing_id}: {e}");
+                }
+                if !entities.is_empty()
+                    && let Err(e) = store.upsert_entity_edges(existing_id, &entities)
+                {
+                    tracing::warn!("Failed to upsert entity edges for #{existing_id}: {e}");
                 }
                 return Ok(RememberResult {
                     id: existing_id,
@@ -626,8 +633,10 @@ pub fn remember(
             // Extract and store entity edges
             let entities: Vec<(String, String)> = extract_entities(content)
                 .into_iter().map(|e| (e.value, e.kind)).collect();
-            if !entities.is_empty() {
-                store.upsert_entity_edges(id, &entities).ok();
+            if !entities.is_empty()
+                && let Err(e) = store.upsert_entity_edges(id, &entities)
+            {
+                tracing::warn!("Failed to upsert entity edges for #{id}: {e}");
             }
             return Ok(RememberResult {
                 id,
@@ -653,8 +662,10 @@ pub fn remember(
     // Extract and store entity edges
     let entities: Vec<(String, String)> = extract_entities(content)
         .into_iter().map(|e| (e.value, e.kind)).collect();
-    if !entities.is_empty() {
-        store.upsert_entity_edges(id, &entities).ok();
+    if !entities.is_empty()
+        && let Err(e) = store.upsert_entity_edges(id, &entities)
+    {
+        tracing::warn!("Failed to upsert entity edges for #{id}: {e}");
     }
     Ok(RememberResult {
         id,
@@ -912,58 +923,69 @@ pub fn consolidate(
     }
     episode_clusters.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
 
-    // Phase 4: Create summary memories for episode clusters
+    // Phase 4: Create summary memories for episode clusters (transactional)
     let mut summaries_created = Vec::new();
     if !dry_run {
-        for (tag, members) in &episode_clusters {
-            let member_ids: Vec<i64> = members.iter().map(|m| m.id).collect();
-            // Check if summary already exists for this exact member set
-            if let Ok(existing) = store.get_summaries_for_chunks(&member_ids)
-                && !existing.is_empty()
-            {
-                continue; // Already summarized
-            }
-            let summary_text = build_summary_text(tag, members);
-            let summary_title = format!("Summary: {} entries about \"{}\"", members.len(), tag);
-            // Content hash from sorted member IDs for dedup
-            let mut sorted_ids = member_ids.clone();
-            sorted_ids.sort();
-            let hash = format!(
-                "{:x}",
-                Sha256::new()
-                    .chain_update(format!("summary:{sorted_ids:?}").as_bytes())
-                    .finalize()
-            );
-            // Check content hash dedup
-            if store.get_memory_by_hash(&hash)?.is_some() {
-                continue;
-            }
-            let max_salience = members.iter().map(|m| m.salience).fold(0.5_f64, f64::max);
-            let all_desc: std::collections::BTreeSet<String> = members
-                .iter()
-                .flat_map(|m| m.descriptors.split(',').map(|t| t.trim().to_lowercase()))
-                .filter(|t| !t.is_empty())
-                .collect();
-            let mut desc_list: Vec<String> = all_desc.into_iter().collect();
-            desc_list.push("summary".to_string());
-            let descriptors = desc_list.join(", ");
+        store.execute_batch("SAVEPOINT consolidate_summaries")?;
+        let tx_result: Result<()> = (|| {
+            for (tag, members) in &episode_clusters {
+                let member_ids: Vec<i64> = members.iter().map(|m| m.id).collect();
+                // Check if summary already exists for this exact member set
+                if let Ok(existing) = store.get_summaries_for_chunks(&member_ids)
+                    && !existing.is_empty()
+                {
+                    continue; // Already summarized
+                }
+                let summary_text = build_summary_text(tag, members);
+                let summary_title = format!("Summary: {} entries about \"{}\"", members.len(), tag);
+                // Content hash from sorted member IDs for dedup
+                let mut sorted_ids = member_ids.clone();
+                sorted_ids.sort();
+                let hash = format!(
+                    "{:x}",
+                    Sha256::new()
+                        .chain_update(format!("summary:{sorted_ids:?}").as_bytes())
+                        .finalize()
+                );
+                // Check content hash dedup
+                if store.get_memory_by_hash(&hash)?.is_some() {
+                    continue;
+                }
+                let max_salience = members.iter().map(|m| m.salience).fold(0.5_f64, f64::max);
+                let all_desc: std::collections::BTreeSet<String> = members
+                    .iter()
+                    .flat_map(|m| m.descriptors.split(',').map(|t| t.trim().to_lowercase()))
+                    .filter(|t| !t.is_empty())
+                    .collect();
+                let mut desc_list: Vec<String> = all_desc.into_iter().collect();
+                desc_list.push("summary".to_string());
+                let descriptors = desc_list.join(", ");
 
-            let summary_id = store.insert_memory(&MemoryParams {
-                title: &summary_title,
-                content: &summary_text,
-                memory_type: "knowledge",
-                descriptors: &descriptors,
-                salience: max_salience,
-                content_hash: &hash,
-                agent_id: "consolidate",
-            })?;
-            store.insert_summary_edges(summary_id, &member_ids)?;
-            summaries_created.push(ConsolidateSummary {
-                id: summary_id,
-                title: summary_title,
-                member_count: members.len(),
-                member_ids,
-            });
+                let summary_id = store.insert_memory(&MemoryParams {
+                    title: &summary_title,
+                    content: &summary_text,
+                    memory_type: "knowledge",
+                    descriptors: &descriptors,
+                    salience: max_salience,
+                    content_hash: &hash,
+                    agent_id: "consolidate",
+                })?;
+                store.insert_summary_edges(summary_id, &member_ids)?;
+                summaries_created.push(ConsolidateSummary {
+                    id: summary_id,
+                    title: summary_title,
+                    member_count: members.len(),
+                    member_ids,
+                });
+            }
+            Ok(())
+        })();
+        match tx_result {
+            Ok(()) => store.execute_batch("RELEASE consolidate_summaries")?,
+            Err(e) => {
+                store.execute_batch("ROLLBACK TO consolidate_summaries").ok();
+                return Err(e);
+            }
         }
     }
 
@@ -1364,6 +1386,10 @@ mod tests {
         // Empty intervals → falls back to static rate
         let rate = learned_decay_rate("knowledge", &[]);
         assert!((rate - 0.005).abs() < 1e-10, "should match static knowledge rate: {rate}");
+
+        // Single interval → also falls back (need >= 2 per spec)
+        let rate = learned_decay_rate("knowledge", &[5.0]);
+        assert!((rate - 0.005).abs() < 1e-10, "single interval should also fall back: {rate}");
     }
 
     #[test]

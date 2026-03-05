@@ -678,16 +678,10 @@ impl GrasshopperMcp {
                 &store, emb_guard.as_mut(), rr_guard.as_mut(), &params.query, limit,
                 hnsw_guard.as_ref(),
             )?;
-            let mut output = serde_json::json!(format_search_hits(&result.hits));
-            if let Some(log_id) = result.log_id
-                && let Some(arr) = output.as_array_mut()
-            {
-                let wrapped = serde_json::json!({
-                    "query_id": log_id,
-                    "results": arr.clone(),
-                });
-                return Ok(serde_json::to_string_pretty(&wrapped)?);
-            }
+            let output = serde_json::json!({
+                "query_id": result.log_id,
+                "results": format_search_hits(&result.hits),
+            });
             let json = serde_json::to_string_pretty(&output)?;
             Ok::<_, anyhow::Error>(json)
         })
@@ -780,9 +774,10 @@ impl GrasshopperMcp {
             output.insert("filtered_count".to_string(), serde_json::Value::from(result.filtered_count));
             output.insert("budget_dropped".to_string(), serde_json::Value::from(budgeted.dropped_count));
             output.insert("estimated_tokens".to_string(), serde_json::Value::from(budgeted.estimated_tokens));
-            if let Some(log_id) = result.log_id {
-                output.insert("query_id".to_string(), serde_json::Value::from(log_id));
-            }
+            output.insert("query_id".to_string(), match result.log_id {
+                Some(id) => serde_json::Value::from(id),
+                None => serde_json::Value::Null,
+            });
             if let Some(contradictions) = contradictions {
                 output.insert("contradictions".to_string(), contradictions);
             }
@@ -1041,6 +1036,14 @@ impl GrasshopperMcp {
             let signal = params.signal.as_str();
             if signal != "positive" && signal != "negative" {
                 anyhow::bail!("signal must be 'positive' or 'negative'");
+            }
+            // Validate chunk_id was in the retrieval results
+            if !store.validate_feedback(params.query_id, params.chunk_id)? {
+                anyhow::bail!(
+                    "chunk_id {} was not in the results for query_id {}",
+                    params.chunk_id,
+                    params.query_id
+                );
             }
             store.log_feedback(params.query_id, params.chunk_id, signal)?;
             let delta = if signal == "positive" { 0.1 } else { -0.1 };
