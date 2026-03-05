@@ -12,6 +12,51 @@ use std::sync::{Arc, Mutex};
 use crate::store::Store;
 use ferret::embed::Embedder;
 
+// --- Embedding cache ---
+
+struct EmbedCache {
+    entries: std::collections::HashMap<String, (std::time::Instant, Vec<f32>)>,
+    ttl: std::time::Duration,
+    max_entries: usize,
+}
+
+impl EmbedCache {
+    fn new(ttl_secs: u64, max_entries: usize) -> Self {
+        Self {
+            entries: std::collections::HashMap::new(),
+            ttl: std::time::Duration::from_secs(ttl_secs),
+            max_entries,
+        }
+    }
+
+    fn get(&self, query: &str) -> Option<Vec<f32>> {
+        self.entries.get(query).and_then(|(instant, vec)| {
+            if instant.elapsed() < self.ttl {
+                Some(vec.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    fn insert(&mut self, query: String, embedding: Vec<f32>) {
+        // Evict expired entries if at capacity
+        if self.entries.len() >= self.max_entries {
+            let ttl = self.ttl;
+            self.entries.retain(|_, (instant, _)| instant.elapsed() < ttl);
+        }
+        // If still at capacity, evict oldest
+        if self.entries.len() >= self.max_entries
+            && let Some(oldest_key) = self.entries.iter()
+                .min_by_key(|(_, (instant, _))| *instant)
+                .map(|(k, _)| k.clone())
+        {
+            self.entries.remove(&oldest_key);
+        }
+        self.entries.insert(query, (std::time::Instant::now(), embedding));
+    }
+}
+
 // --- Tool parameter types ---
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -130,6 +175,17 @@ pub struct FeedbackParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct StatusParams {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MaintenanceParams {
+    /// Number of days to retain retrieval logs, feedback, and access logs. Default: 90.
+    pub retention_days: Option<i64>,
+    /// Also run VACUUM (slow, rebuilds entire database file). Default: false.
+    pub vacuum: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ArchiveParams {
     /// Numeric ID of the memory to archive (from search, recall, or other tool outputs)
     pub id: i64,
@@ -160,6 +216,7 @@ pub struct GrasshopperMcp {
     /// Epoch seconds of last NLI init failure (0 = never failed). Retry after 60s cooldown.
     nli_failed_at: Arc<std::sync::atomic::AtomicI64>,
     hnsw: Arc<Mutex<Option<ferret::hnsw::HnswIndex>>>,
+    embed_cache: Arc<Mutex<EmbedCache>>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -175,6 +232,7 @@ impl GrasshopperMcp {
             nli: Arc::new(Mutex::new(None)),
             nli_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             hnsw: Arc::new(Mutex::new(hnsw)),
+            embed_cache: Arc::new(Mutex::new(EmbedCache::new(60, 100))),
             tool_router: Self::annotated_router(),
         }
     }
@@ -193,6 +251,7 @@ impl GrasshopperMcp {
             nli: Arc::new(Mutex::new(None)),
             nli_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             hnsw,
+            embed_cache: Arc::new(Mutex::new(EmbedCache::new(60, 100))),
             tool_router: Self::annotated_router(),
         }
     }
@@ -664,24 +723,83 @@ impl GrasshopperMcp {
         let embedder = Arc::clone(&self.embedder);
         let reranker = Arc::clone(&self.reranker);
         let rr_failed = Arc::clone(&self.reranker_failed_at);
+        let nli = Arc::clone(&self.nli);
+        let nli_failed = Arc::clone(&self.nli_failed_at);
         let hnsw = Arc::clone(&self.hnsw);
+        let embed_cache = Arc::clone(&self.embed_cache);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
             Self::init_reranker_blocking(&reranker, &rr_failed);
+            Self::init_nli_blocking(&nli, &nli_failed);
             let store = Store::open(&db_path)?;
             let limit = params.limit.unwrap_or(10).clamp(1, 50);
-            let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+
+            // Check embedding cache
+            let cached_emb = embed_cache.lock().ok().and_then(|c| c.get(&params.query));
+            let fresh_emb = if cached_emb.is_none() {
+                // Embed and cache
+                let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                if let Some(emb) = emb_guard.as_mut() {
+                    match emb.embed_batch(std::slice::from_ref(&params.query)) {
+                        Ok(vecs) if !vecs.is_empty() => {
+                            if let Ok(mut cache) = embed_cache.lock() {
+                                cache.insert(params.query.clone(), vecs[0].clone());
+                            }
+                            Some(vecs.into_iter().next().unwrap())
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let precomputed = cached_emb.as_deref().or(fresh_emb.as_deref());
+
+            // When we have a precomputed embedding, skip locking the embedder
+            let mut emb_guard = if precomputed.is_none() {
+                Some(embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?)
+            } else {
+                None
+            };
             let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
             let result = crate::memory::recall(
-                &store, emb_guard.as_mut(), rr_guard.as_mut(), &params.query, limit,
-                hnsw_guard.as_ref(),
+                &store,
+                emb_guard.as_mut().and_then(|g| g.as_mut()),
+                rr_guard.as_mut(), &params.query, limit,
+                hnsw_guard.as_ref(), precomputed,
             )?;
-            let output = serde_json::json!({
+
+            // NLI contradiction detection on recall results
+            let contradictions = if result.hits.len() >= 2 {
+                let mut nli_guard = nli.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                if let Some(nli_model) = nli_guard.as_mut() {
+                    let entries: Vec<(i64, String, String)> = result.hits.iter()
+                        .map(|h| (h.id, h.title.clone(), h.snippet.clone()))
+                        .collect();
+                    let found = nli_model.find_contradictions(&entries);
+                    if !found.is_empty() {
+                        Some(serde_json::to_value(&found)?)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let mut output = serde_json::json!({
                 "query_id": result.log_id,
                 "results": format_search_hits(&result.hits),
             });
+            if let Some(contradictions) = contradictions {
+                output["contradictions"] = contradictions;
+            }
             let json = serde_json::to_string_pretty(&output)?;
             Ok::<_, anyhow::Error>(json)
         })
@@ -709,6 +827,7 @@ impl GrasshopperMcp {
         let nli = Arc::clone(&self.nli);
         let nli_failed = Arc::clone(&self.nli_failed_at);
         let hnsw = Arc::clone(&self.hnsw);
+        let embed_cache = Arc::clone(&self.embed_cache);
 
         let result = tokio::task::spawn_blocking(move || {
             Self::init_embedder_blocking(&embedder);
@@ -718,14 +837,42 @@ impl GrasshopperMcp {
             let limit = params.limit.unwrap_or(5).clamp(1, 20);
             let threshold = params.threshold.unwrap_or(0.1).clamp(0.0, 1.0);
 
+            // Check embedding cache
+            let cached_emb = embed_cache.lock().ok().and_then(|c| c.get(&params.query));
+            let fresh_emb = if cached_emb.is_none() {
+                let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                if let Some(emb) = emb_guard.as_mut() {
+                    match emb.embed_batch(std::slice::from_ref(&params.query)) {
+                        Ok(vecs) if !vecs.is_empty() => {
+                            if let Ok(mut cache) = embed_cache.lock() {
+                                cache.insert(params.query.clone(), vecs[0].clone());
+                            }
+                            Some(vecs.into_iter().next().unwrap())
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let precomputed = cached_emb.as_deref().or(fresh_emb.as_deref());
+
             // Retrieval: hold model locks only for the search pipeline
             let result = {
-                let mut emb_guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                let mut emb_guard = if precomputed.is_none() {
+                    Some(embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?)
+                } else {
+                    None
+                };
                 let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
                 let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
                 crate::memory::get_context(
-                    &store, emb_guard.as_mut(), rr_guard.as_mut(), &params.query, limit, threshold,
-                    hnsw_guard.as_ref(),
+                    &store,
+                    emb_guard.as_mut().and_then(|g| g.as_mut()),
+                    rr_guard.as_mut(), &params.query, limit, threshold,
+                    hnsw_guard.as_ref(), precomputed,
                 )?
             }; // model locks released here
 
@@ -1064,6 +1211,113 @@ impl GrasshopperMcp {
         }
     }
 
+    #[tool(
+        name = "status",
+        description = "System health check and overview. Reports database size, chunk/memory counts, model availability (embedder, reranker, NLI), HNSW index stats, retrieval/feedback/access log counts, codebase count, and last handoff timestamp."
+    )]
+    async fn status(
+        &self,
+        #[allow(unused_variables)]
+        Parameters(_params): Parameters<StatusParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let db_path = self.db_path.clone();
+        let embedder = Arc::clone(&self.embedder);
+        let reranker = Arc::clone(&self.reranker);
+        let nli = Arc::clone(&self.nli);
+        let hnsw = Arc::clone(&self.hnsw);
+
+        let result = tokio::task::spawn_blocking(move || {
+            let store = Store::open(&db_path)?;
+            let (code_count, memory_count) = store.count_by_kind()?;
+            let mem_by_type = store.count_memories_by_type()?;
+            let db_bytes = store.db_size_bytes()?;
+            let retrieval_logs = store.count_retrieval_logs()?;
+            let feedback_count = store.count_feedback()?;
+            let access_log_count = store.count_access_log()?;
+            let codebases = store.count_codebases()?;
+            let last_handoff = store.latest_handoff_timestamp()?;
+
+            let embedder_loaded = embedder.lock().map(|g| g.is_some()).unwrap_or(false);
+            let reranker_loaded = reranker.lock().map(|g| g.is_some()).unwrap_or(false);
+            let nli_loaded = nli.lock().map(|g| g.is_some()).unwrap_or(false);
+            let hnsw_points = hnsw.lock().ok()
+                .and_then(|g| g.as_ref().map(|h| h.len()));
+
+            let db_size_str = if db_bytes > 1_048_576 {
+                format!("{:.1} MB", db_bytes as f64 / 1_048_576.0)
+            } else {
+                format!("{:.1} KB", db_bytes as f64 / 1024.0)
+            };
+
+            Ok::<_, anyhow::Error>(serde_json::to_string_pretty(&serde_json::json!({
+                "database": {
+                    "size": db_size_str,
+                    "size_bytes": db_bytes,
+                    "code_chunks": code_count,
+                    "memories": memory_count,
+                    "memories_by_type": mem_by_type,
+                    "codebases": codebases,
+                },
+                "models": {
+                    "embedder": embedder_loaded,
+                    "reranker": reranker_loaded,
+                    "nli": nli_loaded,
+                },
+                "hnsw_points": hnsw_points,
+                "logs": {
+                    "retrieval_logs": retrieval_logs,
+                    "feedback": feedback_count,
+                    "access_log": access_log_count,
+                },
+                "last_handoff": last_handoff,
+            }))?)
+        })
+        .await
+        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
+
+        match result {
+            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
+            Err(e) => Ok(error_result(format!("{e:#}"))),
+        }
+    }
+
+    #[tool(
+        name = "maintenance",
+        description = "Run database maintenance: prune old logs, WAL checkpoint, ANALYZE, optimize. Optionally VACUUM (slow). Run periodically to keep the database lean. Default retention: 90 days."
+    )]
+    async fn maintenance(
+        &self,
+        Parameters(params): Parameters<MaintenanceParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let db_path = self.db_path.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            let store = Store::open(&db_path)?;
+            let retention_days = params.retention_days.unwrap_or(90);
+            let report = store.maintenance(retention_days)?;
+            if params.vacuum.unwrap_or(false) {
+                store.vacuum()?;
+            }
+            Ok::<_, anyhow::Error>(serde_json::to_string_pretty(&serde_json::json!({
+                "ok": true,
+                "retention_days": retention_days,
+                "retrieval_logs_pruned": report.retrieval_logs_pruned,
+                "feedback_pruned": report.feedback_pruned,
+                "access_log_pruned": report.access_log_pruned,
+                "wal_pages_before": report.wal_pages_before,
+                "wal_pages_after": report.wal_pages_after,
+                "vacuumed": params.vacuum.unwrap_or(false),
+            }))?)
+        })
+        .await
+        .map_err(|e| rmcp::ErrorData::internal_error(format!("task join: {e}"), None))?;
+
+        match result {
+            Ok(json) => Ok(CallToolResult::success(vec![Content::text(json)])),
+            Err(e) => Ok(error_result(format!("{e:#}"))),
+        }
+    }
+
     // --- Data Management Tools ---
 
     #[tool(
@@ -1232,6 +1486,26 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
     tracing::info!("starting grasshopper MCP server on http://{addr}/mcp");
     tracing::info!("health check at http://{addr}/healthz");
 
+    // Startup diagnostics
+    {
+        match Store::open(&db_path) {
+            Ok(store) => {
+                let (code, memory) = store.count_by_kind().unwrap_or((0, 0));
+                let db_bytes = store.db_size_bytes().unwrap_or(0);
+                let codebases = store.count_codebases().unwrap_or(0);
+                tracing::info!(
+                    "database: {} code chunks, {} memories, {:.1} KB, {} codebases",
+                    code, memory, db_bytes as f64 / 1024.0, codebases
+                );
+                if let Err(e) = store.optimize() {
+                    tracing::warn!("startup optimize failed: {e}");
+                }
+            }
+            Err(e) => tracing::warn!("startup diagnostics failed: {e}"),
+        }
+    }
+
+    let db_path_for_shutdown = db_path.clone();
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .with_context(|| format!("binding to {addr}"))?;
@@ -1240,6 +1514,12 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
         .with_graceful_shutdown(async move {
             tokio::signal::ctrl_c().await.ok();
             tracing::info!("shutting down");
+            // Run PRAGMA optimize on shutdown for query planner stats
+            if let Ok(store) = Store::open(&db_path_for_shutdown)
+                && let Err(e) = store.optimize()
+            {
+                tracing::warn!("shutdown optimize failed: {e}");
+            }
             ct.cancel();
         })
         .await?;
@@ -1418,4 +1698,47 @@ fn error_result(msg: String) -> CallToolResult {
     let mut result = CallToolResult::success(vec![Content::text(msg)]);
     result.is_error = Some(true);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_embed_cache_insert_and_get() {
+        let mut cache = EmbedCache::new(60, 10);
+        cache.insert("hello".to_string(), vec![1.0, 2.0, 3.0]);
+        let result = cache.get("hello");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_embed_cache_miss() {
+        let cache = EmbedCache::new(60, 10);
+        assert!(cache.get("missing").is_none());
+    }
+
+    #[test]
+    fn test_embed_cache_expiry() {
+        let mut cache = EmbedCache::new(0, 10); // 0s TTL = immediate expiry
+        cache.insert("hello".to_string(), vec![1.0]);
+        // With 0s TTL, elapsed >= ttl immediately
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        assert!(cache.get("hello").is_none());
+    }
+
+    #[test]
+    fn test_embed_cache_eviction_at_capacity() {
+        let mut cache = EmbedCache::new(60, 2);
+        cache.insert("first".to_string(), vec![1.0]);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        cache.insert("second".to_string(), vec![2.0]);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        // Third insert should evict "first" (oldest)
+        cache.insert("third".to_string(), vec![3.0]);
+        assert!(cache.get("first").is_none());
+        assert!(cache.get("second").is_some());
+        assert!(cache.get("third").is_some());
+    }
 }

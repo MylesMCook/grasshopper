@@ -104,7 +104,8 @@ impl Store {
             "PRAGMA journal_mode = WAL;
              PRAGMA busy_timeout = 60000;
              PRAGMA synchronous = NORMAL;
-             PRAGMA cache_size = -64000;",
+             PRAGMA cache_size = -64000;
+             PRAGMA auto_vacuum = INCREMENTAL;",
         )?;
 
         // Register code-aware token expansion as a SQL scalar function.
@@ -196,6 +197,8 @@ impl Store {
                 ON chunks(memory_type) WHERE memory_type IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_chunks_archived
                 ON chunks(archived) WHERE kind = 'memory';
+            CREATE INDEX IF NOT EXISTS idx_chunks_recall_filter
+                ON chunks(kind, archived, memory_type);
             CREATE INDEX IF NOT EXISTS idx_chunks_content_hash
                 ON chunks(content_hash) WHERE content_hash != '';
             CREATE UNIQUE INDEX IF NOT EXISTS idx_chunks_chunk_key
@@ -1691,14 +1694,107 @@ impl Store {
         Ok(hits)
     }
 
+    /// Get database file size in bytes via PRAGMA.
+    pub fn db_size_bytes(&self) -> Result<i64> {
+        let page_count: i64 = self.conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
+        let page_size: i64 = self.conn.query_row("PRAGMA page_size", [], |r| r.get(0))?;
+        Ok(page_count * page_size)
+    }
+
+    /// Count retrieval log entries.
+    pub fn count_retrieval_logs(&self) -> Result<i64> {
+        self.conn.query_row("SELECT COUNT(*) FROM retrieval_log", [], |r| r.get(0)).map_err(Into::into)
+    }
+
+    /// Count feedback entries.
+    pub fn count_feedback(&self) -> Result<i64> {
+        self.conn.query_row("SELECT COUNT(*) FROM feedback", [], |r| r.get(0)).map_err(Into::into)
+    }
+
+    /// Count access log entries.
+    pub fn count_access_log(&self) -> Result<i64> {
+        self.conn.query_row("SELECT COUNT(*) FROM access_log", [], |r| r.get(0)).map_err(Into::into)
+    }
+
+    /// Get the timestamp of the latest handoff (if any).
+    pub fn latest_handoff_timestamp(&self) -> Result<Option<String>> {
+        use rusqlite::OptionalExtension;
+        self.conn.query_row(
+            "SELECT created_at FROM handoffs ORDER BY created_at DESC LIMIT 1",
+            [],
+            |r| r.get(0),
+        ).optional().map_err(Into::into)
+    }
+
+    /// Count indexed codebases.
+    pub fn count_codebases(&self) -> Result<i64> {
+        self.conn.query_row("SELECT COUNT(*) FROM codebases", [], |r| r.get(0)).map_err(Into::into)
+    }
+
     /// Run PRAGMA optimize for query planner stats.
     pub fn optimize(&self) -> Result<()> {
         self.conn.execute_batch("PRAGMA optimize;")?;
         Ok(())
     }
+
+    /// Run database maintenance: prune old logs, WAL checkpoint, ANALYZE, optimize.
+    /// Returns counts of pruned rows.
+    pub fn maintenance(&self, retention_days: i64) -> Result<MaintenanceReport> {
+        let retention_days = retention_days.max(1);
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(retention_days)).to_rfc3339();
+
+        let tx = self.conn.unchecked_transaction()?;
+        let retrieval_logs_pruned = tx.execute(
+            "DELETE FROM retrieval_log WHERE created_at < ?1",
+            params![cutoff],
+        )?;
+        let feedback_pruned = tx.execute(
+            "DELETE FROM feedback WHERE created_at < ?1",
+            params![cutoff],
+        )?;
+        let access_log_pruned = tx.execute(
+            "DELETE FROM access_log WHERE accessed_at < ?1",
+            params![cutoff],
+        )?;
+        tx.commit()?;
+
+        // WAL checkpoint
+        let (wal_pages_before, wal_pages_after): (i64, i64) = self.conn.query_row(
+            "PRAGMA wal_checkpoint(TRUNCATE)",
+            [],
+            |row| Ok((row.get::<_, i64>(1).unwrap_or(0), row.get::<_, i64>(2).unwrap_or(0))),
+        )?;
+
+        self.conn.execute_batch("ANALYZE;")?;
+        self.conn.execute_batch("PRAGMA optimize;")?;
+
+        Ok(MaintenanceReport {
+            retrieval_logs_pruned,
+            feedback_pruned,
+            access_log_pruned,
+            wal_pages_before,
+            wal_pages_after,
+        })
+    }
+
+    /// Rebuild the database file (slow — use sparingly).
+    pub fn vacuum(&self) -> Result<()> {
+        self.conn.execute_batch("VACUUM;")?;
+        Ok(())
+    }
 }
 
 // --- Data types ---
+
+/// Result of database maintenance operation.
+#[derive(Debug, serde::Serialize)]
+pub struct MaintenanceReport {
+    pub retrieval_logs_pruned: usize,
+    pub feedback_pruned: usize,
+    pub access_log_pruned: usize,
+    pub wal_pages_before: i64,
+    pub wal_pages_after: i64,
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Chunk {
@@ -3023,5 +3119,134 @@ mod tests {
         // Memory count should be 0 — the insert was rolled back
         let (_, mem_count) = store.count_by_kind().unwrap();
         assert_eq!(mem_count, 0, "insert_memory should be rollbackable from outer savepoint");
+    }
+
+    #[test]
+    fn test_composite_recall_index_exists() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let exists: bool = store.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='index' AND name='idx_chunks_recall_filter'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert!(exists, "composite recall filter index should exist");
+    }
+
+    #[test]
+    fn test_maintenance_prunes_old_logs() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        // Insert a memory and create old log entries
+        let id = store.insert_memory(&MemoryParams {
+            title: "M", content: "c", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "maint1", agent_id: "test",
+        }).unwrap();
+
+        // Insert old retrieval log (200 days ago)
+        let old_date = (chrono::Utc::now() - chrono::Duration::days(200)).to_rfc3339();
+        store.conn.execute(
+            "INSERT INTO retrieval_log (query, tool, result_ids, scores, result_count, created_at) VALUES ('q', 'recall', '[]', '[]', 0, ?1)",
+            params![old_date],
+        ).unwrap();
+
+        // Insert old access log
+        store.conn.execute(
+            "INSERT INTO access_log (chunk_id, accessed_at) VALUES (?1, ?2)",
+            params![id, old_date],
+        ).unwrap();
+
+        // Insert recent retrieval log (today)
+        let log_id = store.log_retrieval("q", "recall", &[(id, 0.9)], None).unwrap();
+
+        // Insert old feedback
+        store.conn.execute(
+            "INSERT INTO feedback (retrieval_log_id, chunk_id, signal, created_at) VALUES (?1, ?2, 'positive', ?3)",
+            params![log_id, id, old_date],
+        ).unwrap();
+
+        let report = store.maintenance(90).unwrap();
+        assert_eq!(report.retrieval_logs_pruned, 1, "should prune 1 old retrieval log");
+        assert_eq!(report.access_log_pruned, 1, "should prune 1 old access log");
+        assert_eq!(report.feedback_pruned, 1, "should prune 1 old feedback");
+
+        // Recent retrieval log should still exist
+        let count: i64 = store.conn.query_row(
+            "SELECT COUNT(*) FROM retrieval_log", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 1, "recent retrieval log should survive maintenance");
+    }
+
+    #[test]
+    fn test_maintenance_clamps_negative_retention() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        // Insert a recent retrieval log (today)
+        let id = store.insert_memory(&MemoryParams {
+            title: "M", content: "c", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "clamp1", agent_id: "test",
+        }).unwrap();
+        store.log_retrieval("q", "recall", &[(id, 0.9)], None).unwrap();
+
+        // Negative retention should be clamped to 1, not delete everything
+        let report = store.maintenance(-5).unwrap();
+        assert_eq!(report.retrieval_logs_pruned, 0, "negative retention should not delete recent logs");
+    }
+
+    #[test]
+    fn test_vacuum_on_fresh_db() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        store.vacuum().unwrap(); // Should not error
+    }
+
+    #[test]
+    fn test_db_size_bytes() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let size = store.db_size_bytes().unwrap();
+        assert!(size > 0, "database should have non-zero size");
+    }
+
+    #[test]
+    fn test_count_helpers_empty() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        assert_eq!(store.count_retrieval_logs().unwrap(), 0);
+        assert_eq!(store.count_feedback().unwrap(), 0);
+        assert_eq!(store.count_access_log().unwrap(), 0);
+        assert_eq!(store.count_codebases().unwrap(), 0);
+        assert!(store.latest_handoff_timestamp().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_count_helpers_populated() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id = store.insert_memory(&MemoryParams {
+            title: "T", content: "c", memory_type: "knowledge",
+            descriptors: "", salience: 0.5, content_hash: "ch1", agent_id: "test",
+        }).unwrap();
+
+        store.log_retrieval("q", "recall", &[(id, 0.9)], None).unwrap();
+        store.touch_memory(id).unwrap(); // creates access_log entry
+
+        assert_eq!(store.count_retrieval_logs().unwrap(), 1);
+        assert_eq!(store.count_access_log().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_latest_handoff_timestamp() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        assert!(store.latest_handoff_timestamp().unwrap().is_none());
+
+        store.create_handoff("test-id", "summary", "next steps", "test-project").unwrap();
+        let ts = store.latest_handoff_timestamp().unwrap();
+        assert!(ts.is_some(), "should have a handoff timestamp");
     }
 }

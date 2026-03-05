@@ -276,7 +276,7 @@ fn main() -> Result<()> {
             let mut embedder = try_embedder();
             let mut reranker = try_reranker();
             let hnsw = try_hnsw(&db_path);
-            let result = memory::recall(&store, embedder.as_mut(), reranker.as_mut(), &query, limit, hnsw.as_ref())?;
+            let result = memory::recall(&store, embedder.as_mut(), reranker.as_mut(), &query, limit, hnsw.as_ref(), None)?;
 
             if result.hits.is_empty() {
                 println!("No memories found.");
@@ -301,7 +301,7 @@ fn main() -> Result<()> {
             let mut embedder = try_embedder();
             let mut reranker = try_reranker();
             let hnsw = try_hnsw(&db_path);
-            let result = memory::get_context(&store, embedder.as_mut(), reranker.as_mut(), &query, limit, threshold, hnsw.as_ref())?;
+            let result = memory::get_context(&store, embedder.as_mut(), reranker.as_mut(), &query, limit, threshold, hnsw.as_ref(), None)?;
 
             if result.hits.is_empty() {
                 println!("No relevant context found (threshold: {threshold}, filtered: {}).", result.filtered_count);

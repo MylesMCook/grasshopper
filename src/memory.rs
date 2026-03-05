@@ -232,12 +232,19 @@ pub fn recall(
     query: &str,
     limit: usize,
     hnsw: Option<&ferret::hnsw::HnswIndex>,
+    precomputed_embedding: Option<&[f32]>,
 ) -> Result<RecallResult> {
     // 1. Expanded FTS keyword candidates (multi-query for better recall)
     let fts = crate::search::expanded_fts_search(store, query, Some("memory"), 20)?;
 
-    // 2. Vector candidates (if embedder available, graceful fallback on error)
-    let vec_results = if let Some(emb) = embedder {
+    // 2. Vector candidates (use precomputed embedding if available, else embed)
+    let vec_results = if let Some(qvec) = precomputed_embedding {
+        if let Some(hnsw) = hnsw {
+            store.vector_search_hnsw(hnsw, qvec, Some("memory"), 20)?
+        } else {
+            store.vector_search(qvec, ferret::embed::MODEL_NAME, Some("memory"), 20)?
+        }
+    } else if let Some(emb) = embedder {
         match emb.embed_batch(&[query.to_string()]) {
             Ok(query_vec) if !query_vec.is_empty() => {
                 if let Some(hnsw) = hnsw {
@@ -348,6 +355,7 @@ pub struct GetContextResult {
 /// Like recall(), but drops memories below a relevance floor.
 /// Returns empty if nothing is relevant — that's the correct behavior.
 /// Uses reranker score as the gate when available, falls back to RRF score.
+#[allow(clippy::too_many_arguments)]
 pub fn get_context(
     store: &Store,
     embedder: Option<&mut ferret::embed::Embedder>,
@@ -356,12 +364,19 @@ pub fn get_context(
     limit: usize,
     threshold: f32,
     hnsw: Option<&ferret::hnsw::HnswIndex>,
+    precomputed_embedding: Option<&[f32]>,
 ) -> Result<GetContextResult> {
     // 1. Expanded FTS keyword candidates (multi-query for better recall)
     let fts = crate::search::expanded_fts_search(store, query, Some("memory"), 20)?;
 
-    // 2. Vector candidates
-    let vec_results = if let Some(emb) = embedder {
+    // 2. Vector candidates (use precomputed embedding if available, else embed)
+    let vec_results = if let Some(qvec) = precomputed_embedding {
+        if let Some(hnsw) = hnsw {
+            store.vector_search_hnsw(hnsw, qvec, Some("memory"), 20)?
+        } else {
+            store.vector_search(qvec, ferret::embed::MODEL_NAME, Some("memory"), 20)?
+        }
+    } else if let Some(emb) = embedder {
         match emb.embed_batch(&[query.to_string()]) {
             Ok(query_vec) if !query_vec.is_empty() => {
                 if let Some(hnsw) = hnsw {
@@ -723,7 +738,7 @@ pub fn pickup(
 
     let related_memories = if let Some(ref h) = handoff {
         let query = format!("{} {}", h.summary, h.project);
-        recall(store, embedder, reranker, &query, 5, hnsw)?.hits
+        recall(store, embedder, reranker, &query, 5, hnsw, None)?.hits
     } else {
         vec![]
     };
@@ -1180,7 +1195,7 @@ mod tests {
         remember(&store, None, "Always use bun for packages", None, Some("knowledge"), "tools").unwrap();
         remember(&store, None, "SQLite WAL mode", None, Some("knowledge"), "database").unwrap();
 
-        let result = recall(&store, None, None, "bun", 10, None).unwrap();
+        let result = recall(&store, None, None, "bun", 10, None, None).unwrap();
         assert!(!result.hits.is_empty());
         assert_eq!(result.hits[0].memory_type.as_deref(), Some("knowledge"));
     }
@@ -1192,7 +1207,7 @@ mod tests {
         remember(&store, None, "I am a developer", None, Some("identity"), "").unwrap();
         remember(&store, None, "Developer tools are great", None, Some("knowledge"), "").unwrap();
 
-        let result = recall(&store, None, None, "developer", 10, None).unwrap();
+        let result = recall(&store, None, None, "developer", 10, None, None).unwrap();
         // Should only return the knowledge entry, not the identity
         for hit in &result.hits {
             assert_ne!(hit.memory_type.as_deref(), Some("identity"));
@@ -1264,7 +1279,7 @@ mod tests {
         remember(&store, None, "Rust's ownership model prevents data races", None, None, "").unwrap();
 
         // Query about something completely unrelated with a high threshold
-        let result = get_context(&store, None, None, "quantum physics entanglement", 5, 0.9, None).unwrap();
+        let result = get_context(&store, None, None, "quantum physics entanglement", 5, 0.9, None, None).unwrap();
         // With FTS-only (no embedder/reranker), threshold scales down by 0.05x
         // Even if FTS returns something, a 0.9 threshold (→ 0.045 RRF) should filter weak matches
         assert_eq!(result.threshold, 0.9);
@@ -1279,7 +1294,7 @@ mod tests {
         remember(&store, None, "PostgreSQL uses MVCC for concurrency control", None, None, "database").unwrap();
 
         // Query matching the stored memories, with a low threshold
-        let result = get_context(&store, None, None, "SQLite WAL concurrency", 5, 0.0, None).unwrap();
+        let result = get_context(&store, None, None, "SQLite WAL concurrency", 5, 0.0, None, None).unwrap();
         // With threshold 0.0 and FTS match, we should get results
         assert!(!result.hits.is_empty(), "should find relevant memories with threshold 0.0");
         assert_eq!(result.threshold, 0.0);
@@ -1297,7 +1312,7 @@ mod tests {
         let archived = remember(&store, None, "SQLite is a database engine", None, Some("knowledge"), "").unwrap();
         store.archive_memory(archived.id).unwrap();
 
-        let result = get_context(&store, None, None, "SQLite", 10, 0.0, None).unwrap();
+        let result = get_context(&store, None, None, "SQLite", 10, 0.0, None, None).unwrap();
         // Should only contain the non-archived knowledge memory
         let ids: Vec<i64> = result.hits.iter().map(|h| h.id).collect();
         assert!(ids.contains(&know.id), "should contain knowledge memory");
@@ -1582,7 +1597,7 @@ mod tests {
             memory_type: "knowledge", descriptors: "rust",
             salience: 0.5, content_hash: "rc1", agent_id: "test",
         }).unwrap();
-        let result = recall(&store, None, None, "Rust", 5, None).unwrap();
+        let result = recall(&store, None, None, "Rust", 5, None, None).unwrap();
         assert!(result.log_id.is_some(), "recall should return a log_id");
     }
 
@@ -1594,7 +1609,7 @@ mod tests {
             memory_type: "knowledge", descriptors: "rust",
             salience: 0.5, content_hash: "gc1", agent_id: "test",
         }).unwrap();
-        let result = get_context(&store, None, None, "Rust", 5, 0.0, None).unwrap();
+        let result = get_context(&store, None, None, "Rust", 5, 0.0, None, None).unwrap();
         assert!(result.log_id.is_some(), "get_context should return a log_id");
     }
 
@@ -1657,7 +1672,7 @@ mod tests {
             memory_type: "knowledge", descriptors: "test",
             salience: 0.5, content_hash: "rshape1", agent_id: "test",
         }).unwrap();
-        let result = recall(&store, None, None, "shape test", 5, None).unwrap();
+        let result = recall(&store, None, None, "shape test", 5, None, None).unwrap();
         // log_id should always be present (Some) or None — but the MCP layer
         // now always wraps in {query_id, results}. Here we verify the memory layer
         // always produces a log_id when retrieval_log succeeds.

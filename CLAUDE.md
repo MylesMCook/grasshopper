@@ -14,7 +14,7 @@ Based on Yuan et al. (March 2026, arXiv:2603.02473v1):
 
 ```sh
 cargo build                    # Build
-cargo test                     # 107 tests (+ 4 ignored NLI tests requiring model)
+cargo test                     # 119 tests (+ 4 ignored NLI tests requiring model)
 cargo run -- --help            # CLI help
 cargo run -- remember "text"   # Store a memory
 cargo run -- recall "query"    # Cognitive-scored memory search
@@ -31,11 +31,11 @@ cargo run -- serve --port 8106 # HTTP MCP server
 src/
 ├── main.rs    — CLI with 14 subcommands (604 lines)
 ├── lib.rs     — Module exports
-├── store.rs   — Unified SQLite schema, all queries (3027 lines)
-├── memory.rs  — Cognitive layer: remember, recall, get_context, classify, score, reflect, consolidate, entity extraction, learned decay (1667 lines)
+├── store.rs   — Unified SQLite schema, all queries, maintenance (3252 lines)
+├── memory.rs  — Cognitive layer: remember, recall, get_context, classify, score, reflect, consolidate, entity extraction, learned decay (1682 lines)
 ├── search.rs  — Hybrid search: FTS5 + vector → RRF fusion → query expansion → cross-encoder rerank (274 lines)
 ├── index.rs   — Code indexing: scan → chunk → graph → FTS → embed (286 lines)
-├── mcp.rs     — MCP server: 16 tools, HTTP + stdio transport (1421 lines)
+├── mcp.rs     — MCP server: 18 tools, HTTP + stdio transport, embedding cache (1744 lines)
 ├── nli.rs     — NLI contradiction detection via ONNX Runtime (cross-encoder/nli-MiniLM2-L6-H768) (256 lines)
 └── rerank.rs  — Cross-encoder reranking via fastembed/ONNX (BAAI/bge-reranker-base)
 ```
@@ -88,3 +88,4 @@ Supporting tables: `codebases`, `indexed_files`, `graph` (code refs + Hebbian as
 - Phase 1 — Retrieval Excellence: LAB-45 → LAB-32 → LAB-33, LAB-34 (parallel), LAB-35 (eval)
 - Phase 2 — Proactive Intelligence: LAB-36 (parent), LAB-38 (relevance gate) ✓, LAB-39 (query expander) ✓, LAB-40 (contradiction detector) ✓, LAB-46 (working memory) ✓
 - Phase 3 — Learning & Evolution: LAB-37 (parent) ✓, LAB-41 (decay scorer) ✓, LAB-42 (consolidation) ✓, LAB-43 (entity graph) ✓, LAB-44 (fine-tuning pipeline) ✓
+- Phase 4 — Production Hardening: LAB-77 (parent) ✓, LAB-78 (NLI wiring) ✓, LAB-79 (DB maintenance) ✓, LAB-80 (observability) ✓, LAB-81 (embedding cache) ✓
