@@ -1,7 +1,0 @@
-target/
-.git/
-*.db
-*.db-wal
-*.db-shm
-CLAUDE.md
-.claude/

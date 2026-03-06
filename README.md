@@ -8,26 +8,8 @@ Grasshopper indexes codebases and stores memories, then retrieves them with a pi
 
 ## Install
 
-**Pre-built binaries** (Linux x64/arm64, macOS x64/arm64, Windows x64):
-
-```sh
-# macOS / Linux
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/MylesMCook/grasshopper/releases/latest/download/grasshopper-installer.sh | sh
-
-# Windows (PowerShell)
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/MylesMCook/grasshopper/releases/latest/download/grasshopper-installer.ps1 | iex"
-```
-
-**From source**:
-
 ```sh
 cargo install --git https://github.com/MylesMCook/grasshopper
-```
-
-**Docker** (runs MCP server — for indexing/searching, use the CLI binary):
-
-```sh
-docker run -v grasshopper-data:/data -p 8106:8106 ghcr.io/mylesmcook/grasshopper
 ```
 
 ## Quick Start
@@ -185,7 +167,7 @@ src/
 
 ```sh
 cargo build                    # Build
-cargo test                     # 107 tests
+cargo test                     # 113 tests
 cargo clippy --all-targets     # Lint
 cargo run -- --help            # CLI help
 RUST_LOG=debug cargo run -- serve --port 8106  # Verbose server
