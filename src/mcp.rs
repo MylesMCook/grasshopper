@@ -84,6 +84,7 @@ impl GrasshopperMcp {
     }
 
     /// Create without model initialization (FTS-only). For tests and CI.
+    #[doc(hidden)]
     pub fn new_without_models(db_path: PathBuf) -> Self {
         Self {
             db_path,
@@ -100,13 +101,14 @@ impl GrasshopperMcp {
         db_path: PathBuf,
         embedder: Arc<Mutex<Option<Embedder>>>,
         reranker: Arc<Mutex<Option<crate::rerank::Reranker>>>,
+        reranker_failed_at: Arc<std::sync::atomic::AtomicI64>,
         hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>>,
     ) -> Self {
         Self {
             db_path,
             embedder,
             reranker,
-            reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            reranker_failed_at,
             hnsw,
             skip_model_init: false,
             tool_router: Self::annotated_router(),
@@ -409,6 +411,21 @@ impl GrasshopperMcp {
             let store = Store::open(&db_path)?;
             let dir = std::path::Path::new(&params.directory);
             let result = crate::index::index_directory(&store, dir)?;
+
+            // Invalidate stale HNSW when files changed (embeddings cleared on re-index)
+            if (result.files_changed > 0 || result.files_removed > 0)
+                && let Ok(mut hnsw_guard) = hnsw.lock()
+                && hnsw_guard.is_some()
+            {
+                *hnsw_guard = None;
+                let hnsw_file = crate::code::hnsw::hnsw_path(&db_path);
+                if hnsw_file.exists() {
+                    let _ = std::fs::remove_file(&hnsw_file);
+                }
+                tracing::debug!("invalidated HNSW after re-index ({} changed, {} removed)",
+                    result.files_changed, result.files_removed);
+            }
+
             let mut output = serde_json::json!({
                 "files_scanned": result.files_scanned,
                 "files_changed": result.files_changed,
@@ -505,6 +522,10 @@ impl GrasshopperMcp {
                 && hnsw_guard.is_some()
             {
                 *hnsw_guard = None;
+                let hnsw_file = crate::code::hnsw::hnsw_path(&db_path);
+                if hnsw_file.exists() {
+                    let _ = std::fs::remove_file(&hnsw_file);
+                }
                 tracing::debug!("invalidated HNSW after memory store");
             }
 
@@ -614,6 +635,8 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
     let ct = tokio_util::sync::CancellationToken::new();
     let shared_embedder: Arc<Mutex<Option<Embedder>>> = Arc::new(Mutex::new(None));
     let shared_reranker: Arc<Mutex<Option<crate::rerank::Reranker>>> = Arc::new(Mutex::new(None));
+    let shared_reranker_failed_at: Arc<std::sync::atomic::AtomicI64> =
+        Arc::new(std::sync::atomic::AtomicI64::new(0));
     let shared_hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>> =
         Arc::new(Mutex::new(GrasshopperMcp::try_load_hnsw(&db_path)));
 
@@ -622,6 +645,7 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
     let db = db_path.clone();
     let embedder_for_mcp = shared_embedder.clone();
     let reranker_for_mcp = shared_reranker.clone();
+    let rr_failed_for_mcp = shared_reranker_failed_at.clone();
     let hnsw_for_mcp = shared_hnsw.clone();
     let mcp_service = StreamableHttpService::new(
         move || {
@@ -629,6 +653,7 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
                 db.clone(),
                 embedder_for_mcp.clone(),
                 reranker_for_mcp.clone(),
+                rr_failed_for_mcp.clone(),
                 hnsw_for_mcp.clone(),
             ))
         },

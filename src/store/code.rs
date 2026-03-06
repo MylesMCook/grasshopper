@@ -47,68 +47,57 @@ impl Store {
     /// Batch upsert chunks for multiple files within a transaction.
     /// Deletes old chunks for each file, inserts new ones. Returns total chunk count.
     pub fn batch_upsert_chunks(&self, codebase_id: i64, file_chunks: &[FileChunks]) -> Result<usize> {
-        self.conn.execute_batch("BEGIN")?;
-        let result = (|| -> Result<usize> {
-            let mut total = 0;
-            let now = chrono::Utc::now().to_rfc3339();
-            let ts = now_millis();
-            for fc in file_chunks {
-                // Delete old FTS rows before removing chunks (avoids orphaned FTS entries)
-                self.conn.execute(
-                    "DELETE FROM chunks_fts WHERE rowid IN (
-                        SELECT id FROM chunks WHERE codebase_id = ?1 AND file_path = ?2 AND kind = 'code'
-                    )",
-                    params![codebase_id, fc.file_path],
+        let tx = self.conn.unchecked_transaction()?;
+        let mut total = 0;
+        let now = chrono::Utc::now().to_rfc3339();
+        let ts = now_millis();
+        for fc in file_chunks {
+            // Delete old FTS rows before removing chunks (avoids orphaned FTS entries)
+            tx.execute(
+                "DELETE FROM chunks_fts WHERE rowid IN (
+                    SELECT id FROM chunks WHERE codebase_id = ?1 AND file_path = ?2 AND kind = 'code'
+                )",
+                params![codebase_id, fc.file_path],
+            )?;
+            // Delete old chunks for this file
+            tx.execute(
+                "DELETE FROM chunks WHERE codebase_id = ?1 AND file_path = ?2 AND kind = 'code'",
+                params![codebase_id, fc.file_path],
+            )?;
+            // Insert new chunks
+            for c in &fc.chunks {
+                tx.execute(
+                    "INSERT INTO chunks (kind, codebase_id, file_path, chunk_key, language,
+                        symbol_kind, symbol_name, signature, content, snippet,
+                        start_line, end_line, file_hash, indexed_at, created_at, updated_at)
+                     VALUES ('code', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)
+                     ON CONFLICT(codebase_id, chunk_key) DO UPDATE SET
+                        content = excluded.content, snippet = excluded.snippet,
+                        signature = excluded.signature, symbol_kind = excluded.symbol_kind,
+                        symbol_name = excluded.symbol_name, file_hash = excluded.file_hash,
+                        start_line = excluded.start_line, end_line = excluded.end_line,
+                        indexed_at = excluded.indexed_at, updated_at = excluded.updated_at,
+                        embedding = NULL, embedding_model = ''",
+                    params![
+                        codebase_id, c.file_path, c.chunk_key, c.language,
+                        c.symbol_kind, c.symbol_name, c.signature, c.snippet, c.snippet,
+                        c.start_line, c.end_line, c.file_hash, ts, now,
+                    ],
                 )?;
-                // Delete old chunks for this file
-                self.conn.execute(
-                    "DELETE FROM chunks WHERE codebase_id = ?1 AND file_path = ?2 AND kind = 'code'",
-                    params![codebase_id, fc.file_path],
-                )?;
-                // Insert new chunks
-                for c in &fc.chunks {
-                    self.conn.execute(
-                        "INSERT INTO chunks (kind, codebase_id, file_path, chunk_key, language,
-                            symbol_kind, symbol_name, signature, content, snippet,
-                            start_line, end_line, file_hash, indexed_at, created_at, updated_at)
-                         VALUES ('code', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)
-                         ON CONFLICT(codebase_id, chunk_key) DO UPDATE SET
-                            content = excluded.content, snippet = excluded.snippet,
-                            signature = excluded.signature, symbol_kind = excluded.symbol_kind,
-                            symbol_name = excluded.symbol_name, file_hash = excluded.file_hash,
-                            start_line = excluded.start_line, end_line = excluded.end_line,
-                            indexed_at = excluded.indexed_at, updated_at = excluded.updated_at,
-                            embedding = NULL, embedding_model = ''",
-                        params![
-                            codebase_id, c.file_path, c.chunk_key, c.language,
-                            c.symbol_kind, c.symbol_name, c.signature, c.snippet, c.snippet,
-                            c.start_line, c.end_line, c.file_hash, ts, now,
-                        ],
-                    )?;
-                    total += 1;
-                }
-                // Upsert indexed_files
-                self.conn.execute(
-                    "INSERT INTO indexed_files (codebase_id, file_path, file_hash, chunk_count, indexed_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5)
-                     ON CONFLICT(codebase_id, file_path) DO UPDATE SET
-                        file_hash = excluded.file_hash, chunk_count = excluded.chunk_count,
-                        indexed_at = excluded.indexed_at",
-                    params![codebase_id, fc.file_path, fc.file_hash, fc.chunks.len() as i64, ts],
-                )?;
+                total += 1;
             }
-            Ok(total)
-        })();
-        match result {
-            Ok(total) => {
-                self.conn.execute_batch("COMMIT")?;
-                Ok(total)
-            }
-            Err(e) => {
-                let _ = self.conn.execute_batch("ROLLBACK");
-                Err(e)
-            }
+            // Upsert indexed_files
+            tx.execute(
+                "INSERT INTO indexed_files (codebase_id, file_path, file_hash, chunk_count, indexed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(codebase_id, file_path) DO UPDATE SET
+                    file_hash = excluded.file_hash, chunk_count = excluded.chunk_count,
+                    indexed_at = excluded.indexed_at",
+                params![codebase_id, fc.file_path, fc.file_hash, fc.chunks.len() as i64, ts],
+            )?;
         }
+        tx.commit()?;
+        Ok(total)
     }
 
     /// Remove indexed files and their chunks that no longer exist on disk.
@@ -215,13 +204,17 @@ impl Store {
 
     /// Batch update embeddings for chunks by ID.
     pub fn batch_upsert_embeddings(&self, items: &[(i64, &[f32], &str)]) -> Result<()> {
-        let mut stmt = self.conn.prepare_cached(
-            "UPDATE chunks SET embedding = ?1, embedding_model = ?2 WHERE id = ?3",
-        )?;
-        for &(id, embedding, model_name) in items {
-            let blob = embedding_to_blob(embedding);
-            stmt.execute(params![blob, model_name, id])?;
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "UPDATE chunks SET embedding = ?1, embedding_model = ?2 WHERE id = ?3",
+            )?;
+            for &(id, embedding, model_name) in items {
+                let blob = embedding_to_blob(embedding);
+                stmt.execute(params![blob, model_name, id])?;
+            }
         }
+        tx.commit()?;
         Ok(())
     }
 }

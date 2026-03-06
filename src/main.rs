@@ -209,11 +209,15 @@ fn main() -> Result<()> {
         } => {
             let store = Store::open(&db_path)?;
 
+            let limit = limit.clamp(1, 100);
+            let budget = budget.clamp(1, 200_000);
+
             match mode.as_str() {
                 "search" => {
                     let kind_filter = match kind.as_str() {
                         "all" => None,
-                        k => Some(k),
+                        "code" | "memory" => Some(kind.as_str()),
+                        k => anyhow::bail!("invalid kind '{k}': must be 'all', 'code', or 'memory'"),
                     };
 
                     let mut embedder = try_embedder();

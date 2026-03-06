@@ -688,20 +688,6 @@ mod tests {
     }
 
     #[test]
-    fn test_log_retrieval() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let log_id = store.log_retrieval("test query", "recall", &[(1, 0.9), (2, 0.5)], Some(42)).unwrap();
-        assert!(log_id > 0);
-
-        let count: i64 = store.conn.query_row(
-            "SELECT COUNT(*) FROM retrieval_log", [], |row| row.get(0),
-        ).unwrap();
-        assert_eq!(count, 1);
-    }
-
-    #[test]
     fn test_insert_memory_nestable_in_savepoint() {
         let dir = TempDir::new().unwrap();
         let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -755,54 +741,6 @@ mod tests {
     }
 
     #[test]
-    fn test_maintenance_prunes_old_logs() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        // Insert a memory and create old log entries
-        let id = store.insert_memory(&MemoryParams {
-            title: "M", content: "c", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "maint1", agent_id: "test",
-        }).unwrap();
-
-        // Insert old retrieval log (200 days ago)
-        let old_date = (chrono::Utc::now() - chrono::Duration::days(200)).to_rfc3339();
-        store.conn.execute(
-            "INSERT INTO retrieval_log (query, tool, result_ids, scores, result_count, created_at) VALUES ('q', 'recall', '[]', '[]', 0, ?1)",
-            rusqlite::params![old_date],
-        ).unwrap();
-
-        // Insert recent retrieval log (today)
-        store.log_retrieval("q", "recall", &[(id, 0.9)], None).unwrap();
-
-        let report = store.maintenance(90).unwrap();
-        assert_eq!(report.retrieval_logs_pruned, 1, "should prune 1 old retrieval log");
-
-        // Recent retrieval log should still exist
-        let count: i64 = store.conn.query_row(
-            "SELECT COUNT(*) FROM retrieval_log", [], |row| row.get(0),
-        ).unwrap();
-        assert_eq!(count, 1, "recent retrieval log should survive maintenance");
-    }
-
-    #[test]
-    fn test_maintenance_clamps_negative_retention() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        // Insert a recent retrieval log (today)
-        let id = store.insert_memory(&MemoryParams {
-            title: "M", content: "c", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "clamp1", agent_id: "test",
-        }).unwrap();
-        store.log_retrieval("q", "recall", &[(id, 0.9)], None).unwrap();
-
-        // Negative retention should be clamped to 1, not delete everything
-        let report = store.maintenance(-5).unwrap();
-        assert_eq!(report.retrieval_logs_pruned, 0, "negative retention should not delete recent logs");
-    }
-
-    #[test]
     fn test_vacuum_on_fresh_db() {
         let dir = TempDir::new().unwrap();
         let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -821,23 +759,7 @@ mod tests {
     fn test_count_helpers_empty() {
         let dir = TempDir::new().unwrap();
         let store = Store::open(&dir.path().join("test.db")).unwrap();
-        assert_eq!(store.count_retrieval_logs().unwrap(), 0);
         assert_eq!(store.count_codebases().unwrap(), 0);
-    }
-
-    #[test]
-    fn test_count_helpers_populated() {
-        let dir = TempDir::new().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-
-        let id = store.insert_memory(&MemoryParams {
-            title: "T", content: "c", memory_type: "knowledge",
-            descriptors: "", salience: 0.5, content_hash: "ch1", agent_id: "test",
-        }).unwrap();
-
-        store.log_retrieval("q", "recall", &[(id, 0.9)], None).unwrap();
-
-        assert_eq!(store.count_retrieval_logs().unwrap(), 1);
     }
 
 }

@@ -79,14 +79,6 @@ pub struct GraphEdge {
     pub line: i64,
 }
 
-/// Result of database maintenance operation.
-#[derive(Debug, serde::Serialize)]
-pub struct MaintenanceReport {
-    pub retrieval_logs_pruned: usize,
-    pub wal_pages_before: i64,
-    pub wal_pages_after: i64,
-}
-
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Chunk {
     pub id: i64,

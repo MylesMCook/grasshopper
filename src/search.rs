@@ -189,8 +189,6 @@ pub fn rerank_hits(
 /// Result of unified search across code and memory.
 pub struct UnifiedSearchResult {
     pub hits: Vec<SearchHit>,
-    /// Retrieval log ID (only for memory queries).
-    pub log_id: Option<i64>,
 }
 
 /// Unified search: searches code and/or memory with a single entry point.
@@ -298,20 +296,8 @@ pub fn unified_search(
             }
         }
 
-        // Log retrieval
-        let log_id = store
-            .log_retrieval(
-                query,
-                "unified_search",
-                &all_hits.iter().map(|h| (h.id, h.score)).collect::<Vec<_>>(),
-                None,
-            )
-            .map_err(|e| { tracing::warn!("Failed to log retrieval: {e}"); e })
-            .ok();
-
         Ok(UnifiedSearchResult {
             hits: all_hits,
-            log_id,
         })
     } else {
         // Code-only: no cognitive scoring, no side effects
@@ -319,7 +305,6 @@ pub fn unified_search(
         hits.truncate(limit);
         Ok(UnifiedSearchResult {
             hits,
-            log_id: None,
         })
     }
 }

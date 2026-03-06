@@ -151,17 +151,6 @@ impl Store {
                 tokenize='porter unicode61'
             );
 
-            -- Retrieval logging for fine-tuning pipeline
-            CREATE TABLE IF NOT EXISTS retrieval_log (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                query           TEXT NOT NULL,
-                tool            TEXT NOT NULL,
-                result_ids      TEXT NOT NULL,
-                scores          TEXT NOT NULL,
-                result_count    INTEGER NOT NULL,
-                latency_ms      INTEGER,
-                created_at      TEXT NOT NULL
-            );
 ",
         )?;
         Ok(())
