@@ -193,7 +193,7 @@ fn test_corpus() -> Vec<TestEntry> {
             memory_type: "identity", created_days_ago: 30.0, last_accessed_days_ago: Some(5.0),
             access_count: 50, salience: 1.0, descriptors: "preferences,simplicity" },
         TestEntry { id: 12, title: "I use Rust for systems work",
-            content: "I use Rust for all systems-level projects. My name is Myles.",
+            content: "I use Rust for all systems-level projects. Prefer compiled languages.",
             memory_type: "identity", created_days_ago: 60.0, last_accessed_days_ago: Some(1.0),
             access_count: 100, salience: 1.0, descriptors: "preferences,rust" },
         // --- High frequency, low salience ---
@@ -208,11 +208,11 @@ fn test_corpus() -> Vec<TestEntry> {
             access_count: 0, salience: 0.9, descriptors: "security,incident,response" },
         // --- Entity-rich entries ---
         TestEntry { id: 15, title: "Traefik configuration",
-            content: "Traefik reverse proxy at ~/services/traefik/. Config in /etc/traefik/traefik.yml. Dashboard at https://traefik.funnydomainname.com",
+            content: "Traefik reverse proxy at ~/services/traefik/. Config in /etc/traefik/traefik.yml. Dashboard at https://traefik.example.com",
             memory_type: "knowledge", created_days_ago: 15.0, last_accessed_days_ago: Some(3.0),
             access_count: 10, salience: 0.7, descriptors: "traefik,proxy,config" },
         TestEntry { id: 16, title: "PocketBase corpus setup",
-            content: "PocketBase runs at /home/myles/projects/pocketbase-corpus/. Docker compose on port 8090. Tunnels via Cloudflare.",
+            content: "PocketBase runs at ~/projects/pocketbase-corpus/. Docker compose on port 8090. Accessible via reverse proxy.",
             memory_type: "knowledge", created_days_ago: 20.0, last_accessed_days_ago: Some(5.0),
             access_count: 12, salience: 0.6, descriptors: "pocketbase,corpus,docker" },
         // --- Near-duplicates (for dedup / differentiation testing) ---
@@ -235,7 +235,7 @@ fn test_corpus() -> Vec<TestEntry> {
             access_count: 3, salience: 0.5, descriptors: "hnsw,vector,search" },
         // --- More recent mixed entries ---
         TestEntry { id: 21, title: "Cloudflare tunnel setup",
-            content: "Cloudflare tunnel using cloudflared daemon. Config at /home/myles/.cloudflared/config.yml. Exposes internal services.",
+            content: "Reverse tunnel using cloudflared daemon. Config at ~/.cloudflared/config.yml. Exposes internal services securely.",
             memory_type: "knowledge", created_days_ago: 5.0, last_accessed_days_ago: Some(1.0),
             access_count: 7, salience: 0.7, descriptors: "cloudflare,tunnel,networking" },
         TestEntry { id: 22, title: "Systemd service creation",
@@ -270,7 +270,7 @@ fn test_corpus() -> Vec<TestEntry> {
             memory_type: "episode", created_days_ago: 0.1, last_accessed_days_ago: Some(0.05),
             access_count: 1, salience: 0.0, descriptors: "debug,vector,search" },
         TestEntry { id: 29, title: "Critical: backup encryption key",
-            content: "The restic backup encryption passphrase is stored in Bitwarden. Without it, backups are unrecoverable.",
+            content: "The restic backup encryption passphrase is stored in a password manager. Without it, backups are unrecoverable.",
             memory_type: "knowledge", created_days_ago: 30.0, last_accessed_days_ago: Some(10.0),
             access_count: 5, salience: 1.0, descriptors: "backup,encryption,critical" },
         // --- More procedures at different ages ---
@@ -298,7 +298,7 @@ fn test_corpus() -> Vec<TestEntry> {
             access_count: 3, salience: 0.6, descriptors: "nli,contradiction,pipeline" },
         // --- Knowledge at the 30-day boundary ---
         TestEntry { id: 35, title: "Tailscale VPN configuration",
-            content: "Tailscale VPN for secure remote access. IP 100.125.35.63. MagicDNS enabled. Subnet routes for LAN.",
+            content: "Tailscale VPN for secure remote access. MagicDNS enabled. Subnet routes for LAN access.",
             memory_type: "knowledge", created_days_ago: 30.0, last_accessed_days_ago: Some(5.0),
             access_count: 8, salience: 0.6, descriptors: "tailscale,vpn,networking" },
         // --- Filler with specific search targets ---
