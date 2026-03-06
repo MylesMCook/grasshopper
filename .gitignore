@@ -5,3 +5,4 @@
 *.hnsw
 .env
 .fastembed_cache/
+CLAUDE.md

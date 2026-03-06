@@ -5,7 +5,6 @@ use rmcp::model::{CallToolResult, Content, ServerCapabilities, ServerInfo, ToolA
 use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -64,6 +63,8 @@ pub struct GrasshopperMcp {
     /// Epoch seconds of last reranker init failure (0 = never failed). Retry after 60s cooldown.
     reranker_failed_at: Arc<std::sync::atomic::AtomicI64>,
     hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>>,
+    /// When true, skip lazy model initialization (for tests without model downloads).
+    skip_model_init: bool,
     tool_router: ToolRouter<Self>,
 }
 
@@ -77,6 +78,20 @@ impl GrasshopperMcp {
             reranker: Arc::new(Mutex::new(None)),
             reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             hnsw: Arc::new(Mutex::new(hnsw)),
+            skip_model_init: false,
+            tool_router: Self::annotated_router(),
+        }
+    }
+
+    /// Create without model initialization (FTS-only). For tests and CI.
+    pub fn new_without_models(db_path: PathBuf) -> Self {
+        Self {
+            db_path,
+            embedder: Arc::new(Mutex::new(None)),
+            reranker: Arc::new(Mutex::new(None)),
+            reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            hnsw: Arc::new(Mutex::new(None)),
+            skip_model_init: true,
             tool_router: Self::annotated_router(),
         }
     }
@@ -93,6 +108,7 @@ impl GrasshopperMcp {
             reranker,
             reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             hnsw,
+            skip_model_init: false,
             tool_router: Self::annotated_router(),
         }
     }
@@ -141,26 +157,17 @@ impl GrasshopperMcp {
         }
     }
 
-    /// Build tool router with MCP annotations so clients can categorize tools
-    /// into read-only vs write/delete groups.
+    /// Build tool router with MCP annotations.
     fn annotated_router() -> rmcp::handler::server::router::tool::ToolRouter<Self> {
         let mut router = Self::tool_router();
 
-        let read_only = ToolAnnotations::new()
-            .read_only(true)
-            .destructive(false);
+        // All tools are non-destructive writers (search updates salience + logs)
         let write = ToolAnnotations::new()
             .read_only(false)
             .destructive(false);
 
-        for (name, route) in router.map.iter_mut() {
-            let ann = match name.as_ref() {
-                // Read-only: search (touch_memory side effects are acceptable)
-                "search" => read_only.clone(),
-                // Write (non-destructive): index, store
-                _ => write.clone(),
-            };
-            route.attr.annotations = Some(ann);
+        for (_name, route) in router.map.iter_mut() {
+            route.attr.annotations = Some(write.clone());
         }
 
         router
@@ -228,7 +235,7 @@ impl GrasshopperMcp {
         name = "search",
         description = "Search across code and memory, navigate symbols, map codebases, or analyze impact. Default mode searches with hybrid retrieval (keywords + semantics + reranking). Use mode='navigate' to find symbol definitions/references, mode='map' for codebase overview, mode='impact' to analyze change blast radius."
     )]
-    async fn search(
+    pub async fn search(
         &self,
         Parameters(params): Parameters<SearchParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
@@ -237,13 +244,16 @@ impl GrasshopperMcp {
         let reranker = Arc::clone(&self.reranker);
         let rr_failed = Arc::clone(&self.reranker_failed_at);
         let hnsw = Arc::clone(&self.hnsw);
+        let skip_models = self.skip_model_init;
 
         let result = tokio::task::spawn_blocking(move || {
             let mode = params.mode.as_deref().unwrap_or("search");
             match mode {
                 "search" => {
-                    Self::init_embedder_blocking(&embedder);
-                    Self::init_reranker_blocking(&reranker, &rr_failed);
+                    if !skip_models {
+                        Self::init_embedder_blocking(&embedder);
+                        Self::init_reranker_blocking(&reranker, &rr_failed);
+                    }
                     let store = Store::open(&db_path)?;
                     let kind_filter = match params.kind.as_deref() {
                         Some("all") | None => None,
@@ -320,7 +330,7 @@ impl GrasshopperMcp {
                     let budget = params.budget.unwrap_or(4000).clamp(1, 200_000);
                     let codebase_id = store.resolve_codebase(params.dir.as_deref())?
                         .context("no codebases indexed — run index first")?;
-                    generate_map(&store, codebase_id, budget)
+                    crate::search::generate_map(&store, codebase_id, budget)
                 }
                 "impact" => {
                     let store = Store::open(&db_path)?;
@@ -386,7 +396,7 @@ impl GrasshopperMcp {
         name = "index",
         description = "Index a source code directory for search and navigation. Indexes all non-hidden text files (<1MB) regardless of language — extracts symbols and structure using universal heuristics. Respects .gitignore. Incremental — only re-indexes changed files. Run once per codebase, then use search/navigate/map/impact."
     )]
-    async fn index_dir(
+    pub async fn index_dir(
         &self,
         Parameters(params): Parameters<IndexParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
@@ -463,17 +473,22 @@ impl GrasshopperMcp {
         name = "store",
         description = "Store raw content as a persistent memory. Deduplicates — if a near-duplicate exists, it updates the existing entry instead of creating a new one. Use proactively to save anything worth persisting across sessions: facts, decisions, preferences, observations."
     )]
-    async fn store(
+    pub async fn store(
         &self,
         Parameters(params): Parameters<StoreParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let db_path = self.db_path.clone();
         let embedder = Arc::clone(&self.embedder);
+        let hnsw = Arc::clone(&self.hnsw);
+        let skip_models = self.skip_model_init;
 
         let result = tokio::task::spawn_blocking(move || {
-            Self::init_embedder_blocking(&embedder);
+            if !skip_models {
+                Self::init_embedder_blocking(&embedder);
+            }
             let store = Store::open(&db_path)?;
             let mut guard = embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+            let has_embedder = guard.is_some();
             let tags = params.tags.as_deref().unwrap_or("");
             let result = crate::memory::store(
                 &store,
@@ -482,6 +497,16 @@ impl GrasshopperMcp {
                 params.title.as_deref(),
                 tags,
             )?;
+
+            // Invalidate HNSW so vector search falls back to brute-force
+            // until next index --embed rebuilds it with fresh data
+            if has_embedder
+                && let Ok(mut hnsw_guard) = hnsw.lock()
+                && hnsw_guard.is_some()
+            {
+                *hnsw_guard = None;
+                tracing::debug!("invalidated HNSW after memory store");
+            }
 
             let output = serde_json::json!({
                 "id": result.id,
@@ -725,72 +750,6 @@ fn format_search_hits(hits: &[crate::store::SearchHit]) -> Vec<serde_json::Value
             v
         })
         .collect()
-}
-
-/// Generate a compact codebase map from definitions, ranked by definition density per file.
-pub fn generate_map(store: &Store, codebase_id: i64, token_budget: usize) -> Result<String> {
-    let definitions = store.get_all_definitions(codebase_id)?;
-    let def_counts = store.count_definitions_per_file(codebase_id)?;
-
-    if definitions.is_empty() {
-        return Ok("No definitions found. Run index first.".into());
-    }
-
-    // Group definitions by file
-    let mut by_file: BTreeMap<&str, Vec<&crate::store::GraphEdge>> = BTreeMap::new();
-    for edge in &definitions {
-        by_file.entry(&edge.file_path).or_default().push(edge);
-    }
-
-    // Score each file by definition count (more definitions = likely more important)
-    let mut file_scores: Vec<(&str, i64)> = by_file
-        .keys()
-        .map(|&file| {
-            let score = *def_counts.get(file).unwrap_or(&0) as i64;
-            (file, score)
-        })
-        .collect();
-    file_scores.sort_by(|a, b| b.1.cmp(&a.1));
-
-    // Build the map, respecting token budget (~4 chars per token)
-    let char_budget = token_budget.saturating_mul(4);
-    if char_budget == 0 {
-        return Ok(String::new());
-    }
-    let mut output = String::new();
-    let mut chars_used = 0;
-
-    for (file, _score) in &file_scores {
-        use std::fmt::Write;
-        let defs = &by_file[file];
-        let mut section = String::new();
-        let _ = writeln!(&mut section, "{file}");
-        for def in defs {
-            let prefix = match def.kind.as_str() {
-                "function" | "method" => "fn",
-                "class" | "struct" => "struct",
-                "interface" | "trait" => "trait",
-                "module" => "mod",
-                "macro" => "macro",
-                "constant" => "const",
-                "variable" => "let",
-                "type" => "type",
-                "implementation" => "impl",
-                "enum" => "enum",
-                other => other,
-            };
-            let _ = writeln!(&mut section, "  {prefix} {}", def.symbol);
-        }
-
-        if chars_used + section.len() > char_budget && chars_used > 0 {
-            break;
-        }
-
-        output.push_str(&section);
-        chars_used += section.len();
-    }
-
-    Ok(output)
 }
 
 

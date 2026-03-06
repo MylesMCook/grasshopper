@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use grasshopper::store::{SearchHit, Store};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -57,6 +58,9 @@ enum Commands {
         /// Edge direction for navigate mode: both, defs, refs
         #[arg(long, default_value = "both")]
         direction: String,
+        /// Output as JSON (machine-readable)
+        #[arg(long)]
+        json: bool,
     },
 
     /// Store raw content as a persistent memory (with dedup)
@@ -82,9 +86,43 @@ enum Commands {
     },
 }
 
+// ANSI color codes — only used when outputting to a terminal
+struct Colors {
+    green: &'static str,
+    blue: &'static str,
+    cyan: &'static str,
+    magenta: &'static str,
+    yellow: &'static str,
+    dim: &'static str,
+    bold: &'static str,
+    reset: &'static str,
+}
+
+const COLORS_ON: Colors = Colors {
+    green: "\x1b[32m",
+    blue: "\x1b[34m",
+    cyan: "\x1b[36m",
+    magenta: "\x1b[35m",
+    yellow: "\x1b[33m",
+    dim: "\x1b[2m",
+    bold: "\x1b[1m",
+    reset: "\x1b[0m",
+};
+
+const COLORS_OFF: Colors = Colors {
+    green: "", blue: "", cyan: "", magenta: "", yellow: "",
+    dim: "", bold: "", reset: "",
+};
+
+fn colors() -> &'static Colors {
+    if std::io::stdout().is_terminal() { &COLORS_ON } else { &COLORS_OFF }
+}
+
 fn default_db_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".grasshopper").join("brain.db")
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".grasshopper")
+        .join("brain.db")
 }
 
 fn try_embedder() -> Option<grasshopper::code::embed::Embedder> {
@@ -132,8 +170,10 @@ fn main() -> Result<()> {
             let store = Store::open(&db_path)?;
             let result = grasshopper::index::index_directory(&store, &dir)?;
 
+            let c = colors();
             println!(
-                "Indexed {} ({} files, {} chunks)",
+                "{}Indexed{} {} ({} files, {} chunks)",
+                c.bold, c.reset,
                 dir.display(),
                 result.files_scanned,
                 result.chunks_written,
@@ -161,11 +201,11 @@ fn main() -> Result<()> {
                 rebuild_hnsw(&store, &db_path)?;
             }
 
-            println!("Done in {}ms", result.duration_ms);
+            println!("{}Done in {}ms{}", c.dim, result.duration_ms, c.reset);
         }
 
         Commands::Search {
-            query, mode, kind, limit, threshold, budget, depth, dir, direction,
+            query, mode, kind, limit, threshold, budget, depth, dir, direction, json,
         } => {
             let store = Store::open(&db_path)?;
 
@@ -190,17 +230,23 @@ fn main() -> Result<()> {
                         hnsw.as_ref(),
                     )?;
 
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&result.hits)?);
+                        return Ok(());
+                    }
+
                     if result.hits.is_empty() {
                         println!("No results found.");
                         return Ok(());
                     }
 
                     for (i, hit) in result.hits.iter().enumerate() {
-                        println!("{}. [{:.4}] {}", i + 1, hit.score, format_hit(hit));
+                        print_hit(i + 1, hit);
                     }
                 }
                 "navigate" => {
                     let codebase_id = store.resolve_codebase(dir.as_deref())?;
+                    let c = colors();
 
                     let (show_defs, show_refs) = match direction.as_str() {
                         "both" => (true, true),
@@ -209,22 +255,41 @@ fn main() -> Result<()> {
                         d => anyhow::bail!("invalid direction '{d}': must be 'both', 'defs', or 'refs'"),
                     };
 
-                    if show_defs {
-                        let defs = store.find_definitions(&query, codebase_id)?;
+                    let defs = if show_defs {
+                        store.find_definitions(&query, codebase_id)?
+                    } else { vec![] };
+                    let refs = if show_refs {
+                        store.find_references(&query, codebase_id)?
+                    } else { vec![] };
+
+                    if json {
+                        let out = serde_json::json!({
+                            "definitions": defs,
+                            "references": refs,
+                        });
+                        println!("{}", serde_json::to_string_pretty(&out)?);
+                    } else {
                         if !defs.is_empty() {
-                            println!("Definitions of '{query}':");
+                            println!("{}Definitions{} of '{}{query}{}':", c.bold, c.reset, c.cyan, c.reset);
                             for d in &defs {
-                                println!("  {}:{} ({} {})", d.file_path, d.line, d.kind, d.symbol);
+                                println!(
+                                    "  {}{}{}{}{}{} {}({} {}){}",
+                                    c.green, d.file_path, c.reset,
+                                    c.dim, format_line(d.line), c.reset,
+                                    c.magenta, d.kind, d.symbol, c.reset,
+                                );
                             }
                         }
-                    }
-
-                    if show_refs {
-                        let refs = store.find_references(&query, codebase_id)?;
                         if !refs.is_empty() {
-                            println!("References to '{query}':");
+                            if !defs.is_empty() { println!(); }
+                            println!("{}References{} to '{}{query}{}':", c.bold, c.reset, c.cyan, c.reset);
                             for r in &refs {
-                                println!("  {}:{} ({} {})", r.file_path, r.line, r.kind, r.symbol);
+                                println!(
+                                    "  {}{}{}{}{}{} {}({} {}){}",
+                                    c.green, r.file_path, c.reset,
+                                    c.dim, format_line(r.line), c.reset,
+                                    c.magenta, r.kind, r.symbol, c.reset,
+                                );
                             }
                         }
                     }
@@ -232,13 +297,19 @@ fn main() -> Result<()> {
                 "map" => {
                     let codebase_id = store.resolve_codebase(dir.as_deref())?
                         .ok_or_else(|| anyhow::anyhow!("no codebases indexed — run index first"))?;
-                    let output = grasshopper::mcp::generate_map(&store, codebase_id, budget)?;
+                    let output = grasshopper::search::generate_map(&store, codebase_id, budget)?;
                     print!("{output}");
                 }
                 "impact" => {
                     let codebase_id = store.resolve_codebase(dir.as_deref())?;
                     let max_depth = depth.clamp(1, 5);
                     let hits = store.find_impact(&query, codebase_id, max_depth)?;
+                    let c = colors();
+
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&hits)?);
+                        return Ok(());
+                    }
 
                     if hits.is_empty() {
                         println!("No impact found for '{query}'.");
@@ -249,9 +320,12 @@ fn main() -> Result<()> {
                     if !defs.is_empty() {
                         let locs: Vec<String> =
                             defs.iter().map(|d| format!("{}:{}", d.file_path, d.line)).collect();
-                        println!("Impact of changing '{}' (defined at {}):", query, locs.join(", "));
+                        println!(
+                            "{}Impact{} of changing '{}{query}{}' (defined at {}{}{}):",
+                            c.bold, c.reset, c.cyan, c.reset, c.green, locs.join(", "), c.reset,
+                        );
                     } else {
-                        println!("Impact of changing '{query}':");
+                        println!("{}Impact{} of changing '{}{query}{}':", c.bold, c.reset, c.cyan, c.reset);
                     }
 
                     let mut current_depth = 0;
@@ -259,12 +333,16 @@ fn main() -> Result<()> {
                         if h.depth != current_depth {
                             current_depth = h.depth;
                             println!(
-                                "\n  Depth {} ({}):",
+                                "\n  {}Depth {} ({}):{}", c.yellow,
                                 current_depth,
                                 if current_depth == 1 { "direct" } else { "transitive" },
+                                c.reset,
                             );
                         }
-                        println!("    {} (via {})", h.file_path, h.via_symbol);
+                        println!(
+                            "    {}{}{} {}(via {}){}",
+                            c.green, h.file_path, c.reset, c.dim, h.via_symbol, c.reset,
+                        );
                     }
 
                     println!("\n{} file(s) affected.", hits.len());
@@ -288,15 +366,16 @@ fn main() -> Result<()> {
                 &tags,
             )?;
 
+            let c = colors();
             if result.was_update {
                 println!(
-                    "Updated memory #{} \"{}\"",
-                    result.id, result.title,
+                    "{}Updated{} memory #{} \"{}\"",
+                    c.yellow, c.reset, result.id, result.title,
                 );
             } else {
                 println!(
-                    "Stored memory #{} \"{}\"",
-                    result.id, result.title,
+                    "{}Stored{} memory #{} \"{}\"",
+                    c.green, c.reset, result.id, result.title,
                 );
             }
         }
@@ -307,7 +386,33 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn format_hit(hit: &SearchHit) -> String {
+fn format_line(line: i64) -> String {
+    format!(":{line}")
+}
+
+fn snippet_preview(snippet: &str, max_lines: usize) -> String {
+    let lines: Vec<&str> = snippet.lines().take(max_lines).collect();
+    let mut out = String::new();
+    for line in &lines {
+        out.push_str("    ");
+        if line.len() > 120 {
+            // Find a valid char boundary at or before byte 120
+            let mut end = 120;
+            while end > 0 && !line.is_char_boundary(end) {
+                end -= 1;
+            }
+            out.push_str(&line[..end]);
+            out.push_str("...");
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    out
+}
+
+fn print_hit(rank: usize, hit: &SearchHit) {
+    let c = colors();
     match hit.kind.as_str() {
         "code" => {
             let name = hit.symbol_name.as_deref().unwrap_or("?");
@@ -317,13 +422,31 @@ fn format_hit(hit: &SearchHit) -> String {
                 (Some(s), Some(e)) => format!(":{s}-{e}"),
                 _ => String::new(),
             };
-            format!("{kind} {name} in {file}{lines}")
+            println!(
+                "{}{}. {}{file}{lines}{} {}{kind} {name}{} {}{:.4}{}",
+                c.dim, rank, c.green, c.reset, c.magenta, c.reset, c.dim, hit.score, c.reset,
+            );
+            if !hit.snippet.is_empty() {
+                print!("{}", snippet_preview(&hit.snippet, 4));
+            }
         }
         "memory" => {
             let mtype = hit.memory_type.as_deref().unwrap_or("?");
-            format!("[{}] {}", mtype, hit.title)
+            println!(
+                "{}{}. {}[{mtype}]{} {}{}{} {}{:.4}{}",
+                c.dim, rank, c.blue, c.reset, c.bold, hit.title, c.reset, c.dim, hit.score, c.reset,
+            );
+            if !hit.snippet.is_empty() {
+                print!("{}{}", c.dim, snippet_preview(&hit.snippet, 2));
+                print!("{}", c.reset);
+            }
         }
-        _ => format!("{}: {}", hit.kind, hit.title),
+        _ => {
+            println!(
+                "{}. [{}] {} {}{:.4}{}",
+                rank, hit.kind, hit.title, c.dim, hit.score, c.reset,
+            );
+        }
     }
 }
 

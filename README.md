@@ -1,146 +1,92 @@
 # Grasshopper
 
-A persistent retrieval engine for AI agents. Indexes codebases and stores memories in a single SQLite database. Agents search with one tool; the engine handles hybrid retrieval, reranking, and cognitive scoring internally.
+Persistent hybrid search for code and memory. One binary, one SQLite database. All inference runs locally — no external API calls at query time.
 
-**One binary, one database, 3 MCP tools, 4 CLI commands.**
+Grasshopper indexes codebases and stores memories, then retrieves them with a pipeline that combines full-text search, semantic embeddings, reciprocal rank fusion, and cross-encoder reranking — all running locally via ONNX.
 
-## Design Philosophy: "Store Raw, Retrieve Smart"
+**3 MCP tools. 4 CLI commands. Built for AI agents.**
 
-Based on peer-reviewed research (Yuan et al. 2026, Maharana et al. 2024):
-- Retrieval method = 20pt accuracy swing. Write strategy = only 3-8pt.
-- Raw chunks + hybrid search + reranking = best config (81.1% accuracy on LoCoMo benchmark)
-- Invest compute in retrieval (reranker, query expansion), not write-time processing
-- All models run locally via ONNX -- zero external API calls
+## Install
+
+**Pre-built binaries** (Linux x64/arm64, macOS x64/arm64, Windows x64):
+
+```sh
+# macOS / Linux
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/MylesMCook/grasshopper/releases/latest/download/grasshopper-installer.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/MylesMCook/grasshopper/releases/latest/download/grasshopper-installer.ps1 | iex"
+```
+
+**From source**:
+
+```sh
+cargo install --git https://github.com/MylesMCook/grasshopper
+```
+
+**Docker** (runs MCP server — for indexing/searching, use the CLI binary):
+
+```sh
+docker run -v grasshopper-data:/data -p 8106:8106 ghcr.io/mylesmcook/grasshopper
+```
 
 ## Quick Start
 
 ```sh
-# Build and install
-cargo build --release
-sudo cp target/release/grasshopper /usr/local/bin/grasshopper
-
-# Index a codebase
+# Index a codebase (first run downloads ~270MB of models)
 grasshopper index ./my-project --embed
 
-# Store a memory
-grasshopper store "Prefer .clamp() over .min() for bounded values"
-
 # Search across code and memory
-grasshopper search "parameter validation"
+grasshopper search "error handling"
 
-# Start MCP server
+# Store a memory
+grasshopper store "Always use .clamp() over .min().max() for bounded values"
+
+# Start the MCP server
 grasshopper serve --port 8106
 ```
 
-## MCP Tools
+## What This Is
 
-3 tools, covering all agent workflows:
+- A local retrieval engine that AI agents query via MCP or CLI
+- Hybrid search combining keywords (FTS5) and semantics (vector) with reranking
+- Cognitive memory with typed entries, salience scoring, and time decay
+- Language-agnostic code intelligence — works on any text file
 
-| Tool | Description |
-|------|-------------|
-| `index` | Index a source directory (with optional embeddings). |
-| `store` | Store a memory with auto-classification and dedup. |
-| `search` | Hybrid search across code and memory. Supports `mode` parameter for specialized queries. |
+## What This Isn't
 
-The `search` tool's `mode` parameter:
+- Not a vector database (it's SQLite with an HNSW index)
+- Not a cloud service (everything runs on your machine)
+- Not language-specific (no tree-sitter, no AST parsing — universal heuristics only)
 
-| Mode | What it does |
-|------|-------------|
-| *(default)* | Hybrid search: FTS5 + vector + RRF fusion + reranking |
-| `navigate` | Find a symbol's definition and references (language-agnostic, via chunks + FTS5) |
-| `map` | Token-budgeted overview of an entire codebase |
-| `impact` | BFS traversal showing what breaks if you change a symbol |
+## CLI Reference
 
-## CLI
+| Command | Description |
+|---------|-------------|
+| `index <dir>` | Index a source directory. Add `--embed` for semantic search. |
+| `search <query>` | Hybrid search across code and memory. |
+| `store <content>` | Store a memory with auto-dedup. |
+| `serve` | Start the MCP server (HTTP or `--stdio`). |
 
-4 commands:
+Global option: `--db /path/to/brain.db` overrides the default `~/.grasshopper/brain.db`.
 
-```sh
-grasshopper index ./my-project              # Index source code
-grasshopper index ./my-project --embed      # Index + generate embeddings
-grasshopper store "design decision text"    # Store a memory
-grasshopper search "hybrid search"          # Search code + memory
-grasshopper search "query" --kind code      # Code only
-grasshopper search "query" --mode navigate  # Symbol navigation
-grasshopper search "query" --mode map       # Codebase overview
-grasshopper search "query" --mode impact    # Blast radius analysis
-grasshopper serve --port 8106              # HTTP MCP server
-grasshopper serve --stdio                  # stdio MCP (for Claude Code)
-```
+## Search Modes
 
-Global option: `--db /path/to/brain.db` overrides the default database location.
+The `search` command (and MCP tool) supports four modes via `--mode`:
 
-## Architecture
+| Mode | Description | Example |
+|------|-------------|---------|
+| `search` *(default)* | Hybrid retrieval: FTS5 + vector + RRF fusion + reranking | `grasshopper search "auth middleware"` |
+| `navigate` | Find symbol definitions and references | `grasshopper search "Config" --mode navigate` |
+| `map` | Token-budgeted codebase overview | `grasshopper search "" --mode map` |
+| `impact` | BFS blast radius — what breaks if you change a symbol | `grasshopper search "Store" --mode impact` |
 
-```
-grasshopper/src/
-├── main.rs     -- CLI with 4 subcommands (index, store, search, serve)
-├── lib.rs      -- Module exports
-├── store.rs    -- Unified SQLite schema, all queries, auto-maintenance
-├── memory.rs   -- Cognitive layer: store, recall, cognitive_score (salience + decay)
-├── search.rs   -- Hybrid search: FTS5 + vector -> RRF fusion -> query expansion -> cross-encoder rerank -> unified_search
-├── index.rs    -- Code indexing: scan -> chunk -> FTS -> embed (per-directory atomic locking)
-├── mcp.rs      -- MCP server: 3 tools, HTTP + stdio transport, embedding cache
-├── rerank.rs   -- Cross-encoder reranking via fastembed/ONNX
-└── code/       -- Code intelligence primitives (self-contained, language-agnostic)
-    ├── chunk.rs      -- Universal structural chunking (all text files)
-    ├── embed.rs      -- ONNX embeddings (Jina Code V2, 768-dim)
-    ├── scan.rs       -- Directory walking + SHA-256 hashing
-    ├── tokenizer.rs  -- CamelCase splitting for FTS5
-    └── hnsw.rs       -- HNSW approximate nearest neighbor (instant-distance)
-```
+Additional flags: `--kind code|memory`, `--limit N`, `--json`, `--direction defs|refs|both`.
 
-### Retrieval Pipeline
+## MCP Integration
 
-```
-Query Expansion -> FTS5 (BM25) -> Vector (cosine, HNSW) -> RRF fusion (k=60) -> Cross-encoder rerank -> Relevance gate -> Cognitive scoring (salience * decay) -> Budget truncation -> Return
-```
+**Claude Code** (`~/.claude.json`):
 
-### Code Intelligence
-
-- **Language-agnostic**: indexes all non-hidden text files (<1MB) regardless of language — no tree-sitter, no language-specific code
-- **Structural chunking**: blank-line boundaries + indentation changes + keyword regex for symbol names
-- **Symbol navigation**: definitions derived from chunk names, references found via FTS5 at query time
-- **Hybrid search**: FTS5 keyword matching + Jina Code V2 semantic embeddings, merged via Reciprocal Rank Fusion
-- **Incremental indexing**: content-hash diffing skips unchanged files, parallel chunking via Rayon, per-directory atomic locks for concurrent safety
-
-### Cognitive Memory
-
-Memories are typed, scored, and decay over time:
-
-| Type | Decay | Purpose |
-|------|-------|---------|
-| `identity` | None | Who I am, preferences, never fades |
-| `knowledge` | Slow (0.005/day) | Facts, decisions, architecture |
-| `episode` | Fast (0.023/day) | Events, sessions, temporal context |
-| `procedure` | Medium (0.01/day) | How-to, workflows, recipes |
-
-**Cognitive scoring**: `score = salience * decay`. Salience increases (+0.05) each time a memory is retrieved, capped at 1.0. Decay is exponential with type-specific lambda.
-
-**Dedup**: new memories are embedded and compared against existing entries. Cosine similarity > 0.75 triggers an update instead of a duplicate insert.
-
-### Database
-
-Single SQLite file at `~/.grasshopper/brain.db` with WAL mode. One `chunks` table stores both code and memory entries, discriminated by a `kind` column. Auto-maintenance: HNSW rebuilds on startup, PRAGMA optimize on shutdown.
-
-### Embedding
-
-Jina Code V2 (`jina-embeddings-v2-base-code`) via ONNX Runtime, producing 768-dimensional vectors. Quantized to uint8 for storage. The embedder initializes lazily and is shared across all tool calls.
-
-## Deployment
-
-### Systemd (HTTP mode)
-
-The server runs as a systemd service on port 8106, accessed remotely through an OAuth 2.1 auth proxy on port 8107 and a Cloudflare tunnel.
-
-```
-Internet -> Cloudflare Tunnel -> grasshopper-auth-proxy (:8107) -> grasshopper (:8106)
-Local    -> http://127.0.0.1:8106/mcp (no auth, loopback only)
-```
-
-### Claude Code integration
-
-Add to `~/.claude.json`:
 ```json
 {
   "mcpServers": {
@@ -152,23 +98,99 @@ Add to `~/.claude.json`:
 }
 ```
 
-Or use stdio mode: `grasshopper serve --stdio`.
+Or use stdio transport directly:
+
+```json
+{
+  "mcpServers": {
+    "grasshopper": {
+      "command": "grasshopper",
+      "args": ["serve", "--stdio"]
+    }
+  }
+}
+```
+
+The MCP server exposes three tools: `index`, `store`, `search`. The `search` tool accepts a `mode` parameter matching the CLI modes above.
+
+Verify the server is running: `curl http://127.0.0.1:8106/healthz` should return `ok`.
+
+## How It Works
+
+### Retrieval Pipeline
+
+```
+Query → Expansion → FTS5 (BM25) ─┐
+                                  ├─ RRF Fusion → Cross-encoder Rerank → Relevance Gate → Cognitive Scoring → Return
+Query → Embedder → HNSW (cosine) ┘
+```
+
+1. **Query expansion**: CamelCase splitting, synonym generation
+2. **Dual retrieval**: FTS5 keyword search + HNSW vector search run in parallel
+3. **RRF fusion** (k=60): merges ranked lists from both retrievers
+4. **Cross-encoder rerank**: BAAI/bge-reranker-base rescores the top candidates
+5. **Cognitive scoring**: `score × salience × decay` weights memories by importance and recency
+6. **Budget truncation**: trims output to fit the caller's token budget
+
+### Cognitive Memory
+
+Memories are typed, scored, and decay over time:
+
+| Type | Decay Rate | Purpose |
+|------|-----------|---------|
+| `identity` | None | Preferences, never fades |
+| `knowledge` | Slow | Facts, decisions, architecture |
+| `episode` | Fast | Events, sessions, temporal context |
+| `procedure` | Medium | How-to, workflows, recipes |
+
+Salience increases (+0.05) each retrieval, capped at 1.0. New memories are deduplicated by cosine similarity (threshold: 0.75).
+
+### Models
+
+All models run locally via ONNX Runtime. Downloaded automatically on first use to `~/.cache/grasshopper/models/`.
+
+| Model | Purpose | Size |
+|-------|---------|------|
+| Jina Code V2 | Embeddings (768-dim) | ~142 MB |
+| BGE Reranker Base | Cross-encoder reranking | ~130 MB |
+
+## Architecture
+
+```
+src/
+├── main.rs        CLI (4 subcommands)
+├── lib.rs         Module exports
+├── store/         SQLite schema, queries, maintenance
+│   ├── schema.rs  Store struct, migrations
+│   ├── types.rs   Chunk, SearchHit, GraphEdge, row mappers
+│   ├── memory.rs  Memory CRUD
+│   ├── code.rs    Codebase indexing queries
+│   ├── search.rs  FTS + vector search
+│   ├── navigate.rs  Definitions, references, impact BFS
+│   └── maintenance.rs  Stats, logging, optimize
+├── memory.rs      Cognitive layer (store, recall, scoring)
+├── search.rs      Unified search orchestrator
+├── index.rs       Directory scanning, chunking, embedding
+├── mcp.rs         MCP server (3 tools, HTTP + stdio)
+├── rerank.rs      Cross-encoder reranking
+└── code/
+    ├── chunk.rs   Structural chunking (language-agnostic)
+    ├── embed.rs   ONNX embeddings
+    ├── scan.rs    Directory walking + hashing
+    ├── tokenizer.rs  CamelCase splitting for FTS5
+    └── hnsw.rs    HNSW nearest neighbor index
+```
 
 ## Development
 
 ```sh
 cargo build                    # Build
-cargo test                     # ~151 tests across all modules
+cargo test                     # 107 tests
+cargo clippy --all-targets     # Lint
 cargo run -- --help            # CLI help
 RUST_LOG=debug cargo run -- serve --port 8106  # Verbose server
 ```
 
-### Conventions
+## License
 
-- Fully self-contained -- no external path dependencies, zero language-specific code
-- Database default: `~/.grasshopper/brain.db` (SQLite WAL mode, concurrent-safe)
-- Embedding model cache: `~/.cache/grasshopper/models/`
-- All blocking operations (DB, embedder) run inside `spawn_blocking`
-- Poisoned mutexes are recovered with a warning log, not panicked
-- Ambiguous codebase references error with suggestions instead of silently picking one
-- Per-directory atomic lockfile prevents concurrent index runs on the same directory
+[MIT](LICENSE)

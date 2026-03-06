@@ -1,8 +1,15 @@
 [package]
 name = "grasshopper"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
-description = "Unified agent brain — code intelligence + cognitive memory in one MCP server"
+description = "Persistent hybrid search for code and memory. The agent-native grep."
+license = "MIT"
+repository = "https://github.com/MylesMCook/grasshopper"
+homepage = "https://github.com/MylesMCook/grasshopper"
+readme = "README.md"
+authors = ["Myles Cook <mylesmcook@gmail.com>"]
+keywords = ["search", "code-intelligence", "mcp", "retrieval", "embeddings"]
+categories = ["command-line-utilities", "development-tools", "text-processing"]
 
 [lints.clippy]
 perf = { level = "deny", priority = -1 }
@@ -42,6 +49,9 @@ ort = "2.0.0-rc.11"
 tokenizers = "0.22"
 ndarray = "0.17"
 
+# Cross-platform paths
+dirs = "6"
+
 # Utilities
 anyhow = "1"
 bytemuck = { version = "1", features = ["derive"] }
@@ -52,7 +62,6 @@ regex = "1"
 sha2 = "0.10"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]
@@ -62,3 +71,7 @@ tempfile = "3"
 lto = true
 strip = true
 codegen-units = 1
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"

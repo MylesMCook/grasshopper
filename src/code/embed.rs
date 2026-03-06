@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use ndarray::Array2;
 use ort::session::Session;
 use ort::value::Tensor;
+use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
 use tokenizers::Tokenizer;
 
@@ -227,10 +228,12 @@ fn truncate_str(s: &str, max_bytes: usize) -> &str {
     &s[..end]
 }
 
-/// Download model files from HuggingFace Hub.
+/// Download model files from HuggingFace Hub with progress indication.
 fn download_model(model_dir: &Path) -> Result<()> {
     std::fs::create_dir_all(model_dir)
         .with_context(|| format!("creating model dir: {}", model_dir.display()))?;
+
+    eprintln!("First run — downloading {} to {}", MODEL_NAME, model_dir.display());
 
     let files = &[
         ("onnx/model_quantized.onnx", "model.onnx"),
@@ -245,20 +248,83 @@ fn download_model(model_dir: &Path) -> Result<()> {
             continue;
         }
 
-        tracing::info!("downloading {local_name} from HuggingFace...");
-        let resp = ureq::get(&url).call().context("downloading model file")?;
+        let resp = ureq::get(&url)
+            .call()
+            .with_context(|| format!("downloading {local_name} — check your network connection"))?;
+
+        let content_length = resp
+            .headers()
+            .get("content-length")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok());
 
         // Write to temp file then atomic rename to prevent corrupt partial downloads
         let tmp_dest = dest.with_extension("tmp");
-        let mut reader = resp.into_body().into_reader();
         let mut file = std::fs::File::create(&tmp_dest)
-            .with_context(|| format!("creating temp file: {}", tmp_dest.display()))?;
-        std::io::copy(&mut reader, &mut file).context("writing model file")?;
+            .with_context(|| format!("creating {}: permission denied or disk full?", tmp_dest.display()))?;
+
+        let mut reader = resp.into_body().into_reader();
+        let mut buf = [0u8; 65536];
+        let mut downloaded: u64 = 0;
+        let use_progress = std::io::stderr().is_terminal();
+
+        let result = (|| -> Result<()> {
+            loop {
+                let n = reader.read(&mut buf).context("reading model data — download interrupted?")?;
+                if n == 0 { break; }
+                std::io::Write::write_all(&mut file, &buf[..n])
+                    .with_context(|| format!("writing to {}: disk full?", tmp_dest.display()))?;
+                downloaded += n as u64;
+
+                if use_progress {
+                    if let Some(total) = content_length.filter(|&t| t > 0) {
+                        let pct = (downloaded * 100 / total).min(100);
+                        let bar_width = 30;
+                        let filled = (pct as usize * bar_width / 100).min(bar_width);
+                        let arrow = if filled < bar_width { ">" } else { "" };
+                        let spaces = bar_width - filled - if filled < bar_width { 1 } else { 0 };
+                        let mb_done = downloaded / (1024 * 1024);
+                        let mb_total = total / (1024 * 1024);
+                        eprint!(
+                            "\r  {} [{}{}{}] {}% ({}/{} MB)",
+                            local_name,
+                            "=".repeat(filled), arrow, " ".repeat(spaces),
+                            pct, mb_done, mb_total,
+                        );
+                    } else {
+                        let mb = downloaded / (1024 * 1024);
+                        eprint!("\r  {} ... {} MB downloaded", local_name, mb);
+                    }
+                }
+            }
+            Ok(())
+        })();
+
+        if use_progress {
+            eprintln!(); // newline after progress bar
+        }
+
+        // Clean up temp file on error
+        if let Err(e) = result {
+            let _ = std::fs::remove_file(&tmp_dest);
+            return Err(e);
+        }
+
+        // Verify download completeness when Content-Length is known
+        if let Some(total) = content_length.filter(|&t| t > 0 && downloaded != t) {
+            let _ = std::fs::remove_file(&tmp_dest);
+            anyhow::bail!(
+                "incomplete download of {local_name}: got {} bytes, expected {total}",
+                downloaded,
+            );
+        }
+
         drop(file);
         std::fs::rename(&tmp_dest, &dest)
             .with_context(|| format!("renaming {} -> {}", tmp_dest.display(), dest.display()))?;
 
-        tracing::info!("saved {}", dest.display());
+        let size_mb = downloaded / (1024 * 1024);
+        eprintln!("  saved {} ({} MB)", dest.display(), size_mb);
     }
 
     Ok(())
@@ -266,10 +332,9 @@ fn download_model(model_dir: &Path) -> Result<()> {
 
 /// Return the default cache directory for embedding models.
 pub fn default_cache_dir() -> PathBuf {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    home.join(".cache").join("grasshopper")
+    dirs::cache_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("grasshopper")
 }
 
 #[cfg(test)]

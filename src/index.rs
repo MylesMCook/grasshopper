@@ -71,17 +71,7 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
             let _ = write!(f, "{}", std::process::id());
         }
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            tracing::info!("skipping index of {} — another index is in progress", root.display());
-            return Ok(IndexResult {
-                files_scanned: 0,
-                files_changed: 0,
-                files_skipped: 0,
-                files_removed: 0,
-                chunks_written: 0,
-                errors: vec![],
-                duration_ms: start.elapsed().as_millis() as u64,
-                codebase_id: 0,
-            });
+            anyhow::bail!("another index is in progress for {} — try again later", root.display());
         }
         Err(e) => return Err(e).context("creating index lock file"),
     }

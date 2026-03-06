@@ -122,55 +122,6 @@ pub fn expanded_fts_search(
     Ok(merged)
 }
 
-/// Unified search: runs FTS (always), vector (if embedder provided),
-/// merges via RRF, then optionally reranks via cross-encoder.
-/// When an HNSW index is provided, vector search uses O(log N) ANN instead of O(N) brute-force.
-pub fn search(
-    store: &Store,
-    query: &str,
-    kind_filter: Option<&str>,
-    limit: usize,
-    embedder: Option<&mut crate::code::embed::Embedder>,
-    reranker: Option<&mut Reranker>,
-    hnsw: Option<&crate::code::hnsw::HnswIndex>,
-) -> Result<Vec<SearchHit>> {
-    let fts_results = store.fts_search(query, kind_filter, limit)?;
-
-    let vec_results = if let Some(emb) = embedder {
-        let query_vec = emb.embed_batch(&[query.to_string()])?;
-        if query_vec.is_empty() {
-            vec![]
-        } else if let Some(hnsw) = hnsw {
-            store.vector_search_hnsw(hnsw, &query_vec[0], kind_filter, limit)?
-        } else {
-            store.vector_search(&query_vec[0], crate::code::embed::MODEL_NAME, kind_filter, limit)?
-        }
-    } else {
-        vec![]
-    };
-
-    let merged = if fts_results.is_empty() {
-        vec_results
-    } else if vec_results.is_empty() {
-        fts_results
-    } else {
-        hybrid_search(&fts_results, &vec_results, limit)
-    };
-
-    // Rerank via cross-encoder if available (graceful fallback on error)
-    if let Some(reranker) = reranker {
-        match rerank_hits(reranker, query, merged.clone(), limit) {
-            Ok(reranked) => Ok(reranked),
-            Err(e) => {
-                tracing::warn!("reranking failed, returning unreranked results: {e}");
-                Ok(merged)
-            }
-        }
-    } else {
-        Ok(merged)
-    }
-}
-
 /// Build a meaningful passage for cross-encoder reranking.
 /// Code entries use snippet (source text); memory entries use title + content
 /// since their snippet column is empty by design.
@@ -238,10 +189,8 @@ pub fn rerank_hits(
 /// Result of unified search across code and memory.
 pub struct UnifiedSearchResult {
     pub hits: Vec<SearchHit>,
-    /// Retrieval log ID for feedback correlation (only for memory queries).
+    /// Retrieval log ID (only for memory queries).
     pub log_id: Option<i64>,
-    /// How many candidates were filtered by the relevance threshold.
-    pub filtered_count: usize,
 }
 
 /// Unified search: searches code and/or memory with a single entry point.
@@ -313,7 +262,6 @@ pub fn unified_search(
     // For memory results: filter archived + identity, apply relevance gate, cognitive scoring
     if is_memory_only || kind_filter.is_none() {
         // Apply cognitive scoring to memory hits in-place, pass code hits through unchanged
-        let mut pre_gate_count = 0usize;
         let mut all_hits: Vec<SearchHit> = merged
             .into_iter()
             .filter_map(|mut h| {
@@ -321,7 +269,6 @@ pub fn unified_search(
                     if h.archived || h.memory_type.as_deref() == Some("identity") {
                         return None;
                     }
-                    pre_gate_count += 1;
                     if let Some(threshold) = threshold {
                         let passes = if rerank_succeeded {
                             h.reranker_score.unwrap_or(0.0) >= threshold
@@ -337,10 +284,6 @@ pub fn unified_search(
                 Some(h)
             })
             .collect();
-
-        // Count filtered (pre_gate_count includes those that passed + were gated)
-        let memory_count_after = all_hits.iter().filter(|h| h.kind == "memory").count();
-        let filtered_count = pre_gate_count - memory_count_after;
 
         // Sort all hits (memory + code) by score, interleaved
         all_hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
@@ -369,7 +312,6 @@ pub fn unified_search(
         Ok(UnifiedSearchResult {
             hits: all_hits,
             log_id,
-            filtered_count,
         })
     } else {
         // Code-only: no cognitive scoring, no side effects
@@ -378,9 +320,74 @@ pub fn unified_search(
         Ok(UnifiedSearchResult {
             hits,
             log_id: None,
-            filtered_count: 0,
         })
     }
+}
+
+/// Generate a compact codebase map from definitions, ranked by definition density per file.
+pub fn generate_map(store: &Store, codebase_id: i64, token_budget: usize) -> Result<String> {
+    let definitions = store.get_all_definitions(codebase_id)?;
+    let def_counts = store.count_definitions_per_file(codebase_id)?;
+
+    if definitions.is_empty() {
+        return Ok("No definitions found. Run index first.".into());
+    }
+
+    // Group definitions by file
+    let mut by_file: std::collections::BTreeMap<&str, Vec<&crate::store::GraphEdge>> = std::collections::BTreeMap::new();
+    for edge in &definitions {
+        by_file.entry(&edge.file_path).or_default().push(edge);
+    }
+
+    // Score each file by definition count (more definitions = likely more important)
+    let mut file_scores: Vec<(&str, i64)> = by_file
+        .keys()
+        .map(|&file| {
+            let score = *def_counts.get(file).unwrap_or(&0) as i64;
+            (file, score)
+        })
+        .collect();
+    file_scores.sort_by(|a, b| b.1.cmp(&a.1));
+
+    // Build the map, respecting token budget (~4 chars per token)
+    let char_budget = token_budget.saturating_mul(4);
+    if char_budget == 0 {
+        return Ok(String::new());
+    }
+    let mut output = String::new();
+    let mut chars_used = 0;
+
+    for (file, _score) in &file_scores {
+        use std::fmt::Write;
+        let defs = &by_file[file];
+        let mut section = String::new();
+        let _ = writeln!(&mut section, "{file}");
+        for def in defs {
+            let prefix = match def.kind.as_str() {
+                "function" | "method" => "fn",
+                "class" | "struct" => "struct",
+                "interface" | "trait" => "trait",
+                "module" => "mod",
+                "macro" => "macro",
+                "constant" => "const",
+                "variable" => "let",
+                "type" => "type",
+                "implementation" => "impl",
+                "enum" => "enum",
+                other => other,
+            };
+            let _ = writeln!(&mut section, "  {prefix} {}", def.symbol);
+        }
+
+        if chars_used + section.len() > char_budget && chars_used > 0 {
+            break;
+        }
+
+        output.push_str(&section);
+        chars_used += section.len();
+    }
+
+    Ok(output)
 }
 
 #[cfg(test)]
