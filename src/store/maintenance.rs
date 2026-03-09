@@ -136,6 +136,25 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Count embedded chunks filtered by kind (code/memory/all).
+    pub fn count_embedded_filtered(&self, kind_filter: Option<&str>) -> Result<i64> {
+        let (sql, params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match kind_filter {
+            Some(kind) => (
+                "SELECT COUNT(*) FROM chunks WHERE embedding IS NOT NULL AND kind = ?1",
+                vec![Box::new(kind.to_string())],
+            ),
+            None => (
+                "SELECT COUNT(*) FROM chunks WHERE embedding IS NOT NULL",
+                vec![],
+            ),
+        };
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+        self.conn
+            .query_row(sql, param_refs.as_slice(), |r| r.get(0))
+            .map_err(Into::into)
+    }
+
     /// Run PRAGMA optimize for query planner stats.
     pub fn optimize(&self) -> Result<()> {
         self.conn.execute_batch("PRAGMA optimize;")?;

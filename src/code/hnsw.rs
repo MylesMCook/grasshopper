@@ -129,6 +129,16 @@ impl HnswIndex {
                 .with_limit(data.len() as u64)
                 .deserialize(&data[12..])
                 .context("deserializing HNSW index (v2)")?;
+            // Validate header count against actual graph
+            let actual_count = map.iter().count();
+            let chunk_count = if chunk_count != actual_count {
+                tracing::warn!(
+                    "HNSW header count mismatch: header={chunk_count}, actual={actual_count}; using actual"
+                );
+                actual_count
+            } else {
+                chunk_count
+            };
             tracing::info!("loaded HNSW index ({chunk_count} points)");
             Ok(Self { map, chunk_count })
         } else {
@@ -369,5 +379,33 @@ mod tests {
             result.is_err(),
             "valid header with empty bincode should return Err"
         );
+    }
+
+    #[test]
+    fn header_count_mismatch_corrected() {
+        // Build a valid index with 1 point
+        let mut v0 = vec![0.0f32; 10];
+        v0[0] = 1.0;
+        let points = vec![EmbeddingPoint(v0)];
+        let values = vec![42i64];
+        let map = Builder::default().build(points, values);
+        let index = HnswIndex {
+            map,
+            chunk_count: 1,
+        };
+
+        // Save it, then tamper with the header count
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tampered.hnsw");
+        index.save(&path).unwrap();
+
+        let mut data = std::fs::read(&path).unwrap();
+        // Overwrite header count to 999 (wrong)
+        data[4..12].copy_from_slice(&999u64.to_le_bytes());
+        std::fs::write(&path, &data).unwrap();
+
+        // Load should succeed but correct the count
+        let loaded = HnswIndex::load(&path).unwrap();
+        assert_eq!(loaded.len(), 1, "should use actual count, not header count");
     }
 }

@@ -85,11 +85,12 @@ impl Store {
         kind_filter: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>> {
-        let total: i64 = self.count_embedded()?;
+        let total: i64 = self.count_embedded_filtered(kind_filter)?;
         if total as usize > MAX_BRUTE_FORCE_CHUNKS {
             tracing::warn!(
-                "brute-force vector search skipped: {total} embedded chunks exceeds \
-                 limit of {MAX_BRUTE_FORCE_CHUNKS}. Rebuild HNSW index to enable vector search."
+                "brute-force vector search skipped: {total} embedded chunks (kind={}) exceeds \
+                 limit of {MAX_BRUTE_FORCE_CHUNKS}. Rebuild HNSW index to enable vector search.",
+                kind_filter.unwrap_or("all")
             );
             return Ok(vec![]);
         }

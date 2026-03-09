@@ -97,7 +97,7 @@ Memories are deduplicated by content hash (always) and embedding similarity when
 | Type | Decay | Use for |
 |------|-------|---------|
 | `knowledge` | Slow | Facts, decisions, architecture (default) |
-| `identity` | None | Preferences, config — never fades |
+| `identity` | None | Preferences, config — never fades (stored only; excluded from hybrid search, accessible via `memories` command) |
 | `episode` | Fast | Session events, temporal context |
 | `procedure` | Medium | Workflows, how-tos, recipes |
 

@@ -113,7 +113,7 @@ pub fn prepare_fts_query(query: &str) -> String {
     }
 
     if words.is_empty() {
-        return query.to_string();
+        return String::new();
     }
 
     if words.len() == 1 {
@@ -256,6 +256,17 @@ mod tests {
 
         let q = prepare_fts_query("NEAR");
         assert_eq!(q, "\"near\"");
+    }
+
+    #[test]
+    fn query_punctuation_only_returns_empty() {
+        // Punctuation-only queries have no alphanumeric tokens.
+        // Must return empty string, not raw punctuation that breaks FTS5 MATCH.
+        assert_eq!(prepare_fts_query("*"), "");
+        assert_eq!(prepare_fts_query("!@#$%^&*()"), "");
+        assert_eq!(prepare_fts_query("..."), "");
+        assert_eq!(prepare_fts_query("---"), "");
+        assert_eq!(prepare_fts_query("'"), "");
     }
 
     // ---------------------------------------------------------------
@@ -407,9 +418,9 @@ mod tests {
     #[test]
     fn fuzz_punctuation_only() {
         // Queries that are purely punctuation — no alphanumeric tokens
+        // Must return empty string to avoid FTS5 MATCH parse errors
         let result = prepare_fts_query("!@#$%^&*()");
-        // Should return original since words vec is empty
-        assert_eq!(result, "!@#$%^&*()");
+        assert_eq!(result, "");
     }
 
     #[test]

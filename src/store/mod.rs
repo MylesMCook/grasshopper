@@ -995,6 +995,37 @@ mod tests {
     }
 
     #[test]
+    fn test_count_embedded_filtered() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        // Insert a memory with embedding
+        let id = store
+            .insert_memory(&MemoryParams {
+                title: "M",
+                content: "memory content",
+                memory_type: "knowledge",
+                descriptors: "",
+                salience: 0.5,
+                content_hash: "mem_hash",
+            })
+            .unwrap();
+        let emb = vec![0.1f32; 768];
+        store
+            .batch_upsert_embeddings(&[(id, emb.as_slice(), "test-model")])
+            .unwrap();
+
+        // Global count = 1
+        assert_eq!(store.count_embedded().unwrap(), 1);
+        // Filtered by memory = 1
+        assert_eq!(store.count_embedded_filtered(Some("memory")).unwrap(), 1);
+        // Filtered by code = 0
+        assert_eq!(store.count_embedded_filtered(Some("code")).unwrap(), 0);
+        // No filter = 1
+        assert_eq!(store.count_embedded_filtered(None).unwrap(), 1);
+    }
+
+    #[test]
     fn test_batch_touch_memories() {
         let dir = TempDir::new().unwrap();
         let store = Store::open(&dir.path().join("test.db")).unwrap();
