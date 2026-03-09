@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use grasshopper::store::{SearchHit, Store};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -8,10 +8,22 @@ use std::path::{Path, PathBuf};
 #[command(
     name = "grasshopper",
     version,
-    about = "Persistent retrieval engine for AI agents"
+    about = "Persistent retrieval engine for AI agents",
+    long_about = "Grasshopper indexes codebases and stores memories, then retrieves them\n\
+                  with a pipeline combining full-text search, semantic embeddings,\n\
+                  reciprocal rank fusion, and cross-encoder reranking.\n\n\
+                  All inference runs locally via ONNX. No external API calls.",
+    after_help = "EXAMPLES:\n  \
+                  grasshopper index ./my-project --embed\n  \
+                  grasshopper search \"error handling\"\n  \
+                  grasshopper search Config --mode navigate\n  \
+                  grasshopper store \"Always use .clamp() for bounded values\"\n  \
+                  grasshopper status\n  \
+                  grasshopper memories --type knowledge\n  \
+                  grasshopper get 42"
 )]
 struct Cli {
-    /// Database file path (default: ~/.grasshopper/brain.db)
+    /// Database file path [default: ~/.grasshopper/brain.db]
     #[arg(long, global = true)]
     db: Option<PathBuf>,
 
@@ -22,6 +34,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Index a directory of source code
+    #[command(
+        after_help = "EXAMPLES:\n  \
+                      grasshopper index .                    # FTS only (fast)\n  \
+                      grasshopper index ./src --embed        # FTS + semantic (slow, ~4/sec CPU)"
+    )]
     Index {
         /// Directory to index
         dir: PathBuf,
@@ -30,22 +47,42 @@ enum Commands {
         embed: bool,
     },
 
-    /// Search code and memory, navigate symbols, map codebases, or analyze impact
+    /// Search code and memory
+    #[command(
+        after_help = "MODES:\n  \
+                      search     Hybrid FTS + vector + reranking (default)\n  \
+                      navigate   Find symbol definitions and references\n  \
+                      map        Token-budgeted codebase overview\n  \
+                      impact     BFS blast radius analysis\n\n\
+                      PRESETS (--preset):\n  \
+                      strict       Only high-confidence results (threshold 0.5)\n  \
+                      balanced     Good precision/recall tradeoff (threshold 0.3)\n  \
+                      exploratory  Cast a wide net (threshold 0.1)\n\n\
+                      EXAMPLES:\n  \
+                      grasshopper search \"auth middleware\"\n  \
+                      grasshopper search Config --mode navigate\n  \
+                      grasshopper search \"\" --mode map --budget 8000\n  \
+                      grasshopper search Store --mode impact --depth 3\n  \
+                      grasshopper search \"error\" --kind memory --preset strict"
+    )]
     Search {
         /// Search query
         query: String,
-        /// Search mode: search (default), navigate, map, impact
+        /// Search mode
         #[arg(long, default_value = "search")]
         mode: String,
         /// Filter: code, memory, or all
         #[arg(long, default_value = "all")]
         kind: String,
-        /// Maximum results
+        /// Maximum results (1-100)
         #[arg(long, default_value = "10")]
         limit: usize,
         /// Minimum relevance threshold (0.0-1.0) for memory results
         #[arg(long)]
         threshold: Option<f32>,
+        /// Named threshold preset (overridden by --threshold)
+        #[arg(long, value_enum)]
+        preset: Option<Preset>,
         /// Token budget for map mode
         #[arg(long, default_value = "4000")]
         budget: usize,
@@ -58,19 +95,30 @@ enum Commands {
         /// Edge direction for navigate mode: both, defs, refs
         #[arg(long, default_value = "both")]
         direction: String,
-        /// Output as JSON (machine-readable)
+        /// Output as JSON
         #[arg(long)]
         json: bool,
     },
 
-    /// Store raw content as a persistent memory (with dedup)
+    /// Store a memory (with automatic dedup)
+    #[command(
+        after_help = "TYPES:\n  \
+                      knowledge    Facts, decisions, architecture (default, slow decay)\n  \
+                      identity     Preferences, never fades\n  \
+                      episode      Events, sessions (fast decay)\n  \
+                      procedure    Workflows, how-tos (medium decay)\n\n\
+                      EXAMPLES:\n  \
+                      grasshopper store \"Always use bun for scripts\"\n  \
+                      grasshopper store \"I prefer dark themes\" --memory-type identity\n  \
+                      grasshopper store \"Deploy steps: build, test, push\" --tags ops,deploy"
+    )]
     Store {
         /// Memory content
         content: String,
-        /// Optional title (truncated from content if omitted)
+        /// Optional title (auto-generated from content if omitted)
         #[arg(long)]
         title: Option<String>,
-        /// Descriptors (comma-separated tags)
+        /// Tags (comma-separated)
         #[arg(long, default_value = "")]
         tags: String,
         /// Memory type: knowledge (default), identity, episode, procedure
@@ -78,15 +126,93 @@ enum Commands {
         memory_type: Option<String>,
     },
 
-    /// Start the MCP server (HTTP by default, or stdio with --stdio)
+    /// Show database health and statistics
+    #[command(
+        after_help = "EXAMPLES:\n  \
+                      grasshopper status\n  \
+                      grasshopper status --json"
+    )]
+    Status {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Inspect a chunk by ID
+    #[command(
+        after_help = "Shows full content and metadata for any chunk (code or memory).\n\
+                      Use search results to find chunk IDs.\n\n\
+                      EXAMPLES:\n  \
+                      grasshopper get 42\n  \
+                      grasshopper get 42 --json"
+    )]
+    Get {
+        /// Chunk ID
+        id: i64,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// List and browse memories
+    #[command(
+        after_help = "EXAMPLES:\n  \
+                      grasshopper memories\n  \
+                      grasshopper memories --type identity\n  \
+                      grasshopper memories --type episode --archived\n  \
+                      grasshopper memories --limit 50 --json"
+    )]
+    Memories {
+        /// Filter by memory type
+        #[arg(long, rename_all = "kebab-case")]
+        r#type: Option<String>,
+        /// Include archived entries
+        #[arg(long)]
+        archived: bool,
+        /// Maximum entries to show
+        #[arg(long, default_value = "20")]
+        limit: usize,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Start the MCP server
+    #[command(
+        after_help = "EXAMPLES:\n  \
+                      grasshopper serve                    # HTTP on port 8106\n  \
+                      grasshopper serve --port 9000        # Custom port\n  \
+                      grasshopper serve --stdio            # stdio transport"
+    )]
     Serve {
         /// Port to listen on
         #[arg(long, default_value = "8106")]
         port: u16,
-        /// Use stdio transport instead of HTTP (for direct Claude Code integration)
+        /// Use stdio transport instead of HTTP
         #[arg(long)]
         stdio: bool,
     },
+}
+
+/// Named threshold presets for search.
+#[derive(Clone, ValueEnum)]
+enum Preset {
+    /// Only high-confidence results (threshold 0.5)
+    Strict,
+    /// Good precision/recall tradeoff (threshold 0.3)
+    Balanced,
+    /// Cast a wide net (threshold 0.1)
+    Exploratory,
+}
+
+impl Preset {
+    fn threshold(&self) -> f32 {
+        match self {
+            Preset::Strict => 0.5,
+            Preset::Balanced => 0.3,
+            Preset::Exploratory => 0.1,
+        }
+    }
 }
 
 // ANSI color codes — only used when outputting to a terminal
@@ -234,6 +360,7 @@ fn run() -> Result<()> {
             kind,
             limit,
             threshold,
+            preset,
             budget,
             depth,
             dir,
@@ -244,6 +371,9 @@ fn run() -> Result<()> {
 
             let limit = limit.clamp(1, 100);
             let budget = budget.clamp(1, 200_000);
+
+            // Resolve threshold: explicit --threshold wins, then --preset, then None
+            let threshold = threshold.or_else(|| preset.map(|p| p.threshold()));
 
             match mode.as_str() {
                 "search" => {
@@ -484,14 +614,400 @@ fn run() -> Result<()> {
             }
         }
 
+        Commands::Status { json } => {
+            cmd_status(&db_path, json)?;
+        }
+
+        Commands::Get { id, json } => {
+            cmd_get(&db_path, id, json)?;
+        }
+
+        Commands::Memories {
+            r#type,
+            archived,
+            limit,
+            json,
+        } => {
+            cmd_memories(&db_path, r#type.as_deref(), archived, limit, json)?;
+        }
+
         Commands::Serve { .. } => unreachable!(),
     }
 
     Ok(())
 }
 
+// --- Status command ---
+
+fn cmd_status(db_path: &Path, json: bool) -> Result<()> {
+    let store = Store::open(db_path)?;
+    let c = colors();
+
+    let (code_count, memory_count) = store.count_by_kind()?;
+    let db_size = store.db_size_bytes()?;
+    let codebases = store.codebase_stats()?;
+    let mem_stats = store.memory_stats()?;
+    let total_embedded = store.count_embedded()?;
+
+    let hnsw_path = grasshopper::code::hnsw::hnsw_path(db_path);
+    let hnsw_exists = hnsw_path.exists();
+    let hnsw_size = if hnsw_exists {
+        std::fs::metadata(&hnsw_path).map(|m| m.len()).unwrap_or(0)
+    } else {
+        0
+    };
+
+    // Check model cache
+    let cache_dir = grasshopper::code::embed::default_cache_dir();
+    let embedder_cached = cache_dir.join("models").join("jina-embeddings-v2-base-code").exists();
+
+    if json {
+        let out = serde_json::json!({
+            "database": {
+                "path": db_path.display().to_string(),
+                "size_bytes": db_size,
+            },
+            "chunks": {
+                "code": code_count,
+                "memory": memory_count,
+                "total": code_count + memory_count,
+                "embedded": total_embedded,
+            },
+            "codebases": codebases.iter().map(|cb| serde_json::json!({
+                "id": cb.id,
+                "name": cb.name,
+                "path": cb.root_path,
+                "chunks": cb.chunk_count,
+                "files": cb.file_count,
+                "embedded": cb.embedded_count,
+            })).collect::<Vec<_>>(),
+            "memory": {
+                "active": mem_stats.total,
+                "archived": mem_stats.archived,
+                "embedded": mem_stats.with_embeddings,
+                "avg_salience": mem_stats.avg_salience,
+                "by_type": mem_stats.by_type.iter().map(|(t, n)| serde_json::json!({
+                    "type": t, "count": n,
+                })).collect::<Vec<_>>(),
+            },
+            "hnsw": {
+                "exists": hnsw_exists,
+                "size_bytes": hnsw_size,
+            },
+            "models": {
+                "embedder_cached": embedder_cached,
+            },
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+
+    // Human-readable output
+    println!(
+        "{}Grasshopper{} {}v{}{}",
+        c.bold,
+        c.reset,
+        c.dim,
+        env!("CARGO_PKG_VERSION"),
+        c.reset
+    );
+    println!();
+
+    // Database
+    println!("{}Database{}", c.bold, c.reset);
+    println!("  Path:  {}", db_path.display());
+    println!("  Size:  {}", format_bytes(db_size as u64));
+    println!(
+        "  Total: {} chunks ({} code, {} memory)",
+        code_count + memory_count,
+        code_count,
+        memory_count
+    );
+    println!(
+        "  Embedded: {}/{} chunks",
+        total_embedded,
+        code_count + memory_count
+    );
+    println!();
+
+    // Codebases
+    if codebases.is_empty() {
+        println!(
+            "{}Codebases{} {}(none indexed){}\n",
+            c.bold, c.reset, c.dim, c.reset
+        );
+    } else {
+        println!("{}Codebases{}", c.bold, c.reset);
+        for cb in &codebases {
+            let name = if cb.name.is_empty() {
+                &cb.root_path
+            } else {
+                &cb.name
+            };
+            let embed_pct = if cb.chunk_count > 0 {
+                (cb.embedded_count as f64 / cb.chunk_count as f64 * 100.0) as u64
+            } else {
+                0
+            };
+            println!(
+                "  {}{}{} {} files, {} chunks ({}% embedded)",
+                c.green, name, c.reset, cb.file_count, cb.chunk_count, embed_pct
+            );
+            println!("    {}{}{}", c.dim, cb.root_path, c.reset);
+        }
+        println!();
+    }
+
+    // Memory
+    println!("{}Memory{}", c.bold, c.reset);
+    if mem_stats.total == 0 && mem_stats.archived == 0 {
+        println!("  {}(empty){}\n", c.dim, c.reset);
+    } else {
+        println!(
+            "  Active: {}  Archived: {}  Avg salience: {:.2}",
+            mem_stats.total, mem_stats.archived, mem_stats.avg_salience
+        );
+        if !mem_stats.by_type.is_empty() {
+            let types: Vec<String> = mem_stats
+                .by_type
+                .iter()
+                .map(|(t, n)| format!("{t}: {n}"))
+                .collect();
+            println!("  {}{}{}", c.dim, types.join("  "), c.reset);
+        }
+        println!();
+    }
+
+    // HNSW
+    println!("{}Search Index{}", c.bold, c.reset);
+    if hnsw_exists {
+        println!(
+            "  HNSW:     {}ready{} ({})",
+            c.green,
+            c.reset,
+            format_bytes(hnsw_size)
+        );
+    } else {
+        println!(
+            "  HNSW:     {}not built{} (run index --embed)",
+            c.yellow, c.reset
+        );
+    }
+    if embedder_cached {
+        println!("  Embedder: {}cached{}", c.green, c.reset);
+    } else {
+        println!(
+            "  Embedder: {}not downloaded{} (downloads on first use, ~270 MB)",
+            c.yellow, c.reset
+        );
+    }
+
+    Ok(())
+}
+
+// --- Get command ---
+
+fn cmd_get(db_path: &Path, id: i64, json: bool) -> Result<()> {
+    let store = Store::open(db_path)?;
+    let c = colors();
+
+    let chunk = store
+        .get_chunk(id)?
+        .ok_or_else(|| anyhow::anyhow!("chunk #{id} not found"))?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&chunk)?);
+        return Ok(());
+    }
+
+    // Header
+    match chunk.kind.as_str() {
+        "code" => {
+            let name = chunk.symbol_name.as_deref().unwrap_or("(unnamed)");
+            let kind = chunk.symbol_kind.as_deref().unwrap_or("block");
+            let file = chunk.file_path.as_deref().unwrap_or("?");
+            let lines = match (chunk.start_line, chunk.end_line) {
+                (Some(s), Some(e)) => format!(":{s}-{e}"),
+                _ => String::new(),
+            };
+            println!(
+                "{}#{}{} {}{kind} {name}{} in {}{file}{lines}{}",
+                c.dim, id, c.reset, c.magenta, c.reset, c.green, c.reset
+            );
+            if let Some(lang) = &chunk.language {
+                println!("  {}Language: {lang}{}", c.dim, c.reset);
+            }
+            if let Some(sig) = &chunk.signature {
+                if !sig.is_empty() {
+                    println!("  {}Signature: {sig}{}", c.dim, c.reset);
+                }
+            }
+        }
+        "memory" => {
+            let mtype = chunk.memory_type.as_deref().unwrap_or("?");
+            println!(
+                "{}#{}{} {}[{mtype}]{} {}{}{}",
+                c.dim, id, c.reset, c.blue, c.reset, c.bold, chunk.title, c.reset
+            );
+            println!(
+                "  Salience: {:.2}  Archived: {}",
+                chunk.salience,
+                if chunk.archived { "yes" } else { "no" }
+            );
+            if let Some(la) = &chunk.last_accessed {
+                println!("  Last accessed: {la}");
+            }
+            if !chunk.descriptors.is_empty() {
+                println!("  Tags: {}", chunk.descriptors);
+            }
+        }
+        _ => {
+            println!("#{id} [{}] {}", chunk.kind, chunk.title);
+        }
+    }
+
+    // Timestamps
+    println!(
+        "  {}Created: {}  Updated: {}{}",
+        c.dim, chunk.created_at, chunk.updated_at, c.reset
+    );
+    println!();
+
+    // Content
+    println!("{}", chunk.content);
+
+    Ok(())
+}
+
+// --- Memories command ---
+
+fn cmd_memories(
+    db_path: &Path,
+    memory_type: Option<&str>,
+    include_archived: bool,
+    limit: usize,
+    json: bool,
+) -> Result<()> {
+    let store = Store::open(db_path)?;
+    let c = colors();
+
+    // Validate memory type if provided
+    if let Some(mt) = memory_type {
+        match mt {
+            "identity" | "knowledge" | "episode" | "procedure" => {}
+            t => anyhow::bail!(
+                "invalid memory type '{t}': must be identity, knowledge, episode, or procedure"
+            ),
+        }
+    }
+
+    let memories = store.list_memories(memory_type, include_archived, limit)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&memories)?);
+        if memories.is_empty() {
+            std::process::exit(EXIT_NO_RESULTS);
+        }
+        return Ok(());
+    }
+
+    if memories.is_empty() {
+        println!("No memories found.");
+        std::process::exit(EXIT_NO_RESULTS);
+    }
+
+    let type_label = memory_type.unwrap_or("all");
+    println!(
+        "{}Memories{} ({type_label}, {} entries){}",
+        c.bold,
+        c.reset,
+        memories.len(),
+        if include_archived { " [+archived]" } else { "" }
+    );
+    println!();
+
+    for mem in &memories {
+        let mtype = mem.memory_type.as_deref().unwrap_or("?");
+        let age = format_age(&mem.created_at);
+        let archived_marker = if mem.archived {
+            format!(" {}[archived]{}", c.yellow, c.reset)
+        } else {
+            String::new()
+        };
+
+        println!(
+            "  {}#{:<5}{} {}[{mtype}]{} {}{}{}{archived_marker}",
+            c.dim, mem.id, c.reset, c.blue, c.reset, c.bold, mem.title, c.reset,
+        );
+        println!(
+            "         {}sal:{:.2}  age:{}  tags:{}{}",
+            c.dim,
+            mem.salience,
+            age,
+            if mem.descriptors.is_empty() {
+                "-"
+            } else {
+                &mem.descriptors
+            },
+            c.reset,
+        );
+
+        // Show first line of content as preview
+        if let Some(first_line) = mem.content.lines().next() {
+            let preview = if first_line.len() > 80 {
+                let mut end = 77;
+                while end > 0 && !first_line.is_char_boundary(end) {
+                    end -= 1;
+                }
+                format!("{}...", &first_line[..end])
+            } else {
+                first_line.to_string()
+            };
+            println!("         {}{}{}", c.dim, preview, c.reset);
+        }
+        println!();
+    }
+
+    Ok(())
+}
+
+// --- Helpers ---
+
 fn format_line(line: i64) -> String {
     format!(":{line}")
+}
+
+fn format_bytes(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
+}
+
+fn format_age(iso_date: &str) -> String {
+    let Ok(dt) = chrono::DateTime::parse_from_rfc3339(iso_date) else {
+        return "?".into();
+    };
+    let now = chrono::Utc::now();
+    let duration = now.signed_duration_since(dt);
+    let days = duration.num_days();
+    if days == 0 {
+        let hours = duration.num_hours();
+        if hours == 0 {
+            format!("{}m", duration.num_minutes().max(1))
+        } else {
+            format!("{hours}h")
+        }
+    } else if days < 30 {
+        format!("{days}d")
+    } else {
+        format!("{}mo", days / 30)
+    }
 }
 
 fn snippet_preview(snippet: &str, max_lines: usize) -> String {

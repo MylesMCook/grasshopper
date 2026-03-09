@@ -29,9 +29,6 @@ pub(super) fn format_search_hits(hits: &[crate::store::SearchHit]) -> Vec<serde_
             if let Some(ref mt) = h.memory_type {
                 v["memory_type"] = serde_json::json!(mt);
             }
-            if h.access_count > 0 {
-                v["access_count"] = serde_json::json!(h.access_count);
-            }
             if (h.salience - 0.5).abs() > f64::EPSILON {
                 v["salience"] = serde_json::json!(h.salience);
             }

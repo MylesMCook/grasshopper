@@ -6,6 +6,7 @@ mod schema;
 mod search;
 mod types;
 
+pub use maintenance::{CodebaseInfo, MemoryStats};
 pub use schema::Store;
 pub use types::*;
 
@@ -69,14 +70,12 @@ mod tests {
 
         store.touch_memory(id).unwrap();
         let chunk = store.get_chunk(id).unwrap().unwrap();
-        assert_eq!(chunk.access_count, 1);
         assert_eq!(chunk.salience, 0.55);
         assert!(chunk.last_accessed.is_some());
 
         // Touch again — salience should stack
         store.touch_memory(id).unwrap();
         let chunk = store.get_chunk(id).unwrap().unwrap();
-        assert_eq!(chunk.access_count, 2);
         assert!((chunk.salience - 0.6).abs() < 0.001);
     }
 

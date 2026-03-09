@@ -194,12 +194,13 @@ impl Store {
         }
     }
 
-    /// Update access tracking for a memory (increment count, update timestamp, bump salience).
+    /// Update access tracking for a memory (update timestamp, bump salience).
+    /// Salience is the sole retrieval signal — it increases on each access and feeds
+    /// into cognitive scoring. access_count is legacy and no longer incremented.
     pub fn touch_memory(&self, id: i64) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
             "UPDATE chunks SET
-                access_count = access_count + 1,
                 last_accessed = ?1,
                 salience = MIN(1.0, salience + 0.05),
                 updated_at = ?1
@@ -218,7 +219,6 @@ impl Store {
         let placeholders: Vec<&str> = ids.iter().map(|_| "?").collect();
         let sql = format!(
             "UPDATE chunks SET
-                access_count = access_count + 1,
                 last_accessed = ?1,
                 salience = MIN(1.0, salience + 0.05),
                 updated_at = ?1

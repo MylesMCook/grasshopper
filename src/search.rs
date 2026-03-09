@@ -126,12 +126,14 @@ pub fn expanded_fts_search(
 }
 
 /// Build a meaningful passage for cross-encoder reranking.
-/// Code entries use snippet (source text); memory entries use title + content
-/// since their snippet column is empty by design.
+/// Uses snippet for code (which contains the source text), and title for memory
+/// entries (snippet is empty for memories — content is the canonical field).
 fn rerank_passage(hit: &SearchHit) -> String {
-    if hit.kind == "memory" || hit.snippet.is_empty() {
+    if hit.kind == "memory" {
         if hit.title.is_empty() {
             hit.snippet.clone()
+        } else if hit.snippet.is_empty() {
+            hit.title.clone()
         } else {
             format!("{}: {}", hit.title, hit.snippet)
         }
