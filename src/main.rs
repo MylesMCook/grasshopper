@@ -34,11 +34,9 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Index a directory of source code
-    #[command(
-        after_help = "EXAMPLES:\n  \
+    #[command(after_help = "EXAMPLES:\n  \
                       grasshopper index .                    # FTS only (fast)\n  \
-                      grasshopper index ./src --embed        # FTS + semantic (slow, ~4/sec CPU)"
-    )]
+                      grasshopper index ./src --embed        # FTS + semantic (slow, ~4/sec CPU)")]
     Index {
         /// Directory to index
         dir: PathBuf,
@@ -48,8 +46,7 @@ enum Commands {
     },
 
     /// Search code and memory
-    #[command(
-        after_help = "MODES:\n  \
+    #[command(after_help = "MODES:\n  \
                       search     Hybrid FTS + vector + reranking (default)\n  \
                       navigate   Find symbol definitions and references\n  \
                       map        Token-budgeted codebase overview\n  \
@@ -63,8 +60,7 @@ enum Commands {
                       grasshopper search Config --mode navigate\n  \
                       grasshopper search \"\" --mode map --budget 8000\n  \
                       grasshopper search Store --mode impact --depth 3\n  \
-                      grasshopper search \"error\" --kind memory --preset strict"
-    )]
+                      grasshopper search \"error\" --kind memory --preset strict")]
     Search {
         /// Search query
         query: String,
@@ -101,8 +97,7 @@ enum Commands {
     },
 
     /// Store a memory (with automatic dedup)
-    #[command(
-        after_help = "TYPES:\n  \
+    #[command(after_help = "TYPES:\n  \
                       knowledge    Facts, decisions, architecture (default, slow decay)\n  \
                       identity     Preferences, never fades\n  \
                       episode      Events, sessions (fast decay)\n  \
@@ -110,8 +105,7 @@ enum Commands {
                       EXAMPLES:\n  \
                       grasshopper store \"Always use bun for scripts\"\n  \
                       grasshopper store \"I prefer dark themes\" --memory-type identity\n  \
-                      grasshopper store \"Deploy steps: build, test, push\" --tags ops,deploy"
-    )]
+                      grasshopper store \"Deploy steps: build, test, push\" --tags ops,deploy")]
     Store {
         /// Memory content
         content: String,
@@ -127,11 +121,9 @@ enum Commands {
     },
 
     /// Show database health and statistics
-    #[command(
-        after_help = "EXAMPLES:\n  \
+    #[command(after_help = "EXAMPLES:\n  \
                       grasshopper status\n  \
-                      grasshopper status --json"
-    )]
+                      grasshopper status --json")]
     Status {
         /// Output as JSON
         #[arg(long)]
@@ -155,13 +147,11 @@ enum Commands {
     },
 
     /// List and browse memories
-    #[command(
-        after_help = "EXAMPLES:\n  \
+    #[command(after_help = "EXAMPLES:\n  \
                       grasshopper memories\n  \
                       grasshopper memories --type identity\n  \
                       grasshopper memories --type episode --archived\n  \
-                      grasshopper memories --limit 50 --json"
-    )]
+                      grasshopper memories --limit 50 --json")]
     Memories {
         /// Filter by memory type
         #[arg(long, rename_all = "kebab-case")]
@@ -178,12 +168,10 @@ enum Commands {
     },
 
     /// Start the MCP server
-    #[command(
-        after_help = "EXAMPLES:\n  \
+    #[command(after_help = "EXAMPLES:\n  \
                       grasshopper serve                    # HTTP on port 8106\n  \
                       grasshopper serve --port 9000        # Custom port\n  \
-                      grasshopper serve --stdio            # stdio transport"
-    )]
+                      grasshopper serve --stdio            # stdio transport")]
     Serve {
         /// Port to listen on
         #[arg(long, default_value = "8106")]
@@ -659,7 +647,10 @@ fn cmd_status(db_path: &Path, json: bool) -> Result<()> {
 
     // Check model cache
     let cache_dir = grasshopper::code::embed::default_cache_dir();
-    let embedder_cached = cache_dir.join("models").join("jina-embeddings-v2-base-code").exists();
+    let embedder_cached = cache_dir
+        .join("models")
+        .join("jina-embeddings-v2-base-code")
+        .exists();
 
     if json {
         let out = serde_json::json!({

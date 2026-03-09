@@ -1118,7 +1118,13 @@ mod tests {
         // update_memory_content should change title/content/descriptors/hash
         // but preserve memory_type and salience
         let updated = store
-            .update_memory_content(id, "New title", "New content about deno", "runtime", "new_hash")
+            .update_memory_content(
+                id,
+                "New title",
+                "New content about deno",
+                "runtime",
+                "new_hash",
+            )
             .unwrap();
         assert!(updated);
 
@@ -1283,12 +1289,12 @@ mod tests {
     fn fts_integration_unicode() {
         let (_dir, store) = store_with_memory();
         for query in &[
-            "\u{1F600}",                                          // emoji
-            "\u{4F60}\u{597D}",                                   // CJK
-            "\u{0645}\u{0631}\u{062D}\u{0628}\u{0627}",         // Arabic
-            "\u{05E9}\u{05DC}\u{05D5}\u{05DD}",                 // Hebrew
-            "test\u{200B}word",                                   // zero-width space
-            "\u{FEFF}bom",                                        // BOM
+            "\u{1F600}",                                // emoji
+            "\u{4F60}\u{597D}",                         // CJK
+            "\u{0645}\u{0631}\u{062D}\u{0628}\u{0627}", // Arabic
+            "\u{05E9}\u{05DC}\u{05D5}\u{05DD}",         // Hebrew
+            "test\u{200B}word",                         // zero-width space
+            "\u{FEFF}bom",                              // BOM
         ] {
             let result = store.fts_search(query, None, 10);
             assert!(

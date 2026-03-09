@@ -120,8 +120,7 @@ impl HnswIndex {
 
         // Detect format: v2 starts with "GH02" magic bytes
         if data.len() >= 12 && &data[..4] == Self::FORMAT_MAGIC {
-            let chunk_count =
-                u64::from_le_bytes(data[4..12].try_into().unwrap()) as usize;
+            let chunk_count = u64::from_le_bytes(data[4..12].try_into().unwrap()) as usize;
             // Bound deserialization to the actual file size to prevent OOM
             let map: HnswMap<EmbeddingPoint, i64> = bincode::options()
                 .with_fixint_encoding()

@@ -169,19 +169,18 @@ impl Store {
 
     /// Run integrity check. Returns "ok" on success or error details.
     pub fn integrity_check(&self) -> Result<String> {
-        let result: String = self.conn.query_row(
-            "PRAGMA integrity_check",
-            [],
-            |r| r.get(0),
-        )?;
+        let result: String = self
+            .conn
+            .query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
         Ok(result)
     }
 
     /// Check FTS index integrity. Returns true if healthy.
     pub fn fts_integrity_check(&self) -> Result<bool> {
-        match self.conn.execute_batch(
-            "INSERT INTO chunks_fts(chunks_fts) VALUES('integrity-check')",
-        ) {
+        match self
+            .conn
+            .execute_batch("INSERT INTO chunks_fts(chunks_fts) VALUES('integrity-check')")
+        {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
