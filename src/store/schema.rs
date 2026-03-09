@@ -96,6 +96,8 @@ impl Store {
                 source          TEXT DEFAULT '',      -- origin URL or file path
 
                 -- Cognitive fields (used by memory, trackable for code)
+                -- Deprecated: access_count is no longer incremented. Salience is the sole
+                -- retrieval signal. Column kept for backward compatibility (migration cost > benefit).
                 access_count    INTEGER NOT NULL DEFAULT 0,
                 last_accessed   TEXT,                 -- ISO 8601 datetime
                 salience        REAL NOT NULL DEFAULT 0.5,

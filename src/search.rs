@@ -434,4 +434,75 @@ mod tests {
             variants.len()
         );
     }
+
+    #[test]
+    fn test_generate_map_budget_exhaustion() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let cb = store.get_or_create_codebase("/tmp/p", "p").unwrap();
+
+        // Insert many chunks across several files so the map exceeds any small budget
+        let mut all_chunks = Vec::new();
+        for i in 0..5 {
+            let file = format!("src/file_{i}.rs");
+            let mut chunks = Vec::new();
+            for j in 0..10 {
+                chunks.push(crate::store::CodeChunkParams {
+                    chunk_key: format!("{file}:fn:func_{i}_{j}:{j}:{}", j + 5),
+                    file_path: file.clone(),
+                    language: "rust".into(),
+                    symbol_kind: "function_item".into(),
+                    symbol_name: format!("func_{i}_{j}"),
+                    signature: format!("fn func_{i}_{j}()"),
+                    snippet: format!("fn func_{i}_{j}() {{ /* body */ }}"),
+                    start_line: j as i64,
+                    end_line: (j + 5) as i64,
+                    file_hash: "h".into(),
+                });
+            }
+            all_chunks.push(crate::store::FileChunks {
+                file_path: file,
+                file_hash: "h".into(),
+                chunks,
+            });
+        }
+        store.batch_upsert_chunks(cb, &all_chunks).unwrap();
+
+        // Zero budget should return empty string
+        let map = generate_map(&store, cb, 0).unwrap();
+        assert!(map.is_empty(), "zero budget should produce empty map");
+
+        // Tiny budget (10 tokens = ~40 chars) should produce partial output
+        // that is smaller than a full map
+        let small_map = generate_map(&store, cb, 10).unwrap();
+        let full_map = generate_map(&store, cb, 100_000).unwrap();
+        assert!(
+            !full_map.is_empty(),
+            "full budget should produce non-empty map"
+        );
+        assert!(
+            small_map.len() < full_map.len(),
+            "small budget ({}) should produce less output than full budget ({})",
+            small_map.len(),
+            full_map.len()
+        );
+
+        // The small map should still contain at least one file header
+        assert!(
+            small_map.contains("src/"),
+            "even with tiny budget, should include at least one file: {small_map}"
+        );
+    }
+
+    #[test]
+    fn test_generate_map_empty_codebase() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        let cb = store.get_or_create_codebase("/tmp/empty", "empty").unwrap();
+
+        let map = generate_map(&store, cb, 1000).unwrap();
+        assert_eq!(map, "No definitions found. Run index first.");
+    }
 }

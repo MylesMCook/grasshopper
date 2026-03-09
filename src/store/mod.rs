@@ -993,4 +993,357 @@ mod tests {
         let store = Store::open(&dir.path().join("test.db")).unwrap();
         assert_eq!(store.count_codebases().unwrap(), 0);
     }
+
+    #[test]
+    fn test_batch_touch_memories() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id1 = store
+            .insert_memory(&MemoryParams {
+                title: "A",
+                content: "Content A",
+                memory_type: "knowledge",
+                descriptors: "",
+                salience: 0.5,
+                content_hash: "h1",
+            })
+            .unwrap();
+        let id2 = store
+            .insert_memory(&MemoryParams {
+                title: "B",
+                content: "Content B",
+                memory_type: "episode",
+                descriptors: "",
+                salience: 0.5,
+                content_hash: "h2",
+            })
+            .unwrap();
+
+        // Batch touch both
+        store.batch_touch_memories(&[id1, id2]).unwrap();
+
+        let c1 = store.get_chunk(id1).unwrap().unwrap();
+        let c2 = store.get_chunk(id2).unwrap().unwrap();
+        assert_eq!(c1.salience, 0.55, "salience should be bumped by +0.05");
+        assert_eq!(c2.salience, 0.55);
+        assert!(c1.last_accessed.is_some(), "last_accessed should be set");
+        assert!(c2.last_accessed.is_some());
+
+        // Touch again — salience should stack
+        store.batch_touch_memories(&[id1]).unwrap();
+        let c1 = store.get_chunk(id1).unwrap().unwrap();
+        assert!((c1.salience - 0.6).abs() < 0.001);
+
+        // Empty slice is a no-op (should not error)
+        store.batch_touch_memories(&[]).unwrap();
+    }
+
+    #[test]
+    fn test_batch_touch_memories_salience_cap() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id = store
+            .insert_memory(&MemoryParams {
+                title: "High salience",
+                content: "Already high",
+                memory_type: "knowledge",
+                descriptors: "",
+                salience: 0.98,
+                content_hash: "",
+            })
+            .unwrap();
+
+        // Touch multiple times — salience should cap at 1.0
+        store.batch_touch_memories(&[id]).unwrap();
+        store.batch_touch_memories(&[id]).unwrap();
+        store.batch_touch_memories(&[id]).unwrap();
+
+        let chunk = store.get_chunk(id).unwrap().unwrap();
+        assert!(
+            chunk.salience <= 1.0,
+            "salience should cap at 1.0, got {}",
+            chunk.salience
+        );
+    }
+
+    #[test]
+    fn test_update_memory_content() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id = store
+            .insert_memory(&MemoryParams {
+                title: "Original title",
+                content: "Original content about bun",
+                memory_type: "procedure",
+                descriptors: "tools",
+                salience: 0.8,
+                content_hash: "orig_hash",
+            })
+            .unwrap();
+
+        // update_memory_content should change title/content/descriptors/hash
+        // but preserve memory_type and salience
+        let updated = store
+            .update_memory_content(id, "New title", "New content about deno", "runtime", "new_hash")
+            .unwrap();
+        assert!(updated);
+
+        let chunk = store.get_chunk(id).unwrap().unwrap();
+        assert_eq!(chunk.title, "New title");
+        assert_eq!(chunk.content, "New content about deno");
+        assert_eq!(chunk.descriptors, "runtime");
+        assert_eq!(chunk.content_hash, "new_hash");
+        // memory_type and salience should be preserved
+        assert_eq!(chunk.memory_type.as_deref(), Some("procedure"));
+        assert_eq!(chunk.salience, 0.8);
+    }
+
+    #[test]
+    fn test_update_memory_content_nonexistent() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let updated = store
+            .update_memory_content(99999, "T", "C", "d", "h")
+            .unwrap();
+        assert!(!updated, "updating nonexistent ID should return false");
+    }
+
+    #[test]
+    fn test_update_memory_content_fts_sync() {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        let id = store
+            .insert_memory(&MemoryParams {
+                title: "Bun preference",
+                content: "Use bun for scripts",
+                memory_type: "knowledge",
+                descriptors: "",
+                salience: 0.5,
+                content_hash: "h1",
+            })
+            .unwrap();
+
+        // FTS should find "bun" before update
+        let hits = store.fts_search("bun", Some("memory"), 10).unwrap();
+        assert_eq!(hits.len(), 1);
+
+        // Update content via update_memory_content
+        store
+            .update_memory_content(id, "Deno preference", "Use deno for scripts", "", "h2")
+            .unwrap();
+
+        // "bun" should no longer match
+        let hits = store.fts_search("bun", Some("memory"), 10).unwrap();
+        assert_eq!(hits.len(), 0);
+
+        // "deno" should now match
+        let hits = store.fts_search("deno", Some("memory"), 10).unwrap();
+        assert_eq!(hits.len(), 1);
+    }
+
+    // ---------------------------------------------------------------
+    // Adversarial FTS5 integration fuzzing
+    // ---------------------------------------------------------------
+    //
+    // These test that fts_search handles adversarial queries through the
+    // full SQLite/FTS5 stack without panicking or returning Err.
+
+    /// Helper: create a store with one memory entry for adversarial search tests.
+    fn store_with_memory() -> (TempDir, Store) {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+        store
+            .insert_memory(&MemoryParams {
+                title: "Test entry",
+                content: "The quick brown fox jumps over the lazy dog",
+                memory_type: "knowledge",
+                descriptors: "animals, pangram",
+                salience: 0.5,
+                content_hash: "fts_fuzz",
+            })
+            .unwrap();
+        (dir, store)
+    }
+
+    #[test]
+    fn fts_integration_fts5_operators() {
+        let (_dir, store) = store_with_memory();
+        // FTS5 boolean operators — should not cause SQL errors
+        for query in &[
+            "error NOT found",
+            "foo AND bar",
+            "x OR y",
+            "NEAR(quick,fox)",
+            "NOT NOT NOT",
+            "NEAR/5(a b)",
+        ] {
+            let result = store.fts_search(query, None, 10);
+            assert!(
+                result.is_ok(),
+                "fts_search should not Err on FTS5 operator query {:?}: {:?}",
+                query,
+                result.err()
+            );
+        }
+    }
+
+    #[test]
+    fn fts_integration_column_filters() {
+        let (_dir, store) = store_with_memory();
+        for query in &[
+            "title:hack",
+            "content:secret",
+            "symbol_name:drop",
+            "{col}:value",
+        ] {
+            let result = store.fts_search(query, None, 10);
+            assert!(
+                result.is_ok(),
+                "fts_search should not Err on column filter {:?}: {:?}",
+                query,
+                result.err()
+            );
+        }
+    }
+
+    #[test]
+    fn fts_integration_wildcards() {
+        let (_dir, store) = store_with_memory();
+        for query in &["test*", "*", "te*st", "***", "?", "test?"] {
+            let result = store.fts_search(query, None, 10);
+            assert!(
+                result.is_ok(),
+                "fts_search should not Err on wildcard {:?}: {:?}",
+                query,
+                result.err()
+            );
+        }
+    }
+
+    #[test]
+    fn fts_integration_sql_injection() {
+        let (_dir, store) = store_with_memory();
+        for query in &[
+            "'; DROP TABLE chunks; --",
+            "\" OR 1=1",
+            "'; DELETE FROM chunks WHERE ''='",
+            "1; SELECT * FROM sqlite_master; --",
+            "UNION SELECT * FROM chunks --",
+        ] {
+            let result = store.fts_search(query, None, 10);
+            assert!(
+                result.is_ok(),
+                "fts_search should not Err on SQL injection {:?}: {:?}",
+                query,
+                result.err()
+            );
+        }
+        // Verify the table still exists and has data
+        let (_code, mem) = store.count_by_kind().unwrap();
+        assert_eq!(mem, 1, "memory should not have been dropped or deleted");
+    }
+
+    #[test]
+    fn fts_integration_unicode() {
+        let (_dir, store) = store_with_memory();
+        for query in &[
+            "\u{1F600}",                                          // emoji
+            "\u{4F60}\u{597D}",                                   // CJK
+            "\u{0645}\u{0631}\u{062D}\u{0628}\u{0627}",         // Arabic
+            "\u{05E9}\u{05DC}\u{05D5}\u{05DD}",                 // Hebrew
+            "test\u{200B}word",                                   // zero-width space
+            "\u{FEFF}bom",                                        // BOM
+        ] {
+            let result = store.fts_search(query, None, 10);
+            assert!(
+                result.is_ok(),
+                "fts_search should not Err on unicode {:?}: {:?}",
+                query,
+                result.err()
+            );
+        }
+    }
+
+    #[test]
+    fn fts_integration_edge_cases() {
+        let (_dir, store) = store_with_memory();
+
+        // Empty string
+        let result = store.fts_search("", None, 10);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+
+        // Single char
+        let result = store.fts_search("a", None, 10);
+        assert!(result.is_ok());
+
+        // Huge query (100KB)
+        let big = "adversarial ".repeat(8500);
+        let result = store.fts_search(&big, None, 10);
+        assert!(result.is_ok(), "100KB query should not panic");
+
+        // Null bytes
+        let result = store.fts_search("hello\x00world", None, 10);
+        assert!(result.is_ok());
+
+        // Punctuation only
+        let result = store.fts_search("!@#$%^&*()", None, 10);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn fts_integration_fts5_special_syntax() {
+        let (_dir, store) = store_with_memory();
+        for query in &[
+            "^start",
+            "{title content}:search",
+            "NEAR/5",
+            "^ first",
+            "((((test))))",
+            "\"\"\"\"\"",
+            "test\"escape\"attempt",
+        ] {
+            let result = store.fts_search(query, None, 10);
+            assert!(
+                result.is_ok(),
+                "fts_search should not Err on FTS5 syntax {:?}: {:?}",
+                query,
+                result.err()
+            );
+        }
+    }
+
+    #[test]
+    fn fts_integration_adversarial_with_kind_filter() {
+        let (_dir, store) = store_with_memory();
+        // Ensure kind filter doesn't break adversarial queries
+        for kind in &[Some("memory"), Some("code"), None] {
+            let result = store.fts_search("'; DROP TABLE chunks; --", *kind, 10);
+            assert!(
+                result.is_ok(),
+                "adversarial query with kind={:?} should not Err",
+                kind
+            );
+        }
+    }
+
+    #[test]
+    fn fts_integration_finds_real_content_after_adversarial() {
+        let (_dir, store) = store_with_memory();
+        // Run adversarial queries first, then verify real search still works
+        let _ = store.fts_search("'; DROP TABLE chunks; --", None, 10);
+        let _ = store.fts_search("UNION SELECT * FROM chunks", None, 10);
+
+        // Real query should still find our memory
+        let hits = store.fts_search("quick brown fox", None, 10).unwrap();
+        assert!(
+            !hits.is_empty(),
+            "real search should still work after adversarial queries"
+        );
+    }
 }

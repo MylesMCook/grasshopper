@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use super::schema::Store;
+use super::types::log_and_skip;
 
 /// Per-codebase statistics.
 pub struct CodebaseInfo {
@@ -79,7 +80,7 @@ impl Store {
                 embedded_count: row.get(6)?,
             })
         })?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        Ok(rows.filter_map(log_and_skip("maintenance_stats")).collect())
     }
 
     /// Memory statistics by type.
@@ -112,7 +113,7 @@ impl Store {
         )?;
         let by_type: Vec<(String, i64)> = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-            .filter_map(|r| r.ok())
+            .filter_map(log_and_skip("maintenance_stats"))
             .collect();
 
         Ok(MemoryStats {

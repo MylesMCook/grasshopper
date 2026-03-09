@@ -30,7 +30,7 @@ impl Store {
             .query_map(params![codebase_id], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?
-            .filter_map(|r| r.ok())
+            .filter_map(log_and_skip("get_all_file_hashes"))
             .collect();
         Ok(map)
     }
@@ -118,7 +118,7 @@ impl Store {
             .prepare("SELECT file_path FROM indexed_files WHERE codebase_id = ?1")?;
         let stale: Vec<String> = stmt
             .query_map(params![codebase_id], |row| row.get(0))?
-            .filter_map(|r| r.ok())
+            .filter_map(log_and_skip("remove_stale_files"))
             .filter(|p: &String| !active_files.contains(p))
             .collect();
 
@@ -208,10 +208,10 @@ impl Store {
                     symbol_kind: row.get(3)?,
                     symbol_name: row.get(4)?,
                     signature: row.get(5)?,
-                    snippet: row.get(6)?,
+                    content: row.get(6)?,
                 })
             })?
-            .filter_map(|r| r.ok())
+            .filter_map(log_and_skip("get_stale_embeddings"))
             .collect();
         Ok(chunks)
     }

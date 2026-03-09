@@ -64,7 +64,7 @@ impl Store {
             )?;
             let edges = stmt
                 .query_map(params![symbol, cb], row_to_graph_edge)?
-                .filter_map(|r| r.ok())
+                .filter_map(log_and_skip("navigate"))
                 .collect();
             Ok(edges)
         } else {
@@ -76,7 +76,7 @@ impl Store {
             )?;
             let edges = stmt
                 .query_map(params![symbol], row_to_graph_edge)?
-                .filter_map(|r| r.ok())
+                .filter_map(log_and_skip("navigate"))
                 .collect();
             Ok(edges)
         }
@@ -96,18 +96,21 @@ impl Store {
                 "SELECT id FROM chunks WHERE kind = 'code' AND symbol_name = ?1 AND codebase_id = ?2",
             )?;
             stmt.query_map(params![symbol, cb], |row| row.get(0))?
-                .filter_map(|r| r.ok())
+                .filter_map(log_and_skip("navigate"))
                 .collect()
         } else {
             let mut stmt = self
                 .conn
                 .prepare_cached("SELECT id FROM chunks WHERE kind = 'code' AND symbol_name = ?1")?;
             stmt.query_map(params![symbol], |row| row.get(0))?
-                .filter_map(|r| r.ok())
+                .filter_map(log_and_skip("navigate"))
                 .collect()
         };
 
-        // FTS5 search for the symbol in chunk content, excluding definition chunks
+        // FTS5 search for the symbol in chunk content, excluding definition chunks.
+        // Double-quoting makes this safe against all FTS5 syntax injection:
+        // operators (AND/OR/NOT/NEAR), prefix wildcards (*), and column filters (col:).
+        // Internal double-quotes are escaped by doubling ("").
         let fts_query = format!("\"{}\"", symbol.replace('"', "\"\""));
 
         let raw_rows: Vec<(i64, String, String, i64)> = if let Some(cb) = codebase_id {
@@ -121,7 +124,7 @@ impl Store {
             stmt.query_map(params![fts_query, cb], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })?
-            .filter_map(|r| r.ok())
+            .filter_map(log_and_skip("navigate"))
             .collect()
         } else {
             let mut stmt = self.conn.prepare_cached(
@@ -134,7 +137,7 @@ impl Store {
             stmt.query_map(params![fts_query], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })?
-            .filter_map(|r| r.ok())
+            .filter_map(log_and_skip("navigate"))
             .collect()
         };
 

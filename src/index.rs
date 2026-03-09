@@ -204,7 +204,7 @@ pub fn embed_codebase(
                     &s.symbol_kind,
                     &s.symbol_name,
                     &s.signature,
-                    &s.snippet,
+                    &s.content,
                 )
             })
             .collect();

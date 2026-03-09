@@ -422,6 +422,10 @@ impl GrasshopperMcp {
         }
     }
 
+    // NOTE: The index tool accepts arbitrary directory paths from the caller.
+    // This is by design — the server binds to loopback only (127.0.0.1:8106)
+    // and remote access goes through an OAuth 2.1 auth proxy on port 8107.
+    // Path restriction is unnecessary given the trust model (local agent access).
     #[tool(
         name = "index",
         description = "Index a source code directory for search and navigation. Indexes all non-hidden text files (<1MB) regardless of language — extracts symbols and structure using universal heuristics. Respects .gitignore. Incremental — only re-indexes changed files. Run once per codebase, then use search/navigate/map/impact."

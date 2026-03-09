@@ -39,7 +39,8 @@ pub struct StaleChunk {
     pub symbol_kind: String,
     pub symbol_name: String,
     pub signature: String,
-    pub snippet: String,
+    /// The full chunk content (read from the `content` column).
+    pub content: String,
 }
 
 /// Search result from FTS, vector, or hybrid search.
@@ -60,6 +61,8 @@ pub struct SearchHit {
     /// Raw cross-encoder reranker score (set by rerank_hits, None if not reranked)
     pub reranker_score: Option<f32>,
     // Cognitive fields (populated from chunks table)
+    /// Deprecated: no longer incremented. Kept for schema backward compatibility.
+    /// Salience is the sole retrieval signal (bumped +0.05 per access).
     pub access_count: i64,
     pub last_accessed: Option<String>,
     pub salience: f64,
@@ -94,6 +97,8 @@ pub struct Chunk {
     pub end_line: Option<i64>,
     pub memory_type: Option<String>,
     pub descriptors: String,
+    /// Deprecated: no longer incremented. Kept for schema backward compatibility.
+    /// Salience is the sole retrieval signal (bumped +0.05 per access).
     pub access_count: i64,
     pub last_accessed: Option<String>,
     pub salience: f64,
@@ -150,6 +155,22 @@ pub(crate) fn row_to_graph_edge(row: &rusqlite::Row) -> rusqlite::Result<GraphEd
         kind: row.get(3)?,
         line: row.get(4)?,
     })
+}
+
+// --- Row error logging ---
+
+/// Logs row-mapping errors instead of silently dropping them via `.ok()`.
+/// Use in `.filter_map(log_and_skip("context"))` on `query_map` result iterators.
+pub(crate) fn log_and_skip<T, E: std::fmt::Display>(
+    context: &str,
+) -> impl FnMut(Result<T, E>) -> Option<T> + '_ {
+    move |result| match result {
+        Ok(v) => Some(v),
+        Err(e) => {
+            tracing::warn!("{context}: skipping row: {e}");
+            None
+        }
+    }
 }
 
 // --- Utility functions ---

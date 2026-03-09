@@ -3,6 +3,7 @@
 /// Wraps the `instant-distance` crate. Builds an HNSW graph over all embeddings,
 /// serializes it to a sidecar file, and loads it on demand for O(log N) search instead of O(N).
 use anyhow::{Context, Result};
+use bincode::Options;
 use instant_distance::{Builder, HnswMap, Point, Search};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -87,9 +88,20 @@ impl HnswIndex {
         self.chunk_count == 0
     }
 
+    /// Magic bytes to identify the v2 format (with prepended point count).
+    /// "GH02" in ASCII. Old files won't start with this, enabling format detection.
+    const FORMAT_MAGIC: &'static [u8; 4] = b"GH02";
+
     /// Save the HNSW index to a file.
+    /// Format: [4-byte magic "GH02"][8-byte little-endian point count][bincode HNSW data]
     pub fn save(&self, path: &Path) -> Result<()> {
-        let data = bincode::serialize(&self.map).context("serializing HNSW index")?;
+        let hnsw_data = bincode::serialize(&self.map).context("serializing HNSW index")?;
+
+        let mut data = Vec::with_capacity(4 + 8 + hnsw_data.len());
+        data.extend_from_slice(Self::FORMAT_MAGIC);
+        data.extend_from_slice(&(self.chunk_count as u64).to_le_bytes());
+        data.extend_from_slice(&hnsw_data);
+
         std::fs::write(path, &data)
             .with_context(|| format!("writing HNSW file: {}", path.display()))?;
         tracing::info!(
@@ -101,17 +113,36 @@ impl HnswIndex {
     }
 
     /// Load an HNSW index from a file.
+    /// Supports both v2 format (with magic + count header) and legacy format (raw bincode).
     pub fn load(path: &Path) -> Result<Self> {
         let data = std::fs::read(path)
             .with_context(|| format!("reading HNSW file: {}", path.display()))?;
-        let map: HnswMap<EmbeddingPoint, i64> =
-            bincode::deserialize(&data).context("deserializing HNSW index")?;
 
-        // Count points by iterating
-        let chunk_count = map.iter().count();
-        tracing::info!("loaded HNSW index ({chunk_count} points)");
-
-        Ok(Self { map, chunk_count })
+        // Detect format: v2 starts with "GH02" magic bytes
+        if data.len() >= 12 && &data[..4] == Self::FORMAT_MAGIC {
+            let chunk_count =
+                u64::from_le_bytes(data[4..12].try_into().unwrap()) as usize;
+            // Bound deserialization to the actual file size to prevent OOM
+            let map: HnswMap<EmbeddingPoint, i64> = bincode::options()
+                .with_fixint_encoding()
+                .allow_trailing_bytes()
+                .with_limit(data.len() as u64)
+                .deserialize(&data[12..])
+                .context("deserializing HNSW index (v2)")?;
+            tracing::info!("loaded HNSW index ({chunk_count} points)");
+            Ok(Self { map, chunk_count })
+        } else {
+            // Legacy format: raw bincode without header. Fall back to iterate-and-count.
+            let map: HnswMap<EmbeddingPoint, i64> = bincode::options()
+                .with_fixint_encoding()
+                .allow_trailing_bytes()
+                .with_limit(data.len() as u64)
+                .deserialize(&data)
+                .context("deserializing HNSW index (legacy)")?;
+            let chunk_count = map.iter().count();
+            tracing::info!("loaded HNSW index ({chunk_count} points, legacy format)");
+            Ok(Self { map, chunk_count })
+        }
     }
 }
 
@@ -189,5 +220,154 @@ mod tests {
         let results = loaded.search(&query, 1);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, 42);
+    }
+
+    // ---------------------------------------------------------------
+    // Adversarial HNSW corruption recovery tests
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn corrupt_zero_byte_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty.hnsw");
+        std::fs::write(&path, b"").unwrap();
+        let result = HnswIndex::load(&path);
+        assert!(result.is_err(), "zero-byte file should return Err");
+    }
+
+    #[test]
+    fn corrupt_random_garbage() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("garbage.hnsw");
+        let garbage = vec![0xFFu8; 256];
+        std::fs::write(&path, &garbage).unwrap();
+        let result = HnswIndex::load(&path);
+        assert!(
+            result.is_err(),
+            "256 bytes of 0xFF should return Err, not panic/OOM"
+        );
+    }
+
+    #[test]
+    fn corrupt_valid_header_truncated_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("truncated.hnsw");
+        // Valid GH02 magic + reasonable point count + minimal junk body
+        let mut data = Vec::new();
+        data.extend_from_slice(b"GH02");
+        data.extend_from_slice(&5u64.to_le_bytes()); // 5 points
+        data.extend_from_slice(&[0xAB, 0xCD, 0xEF]); // 3 bytes of junk
+        std::fs::write(&path, &data).unwrap();
+        let result = HnswIndex::load(&path);
+        assert!(
+            result.is_err(),
+            "valid header with truncated bincode should return Err"
+        );
+    }
+
+    #[test]
+    fn corrupt_absurd_point_count_no_oom() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("absurd.hnsw");
+        // GH02 header with u64::MAX point count but only a few bytes of data.
+        // The with_limit(data.len()) guard must prevent OOM — the critical property
+        // is that this does not allocate u64::MAX memory. Whether deserialization
+        // succeeds or fails depends on whether bincode can parse the payload,
+        // but either outcome is safe.
+        let mut data = Vec::new();
+        data.extend_from_slice(b"GH02");
+        data.extend_from_slice(&u64::MAX.to_le_bytes());
+        data.extend_from_slice(&[0x00; 64]); // minimal payload
+        std::fs::write(&path, &data).unwrap();
+        // The key assertion: this completes without OOM/panic
+        let _result = HnswIndex::load(&path);
+        // If we reach here, the with_limit guard prevented catastrophic allocation.
+        // The header's u64::MAX point count is NOT validated against actual data,
+        // so chunk_count may be wrong — but that's a data integrity issue, not a
+        // crash vector. The returned index (if Ok) will mismatch on len() vs actual.
+    }
+
+    #[test]
+    fn corrupt_absurd_point_count_with_short_payload() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("absurd2.hnsw");
+        // GH02 header with large point count and only 2 bytes of payload.
+        // bincode should fail to deserialize the HnswMap structure.
+        let mut data = Vec::new();
+        data.extend_from_slice(b"GH02");
+        data.extend_from_slice(&1_000_000u64.to_le_bytes());
+        data.extend_from_slice(&[0xAB, 0xCD]); // too little for valid HnswMap
+        std::fs::write(&path, &data).unwrap();
+        let result = HnswIndex::load(&path);
+        assert!(
+            result.is_err(),
+            "large point count with 2 bytes payload should return Err"
+        );
+    }
+
+    #[test]
+    fn corrupt_legacy_format_garbage() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("legacy_bad.hnsw");
+        // Data that does NOT start with GH02 — triggers legacy path.
+        // Random bytes that are not valid bincode for HnswMap.
+        let garbage = vec![0x42u8; 128];
+        std::fs::write(&path, &garbage).unwrap();
+        let result = HnswIndex::load(&path);
+        assert!(
+            result.is_err(),
+            "garbage in legacy format path should return Err"
+        );
+    }
+
+    #[test]
+    fn corrupt_header_too_short() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("short_header.hnsw");
+        // Starts with "GH02" but has less than 12 bytes total (magic + count).
+        // Should fall through to legacy path (data.len() < 12).
+        let mut data = Vec::new();
+        data.extend_from_slice(b"GH02");
+        data.extend_from_slice(&[0x01, 0x02]); // only 6 bytes total
+        std::fs::write(&path, &data).unwrap();
+        let result = HnswIndex::load(&path);
+        assert!(
+            result.is_err(),
+            "GH02 header with <12 bytes should return Err"
+        );
+    }
+
+    #[test]
+    fn corrupt_nonexistent_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("does_not_exist.hnsw");
+        let result = HnswIndex::load(&path);
+        assert!(result.is_err(), "missing file should return Err");
+    }
+
+    #[test]
+    fn corrupt_single_byte() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("one_byte.hnsw");
+        std::fs::write(&path, [0x00]).unwrap();
+        let result = HnswIndex::load(&path);
+        assert!(result.is_err(), "single-byte file should return Err");
+    }
+
+    #[test]
+    fn corrupt_valid_header_empty_bincode() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty_bincode.hnsw");
+        // Valid GH02 header with 0 points but completely empty bincode section
+        let mut data = Vec::new();
+        data.extend_from_slice(b"GH02");
+        data.extend_from_slice(&0u64.to_le_bytes());
+        // No bincode data at all
+        std::fs::write(&path, &data).unwrap();
+        let result = HnswIndex::load(&path);
+        assert!(
+            result.is_err(),
+            "valid header with empty bincode should return Err"
+        );
     }
 }

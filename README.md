@@ -50,7 +50,7 @@ Scans files, chunks them at function/class boundaries, and indexes for search. I
 ```sh
 grasshopper search "auth middleware"              # hybrid search (default)
 grasshopper search Config --mode navigate         # find definitions & references
-grasshopper search "" --mode map --budget 8000    # codebase overview
+grasshopper search _ --mode map --budget 8000     # codebase overview (query ignored)
 grasshopper search Store --mode impact --depth 3  # what breaks if you change this?
 ```
 
@@ -237,6 +237,7 @@ src/
 ├── main.rs        CLI (7 subcommands)
 ├── lib.rs         Module exports
 ├── store/         SQLite schema, queries, maintenance
+│   ├── mod.rs     Module exports, integration tests
 │   ├── schema.rs  Store struct, migrations, PRAGMA config
 │   ├── types.rs   Chunk, SearchHit, GraphEdge, RRF fusion
 │   ├── memory.rs  Memory CRUD, touch, archive
@@ -253,6 +254,7 @@ src/
 │   └── format.rs  Result formatting
 ├── rerank.rs      Cross-encoder reranking (ONNX)
 └── code/          Code intelligence primitives
+    ├── mod.rs     Module exports, language hint tables
     ├── chunk.rs   Universal structural chunking
     ├── embed.rs   ONNX embeddings (Jina Code V2)
     ├── scan.rs    Directory walking, .gitignore, binary detection
@@ -272,7 +274,7 @@ Default location: `~/.grasshopper/brain.db`.
 
 ```sh
 cargo build                                  # build
-cargo test                                   # 109 tests
+cargo test                                   # 155 tests
 cargo clippy --all-targets                   # lint
 cargo run -- --help                          # CLI help
 cargo run -- status                          # check database state

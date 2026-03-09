@@ -4,6 +4,11 @@ use rusqlite::params;
 use super::schema::Store;
 use super::types::*;
 
+/// Safety limit for brute-force vector search fallback.
+/// Above this threshold, skip brute-force to avoid loading ~300MB+ of embeddings into memory.
+/// The HNSW path handles large datasets correctly — this guards only the fallback.
+const MAX_BRUTE_FORCE_CHUNKS: usize = 10_000;
+
 impl Store {
     /// Full-text search across code and/or memory chunks.
     pub fn fts_search(
@@ -66,12 +71,13 @@ impl Store {
                     descriptors: row.get::<_, Option<String>>(17)?.unwrap_or_default(),
                 })
             })?
-            .filter_map(|r| r.ok())
+            .filter_map(log_and_skip("fts_search"))
             .collect();
         Ok(hits)
     }
 
     /// Brute-force vector search across all chunks with embeddings.
+    /// Guarded by MAX_BRUTE_FORCE_CHUNKS to prevent OOM on large datasets.
     pub fn vector_search(
         &self,
         query_embedding: &[f32],
@@ -79,6 +85,15 @@ impl Store {
         kind_filter: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>> {
+        let total: i64 = self.count_embedded()?;
+        if total as usize > MAX_BRUTE_FORCE_CHUNKS {
+            tracing::warn!(
+                "brute-force vector search skipped: {total} embedded chunks exceeds \
+                 limit of {MAX_BRUTE_FORCE_CHUNKS}. Rebuild HNSW index to enable vector search."
+            );
+            return Ok(vec![]);
+        }
+
         let kind_clause = match kind_filter {
             Some("code") => "AND kind = 'code'",
             Some("memory") => "AND kind = 'memory'",

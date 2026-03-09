@@ -92,7 +92,7 @@ impl Store {
             let mut stmt = self.conn.prepare(&sql)?;
             let rows = stmt
                 .query_map(params![mt, limit as i64], row_to_chunk)?
-                .filter_map(|r| r.ok())
+                .filter_map(log_and_skip("list_memories"))
                 .collect();
             Ok(rows)
         } else {
@@ -100,7 +100,7 @@ impl Store {
             let mut stmt = self.conn.prepare(&sql)?;
             let rows = stmt
                 .query_map(params![limit as i64], row_to_chunk)?
-                .filter_map(|r| r.ok())
+                .filter_map(log_and_skip("list_memories"))
                 .collect();
             Ok(rows)
         }

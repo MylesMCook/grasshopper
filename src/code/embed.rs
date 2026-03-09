@@ -347,8 +347,11 @@ fn download_model(model_dir: &Path) -> Result<()> {
         }
 
         drop(file);
-        std::fs::rename(&tmp_dest, &dest)
-            .with_context(|| format!("renaming {} -> {}", tmp_dest.display(), dest.display()))?;
+        if let Err(e) = std::fs::rename(&tmp_dest, &dest) {
+            let _ = std::fs::remove_file(&tmp_dest);
+            return Err(e)
+                .with_context(|| format!("renaming {} -> {}", tmp_dest.display(), dest.display()));
+        }
 
         let size_mb = downloaded / (1024 * 1024);
         eprintln!("  saved {} ({} MB)", dest.display(), size_mb);
