@@ -1,5 +1,8 @@
 # Grasshopper
 
+[![CI](https://github.com/MylesMCook/grasshopper/actions/workflows/ci.yml/badge.svg)](https://github.com/MylesMCook/grasshopper/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Persistent hybrid search for code and memory. One binary, one SQLite database. All inference runs locally — no external API calls at query time.
 
 Grasshopper indexes codebases and stores memories, then retrieves them with a pipeline that combines full-text search, semantic embeddings, reciprocal rank fusion, and cross-encoder reranking — all running locally via ONNX.

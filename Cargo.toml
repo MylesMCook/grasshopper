@@ -2,6 +2,7 @@
 name = "grasshopper"
 version = "1.0.0"
 edition = "2024"
+rust-version = "1.85"
 description = "Persistent hybrid search for code and memory. The agent-native grep."
 license = "MIT"
 repository = "https://github.com/MylesMCook/grasshopper"
@@ -10,6 +11,7 @@ readme = "README.md"
 authors = ["Myles Cook <mylesmcook@gmail.com>"]
 keywords = ["search", "code-intelligence", "mcp", "retrieval", "embeddings"]
 categories = ["command-line-utilities", "development-tools", "text-processing"]
+exclude = ["eval/", ".github/", "Dockerfile", ".dockerignore", "dist-workspace.toml"]
 
 [lints.clippy]
 perf = { level = "deny", priority = -1 }
