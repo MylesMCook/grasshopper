@@ -100,7 +100,9 @@ impl Store {
         let mut rows = stmt.query(params![model_name])?;
         while let Some(row) = rows.next()? {
             let blob: Vec<u8> = row.get(11)?;
-            let Some(emb) = blob_to_embedding(&blob) else { continue };
+            let Some(emb) = blob_to_embedding(&blob) else {
+                continue;
+            };
             let score = dot_product(query_embedding, emb) as f64;
             scored.push(SearchHit {
                 id: row.get(0)?,
@@ -125,16 +127,20 @@ impl Store {
             });
         }
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.truncate(limit);
         Ok(scored)
     }
 
     /// Get all embeddings as (chunk_id, embedding_vector) pairs for HNSW index building.
     pub fn get_all_embeddings(&self) -> Result<Vec<(i64, Vec<f32>)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, embedding FROM chunks WHERE embedding IS NOT NULL",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, embedding FROM chunks WHERE embedding IS NOT NULL")?;
         let mut results = Vec::new();
         let mut dropped = 0u64;
         let raw_rows = stmt.query_map([], |row| {
@@ -143,8 +149,14 @@ impl Store {
             Ok((id, blob))
         })?;
         for row in raw_rows {
-            let Ok((id, blob)) = row else { dropped += 1; continue };
-            let Some(emb) = blob_to_embedding(&blob) else { dropped += 1; continue };
+            let Ok((id, blob)) = row else {
+                dropped += 1;
+                continue;
+            };
+            let Some(emb) = blob_to_embedding(&blob) else {
+                dropped += 1;
+                continue;
+            };
             results.push((id, emb.to_vec()));
         }
         if dropped > 0 {
@@ -163,13 +175,23 @@ impl Store {
         limit: usize,
     ) -> Result<Vec<SearchHit>> {
         if hnsw.is_empty() {
-            return self.vector_search(query_embedding, crate::code::embed::MODEL_NAME, kind_filter, limit);
+            return self.vector_search(
+                query_embedding,
+                crate::code::embed::MODEL_NAME,
+                kind_filter,
+                limit,
+            );
         }
 
         // Retrieve 2x candidates for re-scoring (HNSW is approximate)
         let candidates = hnsw.search(query_embedding, limit * 2);
         if candidates.is_empty() {
-            return self.vector_search(query_embedding, crate::code::embed::MODEL_NAME, kind_filter, limit);
+            return self.vector_search(
+                query_embedding,
+                crate::code::embed::MODEL_NAME,
+                kind_filter,
+                limit,
+            );
         }
 
         let kind_clause = match kind_filter {
@@ -195,13 +217,16 @@ impl Store {
             .iter()
             .map(|(id, _)| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
             .collect();
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
 
         let mut scored: Vec<SearchHit> = Vec::new();
         let mut rows = stmt.query(param_refs.as_slice())?;
         while let Some(row) = rows.next()? {
             let blob: Vec<u8> = row.get(11)?;
-            let Some(emb) = blob_to_embedding(&blob) else { continue };
+            let Some(emb) = blob_to_embedding(&blob) else {
+                continue;
+            };
             let score = dot_product(query_embedding, emb) as f64;
             scored.push(SearchHit {
                 id: row.get(0)?,
@@ -226,7 +251,11 @@ impl Store {
             });
         }
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.truncate(limit);
         Ok(scored)
     }
@@ -250,7 +279,9 @@ impl Store {
         while let Some(row) = rows.next()? {
             let id: i64 = row.get(0)?;
             let blob: Vec<u8> = row.get(1)?;
-            let Some(emb) = blob_to_embedding(&blob) else { continue };
+            let Some(emb) = blob_to_embedding(&blob) else {
+                continue;
+            };
             let sim = dot_product(query_embedding, emb) as f64;
             if sim >= threshold {
                 scored.push((id, sim));

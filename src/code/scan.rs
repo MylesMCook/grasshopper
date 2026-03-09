@@ -209,7 +209,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("code.rs"), "fn small() {}").unwrap();
         // Write a binary file with null bytes
-        std::fs::write(dir.path().join("image.png"), b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR").unwrap();
+        std::fs::write(
+            dir.path().join("image.png"),
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR",
+        )
+        .unwrap();
 
         let result = scan_directory(dir.path()).unwrap();
         assert_eq!(result.files.len(), 1, "should skip binary file");

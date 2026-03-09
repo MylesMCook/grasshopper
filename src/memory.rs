@@ -5,11 +5,7 @@ use crate::store::{MemoryParams, SearchHit, Store};
 
 /// Generate a title from content: simple truncation to 80 chars.
 fn truncate_title(content: &str) -> String {
-    let first_line = content
-        .split('\n')
-        .next()
-        .unwrap_or(content)
-        .trim();
+    let first_line = content.split('\n').next().unwrap_or(content).trim();
     if first_line.chars().count() <= 80 {
         first_line.to_string()
     } else {
@@ -79,7 +75,17 @@ pub fn store(
     content: &str,
     title: Option<&str>,
     tags: &str,
+    memory_type: Option<&str>,
 ) -> Result<StoreResult> {
+    let memory_type = match memory_type {
+        None | Some("knowledge") => "knowledge",
+        Some("identity") => "identity",
+        Some("episode") => "episode",
+        Some("procedure") => "procedure",
+        Some(t) => anyhow::bail!(
+            "invalid memory_type '{t}': must be identity, knowledge, episode, or procedure"
+        ),
+    };
     // 1. Title: use provided or simple truncation
     let title = title
         .map(String::from)
@@ -117,12 +123,8 @@ pub fn store(
             }
         };
         if let Some(query_vec) = vectors.first() {
-            let similar = db.search_similar_memories(
-                query_vec,
-                crate::code::embed::MODEL_NAME,
-                0.75,
-                1,
-            )?;
+            let similar =
+                db.search_similar_memories(query_vec, crate::code::embed::MODEL_NAME, 0.75, 1)?;
 
             if let Some(&(existing_id, _sim)) = similar.first() {
                 // Update existing entry — preserve memory_type and salience
@@ -145,11 +147,10 @@ pub fn store(
             let id = db.insert_memory(&MemoryParams {
                 title: &title,
                 content,
-                memory_type: "knowledge",
+                memory_type,
                 descriptors: tags,
                 salience: 0.5,
                 content_hash: &hash,
-                agent_id: "cli",
             })?;
             db.batch_upsert_embeddings(&[(
                 id,
@@ -169,11 +170,10 @@ pub fn store(
     let id = db.insert_memory(&MemoryParams {
         title: &title,
         content,
-        memory_type: "knowledge",
+        memory_type,
         descriptors: tags,
         salience: 0.5,
         content_hash: &hash,
-        agent_id: "cli",
     })?;
     Ok(StoreResult {
         id,
@@ -215,9 +215,16 @@ mod tests {
     #[test]
     fn test_cognitive_score_identity_no_decay() {
         let hit = SearchHit {
-            id: 1, kind: "memory".into(), file_path: None, symbol_name: None,
-            symbol_kind: None, signature: None, title: "test".into(), snippet: String::new(),
-            start_line: None, end_line: None,
+            id: 1,
+            kind: "memory".into(),
+            file_path: None,
+            symbol_name: None,
+            symbol_kind: None,
+            signature: None,
+            title: "test".into(),
+            snippet: String::new(),
+            start_line: None,
+            end_line: None,
             memory_type: Some("identity".into()),
             score: 1.0,
             reranker_score: None,
@@ -239,9 +246,16 @@ mod tests {
     fn test_cognitive_score_episode_decays() {
         let now = chrono::Utc::now().to_rfc3339();
         let recent_hit = SearchHit {
-            id: 1, kind: "memory".into(), file_path: None, symbol_name: None,
-            symbol_kind: None, signature: None, title: "test".into(), snippet: String::new(),
-            start_line: None, end_line: None,
+            id: 1,
+            kind: "memory".into(),
+            file_path: None,
+            symbol_name: None,
+            symbol_kind: None,
+            signature: None,
+            title: "test".into(),
+            snippet: String::new(),
+            start_line: None,
+            end_line: None,
             memory_type: Some("episode".into()),
             score: 1.0,
             reranker_score: None,
@@ -261,7 +275,10 @@ mod tests {
 
         let recent_score = cognitive_score(&recent_hit);
         let old_score = cognitive_score(&old_hit);
-        assert!(recent_score > old_score, "recent episode ({recent_score}) should score higher than old ({old_score})");
+        assert!(
+            recent_score > old_score,
+            "recent episode ({recent_score}) should score higher than old ({old_score})"
+        );
     }
 
     #[test]
@@ -269,10 +286,14 @@ mod tests {
         let (_dir, db) = test_store();
 
         let result = store(
-            &db, None,
+            &db,
+            None,
             "Always use bun for package management",
-            None, "tools",
-        ).unwrap();
+            None,
+            "tools",
+            None,
+        )
+        .unwrap();
 
         assert!(!result.was_update);
         assert!(!result.title.is_empty());
@@ -286,13 +307,9 @@ mod tests {
     fn test_store_defaults_to_knowledge() {
         let (_dir, db) = test_store();
 
-        let result = store(
-            &db, None,
-            "I am Myles, a software engineer",
-            None, "",
-        ).unwrap();
+        let result = store(&db, None, "I am Myles, a software engineer", None, "", None).unwrap();
 
-        // No auto-classification — always defaults to knowledge
+        // No memory_type param → defaults to knowledge
         let chunk = db.get_chunk(result.id).unwrap().unwrap();
         assert_eq!(chunk.memory_type.as_deref(), Some("knowledge"));
     }
@@ -302,10 +319,14 @@ mod tests {
         let (_dir, db) = test_store();
 
         let result = store(
-            &db, None,
+            &db,
+            None,
             "Some content here",
-            Some("My Custom Title"), "",
-        ).unwrap();
+            Some("My Custom Title"),
+            "",
+            None,
+        )
+        .unwrap();
 
         assert_eq!(result.title, "My Custom Title");
     }

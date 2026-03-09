@@ -27,7 +27,9 @@ impl Store {
 
     /// Count indexed codebases.
     pub fn count_codebases(&self) -> Result<i64> {
-        self.conn.query_row("SELECT COUNT(*) FROM codebases", [], |r| r.get(0)).map_err(Into::into)
+        self.conn
+            .query_row("SELECT COUNT(*) FROM codebases", [], |r| r.get(0))
+            .map_err(Into::into)
     }
 
     /// Run PRAGMA optimize for query planner stats.

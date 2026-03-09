@@ -29,11 +29,10 @@ impl Reranker {
             return Ok(vec![]);
         }
         let str_passages: Vec<&str> = passages.iter().map(String::as_str).collect();
-        let results = self.model.rerank(query, str_passages.as_slice(), false, None)?;
-        let mut scored: Vec<(usize, f32)> = results
-            .iter()
-            .map(|r| (r.index, r.score))
-            .collect();
+        let results = self
+            .model
+            .rerank(query, str_passages.as_slice(), false, None)?;
+        let mut scored: Vec<(usize, f32)> = results.iter().map(|r| (r.index, r.score)).collect();
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scored.truncate(top_k);
         Ok(scored)
@@ -50,9 +49,7 @@ mod tests {
     static RERANKER: std::sync::OnceLock<Mutex<Reranker>> = std::sync::OnceLock::new();
 
     fn get_reranker() -> &'static Mutex<Reranker> {
-        RERANKER.get_or_init(|| {
-            Mutex::new(Reranker::new().expect("model should load"))
-        })
+        RERANKER.get_or_init(|| Mutex::new(Reranker::new().expect("model should load")))
     }
 
     #[test]

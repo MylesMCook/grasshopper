@@ -23,9 +23,9 @@ impl Store {
 
     /// Get all file hashes for a codebase (rel_path -> hash).
     pub fn get_all_file_hashes(&self, codebase_id: i64) -> Result<HashMap<String, String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT file_path, file_hash FROM indexed_files WHERE codebase_id = ?1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT file_path, file_hash FROM indexed_files WHERE codebase_id = ?1")?;
         let map = stmt
             .query_map(params![codebase_id], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -46,7 +46,11 @@ impl Store {
 
     /// Batch upsert chunks for multiple files within a transaction.
     /// Deletes old chunks for each file, inserts new ones. Returns total chunk count.
-    pub fn batch_upsert_chunks(&self, codebase_id: i64, file_chunks: &[FileChunks]) -> Result<usize> {
+    pub fn batch_upsert_chunks(
+        &self,
+        codebase_id: i64,
+        file_chunks: &[FileChunks],
+    ) -> Result<usize> {
         let tx = self.conn.unchecked_transaction()?;
         let mut total = 0;
         let now = chrono::Utc::now().to_rfc3339();
@@ -65,12 +69,14 @@ impl Store {
                 params![codebase_id, fc.file_path],
             )?;
             // Insert new chunks
+            // Note: content = snippet intentionally — both columns needed
+            // (content feeds FTS5 indexing, snippet is returned in search results)
             for c in &fc.chunks {
                 tx.execute(
                     "INSERT INTO chunks (kind, codebase_id, file_path, chunk_key, language,
                         symbol_kind, symbol_name, signature, content, snippet,
                         start_line, end_line, file_hash, indexed_at, created_at, updated_at)
-                     VALUES ('code', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)
+                     VALUES ('code', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9, ?10, ?11, ?12, ?13, ?13)
                      ON CONFLICT(codebase_id, chunk_key) DO UPDATE SET
                         content = excluded.content, snippet = excluded.snippet,
                         signature = excluded.signature, symbol_kind = excluded.symbol_kind,
@@ -80,7 +86,7 @@ impl Store {
                         embedding = NULL, embedding_model = ''",
                     params![
                         codebase_id, c.file_path, c.chunk_key, c.language,
-                        c.symbol_kind, c.symbol_name, c.signature, c.snippet, c.snippet,
+                        c.symbol_kind, c.symbol_name, c.signature, c.snippet,
                         c.start_line, c.end_line, c.file_hash, ts, now,
                     ],
                 )?;
@@ -101,11 +107,15 @@ impl Store {
     }
 
     /// Remove indexed files and their chunks that no longer exist on disk.
-    pub fn remove_stale_files(&self, codebase_id: i64, active_files: &HashSet<String>) -> Result<usize> {
+    pub fn remove_stale_files(
+        &self,
+        codebase_id: i64,
+        active_files: &HashSet<String>,
+    ) -> Result<usize> {
         // Get all indexed files for this codebase
-        let mut stmt = self.conn.prepare(
-            "SELECT file_path FROM indexed_files WHERE codebase_id = ?1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT file_path FROM indexed_files WHERE codebase_id = ?1")?;
         let stale: Vec<String> = stmt
             .query_map(params![codebase_id], |row| row.get(0))?
             .filter_map(|r| r.ok())
@@ -178,7 +188,11 @@ impl Store {
     }
 
     /// Get chunks that need (re-)embedding: NULL embedding or wrong model.
-    pub fn get_stale_embeddings(&self, codebase_id: i64, model_name: &str) -> Result<Vec<StaleChunk>> {
+    pub fn get_stale_embeddings(
+        &self,
+        codebase_id: i64,
+        model_name: &str,
+    ) -> Result<Vec<StaleChunk>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, file_path, language, symbol_kind, symbol_name, signature, content
              FROM chunks

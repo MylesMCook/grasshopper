@@ -37,24 +37,25 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
     let start = Instant::now();
 
     // 1. Resolve and register codebase
-    let root = dir.canonicalize().with_context(|| format!("resolving {}", dir.display()))?;
+    let root = dir
+        .canonicalize()
+        .with_context(|| format!("resolving {}", dir.display()))?;
 
     // Acquire per-directory lock to prevent concurrent index of same codebase.
     // Uses OpenOptions::create_new for atomic lock acquisition (fails if file exists).
     // Stale locks (>30 min) are cleaned up automatically.
-    let lock_path = std::env::temp_dir().join(format!(
-        "grasshopper-index-{:016x}.lock",
-        {
-            use std::hash::{Hash, Hasher};
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            root.hash(&mut h);
-            h.finish()
-        }
-    ));
+    let lock_path = std::env::temp_dir().join(format!("grasshopper-index-{:016x}.lock", {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        root.hash(&mut h);
+        h.finish()
+    }));
 
     // Clean up stale locks (older than 30 minutes — no index should take this long)
     if let Ok(meta) = std::fs::metadata(&lock_path) {
-        let is_stale = meta.modified().ok()
+        let is_stale = meta
+            .modified()
+            .ok()
             .and_then(|m| m.elapsed().ok())
             .is_some_and(|age| age > std::time::Duration::from_secs(1800));
         if is_stale {
@@ -64,14 +65,21 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
     }
 
     // Try to acquire lock atomically
-    match std::fs::OpenOptions::new().write(true).create_new(true).open(&lock_path) {
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lock_path)
+    {
         Ok(mut f) => {
             // Write PID for debugging stale locks
             use std::io::Write;
             let _ = write!(f, "{}", std::process::id());
         }
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            anyhow::bail!("another index is in progress for {} — try again later", root.display());
+            anyhow::bail!(
+                "another index is in progress for {} — try again later",
+                root.display()
+            );
         }
         Err(e) => return Err(e).context("creating index lock file"),
     }
@@ -139,7 +147,11 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
     }
 
     // 5. Remove stale files
-    let active_files: HashSet<String> = scan_result.files.iter().map(|f| f.rel_path.clone()).collect();
+    let active_files: HashSet<String> = scan_result
+        .files
+        .iter()
+        .map(|f| f.rel_path.clone())
+        .collect();
     let removed = store.remove_stale_files(codebase_id, &active_files)?;
 
     // 6. FTS sync
@@ -264,7 +276,11 @@ mod tests {
 
         let result = index_directory(&store, &src_dir).unwrap();
         assert_eq!(result.files_scanned, 1);
-        assert!(result.chunks_written >= 2, "expected >=2 chunks, got {}", result.chunks_written);
+        assert!(
+            result.chunks_written >= 2,
+            "expected >=2 chunks, got {}",
+            result.chunks_written
+        );
 
         // Verify FTS works
         let hits = store.fts_search("hello", None, 10).unwrap();

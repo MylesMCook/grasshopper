@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use anyhow::Result;
 
 use crate::rerank::Reranker;
-use crate::store::{hybrid_search, SearchHit, Store};
+use crate::store::{SearchHit, Store, hybrid_search};
 
 /// Max candidates to pass to cross-encoder (latency control).
 const RERANK_CANDIDATES: usize = 20;
@@ -11,12 +11,15 @@ const RERANK_CANDIDATES: usize = 20;
 /// Max expanded query variants (original + expansions).
 const MAX_EXPANSIONS: usize = 6;
 
+/// Scales reranker-range thresholds (0.0-1.0) to RRF-range scores (~0.003-0.016).
+/// RRF with k=60 gives ~0.0065 for rank-1, so a reranker threshold of 0.3 maps to ~0.015.
+const RRF_THRESHOLD_SCALE: f32 = 0.05;
+
 /// Common stop words to strip for a tighter query variant.
 const STOP_WORDS: &[&str] = &[
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "can", "shall", "to", "of", "in", "for",
-    "on", "with", "at", "by", "from", "as", "into", "about", "it", "its",
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might", "can", "shall", "to",
+    "of", "in", "for", "on", "with", "at", "by", "from", "as", "into", "about", "it", "its",
     "this", "that", "and", "or", "but", "not", "so", "if", "then",
 ];
 
@@ -144,18 +147,15 @@ fn rerank_passage(hit: &SearchHit) -> String {
 pub fn rerank_hits(
     reranker: &mut Reranker,
     query: &str,
-    hits: Vec<SearchHit>,
+    hits: &[SearchHit],
     limit: usize,
 ) -> Result<Vec<SearchHit>> {
     if hits.is_empty() {
-        return Ok(hits);
+        return Ok(vec![]);
     }
 
     let n = RERANK_CANDIDATES.min(hits.len());
-    let passages: Vec<String> = hits[..n]
-        .iter()
-        .map(rerank_passage)
-        .collect();
+    let passages: Vec<String> = hits[..n].iter().map(rerank_passage).collect();
 
     let ranked = reranker.rerank(query, &passages, limit.min(n))?;
 
@@ -191,31 +191,38 @@ pub struct UnifiedSearchResult {
     pub hits: Vec<SearchHit>,
 }
 
+/// Bundles all parameters and resources for a unified search call.
+pub struct SearchContext<'a> {
+    pub store: &'a Store,
+    pub query: &'a str,
+    pub kind_filter: Option<&'a str>,
+    pub limit: usize,
+    pub threshold: Option<f32>,
+    pub embedder: Option<&'a mut crate::code::embed::Embedder>,
+    pub reranker: Option<&'a mut crate::rerank::Reranker>,
+    pub hnsw: Option<&'a crate::code::hnsw::HnswIndex>,
+}
+
 /// Unified search: searches code and/or memory with a single entry point.
 /// For memory results (kind != "code"), automatically applies cognitive scoring
 /// (salience + decay) and optional relevance gating.
 /// For code results, returns raw hybrid-search scores.
-///
-/// This replaces the separate search/recall/get_context read paths with one function.
-#[allow(clippy::too_many_arguments)]
-pub fn unified_search(
-    store: &Store,
-    query: &str,
-    kind_filter: Option<&str>,
-    limit: usize,
-    threshold: Option<f32>,
-    embedder: Option<&mut crate::code::embed::Embedder>,
-    reranker: Option<&mut crate::rerank::Reranker>,
-    hnsw: Option<&crate::code::hnsw::HnswIndex>,
-) -> Result<UnifiedSearchResult> {
+pub fn unified_search(ctx: SearchContext<'_>) -> Result<UnifiedSearchResult> {
+    let SearchContext {
+        store,
+        query,
+        kind_filter,
+        limit,
+        threshold,
+        embedder,
+        reranker,
+        hnsw,
+    } = ctx;
     let is_memory_only = kind_filter == Some("memory");
 
-    // For memory-only queries, use expanded FTS for better recall (like recall() does)
-    let fts_results = if is_memory_only {
-        expanded_fts_search(store, query, kind_filter, limit.max(20))?
-    } else {
-        store.fts_search(query, kind_filter, limit.max(20))?
-    };
+    // Expanded FTS: generates query variants for better recall (stop-word removal,
+    // quoted pairs, 2-token subsets). Falls through to plain fts_search for single words.
+    let fts_results = expanded_fts_search(store, query, kind_filter, limit.max(20))?;
 
     // Vector search (runs once on original query)
     let vec_results = if let Some(emb) = embedder {
@@ -225,7 +232,12 @@ pub fn unified_search(
         } else if let Some(hnsw) = hnsw {
             store.vector_search_hnsw(hnsw, &query_vec[0], kind_filter, limit.max(20))?
         } else {
-            store.vector_search(&query_vec[0], crate::code::embed::MODEL_NAME, kind_filter, limit.max(20))?
+            store.vector_search(
+                &query_vec[0],
+                crate::code::embed::MODEL_NAME,
+                kind_filter,
+                limit.max(20),
+            )?
         }
     } else {
         vec![]
@@ -243,7 +255,7 @@ pub fn unified_search(
     // Rerank via cross-encoder if available
     let mut rerank_succeeded = false;
     let merged = if let Some(reranker) = reranker {
-        match rerank_hits(reranker, query, merged.clone(), limit.max(20)) {
+        match rerank_hits(reranker, query, &merged, limit.max(20)) {
             Ok(reranked) => {
                 rerank_succeeded = true;
                 reranked
@@ -271,7 +283,7 @@ pub fn unified_search(
                         let passes = if rerank_succeeded {
                             h.reranker_score.unwrap_or(0.0) >= threshold
                         } else {
-                            h.score >= (threshold * 0.05) as f64
+                            h.score >= (threshold * RRF_THRESHOLD_SCALE) as f64
                         };
                         if !passes {
                             return None;
@@ -284,28 +296,29 @@ pub fn unified_search(
             .collect();
 
         // Sort all hits (memory + code) by score, interleaved
-        all_hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        all_hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         all_hits.truncate(limit);
 
         // Touch memory side effects AFTER truncation (only returned hits get salience boost)
-        for hit in &all_hits {
-            if hit.kind == "memory"
-                && let Err(e) = store.touch_memory(hit.id)
-            {
-                tracing::warn!("Failed to touch memory #{}: {e}", hit.id);
-            }
+        let memory_ids: Vec<i64> = all_hits
+            .iter()
+            .filter(|h| h.kind == "memory")
+            .map(|h| h.id)
+            .collect();
+        if let Err(e) = store.batch_touch_memories(&memory_ids) {
+            tracing::warn!("batch touch memories failed: {e}");
         }
 
-        Ok(UnifiedSearchResult {
-            hits: all_hits,
-        })
+        Ok(UnifiedSearchResult { hits: all_hits })
     } else {
         // Code-only: no cognitive scoring, no side effects
         let mut hits = merged;
         hits.truncate(limit);
-        Ok(UnifiedSearchResult {
-            hits,
-        })
+        Ok(UnifiedSearchResult { hits })
     }
 }
 
@@ -319,7 +332,8 @@ pub fn generate_map(store: &Store, codebase_id: i64, token_budget: usize) -> Res
     }
 
     // Group definitions by file
-    let mut by_file: std::collections::BTreeMap<&str, Vec<&crate::store::GraphEdge>> = std::collections::BTreeMap::new();
+    let mut by_file: std::collections::BTreeMap<&str, Vec<&crate::store::GraphEdge>> =
+        std::collections::BTreeMap::new();
     for edge in &definitions {
         by_file.entry(&edge.file_path).or_default().push(edge);
     }
@@ -389,7 +403,10 @@ mod tests {
     #[test]
     fn test_expand_query_basic() {
         let variants = expand_query("SQLite WAL concurrency");
-        assert!(variants.len() >= 2, "should produce expansions: {variants:?}");
+        assert!(
+            variants.len() >= 2,
+            "should produce expansions: {variants:?}"
+        );
         assert_eq!(variants[0], "SQLite WAL concurrency"); // original always first
     }
 
@@ -398,7 +415,9 @@ mod tests {
         let variants = expand_query("the best way to configure SQLite");
         // Should have a variant without stop words (lowercased tokens)
         assert!(
-            variants.iter().any(|v| !v.contains("the") && v.contains("configure") && v.contains("sqlite")),
+            variants
+                .iter()
+                .any(|v| !v.contains("the") && v.contains("configure") && v.contains("sqlite")),
             "should have stop-word-stripped variant: {variants:?}"
         );
     }
@@ -407,6 +426,10 @@ mod tests {
     fn test_expand_query_cap_at_max() {
         let long_query = "one two three four five six seven eight nine ten";
         let variants = expand_query(long_query);
-        assert!(variants.len() <= MAX_EXPANSIONS, "should cap at {MAX_EXPANSIONS}: got {}", variants.len());
+        assert!(
+            variants.len() <= MAX_EXPANSIONS,
+            "should cap at {MAX_EXPANSIONS}: got {}",
+            variants.len()
+        );
     }
 }

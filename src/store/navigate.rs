@@ -8,9 +8,9 @@ use super::types::*;
 impl Store {
     /// List all indexed codebases.
     pub fn list_codebases(&self) -> Result<Vec<(i64, String, String)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, root_path, name FROM codebases ORDER BY name",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, root_path, name FROM codebases ORDER BY name")?;
         let rows = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -50,7 +50,11 @@ impl Store {
     }
 
     /// Find all definitions of a symbol by querying chunks with matching symbol_name.
-    pub fn find_definitions(&self, symbol: &str, codebase_id: Option<i64>) -> Result<Vec<GraphEdge>> {
+    pub fn find_definitions(
+        &self,
+        symbol: &str,
+        codebase_id: Option<i64>,
+    ) -> Result<Vec<GraphEdge>> {
         if let Some(cb) = codebase_id {
             let mut stmt = self.conn.prepare_cached(
                 "SELECT file_path, symbol_name, 'definition', symbol_kind, start_line
@@ -80,7 +84,11 @@ impl Store {
 
     /// Find references to a symbol using FTS5 on chunk content.
     /// Excludes chunks where the symbol is defined (avoids self-references).
-    pub fn find_references(&self, symbol: &str, codebase_id: Option<i64>) -> Result<Vec<GraphEdge>> {
+    pub fn find_references(
+        &self,
+        symbol: &str,
+        codebase_id: Option<i64>,
+    ) -> Result<Vec<GraphEdge>> {
         use std::collections::HashSet;
         // Get definition chunk IDs to exclude
         let def_ids: HashSet<i64> = if let Some(cb) = codebase_id {
@@ -91,9 +99,9 @@ impl Store {
                 .filter_map(|r| r.ok())
                 .collect()
         } else {
-            let mut stmt = self.conn.prepare_cached(
-                "SELECT id FROM chunks WHERE kind = 'code' AND symbol_name = ?1",
-            )?;
+            let mut stmt = self
+                .conn
+                .prepare_cached("SELECT id FROM chunks WHERE kind = 'code' AND symbol_name = ?1")?;
             stmt.query_map(params![symbol], |row| row.get(0))?
                 .filter_map(|r| r.ok())
                 .collect()
@@ -112,7 +120,9 @@ impl Store {
             )?;
             stmt.query_map(params![fts_query, cb], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-            })?.filter_map(|r| r.ok()).collect()
+            })?
+            .filter_map(|r| r.ok())
+            .collect()
         } else {
             let mut stmt = self.conn.prepare_cached(
                 "SELECT c.id, c.file_path, c.symbol_kind, c.start_line
@@ -123,10 +133,13 @@ impl Store {
             )?;
             stmt.query_map(params![fts_query], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-            })?.filter_map(|r| r.ok()).collect()
+            })?
+            .filter_map(|r| r.ok())
+            .collect()
         };
 
-        let edges = raw_rows.into_iter()
+        let edges = raw_rows
+            .into_iter()
             .filter(|(id, _, _, _)| !def_ids.contains(id))
             .map(|(_, file_path, kind, line)| GraphEdge {
                 file_path,

@@ -153,7 +153,10 @@ src/
 ├── memory.rs      Cognitive layer (store, recall, scoring)
 ├── search.rs      Unified search orchestrator
 ├── index.rs       Directory scanning, chunking, embedding
-├── mcp.rs         MCP server (3 tools, HTTP + stdio)
+├── mcp/           MCP server (3 tools, HTTP + stdio)
+│   ├── mod.rs     Tool implementations, ServerHandler
+│   ├── transport.rs  HTTP + stdio transports, startup
+│   └── format.rs  Search result formatting
 ├── rerank.rs      Cross-encoder reranking
 └── code/
     ├── chunk.rs   Structural chunking (language-agnostic)
@@ -167,7 +170,7 @@ src/
 
 ```sh
 cargo build                    # Build
-cargo test                     # 113 tests
+cargo test                     # 109 tests
 cargo clippy --all-targets     # Lint
 cargo run -- --help            # CLI help
 RUST_LOG=debug cargo run -- serve --port 8106  # Verbose server

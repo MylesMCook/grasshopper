@@ -1,0 +1,10 @@
+target/
+.git/
+.github/
+eval/
+.fastembed_cache/
+*.db
+*.db-wal
+*.db-shm
+*.hnsw
+.env

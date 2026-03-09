@@ -53,8 +53,14 @@ impl Embedder {
             .iter()
             .any(|input| input.name() == "token_type_ids");
 
-        tracing::info!("embedder loaded: {MODEL_NAME} (dim={EMBEDDING_DIM}, token_type_ids={has_token_type_ids})");
-        Ok(Self { session, tokenizer, has_token_type_ids })
+        tracing::info!(
+            "embedder loaded: {MODEL_NAME} (dim={EMBEDDING_DIM}, token_type_ids={has_token_type_ids})"
+        );
+        Ok(Self {
+            session,
+            tokenizer,
+            has_token_type_ids,
+        })
     }
 
     /// Compute embeddings for a batch of texts.
@@ -178,8 +184,13 @@ pub fn build_embed_text(
     signature: &str,
     snippet: &str,
 ) -> String {
-    let estimated = file_path.len() + language.len() + kind.len() + name.len()
-        + signature.len() + 1500.min(snippet.len()) + 20;
+    let estimated = file_path.len()
+        + language.len()
+        + kind.len()
+        + name.len()
+        + signature.len()
+        + 1500.min(snippet.len())
+        + 20;
     let mut text = String::with_capacity(estimated);
 
     // Language tag helps the model distinguish code conventions
@@ -233,7 +244,11 @@ fn download_model(model_dir: &Path) -> Result<()> {
     std::fs::create_dir_all(model_dir)
         .with_context(|| format!("creating model dir: {}", model_dir.display()))?;
 
-    eprintln!("First run — downloading {} to {}", MODEL_NAME, model_dir.display());
+    eprintln!(
+        "First run — downloading {} to {}",
+        MODEL_NAME,
+        model_dir.display()
+    );
 
     let files = &[
         ("onnx/model_quantized.onnx", "model.onnx"),
@@ -260,8 +275,12 @@ fn download_model(model_dir: &Path) -> Result<()> {
 
         // Write to temp file then atomic rename to prevent corrupt partial downloads
         let tmp_dest = dest.with_extension("tmp");
-        let mut file = std::fs::File::create(&tmp_dest)
-            .with_context(|| format!("creating {}: permission denied or disk full?", tmp_dest.display()))?;
+        let mut file = std::fs::File::create(&tmp_dest).with_context(|| {
+            format!(
+                "creating {}: permission denied or disk full?",
+                tmp_dest.display()
+            )
+        })?;
 
         let mut reader = resp.into_body().into_reader();
         let mut buf = [0u8; 65536];
@@ -270,8 +289,12 @@ fn download_model(model_dir: &Path) -> Result<()> {
 
         let result = (|| -> Result<()> {
             loop {
-                let n = reader.read(&mut buf).context("reading model data — download interrupted?")?;
-                if n == 0 { break; }
+                let n = reader
+                    .read(&mut buf)
+                    .context("reading model data — download interrupted?")?;
+                if n == 0 {
+                    break;
+                }
                 std::io::Write::write_all(&mut file, &buf[..n])
                     .with_context(|| format!("writing to {}: disk full?", tmp_dest.display()))?;
                 downloaded += n as u64;
@@ -288,8 +311,12 @@ fn download_model(model_dir: &Path) -> Result<()> {
                         eprint!(
                             "\r  {} [{}{}{}] {}% ({}/{} MB)",
                             local_name,
-                            "=".repeat(filled), arrow, " ".repeat(spaces),
-                            pct, mb_done, mb_total,
+                            "=".repeat(filled),
+                            arrow,
+                            " ".repeat(spaces),
+                            pct,
+                            mb_done,
+                            mb_total,
                         );
                     } else {
                         let mb = downloaded / (1024 * 1024);
@@ -343,7 +370,14 @@ mod tests {
 
     #[test]
     fn build_embed_text_with_all_fields() {
-        let text = build_embed_text("src/main.rs", "rust", "function", "main", "fn main()", "fn main() {}");
+        let text = build_embed_text(
+            "src/main.rs",
+            "rust",
+            "function",
+            "main",
+            "fn main()",
+            "fn main() {}",
+        );
         assert!(text.starts_with("[rust] src/main.rs: function main"));
         assert!(text.contains("fn main()"));
     }

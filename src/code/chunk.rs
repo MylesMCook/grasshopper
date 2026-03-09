@@ -173,7 +173,11 @@ fn split_oversized(blocks: Vec<(usize, usize)>, lines: &[&str]) -> Vec<(usize, u
                 // Recurse on both halves
                 let left = vec![(start, sp.saturating_sub(1).max(start))];
                 // Skip blank line at split point
-                let right_start = if lines[sp].trim().is_empty() { sp + 1 } else { sp };
+                let right_start = if lines[sp].trim().is_empty() {
+                    sp + 1
+                } else {
+                    sp
+                };
                 result.extend(split_oversized(left, lines));
                 if right_start <= end {
                     result.extend(split_oversized(vec![(right_start, end)], lines));
@@ -223,7 +227,11 @@ fn goodbye() {
 }
 "#;
         let chunks = chunk_content("test.rs", code, "rust");
-        assert!(chunks.len() >= 2, "expected >=2 chunks, got {}", chunks.len());
+        assert!(
+            chunks.len() >= 2,
+            "expected >=2 chunks, got {}",
+            chunks.len()
+        );
         let names: Vec<&str> = chunks.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"hello"), "should find 'hello'");
         assert!(names.contains(&"goodbye"), "should find 'goodbye'");
@@ -366,7 +374,10 @@ CMD ["node", "/app/index.js"]
             code.push_str(&format!("line_{i} = value_{i}\n"));
         }
         let chunks = chunk_content("dense.txt", &code, "unknown");
-        assert!(chunks.len() >= 2, "300-line file should produce multiple chunks");
+        assert!(
+            chunks.len() >= 2,
+            "300-line file should produce multiple chunks"
+        );
         for chunk in &chunks {
             let lines = chunk.end_line - chunk.start_line + 1;
             assert!(
@@ -391,7 +402,10 @@ CMD ["node", "/app/index.js"]
         assert_eq!(extract_heuristic_name("fn hello(name: &str) {"), "hello");
         assert_eq!(extract_heuristic_name("def bark(self):"), "bark");
         assert_eq!(extract_heuristic_name("class Dog:"), "Dog");
-        assert_eq!(extract_heuristic_name("defmodule MyApp.Worker do"), "MyApp.Worker");
+        assert_eq!(
+            extract_heuristic_name("defmodule MyApp.Worker do"),
+            "MyApp.Worker"
+        );
         assert_eq!(extract_heuristic_name("  key: value"), "");
     }
 }

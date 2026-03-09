@@ -23,8 +23,10 @@ fn split_camel(word: &str) -> Vec<String> {
             // - OR current is uppercase followed by lowercase and previous was uppercase
             //   (e.g., "HTMLParser" → split before P: "HTML" + "Parser")
             let prev_lower = i > 0 && chars[i - 1].is_lowercase();
-            let acronym_end =
-                i > 0 && chars[i - 1].is_uppercase() && i + 1 < chars.len() && chars[i + 1].is_lowercase();
+            let acronym_end = i > 0
+                && chars[i - 1].is_uppercase()
+                && i + 1 < chars.len()
+                && chars[i + 1].is_lowercase();
 
             if prev_lower || acronym_end {
                 parts.push(current.to_lowercase());
@@ -100,7 +102,10 @@ pub fn prepare_fts_query(query: &str) -> String {
     let mut words = Vec::new();
     let mut seen = HashSet::new();
 
-    for word in expanded.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()) {
+    for word in expanded
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+    {
         let lower = word.to_lowercase();
         if seen.insert(lower.clone()) {
             words.push(lower);

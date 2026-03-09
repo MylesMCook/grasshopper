@@ -129,7 +129,10 @@ async fn search_fts_returns_results() {
     assert!(result.is_error.is_none() || !result.is_error.unwrap());
     let text = result_text(&result);
     let hits: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap();
-    assert!(!hits.is_empty(), "FTS search for 'greet' should return results");
+    assert!(
+        !hits.is_empty(),
+        "FTS search for 'greet' should return results"
+    );
     assert!(hits.iter().any(|h| {
         h["symbol_name"]
             .as_str()
@@ -202,8 +205,14 @@ async fn search_map_returns_file_listing() {
 
     assert!(result.is_error.is_none() || !result.is_error.unwrap());
     let text = result_text(&result);
-    assert!(text.contains("main"), "map should list main.rs symbols, got: {text}");
-    assert!(text.contains("lib"), "map should list lib.rs symbols, got: {text}");
+    assert!(
+        text.contains("main"),
+        "map should list main.rs symbols, got: {text}"
+    );
+    assert!(
+        text.contains("lib"),
+        "map should list lib.rs symbols, got: {text}"
+    );
 }
 
 #[tokio::test]
@@ -279,6 +288,7 @@ async fn store_returns_id() {
             content: "Always use bun for package management".into(),
             title: Some("Package manager preference".into()),
             tags: Some("tooling,preferences".into()),
+            memory_type: None,
         }))
         .await
         .unwrap();
@@ -300,6 +310,7 @@ async fn store_duplicate_triggers_update() {
             content: "Use Rust for all new backend services".into(),
             title: Some("Language choice".into()),
             tags: None,
+            memory_type: None,
         }))
         .await
         .unwrap();
@@ -313,11 +324,19 @@ async fn store_duplicate_triggers_update() {
             content: "Use Rust for all new backend services".into(),
             title: Some("Language choice".into()),
             tags: None,
+            memory_type: None,
         }))
         .await
         .unwrap();
 
     let json2: serde_json::Value = serde_json::from_str(&result_text(&result2)).unwrap();
-    assert_eq!(json2["was_update"], true, "duplicate content should trigger update");
-    assert_eq!(json2["id"].as_i64().unwrap(), id1, "should update same entry");
+    assert_eq!(
+        json2["was_update"], true,
+        "duplicate content should trigger update"
+    );
+    assert_eq!(
+        json2["id"].as_i64().unwrap(),
+        id1,
+        "should update same entry"
+    );
 }

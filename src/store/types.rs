@@ -8,7 +8,6 @@ pub struct MemoryParams<'a> {
     pub descriptors: &'a str,
     pub salience: f64,
     pub content_hash: &'a str,
-    pub agent_id: &'a str,
 }
 
 /// Parameters for a single code chunk, converted from crate::code::chunk::ParsedChunk.
@@ -95,7 +94,6 @@ pub struct Chunk {
     pub end_line: Option<i64>,
     pub memory_type: Option<String>,
     pub descriptors: String,
-    pub source: String,
     pub access_count: i64,
     pub last_accessed: Option<String>,
     pub salience: f64,
@@ -132,16 +130,15 @@ pub(crate) fn row_to_chunk(row: &rusqlite::Row) -> rusqlite::Result<Chunk> {
         end_line: row.get(11)?,
         memory_type: row.get(12)?,
         descriptors: row.get(13)?,
-        source: row.get(14)?,
-        access_count: row.get(15)?,
-        last_accessed: row.get(16)?,
-        salience: row.get(17)?,
-        archived: row.get(18)?,
-        content_hash: row.get(19)?,
-        agent_id: row.get(20)?,
-        created_at: row.get(21)?,
-        updated_at: row.get(22)?,
-        codebase_id: row.get(23)?,
+        access_count: row.get(14)?,
+        last_accessed: row.get(15)?,
+        salience: row.get(16)?,
+        archived: row.get(17)?,
+        content_hash: row.get(18)?,
+        agent_id: row.get(19)?,
+        created_at: row.get(20)?,
+        updated_at: row.get(21)?,
+        codebase_id: row.get(22)?,
     })
 }
 
@@ -208,7 +205,11 @@ pub fn hybrid_search(fts: &[SearchHit], vec: &[SearchHit], limit: usize) -> Vec<
         })
         .collect();
 
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(limit);
     results
 }

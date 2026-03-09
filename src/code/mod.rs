@@ -124,12 +124,18 @@ pub static FILENAME_HINTS: &[(&str, &str)] = &[
 
 /// Look up language hint from file extension.
 pub fn lang_hint_from_ext(ext: &str) -> Option<&'static str> {
-    LANG_HINTS.iter().find(|(e, _)| *e == ext).map(|(_, lang)| *lang)
+    LANG_HINTS
+        .iter()
+        .find(|(e, _)| *e == ext)
+        .map(|(_, lang)| *lang)
 }
 
 /// Look up language hint from filename.
 pub fn lang_hint_from_filename(name: &str) -> Option<&'static str> {
-    FILENAME_HINTS.iter().find(|(n, _)| *n == name).map(|(_, lang)| *lang)
+    FILENAME_HINTS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, lang)| *lang)
 }
 
 #[cfg(test)]

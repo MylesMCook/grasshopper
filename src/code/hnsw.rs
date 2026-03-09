@@ -89,11 +89,14 @@ impl HnswIndex {
 
     /// Save the HNSW index to a file.
     pub fn save(&self, path: &Path) -> Result<()> {
-        let data = bincode::serialize(&self.map)
-            .context("serializing HNSW index")?;
+        let data = bincode::serialize(&self.map).context("serializing HNSW index")?;
         std::fs::write(path, &data)
             .with_context(|| format!("writing HNSW file: {}", path.display()))?;
-        tracing::info!("saved HNSW index ({} points, {} bytes)", self.chunk_count, data.len());
+        tracing::info!(
+            "saved HNSW index ({} points, {} bytes)",
+            self.chunk_count,
+            data.len()
+        );
         Ok(())
     }
 
@@ -101,8 +104,8 @@ impl HnswIndex {
     pub fn load(path: &Path) -> Result<Self> {
         let data = std::fs::read(path)
             .with_context(|| format!("reading HNSW file: {}", path.display()))?;
-        let map: HnswMap<EmbeddingPoint, i64> = bincode::deserialize(&data)
-            .context("deserializing HNSW index")?;
+        let map: HnswMap<EmbeddingPoint, i64> =
+            bincode::deserialize(&data).context("deserializing HNSW index")?;
 
         // Count points by iterating
         let chunk_count = map.iter().count();
@@ -140,15 +143,14 @@ mod tests {
         let mut v2 = vec![0.0f32; 768];
         v2[2] = 1.0;
 
-        let points = vec![
-            EmbeddingPoint(v0),
-            EmbeddingPoint(v1),
-            EmbeddingPoint(v2),
-        ];
+        let points = vec![EmbeddingPoint(v0), EmbeddingPoint(v1), EmbeddingPoint(v2)];
         let values = vec![100i64, 200, 300];
 
         let map = Builder::default().build(points, values);
-        let index = HnswIndex { map, chunk_count: 3 };
+        let index = HnswIndex {
+            map,
+            chunk_count: 3,
+        };
 
         let mut query = vec![0.0f32; 768];
         query[0] = 0.9;
@@ -169,7 +171,10 @@ mod tests {
         let values = vec![42i64];
 
         let map = Builder::default().build(points, values);
-        let index = HnswIndex { map, chunk_count: 1 };
+        let index = HnswIndex {
+            map,
+            chunk_count: 1,
+        };
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.hnsw");

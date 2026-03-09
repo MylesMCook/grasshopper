@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 
 use super::schema::Store;
 use super::types::*;
@@ -13,8 +13,16 @@ impl Store {
             self.conn.execute(
                 "INSERT INTO chunks (kind, title, content, memory_type, descriptors, salience,
                                      content_hash, agent_id, created_at, updated_at)
-                 VALUES ('memory', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
-                params![p.title, p.content, p.memory_type, p.descriptors, p.salience, p.content_hash, p.agent_id, now],
+                 VALUES ('memory', ?1, ?2, ?3, ?4, ?5, ?6, 'cli', ?7, ?7)",
+                params![
+                    p.title,
+                    p.content,
+                    p.memory_type,
+                    p.descriptors,
+                    p.salience,
+                    p.content_hash,
+                    now
+                ],
             )?;
             let id = self.conn.last_insert_rowid();
             self.conn.execute(
@@ -25,8 +33,16 @@ impl Store {
             Ok(id)
         })();
         match result {
-            Ok(id) => { self.conn.execute_batch("RELEASE insert_memory")?; Ok(id) }
-            Err(e) => { let _ = self.conn.execute_batch("ROLLBACK TO insert_memory; RELEASE insert_memory"); Err(e) }
+            Ok(id) => {
+                self.conn.execute_batch("RELEASE insert_memory")?;
+                Ok(id)
+            }
+            Err(e) => {
+                let _ = self
+                    .conn
+                    .execute_batch("ROLLBACK TO insert_memory; RELEASE insert_memory");
+                Err(e)
+            }
         }
     }
 
@@ -35,39 +51,12 @@ impl Store {
         let mut stmt = self.conn.prepare(
             "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
                     file_path, language, start_line, end_line, memory_type,
-                    descriptors, source, access_count, last_accessed, salience, archived,
+                    descriptors, access_count, last_accessed, salience, archived,
                     content_hash, agent_id, created_at, updated_at, codebase_id
              FROM chunks WHERE id = ?1",
         )?;
 
-        let chunk = stmt.query_row(params![id], |row| {
-            Ok(Chunk {
-                id: row.get(0)?,
-                kind: row.get(1)?,
-                title: row.get(2)?,
-                content: row.get(3)?,
-                snippet: row.get(4)?,
-                symbol_name: row.get(5)?,
-                symbol_kind: row.get(6)?,
-                signature: row.get(7)?,
-                file_path: row.get(8)?,
-                language: row.get(9)?,
-                start_line: row.get(10)?,
-                end_line: row.get(11)?,
-                memory_type: row.get(12)?,
-                descriptors: row.get(13)?,
-                source: row.get(14)?,
-                access_count: row.get(15)?,
-                last_accessed: row.get(16)?,
-                salience: row.get(17)?,
-                archived: row.get(18)?,
-                content_hash: row.get(19)?,
-                agent_id: row.get(20)?,
-                created_at: row.get(21)?,
-                updated_at: row.get(22)?,
-                codebase_id: row.get(23)?,
-            })
-        });
+        let chunk = stmt.query_row(params![id], row_to_chunk);
 
         match chunk {
             Ok(c) => Ok(Some(c)),
@@ -83,13 +72,18 @@ impl Store {
         include_archived: bool,
         limit: usize,
     ) -> Result<Vec<Chunk>> {
-        let select = "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
+        let select =
+            "SELECT id, kind, title, content, snippet, symbol_name, symbol_kind, signature,
                     file_path, language, start_line, end_line, memory_type,
-                    descriptors, source, access_count, last_accessed, salience, archived,
+                    descriptors, access_count, last_accessed, salience, archived,
                     content_hash, agent_id, created_at, updated_at, codebase_id
              FROM chunks WHERE kind = 'memory'";
 
-        let archived_clause = if include_archived { "" } else { " AND archived = 0" };
+        let archived_clause = if include_archived {
+            ""
+        } else {
+            " AND archived = 0"
+        };
 
         if let Some(mt) = memory_type {
             let sql = format!(
@@ -102,9 +96,7 @@ impl Store {
                 .collect();
             Ok(rows)
         } else {
-            let sql = format!(
-                "{select}{archived_clause} ORDER BY created_at DESC LIMIT ?1"
-            );
+            let sql = format!("{select}{archived_clause} ORDER BY created_at DESC LIMIT ?1");
             let mut stmt = self.conn.prepare(&sql)?;
             let rows = stmt
                 .query_map(params![limit as i64], row_to_chunk)?
@@ -123,10 +115,20 @@ impl Store {
                 "UPDATE chunks SET title = ?1, content = ?2, memory_type = ?3, descriptors = ?4,
                                    salience = ?5, content_hash = ?6, updated_at = ?7
                  WHERE id = ?8 AND kind = 'memory'",
-                params![p.title, p.content, p.memory_type, p.descriptors, p.salience, p.content_hash, now, id],
+                params![
+                    p.title,
+                    p.content,
+                    p.memory_type,
+                    p.descriptors,
+                    p.salience,
+                    p.content_hash,
+                    now,
+                    id
+                ],
             )?;
             if rows > 0 {
-                self.conn.execute("DELETE FROM chunks_fts WHERE rowid = ?1", params![id])?;
+                self.conn
+                    .execute("DELETE FROM chunks_fts WHERE rowid = ?1", params![id])?;
                 self.conn.execute(
                     "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
                      VALUES (?1, ?2, ?3, '', '', ?4)",
@@ -136,13 +138,28 @@ impl Store {
             Ok(rows > 0)
         })();
         match result {
-            Ok(updated) => { self.conn.execute_batch("RELEASE update_memory")?; Ok(updated) }
-            Err(e) => { let _ = self.conn.execute_batch("ROLLBACK TO update_memory; RELEASE update_memory"); Err(e) }
+            Ok(updated) => {
+                self.conn.execute_batch("RELEASE update_memory")?;
+                Ok(updated)
+            }
+            Err(e) => {
+                let _ = self
+                    .conn
+                    .execute_batch("ROLLBACK TO update_memory; RELEASE update_memory");
+                Err(e)
+            }
         }
     }
 
     /// Update a memory entry's content fields only, preserving memory_type and salience.
-    pub fn update_memory_content(&self, id: i64, title: &str, content: &str, descriptors: &str, content_hash: &str) -> Result<bool> {
+    pub fn update_memory_content(
+        &self,
+        id: i64,
+        title: &str,
+        content: &str,
+        descriptors: &str,
+        content_hash: &str,
+    ) -> Result<bool> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute_batch("SAVEPOINT update_memory_content")?;
         let result = (|| -> Result<bool> {
@@ -153,7 +170,8 @@ impl Store {
                 params![title, content, descriptors, content_hash, now, id],
             )?;
             if rows > 0 {
-                self.conn.execute("DELETE FROM chunks_fts WHERE rowid = ?1", params![id])?;
+                self.conn
+                    .execute("DELETE FROM chunks_fts WHERE rowid = ?1", params![id])?;
                 self.conn.execute(
                     "INSERT INTO chunks_fts (rowid, title, content, snippet, symbol_name, descriptors)
                      VALUES (?1, ?2, ?3, '', '', ?4)",
@@ -163,8 +181,16 @@ impl Store {
             Ok(rows > 0)
         })();
         match result {
-            Ok(updated) => { self.conn.execute_batch("RELEASE update_memory_content")?; Ok(updated) }
-            Err(e) => { let _ = self.conn.execute_batch("ROLLBACK TO update_memory_content; RELEASE update_memory_content"); Err(e) }
+            Ok(updated) => {
+                self.conn.execute_batch("RELEASE update_memory_content")?;
+                Ok(updated)
+            }
+            Err(e) => {
+                let _ = self.conn.execute_batch(
+                    "ROLLBACK TO update_memory_content; RELEASE update_memory_content",
+                );
+                Err(e)
+            }
         }
     }
 
@@ -180,6 +206,32 @@ impl Store {
              WHERE id = ?2 AND kind = 'memory'",
             params![now, id],
         )?;
+        Ok(())
+    }
+
+    /// Batch-update access tracking for multiple memories in a single statement.
+    pub fn batch_touch_memories(&self, ids: &[i64]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let now = chrono::Utc::now().to_rfc3339();
+        let placeholders: Vec<&str> = ids.iter().map(|_| "?").collect();
+        let sql = format!(
+            "UPDATE chunks SET
+                access_count = access_count + 1,
+                last_accessed = ?1,
+                salience = MIN(1.0, salience + 0.05),
+                updated_at = ?1
+             WHERE id IN ({}) AND kind = 'memory'",
+            placeholders.join(",")
+        );
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(now)];
+        for &id in ids {
+            params.push(Box::new(id));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+        self.conn.execute(&sql, param_refs.as_slice())?;
         Ok(())
     }
 
@@ -204,5 +256,4 @@ impl Store {
         )?;
         Ok(rows > 0)
     }
-
 }

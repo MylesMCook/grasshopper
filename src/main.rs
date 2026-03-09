@@ -73,6 +73,9 @@ enum Commands {
         /// Descriptors (comma-separated tags)
         #[arg(long, default_value = "")]
         tags: String,
+        /// Memory type: knowledge (default), identity, episode, procedure
+        #[arg(long)]
+        memory_type: Option<String>,
     },
 
     /// Start the MCP server (HTTP by default, or stdio with --stdio)
@@ -110,12 +113,22 @@ const COLORS_ON: Colors = Colors {
 };
 
 const COLORS_OFF: Colors = Colors {
-    green: "", blue: "", cyan: "", magenta: "", yellow: "",
-    dim: "", bold: "", reset: "",
+    green: "",
+    blue: "",
+    cyan: "",
+    magenta: "",
+    yellow: "",
+    dim: "",
+    bold: "",
+    reset: "",
 };
 
 fn colors() -> &'static Colors {
-    if std::io::stdout().is_terminal() { &COLORS_ON } else { &COLORS_OFF }
+    if std::io::stdout().is_terminal() {
+        &COLORS_ON
+    } else {
+        &COLORS_OFF
+    }
 }
 
 fn default_db_path() -> PathBuf {
@@ -143,7 +156,17 @@ fn try_hnsw(db_path: &Path) -> Option<grasshopper::code::hnsw::HnswIndex> {
     }
 }
 
-fn main() -> Result<()> {
+/// Exit code 1 = no results found (grep convention).
+const EXIT_NO_RESULTS: i32 = 1;
+
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("error: {e:#}");
+        std::process::exit(2);
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
     let db_path = cli.db.unwrap_or_else(default_db_path);
 
@@ -173,7 +196,8 @@ fn main() -> Result<()> {
             let c = colors();
             println!(
                 "{}Indexed{} {} ({} files, {} chunks)",
-                c.bold, c.reset,
+                c.bold,
+                c.reset,
                 dir.display(),
                 result.files_scanned,
                 result.chunks_written,
@@ -205,7 +229,16 @@ fn main() -> Result<()> {
         }
 
         Commands::Search {
-            query, mode, kind, limit, threshold, budget, depth, dir, direction, json,
+            query,
+            mode,
+            kind,
+            limit,
+            threshold,
+            budget,
+            depth,
+            dir,
+            direction,
+            json,
         } => {
             let store = Store::open(&db_path)?;
 
@@ -217,31 +250,37 @@ fn main() -> Result<()> {
                     let kind_filter = match kind.as_str() {
                         "all" => None,
                         "code" | "memory" => Some(kind.as_str()),
-                        k => anyhow::bail!("invalid kind '{k}': must be 'all', 'code', or 'memory'"),
+                        k => {
+                            anyhow::bail!("invalid kind '{k}': must be 'all', 'code', or 'memory'")
+                        }
                     };
 
                     let mut embedder = try_embedder();
                     let mut reranker = try_reranker();
                     let hnsw = try_hnsw(&db_path);
-                    let result = grasshopper::search::unified_search(
-                        &store,
-                        &query,
-                        kind_filter,
-                        limit,
-                        threshold,
-                        embedder.as_mut(),
-                        reranker.as_mut(),
-                        hnsw.as_ref(),
-                    )?;
+                    let result =
+                        grasshopper::search::unified_search(grasshopper::search::SearchContext {
+                            store: &store,
+                            query: &query,
+                            kind_filter,
+                            limit,
+                            threshold,
+                            embedder: embedder.as_mut(),
+                            reranker: reranker.as_mut(),
+                            hnsw: hnsw.as_ref(),
+                        })?;
 
                     if json {
                         println!("{}", serde_json::to_string_pretty(&result.hits)?);
+                        if result.hits.is_empty() {
+                            std::process::exit(EXIT_NO_RESULTS);
+                        }
                         return Ok(());
                     }
 
                     if result.hits.is_empty() {
                         println!("No results found.");
-                        return Ok(());
+                        std::process::exit(EXIT_NO_RESULTS);
                     }
 
                     for (i, hit) in result.hits.iter().enumerate() {
@@ -256,15 +295,21 @@ fn main() -> Result<()> {
                         "both" => (true, true),
                         "defs" | "def" => (true, false),
                         "refs" | "ref" => (false, true),
-                        d => anyhow::bail!("invalid direction '{d}': must be 'both', 'defs', or 'refs'"),
+                        d => anyhow::bail!(
+                            "invalid direction '{d}': must be 'both', 'defs', or 'refs'"
+                        ),
                     };
 
                     let defs = if show_defs {
                         store.find_definitions(&query, codebase_id)?
-                    } else { vec![] };
+                    } else {
+                        vec![]
+                    };
                     let refs = if show_refs {
                         store.find_references(&query, codebase_id)?
-                    } else { vec![] };
+                    } else {
+                        vec![]
+                    };
 
                     if json {
                         let out = serde_json::json!({
@@ -272,37 +317,69 @@ fn main() -> Result<()> {
                             "references": refs,
                         });
                         println!("{}", serde_json::to_string_pretty(&out)?);
+                        if defs.is_empty() && refs.is_empty() {
+                            std::process::exit(EXIT_NO_RESULTS);
+                        }
+                    } else if defs.is_empty() && refs.is_empty() {
+                        println!("No definitions or references found for '{query}'.");
+                        std::process::exit(EXIT_NO_RESULTS);
                     } else {
                         if !defs.is_empty() {
-                            println!("{}Definitions{} of '{}{query}{}':", c.bold, c.reset, c.cyan, c.reset);
+                            println!(
+                                "{}Definitions{} of '{}{query}{}':",
+                                c.bold, c.reset, c.cyan, c.reset
+                            );
                             for d in &defs {
                                 println!(
                                     "  {}{}{}{}{}{} {}({} {}){}",
-                                    c.green, d.file_path, c.reset,
-                                    c.dim, format_line(d.line), c.reset,
-                                    c.magenta, d.kind, d.symbol, c.reset,
+                                    c.green,
+                                    d.file_path,
+                                    c.reset,
+                                    c.dim,
+                                    format_line(d.line),
+                                    c.reset,
+                                    c.magenta,
+                                    d.kind,
+                                    d.symbol,
+                                    c.reset,
                                 );
                             }
                         }
                         if !refs.is_empty() {
-                            if !defs.is_empty() { println!(); }
-                            println!("{}References{} to '{}{query}{}':", c.bold, c.reset, c.cyan, c.reset);
+                            if !defs.is_empty() {
+                                println!();
+                            }
+                            println!(
+                                "{}References{} to '{}{query}{}':",
+                                c.bold, c.reset, c.cyan, c.reset
+                            );
                             for r in &refs {
                                 println!(
                                     "  {}{}{}{}{}{} {}({} {}){}",
-                                    c.green, r.file_path, c.reset,
-                                    c.dim, format_line(r.line), c.reset,
-                                    c.magenta, r.kind, r.symbol, c.reset,
+                                    c.green,
+                                    r.file_path,
+                                    c.reset,
+                                    c.dim,
+                                    format_line(r.line),
+                                    c.reset,
+                                    c.magenta,
+                                    r.kind,
+                                    r.symbol,
+                                    c.reset,
                                 );
                             }
                         }
                     }
                 }
                 "map" => {
-                    let codebase_id = store.resolve_codebase(dir.as_deref())?
+                    let codebase_id = store
+                        .resolve_codebase(dir.as_deref())?
                         .ok_or_else(|| anyhow::anyhow!("no codebases indexed — run index first"))?;
                     let output = grasshopper::search::generate_map(&store, codebase_id, budget)?;
                     print!("{output}");
+                    if output.starts_with("No definitions found") {
+                        std::process::exit(EXIT_NO_RESULTS);
+                    }
                 }
                 "impact" => {
                     let codebase_id = store.resolve_codebase(dir.as_deref())?;
@@ -312,24 +389,38 @@ fn main() -> Result<()> {
 
                     if json {
                         println!("{}", serde_json::to_string_pretty(&hits)?);
+                        if hits.is_empty() {
+                            std::process::exit(EXIT_NO_RESULTS);
+                        }
                         return Ok(());
                     }
 
                     if hits.is_empty() {
                         println!("No impact found for '{query}'.");
-                        return Ok(());
+                        std::process::exit(EXIT_NO_RESULTS);
                     }
 
                     let defs = store.find_definitions(&query, codebase_id)?;
                     if !defs.is_empty() {
-                        let locs: Vec<String> =
-                            defs.iter().map(|d| format!("{}:{}", d.file_path, d.line)).collect();
+                        let locs: Vec<String> = defs
+                            .iter()
+                            .map(|d| format!("{}:{}", d.file_path, d.line))
+                            .collect();
                         println!(
                             "{}Impact{} of changing '{}{query}{}' (defined at {}{}{}):",
-                            c.bold, c.reset, c.cyan, c.reset, c.green, locs.join(", "), c.reset,
+                            c.bold,
+                            c.reset,
+                            c.cyan,
+                            c.reset,
+                            c.green,
+                            locs.join(", "),
+                            c.reset,
                         );
                     } else {
-                        println!("{}Impact{} of changing '{}{query}{}':", c.bold, c.reset, c.cyan, c.reset);
+                        println!(
+                            "{}Impact{} of changing '{}{query}{}':",
+                            c.bold, c.reset, c.cyan, c.reset
+                        );
                     }
 
                     let mut current_depth = 0;
@@ -337,9 +428,14 @@ fn main() -> Result<()> {
                         if h.depth != current_depth {
                             current_depth = h.depth;
                             println!(
-                                "\n  {}Depth {} ({}):{}", c.yellow,
+                                "\n  {}Depth {} ({}):{}",
+                                c.yellow,
                                 current_depth,
-                                if current_depth == 1 { "direct" } else { "transitive" },
+                                if current_depth == 1 {
+                                    "direct"
+                                } else {
+                                    "transitive"
+                                },
                                 c.reset,
                             );
                         }
@@ -351,7 +447,9 @@ fn main() -> Result<()> {
 
                     println!("\n{} file(s) affected.", hits.len());
                 }
-                m => anyhow::bail!("invalid mode '{m}': must be 'search', 'navigate', 'map', or 'impact'"),
+                m => anyhow::bail!(
+                    "invalid mode '{m}': must be 'search', 'navigate', 'map', or 'impact'"
+                ),
             }
         }
 
@@ -359,6 +457,7 @@ fn main() -> Result<()> {
             content,
             title,
             tags,
+            memory_type,
         } => {
             let store = Store::open(&db_path)?;
             let mut embedder = try_embedder();
@@ -368,6 +467,7 @@ fn main() -> Result<()> {
                 &content,
                 title.as_deref(),
                 &tags,
+                memory_type.as_deref(),
             )?;
 
             let c = colors();
@@ -463,6 +563,10 @@ fn rebuild_hnsw(store: &Store, db_path: &Path) -> Result<()> {
     let index = grasshopper::code::hnsw::HnswIndex::from_embeddings(&rows)?;
     let hnsw_path = grasshopper::code::hnsw::hnsw_path(db_path);
     index.save(&hnsw_path)?;
-    println!("HNSW index: {} points → {}", index.len(), hnsw_path.display());
+    println!(
+        "HNSW index: {} points → {}",
+        index.len(),
+        hnsw_path.display()
+    );
     Ok(())
 }
