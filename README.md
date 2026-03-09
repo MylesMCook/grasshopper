@@ -117,7 +117,7 @@ grasshopper get 42        # full content + metadata
 grasshopper get 42 --json # structured output
 ```
 
-Shows the complete content and metadata for any chunk (code or memory) by its ID. Useful for debugging search results.
+Shows the complete content and metadata for any chunk (code or memory) by ID. Use it to debug search results.
 
 ### `memories` — Browse stored memories
 
@@ -197,7 +197,7 @@ Query → Embedder → HNSW (cosine) ┘
 
 ### Cognitive Memory
 
-Memories are typed and decay over time based on exponential decay:
+Memories decay exponentially based on type:
 
 ```
 final_score = rrf_score x (0.5 + salience) x exp(-decay_rate x days_since_last_access)
@@ -210,7 +210,7 @@ final_score = rrf_score x (0.5 + salience) x exp(-decay_rate x days_since_last_a
 | `episode` | 0.023 | ~30 days |
 | `procedure` | 0.01 | ~69 days |
 
-Salience starts at 0.5 and increases by 0.05 each time a memory is retrieved (capped at 1.0). This means frequently-accessed memories naturally float to the top.
+Salience starts at 0.5 and increases by 0.05 each time a memory is retrieved (capped at 1.0). Frequently-accessed memories rise to the top.
 
 ### Code Intelligence
 
