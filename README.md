@@ -29,7 +29,7 @@ No API keys. No cloud dependencies. No Docker. Just a binary and a database file
 
 ### Give your AI agent persistent memory
 
-Claude Code forgets everything when a session ends. Grasshopper remembers. Store architectural decisions, debugging insights, and user preferences. They surface automatically in future searches.
+Session-scoped coding agents forget everything when a session ends. Grasshopper remembers. Store architectural decisions, debugging insights, and user preferences. They surface automatically in future searches.
 
 ```sh
 grasshopper store "This project uses bun, not npm"
@@ -61,11 +61,11 @@ grasshopper search DatabasePool --mode impact       # what breaks if I change th
 
 ### Drop-in MCP server for any AI tool
 
-Grasshopper speaks MCP natively. Claude Code, Cursor, Windsurf, or any MCP client can use it as a search backend with zero glue code.
+Grasshopper speaks MCP natively. Cursor, Windsurf, or any other MCP client can use it as a search backend with zero glue code.
 
 ```sh
 grasshopper serve              # HTTP on port 8106
-grasshopper serve --stdio      # stdio transport for Claude Code
+grasshopper serve --stdio      # stdio transport for MCP clients
 ```
 
 ## Install
@@ -205,7 +205,7 @@ grasshopper serve --stdio       # stdio transport
 
 ## MCP Integration
 
-### Claude Code (HTTP)
+### HTTP MCP Client
 
 ```json
 {
@@ -218,7 +218,7 @@ grasshopper serve --stdio       # stdio transport
 }
 ```
 
-### Claude Code (stdio)
+### Stdio MCP Client
 
 ```json
 {
