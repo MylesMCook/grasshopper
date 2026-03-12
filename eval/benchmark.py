@@ -103,11 +103,13 @@ def evidence_in_results(evidence: list[str], results: list[dict]) -> dict:
         return {"found": 0, "total": 0, "recall": 1.0}
 
     found = 0
+    found_ids = []
     for eid in evidence:
         for r in results:
             content = r.get("content", "")
             if f"[{eid}]" in content:
                 found += 1
+                found_ids.append(eid)
                 break
 
     total = len(evidence)
@@ -115,7 +117,49 @@ def evidence_in_results(evidence: list[str], results: list[dict]) -> dict:
         "found": found,
         "total": total,
         "recall": found / total if total > 0 else 0.0,
+        "found_ids": found_ids,
     }
+
+
+def precision_at_k(evidence: list[str], results: list[dict], k: int) -> float:
+    """Precision@K: fraction of top-k results containing any evidence."""
+    if not evidence or k == 0:
+        return 0.0
+    top_k = results[:k]
+    hits = 0
+    for r in top_k:
+        content = r.get("content", "")
+        if any(f"[{eid}]" in content for eid in evidence):
+            hits += 1
+    return hits / k
+
+
+def mrr_score(evidence: list[str], results: list[dict]) -> float:
+    """Mean Reciprocal Rank: 1/rank of first result containing evidence."""
+    for i, r in enumerate(results):
+        content = r.get("content", "")
+        if any(f"[{eid}]" in content for eid in evidence):
+            return 1.0 / (i + 1)
+    return 0.0
+
+
+def ndcg_at_k(evidence: list[str], results: list[dict], k: int) -> float:
+    """NDCG@K: Normalized Discounted Cumulative Gain."""
+    import math
+    if not evidence or k == 0:
+        return 0.0
+
+    dcg = 0.0
+    for i, r in enumerate(results[:k]):
+        content = r.get("content", "")
+        rel = 1.0 if any(f"[{eid}]" in content for eid in evidence) else 0.0
+        dcg += rel / math.log2(i + 2)
+
+    # Ideal DCG: all evidence at top
+    ideal_k = min(k, len(evidence))
+    idcg = sum(1.0 / math.log2(i + 2) for i in range(ideal_k))
+
+    return dcg / idcg if idcg > 0 else 0.0
 
 
 def main():
@@ -124,8 +168,8 @@ def main():
     parser.add_argument("--qa", default="eval/data/qa_map.json", help="QA map file")
     parser.add_argument("--limit", type=int, default=10, help="Search result limit")
     parser.add_argument("--output", default=None, help="Output file (auto-named by mode if omitted)")
-    parser.add_argument("--mode", choices=["fts", "hybrid"], default="fts",
-                        help="fts = direct SQLite FTS (fast), hybrid = grasshopper recall CLI (full pipeline)")
+    parser.add_argument("--mode", choices=["fts", "hybrid", "hybrid-no-rerank"], default="fts",
+                        help="fts = direct SQLite FTS (fast), hybrid = grasshopper recall CLI (full pipeline), hybrid-no-rerank = skip reranker")
     parser.add_argument("--binary", default="grasshopper", help="Path to grasshopper binary")
     args = parser.parse_args()
 
@@ -148,7 +192,14 @@ def main():
     with open(qa_path) as f:
         qa_items = json.load(f)
 
-    mode_label = "FTS-only (direct SQLite)" if args.mode == "fts" else "Hybrid (grasshopper recall CLI)"
+    import time as time_mod
+
+    mode_labels = {
+        "fts": "FTS-only (direct SQLite)",
+        "hybrid": "Hybrid (grasshopper recall CLI)",
+        "hybrid-no-rerank": "Hybrid no-rerank (grasshopper recall CLI)",
+    }
+    mode_label = mode_labels.get(args.mode, args.mode)
     print(f"Benchmarking {len(qa_items)} questions against {db_path} ({total_memories} memories)")
     print(f"Mode: {mode_label}, limit: {args.limit}")
 
@@ -161,12 +212,22 @@ def main():
         category = qa["category"]
         sample_id = qa["sample_id"]
 
+        t0 = time_mod.time()
         if args.mode == "fts":
             hits = fts_search(conn, question, args.limit)
         else:
             hits = hybrid_search(str(db_path), question, args.limit, args.binary)
+        latency_ms = (time_mod.time() - t0) * 1000
 
         ev = evidence_in_results(evidence, hits)
+
+        # Compute additional IR metrics
+        p_at_1 = precision_at_k(evidence, hits, 1)
+        p_at_3 = precision_at_k(evidence, hits, 3)
+        p_at_5 = precision_at_k(evidence, hits, 5)
+        p_at_10 = precision_at_k(evidence, hits, 10)
+        mrr_val = mrr_score(evidence, hits)
+        ndcg_val = ndcg_at_k(evidence, hits, 10)
 
         result = {
             "sample_id": sample_id,
@@ -177,6 +238,13 @@ def main():
             "evidence_found": ev["found"],
             "evidence_total": ev["total"],
             "evidence_recall": ev["recall"],
+            "p@1": p_at_1,
+            "p@3": p_at_3,
+            "p@5": p_at_5,
+            "p@10": p_at_10,
+            "mrr": mrr_val,
+            "ndcg@10": ndcg_val,
+            "latency_ms": latency_ms,
         }
         results.append(result)
         by_category[category].append(result)
@@ -190,21 +258,40 @@ def main():
     # Compute aggregates
     total = len(results)
     non_adversarial = [r for r in results if r["category"] != 5]
-    avg_recall = sum(r["evidence_recall"] for r in non_adversarial) / len(non_adversarial) if non_adversarial else 0
+    n_na = len(non_adversarial) if non_adversarial else 1
+    avg_recall = sum(r["evidence_recall"] for r in non_adversarial) / n_na
 
     perfect_recall = sum(1 for r in non_adversarial if r["evidence_recall"] == 1.0)
     partial_recall = sum(1 for r in non_adversarial if 0 < r["evidence_recall"] < 1.0)
     retrieval_failures = sum(1 for r in non_adversarial if r["evidence_recall"] == 0.0)
     avg_hits = sum(r["n_hits"] for r in results) / total if total else 0
 
+    # New aggregate metrics
+    avg_p1 = sum(r["p@1"] for r in non_adversarial) / n_na
+    avg_p3 = sum(r["p@3"] for r in non_adversarial) / n_na
+    avg_p5 = sum(r["p@5"] for r in non_adversarial) / n_na
+    avg_p10 = sum(r["p@10"] for r in non_adversarial) / n_na
+    avg_mrr = sum(r["mrr"] for r in non_adversarial) / n_na
+    avg_ndcg = sum(r["ndcg@10"] for r in non_adversarial) / n_na
+    avg_latency = sum(r["latency_ms"] for r in results) / total if total else 0
+    p95_latency = sorted(r["latency_ms"] for r in results)[int(total * 0.95)] if total else 0
+
     print(f"\n{'='*60}")
     print(f"RESULTS — {mode_label} ({total} questions, limit={args.limit})")
     print(f"{'='*60}")
     print(f"Avg hits per query:                {avg_hits:.1f}")
     print(f"Evidence Recall (non-adversarial):  {avg_recall:.4f}")
-    print(f"Perfect Recall (all evidence):      {perfect_recall}/{len(non_adversarial)} ({perfect_recall/len(non_adversarial)*100:.1f}%)")
-    print(f"Partial Recall (some evidence):     {partial_recall}/{len(non_adversarial)} ({partial_recall/len(non_adversarial)*100:.1f}%)")
-    print(f"Retrieval Failures (none found):    {retrieval_failures}/{len(non_adversarial)} ({retrieval_failures/len(non_adversarial)*100:.1f}%)")
+    print(f"Perfect Recall (all evidence):      {perfect_recall}/{n_na} ({perfect_recall/n_na*100:.1f}%)")
+    print(f"Partial Recall (some evidence):     {partial_recall}/{n_na} ({partial_recall/n_na*100:.1f}%)")
+    print(f"Retrieval Failures (none found):    {retrieval_failures}/{n_na} ({retrieval_failures/n_na*100:.1f}%)")
+    print(f"Precision@1:                        {avg_p1:.4f}")
+    print(f"Precision@3:                        {avg_p3:.4f}")
+    print(f"Precision@5:                        {avg_p5:.4f}")
+    print(f"Precision@10:                       {avg_p10:.4f}")
+    print(f"MRR:                                {avg_mrr:.4f}")
+    print(f"NDCG@10:                            {avg_ndcg:.4f}")
+    print(f"Avg latency:                        {avg_latency:.1f} ms")
+    print(f"P95 latency:                        {p95_latency:.1f} ms")
 
     print(f"\nBy Category:")
     for cat in sorted(by_category.keys()):
@@ -212,8 +299,9 @@ def main():
         cat_non_adv = [r for r in items if r["category"] != 5]
         if cat_non_adv:
             cat_recall = sum(r["evidence_recall"] for r in cat_non_adv) / len(cat_non_adv)
+            cat_mrr = sum(r["mrr"] for r in cat_non_adv) / len(cat_non_adv)
             cat_perfect = sum(1 for r in cat_non_adv if r["evidence_recall"] == 1.0)
-            print(f"  {CATEGORY_NAMES.get(cat, '?'):15} ({len(items):3}q): recall={cat_recall:.4f}, perfect={cat_perfect}/{len(cat_non_adv)}")
+            print(f"  {CATEGORY_NAMES.get(cat, '?'):15} ({len(items):3}q): recall={cat_recall:.4f}, mrr={cat_mrr:.4f}, perfect={cat_perfect}/{len(cat_non_adv)}")
         else:
             print(f"  {CATEGORY_NAMES.get(cat, '?'):15} ({len(items):3}q): adversarial (no evidence)")
 
@@ -230,15 +318,25 @@ def main():
         },
         "aggregate": {
             "evidence_recall": avg_recall,
-            "perfect_recall_rate": perfect_recall / len(non_adversarial) if non_adversarial else 0,
-            "partial_recall_rate": partial_recall / len(non_adversarial) if non_adversarial else 0,
-            "retrieval_failure_rate": retrieval_failures / len(non_adversarial) if non_adversarial else 0,
+            "perfect_recall_rate": perfect_recall / n_na,
+            "partial_recall_rate": partial_recall / n_na,
+            "retrieval_failure_rate": retrieval_failures / n_na,
             "avg_hits_per_query": avg_hits,
+            "p@1": avg_p1,
+            "p@3": avg_p3,
+            "p@5": avg_p5,
+            "p@10": avg_p10,
+            "mrr": avg_mrr,
+            "ndcg@10": avg_ndcg,
+            "avg_latency_ms": avg_latency,
+            "p95_latency_ms": p95_latency,
         },
         "by_category": {
             CATEGORY_NAMES.get(cat, str(cat)): {
                 "n_questions": len(items),
                 "avg_recall": sum(r["evidence_recall"] for r in items if r["category"] != 5) / max(1, len([r for r in items if r["category"] != 5])),
+                "avg_mrr": sum(r["mrr"] for r in items if r["category"] != 5) / max(1, len([r for r in items if r["category"] != 5])),
+                "avg_ndcg@10": sum(r["ndcg@10"] for r in items if r["category"] != 5) / max(1, len([r for r in items if r["category"] != 5])),
             }
             for cat, items in sorted(by_category.items())
         },

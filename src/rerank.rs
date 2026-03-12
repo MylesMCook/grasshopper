@@ -1,16 +1,23 @@
 use anyhow::Result;
 use fastembed::{RerankInitOptions, RerankerModel, TextRerank};
+use std::path::PathBuf;
 
 pub struct Reranker {
     model: TextRerank,
 }
 
 impl Reranker {
-    /// Initialize with BAAI/bge-reranker-base (default fastembed model).
-    /// Model is downloaded and cached on first call (~130MB).
+    /// Initialize with Jina Reranker V1 Turbo (distilled cross-encoder).
+    /// ~3x faster and ~3x less memory than BGE reranker base.
     pub fn new() -> Result<Self> {
+        // fastembed defaults to a relative ".fastembed_cache" path. Use an
+        // absolute home cache path so CLI/systemd/bench runs share one cache.
+        let cache_dir = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".fastembed_cache");
         let model = TextRerank::try_new(
-            RerankInitOptions::new(RerankerModel::BGERerankerBase)
+            RerankInitOptions::new(RerankerModel::JINARerankerV1TurboEn)
+                .with_cache_dir(cache_dir)
                 .with_show_download_progress(true),
         )?;
         Ok(Self { model })

@@ -1,12 +1,19 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
+use tracing::info_span;
 
 use crate::rerank::Reranker;
 use crate::store::{SearchHit, Store, hybrid_search};
 
 /// Max candidates to pass to cross-encoder (latency control).
-const RERANK_CANDIDATES: usize = 20;
+/// Tail-append (lines below) ensures limit > 10 requests still get full results.
+const RERANK_CANDIDATES: usize = 10;
+
+/// Minimum cross-encoder score to keep a reranked hit.
+/// Keep at -inf for a true no-op baseline because fastembed scores are raw
+/// logits and may be negative. Calibrate empirically before raising this.
+const RERANK_MIN_SCORE: f32 = f32::NEG_INFINITY;
 
 /// Max expanded query variants (original + expansions).
 const MAX_EXPANSIONS: usize = 6;
@@ -14,6 +21,7 @@ const MAX_EXPANSIONS: usize = 6;
 /// Scales reranker-range thresholds (0.0-1.0) to RRF-range scores (~0.003-0.016).
 /// RRF with k=60 gives ~0.0065 for rank-1, so a reranker threshold of 0.3 maps to ~0.015.
 const RRF_THRESHOLD_SCALE: f32 = 0.05;
+const RERANK_RANK_K: f64 = 60.0;
 
 /// Common stop words to strip for a tighter query variant.
 const STOP_WORDS: &[&str] = &[
@@ -161,13 +169,18 @@ pub fn rerank_hits(
 
     let ranked = reranker.rerank(query, &passages, limit.min(n))?;
 
-    // Build result: reranked hits with cross-encoder scores written in
+    // Build result: reranked hits with cross-encoder scores written in,
+    // filtering out low-confidence results below RERANK_MIN_SCORE
     let mut result: Vec<SearchHit> = ranked
         .into_iter()
-        .map(|(idx, score)| {
+        .filter(|(_, score)| *score >= RERANK_MIN_SCORE)
+        .enumerate()
+        .map(|(rank, (idx, score))| {
             let mut hit = hits[idx].clone();
             hit.reranker_score = Some(score);
-            hit.score = score as f64;
+            // Keep score in the same positive scale as RRF so downstream
+            // cognitive scoring can combine signals without logits swamping it.
+            hit.score = 1.0 / (RERANK_RANK_K + (rank + 1) as f64);
             hit
         })
         .collect();
@@ -224,47 +237,64 @@ pub fn unified_search(ctx: SearchContext<'_>) -> Result<UnifiedSearchResult> {
 
     // Expanded FTS: generates query variants for better recall (stop-word removal,
     // quoted pairs, 2-token subsets). Falls through to plain fts_search for single words.
-    let fts_results = expanded_fts_search(store, query, kind_filter, limit.max(20))?;
+    let fts_results = {
+        let _span = info_span!("fts_search").entered();
+        expanded_fts_search(store, query, kind_filter, limit.max(20))?
+    };
 
     // Vector search (runs once on original query)
     let vec_results = if let Some(emb) = embedder {
-        let query_vec = emb.embed_batch(&[query.to_string()])?;
+        let query_vec = {
+            let _span = info_span!("query_embed").entered();
+            emb.embed_batch(&[query.to_string()])?
+        };
         if query_vec.is_empty() {
             vec![]
-        } else if let Some(hnsw) = hnsw {
-            store.vector_search_hnsw(hnsw, &query_vec[0], kind_filter, limit.max(20))?
         } else {
-            store.vector_search(
-                &query_vec[0],
-                crate::code::embed::MODEL_NAME,
-                kind_filter,
-                limit.max(20),
-            )?
+            let _span = info_span!("vector_search").entered();
+            if let Some(hnsw) = hnsw {
+                store.vector_search_hnsw(hnsw, &query_vec[0], kind_filter, limit.max(20))?
+            } else {
+                store.vector_search(
+                    &query_vec[0],
+                    crate::code::embed::MODEL_NAME,
+                    kind_filter,
+                    limit.max(20),
+                )?
+            }
         }
     } else {
         vec![]
     };
 
     // RRF fusion
-    let merged = if fts_results.is_empty() {
-        vec_results
-    } else if vec_results.is_empty() {
-        fts_results
-    } else {
-        hybrid_search(&fts_results, &vec_results, limit.max(20))
+    let merged = {
+        let _span = info_span!("rrf_fusion").entered();
+        if fts_results.is_empty() {
+            vec_results
+        } else if vec_results.is_empty() {
+            fts_results
+        } else {
+            hybrid_search(&fts_results, &vec_results, limit.max(20))
+        }
     };
 
-    // Rerank via cross-encoder if available
+    // Rerank via cross-encoder if available (skip for code — benchmarks show it hurts accuracy)
     let mut rerank_succeeded = false;
     let merged = if let Some(reranker) = reranker {
-        match rerank_hits(reranker, query, &merged, limit.max(20)) {
-            Ok(reranked) => {
-                rerank_succeeded = true;
-                reranked
-            }
-            Err(e) => {
-                tracing::warn!("reranking failed, returning unreranked results: {e}");
-                merged
+        if kind_filter == Some("code") {
+            merged // Skip reranking for code — MRR: Hybrid 0.598 vs Full 0.557
+        } else {
+            let _span = info_span!("rerank").entered();
+            match rerank_hits(reranker, query, &merged, limit.max(20)) {
+                Ok(reranked) => {
+                    rerank_succeeded = true;
+                    reranked
+                }
+                Err(e) => {
+                    tracing::warn!("reranking failed, returning unreranked results: {e}");
+                    merged
+                }
             }
         }
     } else {
@@ -273,6 +303,7 @@ pub fn unified_search(ctx: SearchContext<'_>) -> Result<UnifiedSearchResult> {
 
     // For memory results: filter archived + identity, apply relevance gate, cognitive scoring
     if is_memory_only || kind_filter.is_none() {
+        let _span = info_span!("cognitive_scoring").entered();
         // Apply cognitive scoring to memory hits in-place, pass code hits through unchanged
         let mut all_hits: Vec<SearchHit> = merged
             .into_iter()

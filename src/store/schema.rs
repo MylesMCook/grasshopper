@@ -158,9 +158,8 @@ impl Store {
         Ok(())
     }
 
-    /// Raw connection access — restricted to this crate (tests only).
-    #[cfg(test)]
-    pub(crate) fn conn(&self) -> &Connection {
+    /// Raw connection access for tests and benchmarks.
+    pub fn conn(&self) -> &Connection {
         &self.conn
     }
 }

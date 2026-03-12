@@ -6,3 +6,5 @@
 .env
 .fastembed_cache/
 CLAUDE.md
+bench/corpora/
+bench/results/

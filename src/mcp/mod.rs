@@ -18,6 +18,18 @@ use crate::store::Store;
 
 use format::format_search_hits;
 
+fn parse_kind_filter(kind: Option<&str>) -> anyhow::Result<Option<&str>> {
+    match kind {
+        Some("all") | None => Ok(None),
+        Some(kind @ ("code" | "memory")) => Ok(Some(kind)),
+        Some(kind) => anyhow::bail!("invalid kind '{kind}': must be 'all', 'code', or 'memory'"),
+    }
+}
+
+fn should_init_reranker(kind_filter: Option<&str>) -> bool {
+    kind_filter != Some("code")
+}
+
 // --- Tool parameter types ---
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -67,7 +79,7 @@ pub struct StoreParams {
 #[derive(Clone)]
 pub struct GrasshopperMcp {
     db_path: PathBuf,
-    embedder: Arc<Mutex<Option<Embedder>>>,
+    pub(crate) embedder: Arc<Mutex<Option<Embedder>>>,
     reranker: Arc<Mutex<Option<crate::rerank::Reranker>>>,
     /// Epoch seconds of last reranker init failure (0 = never failed). Retry after 60s cooldown.
     reranker_failed_at: Arc<std::sync::atomic::AtomicI64>,
@@ -185,7 +197,7 @@ impl GrasshopperMcp {
 
     /// Initialize embedder if not yet loaded. MUST be called inside spawn_blocking
     /// (not on an async thread) since it acquires a blocking std::sync::Mutex.
-    fn init_embedder_blocking(embedder: &Arc<Mutex<Option<Embedder>>>) {
+    pub(crate) fn init_embedder_blocking(embedder: &Arc<Mutex<Option<Embedder>>>) {
         let mut guard = match embedder.lock() {
             Ok(g) => g,
             Err(poisoned) => {
@@ -260,23 +272,23 @@ impl GrasshopperMcp {
             let mode = params.mode.as_deref().unwrap_or("search");
             match mode {
                 "search" => {
+                    let kind_filter = parse_kind_filter(params.kind.as_deref())?;
                     if !skip_models {
                         Self::init_embedder_blocking(&embedder);
-                        Self::init_reranker_blocking(&reranker, &rr_failed);
+                        if should_init_reranker(kind_filter) {
+                            Self::init_reranker_blocking(&reranker, &rr_failed);
+                        }
                     }
                     let store = Store::open(&db_path)?;
-                    let kind_filter = match params.kind.as_deref() {
-                        Some("all") | None => None,
-                        Some(k @ ("code" | "memory")) => Some(k),
-                        Some(k) => {
-                            anyhow::bail!("invalid kind '{k}': must be 'all', 'code', or 'memory'")
-                        }
-                    };
                     let limit = params.limit.unwrap_or(10).clamp(1, 100);
                     let threshold = params.threshold;
                     let mut emb_guard =
                         embedder.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-                    let mut rr_guard = reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                    let mut rr_guard = if should_init_reranker(kind_filter) {
+                        Some(reranker.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?)
+                    } else {
+                        None
+                    };
                     let hnsw_guard = hnsw.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
                     let result = crate::search::unified_search(crate::search::SearchContext {
                         store: &store,
@@ -285,7 +297,7 @@ impl GrasshopperMcp {
                         limit,
                         threshold,
                         embedder: emb_guard.as_mut(),
-                        reranker: rr_guard.as_mut(),
+                        reranker: rr_guard.as_mut().and_then(|guard| guard.as_mut()),
                         hnsw: hnsw_guard.as_ref(),
                     })?;
                     let json = serde_json::to_string_pretty(&format_search_hits(&result.hits))?;
@@ -569,6 +581,32 @@ impl GrasshopperMcp {
                 Ok(result)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_kind_filter, should_init_reranker};
+
+    #[test]
+    fn parse_kind_filter_accepts_supported_values() {
+        assert_eq!(parse_kind_filter(None).unwrap(), None);
+        assert_eq!(parse_kind_filter(Some("all")).unwrap(), None);
+        assert_eq!(parse_kind_filter(Some("code")).unwrap(), Some("code"));
+        assert_eq!(parse_kind_filter(Some("memory")).unwrap(), Some("memory"));
+    }
+
+    #[test]
+    fn parse_kind_filter_rejects_invalid_values() {
+        let error = parse_kind_filter(Some("symbol")).unwrap_err().to_string();
+        assert!(error.contains("invalid kind 'symbol'"));
+    }
+
+    #[test]
+    fn code_only_search_skips_reranker_init() {
+        assert!(!should_init_reranker(Some("code")));
+        assert!(should_init_reranker(None));
+        assert!(should_init_reranker(Some("memory")));
     }
 }
 

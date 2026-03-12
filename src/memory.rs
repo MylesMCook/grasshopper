@@ -14,6 +14,20 @@ fn truncate_title(content: &str) -> String {
     }
 }
 
+fn build_memory_embedding_text(title: &str, content: &str, tags: &str) -> String {
+    let tags = tags
+        .split(',')
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty())
+        .collect::<Vec<_>>();
+
+    if tags.is_empty() {
+        format!("{title}\n{content}")
+    } else {
+        format!("{title}\n{content}\nDescriptors: {}", tags.join(", "))
+    }
+}
+
 // --- Cognitive scoring ---
 
 fn decay_rate(memory_type: &str) -> f64 {
@@ -53,6 +67,13 @@ pub fn cognitive_score(hit: &SearchHit) -> f64 {
         .map(days_since)
         .unwrap_or(days_created);
     let decay_factor = (-lambda * days_last_access).exp();
+    // Floor prevents old but relevant memories from total erasure by exponential decay.
+    // Higher floor when reranker confirmed relevance (cross-encoder score >= 0.3).
+    let decay_factor = if hit.reranker_score.is_some_and(|s| s >= 0.3) {
+        decay_factor.max(0.5)
+    } else {
+        decay_factor.max(0.15)
+    };
 
     rrf_score * salience_factor * decay_factor
 }
@@ -114,7 +135,7 @@ pub fn store(
 
     // 4. Dedup via embedding similarity (if embedder available, graceful fallback on error)
     if let Some(emb) = embedder {
-        let embed_text = format!("{}\n{}", title, content);
+        let embed_text = build_memory_embedding_text(&title, content, tags);
         let vectors = match emb.embed_batch(&[embed_text]) {
             Ok(v) => v,
             Err(e) => {
@@ -329,5 +350,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.title, "My Custom Title");
+    }
+
+    #[test]
+    fn build_memory_embedding_text_omits_empty_tags() {
+        let text = build_memory_embedding_text("Title", "Body", " , ");
+        assert_eq!(text, "Title\nBody");
+    }
+
+    #[test]
+    fn build_memory_embedding_text_includes_normalized_tags() {
+        let text = build_memory_embedding_text("Title", "Body", " security, backups , cloudflare ");
+        assert_eq!(
+            text,
+            "Title\nBody\nDescriptors: security, backups, cloudflare"
+        );
     }
 }

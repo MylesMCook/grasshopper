@@ -258,7 +258,13 @@ fn try_embedder() -> Option<grasshopper::code::embed::Embedder> {
 }
 
 fn try_reranker() -> Option<grasshopper::rerank::Reranker> {
-    grasshopper::rerank::Reranker::new().ok()
+    match grasshopper::rerank::Reranker::new() {
+        Ok(r) => Some(r),
+        Err(e) => {
+            tracing::warn!("reranker unavailable, continuing without reranking: {e}");
+            None
+        }
+    }
 }
 
 fn try_hnsw(db_path: &Path) -> Option<grasshopper::code::hnsw::HnswIndex> {
@@ -374,7 +380,11 @@ fn run() -> Result<()> {
                     };
 
                     let mut embedder = try_embedder();
-                    let mut reranker = try_reranker();
+                    let mut reranker = if kind_filter == Some("code") {
+                        None
+                    } else {
+                        try_reranker()
+                    };
                     let hnsw = try_hnsw(&db_path);
                     let result =
                         grasshopper::search::unified_search(grasshopper::search::SearchContext {

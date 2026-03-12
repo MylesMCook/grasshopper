@@ -45,6 +45,11 @@ pub async fn run_stdio(db_path: PathBuf) -> Result<()> {
     tracing::info!("starting grasshopper MCP server (stdio)");
     startup_maintenance(&db_path);
     let server = GrasshopperMcp::new(db_path);
+
+    // Warm up embedder in background (eliminates ~500ms cold start on first search)
+    let emb_arc = Arc::clone(&server.embedder);
+    tokio::task::spawn_blocking(move || GrasshopperMcp::init_embedder_blocking(&emb_arc));
+
     let service = rmcp::ServiceExt::serve(server, rmcp::transport::stdio()).await?;
     service.waiting().await?;
     Ok(())
@@ -75,6 +80,11 @@ pub async fn run_http(db_path: PathBuf, port: u16) -> Result<()> {
         Arc::new(Mutex::new(GrasshopperMcp::try_load_hnsw(&db_path)));
 
     startup_maintenance(&db_path);
+
+    // Warm up embedder in background (eliminates ~500ms cold start on first search).
+    // Reranker stays lazy — it loads on first memory search to keep startup VmRSS lower.
+    let emb_warmup = shared_embedder.clone();
+    tokio::task::spawn_blocking(move || GrasshopperMcp::init_embedder_blocking(&emb_warmup));
 
     let db = db_path.clone();
     let embedder_for_mcp = shared_embedder.clone();

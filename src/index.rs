@@ -3,6 +3,7 @@ use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::Instant;
+use tracing::info_span;
 
 use crate::store::{CodeChunkParams, FileChunks, Store};
 
@@ -94,7 +95,10 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
     let codebase_id = store.get_or_create_codebase(&root_str, &dir_name)?;
 
     // 2. Scan directory
-    let scan_result = crate::code::scan::scan_directory(&root)?;
+    let scan_result = {
+        let _span = info_span!("scan").entered();
+        crate::code::scan::scan_directory(&root)?
+    };
     let errors = scan_result.errors;
     let total_files = scan_result.files.len();
 
@@ -115,17 +119,20 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
     let mut changed_files = Vec::new();
 
     for batch in files_to_process.chunks(FILE_BATCH) {
-        let results: Vec<_> = batch
-            .par_iter()
-            .map(|file| {
-                let chunks = crate::code::chunk::chunk_content(
-                    &file.rel_path,
-                    &file.content,
-                    &file.language,
-                );
-                (file, chunks)
-            })
-            .collect();
+        let results: Vec<_> = {
+            let _span = info_span!("chunk", batch_size = batch.len()).entered();
+            batch
+                .par_iter()
+                .map(|file| {
+                    let chunks = crate::code::chunk::chunk_content(
+                        &file.rel_path,
+                        &file.content,
+                        &file.language,
+                    );
+                    (file, chunks)
+                })
+                .collect()
+        };
 
         let mut file_chunks_batch = Vec::new();
         for (file, chunks) in results {
@@ -142,6 +149,7 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
             });
         }
         if !file_chunks_batch.is_empty() {
+            let _span = info_span!("upsert", chunks = file_chunks_batch.len()).entered();
             store.batch_upsert_chunks(codebase_id, &file_chunks_batch)?;
         }
     }
@@ -156,6 +164,7 @@ pub fn index_directory(store: &Store, dir: &Path) -> Result<IndexResult> {
 
     // 6. FTS sync
     if !changed_files.is_empty() || removed > 0 {
+        let _span = info_span!("fts_sync").entered();
         if skipped == 0 || changed_files.len() > total_files / 2 {
             store.rebuild_fts_for_codebase(codebase_id)?;
         } else {
@@ -209,7 +218,10 @@ pub fn embed_codebase(
             })
             .collect();
 
-        let vectors = embedder.embed_batch(&texts)?;
+        let vectors = {
+            let _span = info_span!("embed", batch_size = texts.len()).entered();
+            embedder.embed_batch(&texts)?
+        };
         let items: Vec<(i64, &[f32], &str)> = batch
             .iter()
             .zip(vectors.iter())

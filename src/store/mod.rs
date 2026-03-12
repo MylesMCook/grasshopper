@@ -645,11 +645,11 @@ mod tests {
             ])
             .unwrap();
 
-        // Search near emb_a
+        // Search near emb_a — emb_b has cosine sim ~0.1 (below MIN_VECTOR_SIMILARITY=0.3)
         let query = vec![0.9, 0.1, 0.0];
         let results = store.vector_search(&query, "test-model", None, 10).unwrap();
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].symbol_name.as_deref(), Some("a")); // closer to query
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].symbol_name.as_deref(), Some("a")); // only match above threshold
     }
 
     #[test]
@@ -732,8 +732,8 @@ mod tests {
         query[1] = 0.1;
 
         let results = store.vector_search_hnsw(&hnsw, &query, None, 10).unwrap();
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].symbol_name.as_deref(), Some("x")); // closer to query
+        assert_eq!(results.len(), 1); // emb_y has cosine sim ~0.1, below MIN_VECTOR_SIMILARITY
+        assert_eq!(results[0].symbol_name.as_deref(), Some("x")); // only match above threshold
 
         // Test persistence
         let hnsw_path = crate::code::hnsw::hnsw_path(&db_path);

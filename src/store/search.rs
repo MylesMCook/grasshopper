@@ -9,6 +9,21 @@ use super::types::*;
 /// The HNSW path handles large datasets correctly — this guards only the fallback.
 const MAX_BRUTE_FORCE_CHUNKS: usize = 10_000;
 
+/// Minimum cosine similarity for vector search results.
+/// Defaults to 0.3, but code search uses a stricter floor to suppress
+/// vector-only false positives on out-of-domain queries.
+const MIN_VECTOR_SIMILARITY_DEFAULT: f64 = 0.3;
+const MIN_VECTOR_SIMILARITY_CODE: f64 = 0.48;
+
+#[inline]
+fn min_vector_similarity(kind_filter: Option<&str>) -> f64 {
+    if kind_filter == Some("code") {
+        MIN_VECTOR_SIMILARITY_CODE
+    } else {
+        MIN_VECTOR_SIMILARITY_DEFAULT
+    }
+}
+
 impl Store {
     /// Full-text search across code and/or memory chunks.
     pub fn fts_search(
@@ -85,6 +100,7 @@ impl Store {
         kind_filter: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>> {
+        let min_similarity = min_vector_similarity(kind_filter);
         let total: i64 = self.count_embedded_filtered(kind_filter)?;
         if total as usize > MAX_BRUTE_FORCE_CHUNKS {
             tracing::warn!(
@@ -120,6 +136,9 @@ impl Store {
                 continue;
             };
             let score = dot_product(query_embedding, emb) as f64;
+            if score < min_similarity {
+                continue;
+            }
             scored.push(SearchHit {
                 id: row.get(0)?,
                 kind: row.get(1)?,
@@ -190,6 +209,7 @@ impl Store {
         kind_filter: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>> {
+        let min_similarity = min_vector_similarity(kind_filter);
         if hnsw.is_empty() {
             return self.vector_search(
                 query_embedding,
@@ -244,6 +264,9 @@ impl Store {
                 continue;
             };
             let score = dot_product(query_embedding, emb) as f64;
+            if score < min_similarity {
+                continue;
+            }
             scored.push(SearchHit {
                 id: row.get(0)?,
                 kind: row.get(1)?,
