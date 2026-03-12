@@ -138,13 +138,17 @@ pub fn expanded_fts_search(
 /// entries (snippet is empty for memories — content is the canonical field).
 fn rerank_passage(hit: &SearchHit) -> String {
     if hit.kind == "memory" {
-        if hit.title.is_empty() {
-            hit.snippet.clone()
-        } else if hit.snippet.is_empty() {
-            hit.title.clone()
-        } else {
-            format!("{}: {}", hit.title, hit.snippet)
+        let mut parts = Vec::new();
+        if !hit.title.is_empty() {
+            parts.push(hit.title.clone());
         }
+        if !hit.snippet.is_empty() {
+            parts.push(hit.snippet.clone());
+        }
+        if !hit.descriptors.trim().is_empty() {
+            parts.push(format!("Descriptors: {}", hit.descriptors));
+        }
+        parts.join("\n")
     } else {
         hit.snippet.clone()
     }
@@ -426,6 +430,34 @@ pub fn generate_map(store: &Store, codebase_id: i64, token_budget: usize) -> Res
 mod tests {
     use super::*;
 
+    fn test_hit(kind: &str) -> SearchHit {
+        SearchHit {
+            id: 1,
+            kind: kind.into(),
+            file_path: Some("src/example.rs".into()),
+            symbol_name: Some("example".into()),
+            symbol_kind: Some("function".into()),
+            signature: Some("fn example()".into()),
+            title: String::new(),
+            snippet: String::new(),
+            start_line: Some(1),
+            end_line: Some(2),
+            memory_type: if kind == "memory" {
+                Some("knowledge".into())
+            } else {
+                None
+            },
+            score: 0.0,
+            reranker_score: None,
+            access_count: 0,
+            last_accessed: None,
+            salience: 0.5,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            archived: false,
+            descriptors: String::new(),
+        }
+    }
+
     #[test]
     fn test_expand_query_single_word_passthrough() {
         let variants = expand_query("SQLite");
@@ -464,6 +496,30 @@ mod tests {
             "should cap at {MAX_EXPANSIONS}: got {}",
             variants.len()
         );
+    }
+
+    #[test]
+    fn test_rerank_passage_for_memory_includes_descriptors() {
+        let mut hit = test_hit("memory");
+        hit.title = "Deployment setup".into();
+        hit.snippet = "Use Cloudflare tunnel and systemd services.".into();
+        hit.descriptors = "deployment,cloudflare,systemd".into();
+
+        let passage = rerank_passage(&hit);
+
+        assert!(passage.contains("Deployment setup"));
+        assert!(passage.contains("Use Cloudflare tunnel and systemd services."));
+        assert!(passage.contains("Descriptors: deployment,cloudflare,systemd"));
+    }
+
+    #[test]
+    fn test_rerank_passage_for_code_uses_snippet_only() {
+        let mut hit = test_hit("code");
+        hit.title = "Ignored title".into();
+        hit.snippet = "fn example() {}".into();
+        hit.descriptors = "ignored".into();
+
+        assert_eq!(rerank_passage(&hit), "fn example() {}".to_string());
     }
 
     #[test]
