@@ -7,6 +7,8 @@
 use grasshopper::mcp::{GrasshopperMcp, IndexParams, SearchParams, StoreParams};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::RawContent;
+use std::sync::atomic::AtomicI64;
+use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
 /// Create a temp DB with model init disabled and return (mcp, db_dir).
@@ -23,23 +25,36 @@ fn create_sample_project() -> TempDir {
 
     std::fs::write(
         dir.path().join("main.rs"),
-        r#"fn main() {
-    println!("hello");
-    greet("world");
-}
+        r#"mod handlers;
+mod service;
 
-fn greet(name: &str) {
-    println!("Hello, {name}!");
+fn main() {
+    handlers::run();
 }
 "#,
     )
     .unwrap();
 
     std::fs::write(
-        dir.path().join("lib.rs"),
+        dir.path().join("handlers.rs"),
+        r#"use crate::service::greet;
+
+pub fn run() {
+    greet("world");
+}
+"#,
+    )
+    .unwrap();
+
+    std::fs::write(
+        dir.path().join("service.rs"),
         r#"pub struct Config {
     pub name: String,
     pub debug: bool,
+}
+
+pub fn greet(name: &str) {
+    println!("Hello, {name}!");
 }
 
 impl Config {
@@ -58,6 +73,19 @@ pub fn process(config: &Config) {
     .unwrap();
 
     dir
+}
+
+fn poisoned_reranker_mutex() -> Arc<Mutex<Option<grasshopper::rerank::Reranker>>> {
+    let reranker = Arc::new(Mutex::new(None));
+    let reranker_clone = Arc::clone(&reranker);
+
+    let _ = std::thread::spawn(move || {
+        let _guard = reranker_clone.lock().unwrap();
+        panic!("poison reranker mutex for test");
+    })
+    .join();
+
+    reranker
 }
 
 /// Extract text content from a CallToolResult.
@@ -91,7 +119,7 @@ async fn index_returns_file_counts() {
     assert!(result.is_error.is_none() || !result.is_error.unwrap());
     let text = result_text(&result);
     let json: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(json["files_scanned"], 2);
+    assert_eq!(json["files_scanned"], 3);
     assert!(json["chunks_written"].as_i64().unwrap() > 0);
 }
 
@@ -141,6 +169,75 @@ async fn search_fts_returns_results() {
 }
 
 #[tokio::test]
+async fn search_code_only_skips_poisoned_reranker_lock() {
+    let dir = TempDir::new().unwrap();
+    let db_path = dir.path().join("test.db");
+    let mcp = GrasshopperMcp::with_state_for_tests(
+        db_path,
+        Arc::new(Mutex::new(None)),
+        poisoned_reranker_mutex(),
+        Arc::new(AtomicI64::new(0)),
+        Arc::new(Mutex::new(None)),
+    );
+    let project = create_sample_project();
+
+    mcp.index_dir(Parameters(IndexParams {
+        directory: project.path().to_string_lossy().into_owned(),
+        embed: None,
+    }))
+    .await
+    .unwrap();
+
+    let result = mcp
+        .search(Parameters(SearchParams {
+            query: "greet".into(),
+            mode: None,
+            kind: Some("code".into()),
+            limit: Some(5),
+            threshold: None,
+            budget: None,
+            depth: None,
+            dir: None,
+            direction: None,
+        }))
+        .await
+        .unwrap();
+
+    assert!(result.is_error.is_none() || !result.is_error.unwrap());
+}
+
+#[tokio::test]
+async fn search_memory_attempts_reranker_lock() {
+    let dir = TempDir::new().unwrap();
+    let db_path = dir.path().join("test.db");
+    let mcp = GrasshopperMcp::with_state_for_tests(
+        db_path,
+        Arc::new(Mutex::new(None)),
+        poisoned_reranker_mutex(),
+        Arc::new(AtomicI64::new(0)),
+        Arc::new(Mutex::new(None)),
+    );
+
+    let result = mcp
+        .search(Parameters(SearchParams {
+            query: "anything".into(),
+            mode: None,
+            kind: Some("memory".into()),
+            limit: Some(5),
+            threshold: None,
+            budget: None,
+            depth: None,
+            dir: None,
+            direction: None,
+        }))
+        .await
+        .unwrap();
+
+    assert_eq!(result.is_error, Some(true));
+    assert!(result_text(&result).contains("lock:"));
+}
+
+#[tokio::test]
 async fn search_navigate_returns_definitions() {
     let (mcp, _db_dir) = setup();
     let project = create_sample_project();
@@ -173,7 +270,43 @@ async fn search_navigate_returns_definitions() {
         text.contains("Definitions of 'Config'"),
         "navigate mode should find Config definition, got: {text}"
     );
-    assert!(text.contains("lib.rs"));
+    assert!(text.contains("service.rs"));
+}
+
+#[tokio::test]
+async fn search_navigate_returns_references() {
+    let (mcp, _db_dir) = setup();
+    let project = create_sample_project();
+
+    mcp.index_dir(Parameters(IndexParams {
+        directory: project.path().to_string_lossy().into_owned(),
+        embed: None,
+    }))
+    .await
+    .unwrap();
+
+    let result = mcp
+        .search(Parameters(SearchParams {
+            query: "greet".into(),
+            mode: Some("navigate".into()),
+            kind: None,
+            limit: None,
+            threshold: None,
+            budget: None,
+            depth: None,
+            dir: None,
+            direction: Some("refs".into()),
+        }))
+        .await
+        .unwrap();
+
+    assert!(result.is_error.is_none() || !result.is_error.unwrap());
+    let text = result_text(&result);
+    assert!(
+        text.contains("References to 'greet'"),
+        "navigate refs should find greet references, got: {text}"
+    );
+    assert!(text.contains("handlers.rs"));
 }
 
 #[tokio::test]
@@ -210,8 +343,8 @@ async fn search_map_returns_file_listing() {
         "map should list main.rs symbols, got: {text}"
     );
     assert!(
-        text.contains("lib"),
-        "map should list lib.rs symbols, got: {text}"
+        text.contains("service"),
+        "map should list service.rs symbols, got: {text}"
     );
 }
 
@@ -242,15 +375,14 @@ async fn search_impact_returns_affected_files() {
         .await
         .unwrap();
 
-    // Impact may or may not find results depending on FTS cross-references.
-    // The key thing is it doesn't error.
     assert!(result.is_error.is_none() || !result.is_error.unwrap());
     let text = result_text(&result);
-    // Either finds impact or reports none found — both are valid
     assert!(
-        text.contains("Impact of changing") || text.contains("No impact found"),
-        "impact mode should return a valid response, got: {text}"
+        text.contains("Impact of changing 'greet'"),
+        "impact mode should find greet impact, got: {text}"
     );
+    assert!(text.contains("handlers.rs"));
+    assert!(text.contains("main.rs"));
 }
 
 #[tokio::test]

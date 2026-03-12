@@ -91,31 +91,48 @@ pub struct GrasshopperMcp {
 
 #[tool_router]
 impl GrasshopperMcp {
-    pub fn new(db_path: PathBuf) -> Self {
-        let hnsw = Self::try_load_hnsw(&db_path);
+    fn from_state(
+        db_path: PathBuf,
+        embedder: Arc<Mutex<Option<Embedder>>>,
+        reranker: Arc<Mutex<Option<crate::rerank::Reranker>>>,
+        reranker_failed_at: Arc<std::sync::atomic::AtomicI64>,
+        hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>>,
+        skip_model_init: bool,
+    ) -> Self {
         Self {
             db_path,
-            embedder: Arc::new(Mutex::new(None)),
-            reranker: Arc::new(Mutex::new(None)),
-            reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
-            hnsw: Arc::new(Mutex::new(hnsw)),
-            skip_model_init: false,
+            embedder,
+            reranker,
+            reranker_failed_at,
+            hnsw,
+            skip_model_init,
             tool_router: Self::annotated_router(),
         }
+    }
+
+    pub fn new(db_path: PathBuf) -> Self {
+        let hnsw = Self::try_load_hnsw(&db_path);
+        Self::from_state(
+            db_path,
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+            Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            Arc::new(Mutex::new(hnsw)),
+            false,
+        )
     }
 
     /// Create without model initialization (FTS-only). For tests and CI.
     #[doc(hidden)]
     pub fn new_without_models(db_path: PathBuf) -> Self {
-        Self {
+        Self::from_state(
             db_path,
-            embedder: Arc::new(Mutex::new(None)),
-            reranker: Arc::new(Mutex::new(None)),
-            reranker_failed_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
-            hnsw: Arc::new(Mutex::new(None)),
-            skip_model_init: true,
-            tool_router: Self::annotated_router(),
-        }
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+            Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            Arc::new(Mutex::new(None)),
+            true,
+        )
     }
 
     pub fn with_embedder(
@@ -125,15 +142,25 @@ impl GrasshopperMcp {
         reranker_failed_at: Arc<std::sync::atomic::AtomicI64>,
         hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>>,
     ) -> Self {
-        Self {
+        Self::from_state(
             db_path,
             embedder,
             reranker,
             reranker_failed_at,
             hnsw,
-            skip_model_init: false,
-            tool_router: Self::annotated_router(),
-        }
+            false,
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn with_state_for_tests(
+        db_path: PathBuf,
+        embedder: Arc<Mutex<Option<Embedder>>>,
+        reranker: Arc<Mutex<Option<crate::rerank::Reranker>>>,
+        reranker_failed_at: Arc<std::sync::atomic::AtomicI64>,
+        hnsw: Arc<Mutex<Option<crate::code::hnsw::HnswIndex>>>,
+    ) -> Self {
+        Self::from_state(db_path, embedder, reranker, reranker_failed_at, hnsw, true)
     }
 
     pub(crate) fn try_load_hnsw(db_path: &std::path::Path) -> Option<crate::code::hnsw::HnswIndex> {

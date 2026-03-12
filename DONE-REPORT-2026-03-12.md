@@ -120,7 +120,7 @@
 
 ### search_latency (criterion medians)
 - `full_pipeline/hybrid`: `17.048 ms`
-- `full_pipeline/full_with_rerank`: `16.511 ms`
+- `full_pipeline/full_with_rerank`: `16.511 ms` (legacy benchmark label. The harness passed a reranker object into a code-only search, but `unified_search(...)` still skipped code reranking. This was not a representative production code-search path.)
 - `full_pipeline/fts_only`: `1.944 ms`
 - `reranking/rerank_10`: `608.382 ms`
 
@@ -135,3 +135,4 @@
 ## Notes / caveats
 - Working tree is currently dirty with additional pre-existing and in-flight changes; this report only covers completed retrieval work and verified benchmarks.
 - Benchmark JSON structure uses `sections[*].metrics`; values above were extracted from those aggregates.
+- The `search_latency` harness has since been corrected to benchmark truthful paths: `fts_only_code`, `hybrid_code`, and `memory_with_rerank`. This report preserves the historical artifact label above because the benchmark was not rerun as part of the follow-up cleanup.

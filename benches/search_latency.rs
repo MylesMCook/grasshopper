@@ -24,12 +24,62 @@ struct BenchState {
     hnsw: HnswIndex,
 }
 
+fn build_memory_embedding_text(title: &str, content: &str, descriptors: &str) -> String {
+    let tags = descriptors
+        .split(',')
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty())
+        .collect::<Vec<_>>();
+
+    if tags.is_empty() {
+        format!("{title}\n{content}")
+    } else {
+        format!("{title}\n{content}\nDescriptors: {}", tags.join(", "))
+    }
+}
+
+fn seed_memory_embeddings(store: &Store, embedder: &mut Embedder) {
+    common::fixtures::create_memories(store, 64).unwrap();
+
+    let mut stmt = store
+        .conn()
+        .prepare(
+            "SELECT id, COALESCE(title,''), COALESCE(content,''), COALESCE(descriptors,'') \
+             FROM chunks WHERE kind = 'memory'",
+        )
+        .unwrap();
+    let rows: Vec<(i64, String, String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+        .unwrap()
+        .filter_map(|row| row.ok())
+        .collect();
+
+    for batch in rows.chunks(32) {
+        let texts: Vec<String> = batch
+            .iter()
+            .map(|(_, title, content, descriptors)| {
+                build_memory_embedding_text(title, content, descriptors)
+            })
+            .collect();
+        let vectors = embedder.embed_batch(&texts).unwrap();
+        let items: Vec<(i64, &[f32], &str)> = batch
+            .iter()
+            .zip(vectors.iter())
+            .map(|((id, _, _, _), vector)| {
+                (*id, vector.as_slice(), grasshopper::code::embed::MODEL_NAME)
+            })
+            .collect();
+        store.batch_upsert_embeddings(&items).unwrap();
+    }
+}
+
 fn setup() -> BenchState {
     let dir = TempDir::new().unwrap();
     let db_path = dir.path().join("bench.db");
     let store = Store::open(&db_path).unwrap();
 
-    let (_, embedder) = common::fixtures::index_self_with_embeddings(&store).unwrap();
+    let (_, mut embedder) = common::fixtures::index_self_with_embeddings(&store).unwrap();
+    seed_memory_embeddings(&store, &mut embedder);
 
     let embeddings = store.get_all_embeddings().unwrap();
     let hnsw = HnswIndex::from_embeddings(&embeddings).unwrap();
@@ -159,7 +209,7 @@ fn bench_full_pipeline(c: &mut Criterion) {
     let mut group = c.benchmark_group("full_pipeline");
     group.sample_size(10);
 
-    group.bench_function("fts_only", |b| {
+    group.bench_function("fts_only_code", |b| {
         b.iter(|| {
             let ctx = SearchContext {
                 store: &state.store,
@@ -175,7 +225,7 @@ fn bench_full_pipeline(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("hybrid", |b| {
+    group.bench_function("hybrid_code", |b| {
         b.iter(|| {
             let mut emb = state.embedder.lock().unwrap();
             let ctx = SearchContext {
@@ -192,14 +242,14 @@ fn bench_full_pipeline(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("full_with_rerank", |b| {
+    group.bench_function("memory_with_rerank", |b| {
         b.iter(|| {
             let mut emb = state.embedder.lock().unwrap();
             let mut reranker = state.reranker.lock().unwrap();
             let ctx = SearchContext {
                 store: &state.store,
-                query: "how does search work",
-                kind_filter: Some("code"),
+                query: "procedure topic-3 retrieve patterns",
+                kind_filter: Some("memory"),
                 limit: 10,
                 threshold: None,
                 embedder: Some(&mut *emb),

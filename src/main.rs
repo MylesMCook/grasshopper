@@ -267,6 +267,14 @@ fn try_reranker() -> Option<grasshopper::rerank::Reranker> {
     }
 }
 
+fn maybe_init_reranker<T>(kind_filter: Option<&str>, init: impl FnOnce() -> Option<T>) -> Option<T> {
+    if kind_filter == Some("code") {
+        None
+    } else {
+        init()
+    }
+}
+
 fn try_hnsw(db_path: &Path) -> Option<grasshopper::code::hnsw::HnswIndex> {
     let hnsw_path = grasshopper::code::hnsw::hnsw_path(db_path);
     if hnsw_path.exists() {
@@ -380,11 +388,7 @@ fn run() -> Result<()> {
                     };
 
                     let mut embedder = try_embedder();
-                    let mut reranker = if kind_filter == Some("code") {
-                        None
-                    } else {
-                        try_reranker()
-                    };
+                    let mut reranker = maybe_init_reranker(kind_filter, try_reranker);
                     let hnsw = try_hnsw(&db_path);
                     let result =
                         grasshopper::search::unified_search(grasshopper::search::SearchContext {
@@ -633,6 +637,35 @@ fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::maybe_init_reranker;
+
+    #[test]
+    fn code_search_does_not_initialize_reranker() {
+        let mut called = false;
+        let reranker = maybe_init_reranker(Some("code"), || {
+            called = true;
+            Some(123)
+        });
+
+        assert_eq!(reranker, None);
+        assert!(!called);
+    }
+
+    #[test]
+    fn non_code_search_initializes_reranker() {
+        let mut called = false;
+        let reranker = maybe_init_reranker(Some("memory"), || {
+            called = true;
+            Some(123)
+        });
+
+        assert_eq!(reranker, Some(123));
+        assert!(called);
+    }
 }
 
 // --- Status command ---
