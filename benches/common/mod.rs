@@ -78,11 +78,12 @@ impl<S: Subscriber> Layer<S> for TimingLayer {
 }
 
 // ---------------------------------------------------------------------------
-// VmRSS reader (Linux only)
+// Resident memory reader
 // ---------------------------------------------------------------------------
 
-/// Read current VmRSS from /proc/self/status in bytes.
-/// Returns 0 on non-Linux platforms.
+/// Read current resident memory in bytes.
+/// Linux uses `/proc/self/status`; Windows uses the process working set size.
+/// Returns 0 on unsupported platforms.
 pub fn read_vmrss() -> u64 {
     #[cfg(target_os = "linux")]
     {
@@ -100,7 +101,37 @@ pub fn read_vmrss() -> u64 {
         }
         0
     }
-    #[cfg(not(target_os = "linux"))]
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::System::ProcessStatus::{
+            K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+        };
+        use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+        unsafe {
+            let mut counters = PROCESS_MEMORY_COUNTERS {
+                cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+                PageFaultCount: 0,
+                PeakWorkingSetSize: 0,
+                WorkingSetSize: 0,
+                QuotaPeakPagedPoolUsage: 0,
+                QuotaPagedPoolUsage: 0,
+                QuotaPeakNonPagedPoolUsage: 0,
+                QuotaNonPagedPoolUsage: 0,
+                PagefileUsage: 0,
+                PeakPagefileUsage: 0,
+            };
+
+            if K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb) != 0 {
+                counters.WorkingSetSize as u64
+            } else {
+                0
+            }
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
         0
     }
