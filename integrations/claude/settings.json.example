@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"ABSOLUTE_GRASSHOPPER_BINARY\" hook --config \"ABSOLUTE_CLIENT_CONFIG\" --harness claude",
+            "timeout": 8
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"ABSOLUTE_GRASSHOPPER_BINARY\" hook --config \"ABSOLUTE_CLIENT_CONFIG\" --harness claude",
+            "timeout": 8
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"ABSOLUTE_GRASSHOPPER_BINARY\" hook --config \"ABSOLUTE_CLIENT_CONFIG\" --harness claude",
+            "timeout": 8
+          }
+        ]
+      }
+    ]
+  }
+}

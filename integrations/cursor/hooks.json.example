@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "\"ABSOLUTE_GRASSHOPPER_BINARY\" hook --config \"ABSOLUTE_CLIENT_CONFIG\" --harness cursor",
+        "timeout": 8
+      }
+    ]
+  }
+}

@@ -1,11 +1,7 @@
 # Contributing
 
-Bug reports and pull requests are welcome.
+Read [AGENTS.md](AGENTS.md) and the [shared memory policy](integrations/policy/AGENTS.md) before changing behavior. Grasshopper is a Go-only shared-memory service. The retired Rust code-search implementation is not part of this release.
 
-Before submitting a PR:
+Run `go test ./...`, `go vet ./...`, and `go test -race ./internal/gomemory ./internal/gomcp ./internal/goclient`. Model-backed recall additionally needs the pinned BGE model and ONNX Runtime paths described in [AGENTS.md](AGENTS.md). Use synthetic databases. Keep scope, revisions, authentication, and recovery assertions intact.
 
-1. Run `cargo fmt`
-2. Run `cargo clippy --all-targets -- -D warnings`
-3. Run `cargo test`
-
-All three checks run in CI and must pass.
+Document actual client/version/OS observations in [acceptance evidence](docs/memory-acceptance.md). A passing unit test does not establish first-turn behavior in a desktop app.

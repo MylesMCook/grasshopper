@@ -1,0 +1,496 @@
+{
+  "context_a": {
+    "omitted": 0,
+    "omitted_ids": [],
+    "omitted_records": [],
+    "records": [
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Only use this preference for the synthetic compatibility test.",
+        "created_at": "2026-09-23T19:12:34.460065+00:00",
+        "id": 1,
+        "key": "answer-style",
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "preference",
+        "revision": 2,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": null
+        },
+        "tags": "",
+        "title": "Response style",
+        "updated_at": "2026-09-23T19:12:34.460930+00:00"
+      },
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Use bun in project A.",
+        "created_at": "2026-09-23T19:12:34.461633+00:00",
+        "id": 2,
+        "key": null,
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "decision",
+        "revision": 1,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": "id:project-a"
+        },
+        "tags": "",
+        "title": "Use bun in project A.",
+        "updated_at": "2026-09-23T19:12:34.461633+00:00"
+      },
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Verified pilot passed; next check is Go parity.",
+        "created_at": "2026-09-23T19:12:34.462757+00:00",
+        "id": 5,
+        "key": null,
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "handoff",
+        "revision": 1,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": "id:project-a"
+        },
+        "tags": "",
+        "title": "Verified pilot passed; next check is Go parity.",
+        "updated_at": "2026-09-23T19:12:34.462757+00:00"
+      }
+    ]
+  },
+  "context_a_small": {
+    "omitted": 2,
+    "omitted_ids": [
+      2,
+      5
+    ],
+    "omitted_records": [
+      {
+        "id": 2,
+        "revision": 1,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": "id:project-a"
+        }
+      },
+      {
+        "id": 5,
+        "revision": 1,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": "id:project-a"
+        }
+      }
+    ],
+    "records": [
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Only use this preference for the synthetic compatibility test.",
+        "created_at": "2026-09-23T19:12:34.460065+00:00",
+        "id": 1,
+        "key": "answer-style",
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "preference",
+        "revision": 2,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": null
+        },
+        "tags": "",
+        "title": "Response style",
+        "updated_at": "2026-09-23T19:12:34.460930+00:00"
+      }
+    ]
+  },
+  "context_b": {
+    "omitted": 0,
+    "omitted_ids": [],
+    "omitted_records": [],
+    "records": [
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Only use this preference for the synthetic compatibility test.",
+        "created_at": "2026-09-23T19:12:34.460065+00:00",
+        "id": 1,
+        "key": "answer-style",
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "preference",
+        "revision": 2,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": null
+        },
+        "tags": "",
+        "title": "Response style",
+        "updated_at": "2026-09-23T19:12:34.460930+00:00"
+      },
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Use npm in project B.",
+        "created_at": "2026-09-23T19:12:34.461971+00:00",
+        "id": 3,
+        "key": null,
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "decision",
+        "revision": 1,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": "id:project-b"
+        },
+        "tags": "",
+        "title": "Use npm in project B.",
+        "updated_at": "2026-09-23T19:12:34.461971+00:00"
+      }
+    ]
+  },
+  "context_macos": {
+    "omitted": 0,
+    "omitted_ids": [],
+    "omitted_records": [],
+    "records": [
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Only use this preference for the synthetic compatibility test.",
+        "created_at": "2026-09-23T19:12:34.460065+00:00",
+        "id": 1,
+        "key": "answer-style",
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "preference",
+        "revision": 2,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": null
+        },
+        "tags": "",
+        "title": "Response style",
+        "updated_at": "2026-09-23T19:12:34.460930+00:00"
+      }
+    ]
+  },
+  "context_windows": {
+    "omitted": 0,
+    "omitted_ids": [],
+    "omitted_records": [],
+    "records": [
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Only use this preference for the synthetic compatibility test.",
+        "created_at": "2026-09-23T19:12:34.460065+00:00",
+        "id": 1,
+        "key": "answer-style",
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "preference",
+        "revision": 2,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": null
+        },
+        "tags": "",
+        "title": "Response style",
+        "updated_at": "2026-09-23T19:12:34.460930+00:00"
+      },
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Windows builds use C:\\work.",
+        "created_at": "2026-09-23T19:12:34.462271+00:00",
+        "id": 4,
+        "key": null,
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "lesson",
+        "revision": 1,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": "windows",
+          "project": null
+        },
+        "tags": "",
+        "title": "Windows builds use C:\\work.",
+        "updated_at": "2026-09-23T19:12:34.462271+00:00"
+      }
+    ]
+  },
+  "global_current": {
+    "archived": false,
+    "confirmed": true,
+    "content": "Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Keep answers direct, but retain a complete source reference. Only use this preference for the synthetic compatibility test.",
+    "created_at": "2026-09-23T19:12:34.460065+00:00",
+    "id": 1,
+    "key": "answer-style",
+    "memory_type": "knowledge",
+    "provenance": {
+      "device": "synthetic-mac",
+      "harness": "fixture",
+      "source": "synthetic Go compatibility fixture"
+    },
+    "purpose": "preference",
+    "revision": 2,
+    "scope": {
+      "device": null,
+      "legacy": false,
+      "platform": null,
+      "project": null
+    },
+    "tags": "",
+    "title": "Response style",
+    "updated_at": "2026-09-23T19:12:34.460930+00:00"
+  },
+  "global_prior": {
+    "archived": false,
+    "confirmed": true,
+    "content": "Keep answers concise, but retain a complete source reference. Keep answers concise, but retain a complete source reference. Keep answers concise, but retain a complete source reference. Keep answers concise, but retain a complete source reference. Keep answers concise, but retain a complete source reference. Only use this preference for the synthetic compatibility test.",
+    "created_at": "2026-09-23T19:12:34.460065+00:00",
+    "id": 1,
+    "key": "answer-style",
+    "memory_type": "knowledge",
+    "provenance": {
+      "device": "synthetic-mac",
+      "harness": "fixture",
+      "source": "synthetic Go compatibility fixture"
+    },
+    "purpose": "preference",
+    "revision": 1,
+    "scope": {
+      "device": null,
+      "legacy": false,
+      "platform": null,
+      "project": null
+    },
+    "tags": "",
+    "title": "Response style",
+    "updated_at": "2026-09-23T19:12:34.460065+00:00"
+  },
+  "legacy": {
+    "archived": false,
+    "confirmed": false,
+    "content": "Unknown-scope historical preference",
+    "created_at": "2026-09-23T19:12:34.463187+00:00",
+    "id": 6,
+    "key": null,
+    "memory_type": "identity",
+    "provenance": {
+      "device": "",
+      "harness": "",
+      "source": ""
+    },
+    "purpose": "observation",
+    "revision": 1,
+    "scope": {
+      "device": null,
+      "legacy": true,
+      "platform": null,
+      "project": null
+    },
+    "tags": "",
+    "title": "legacy unknown",
+    "updated_at": "2026-09-23T19:12:34.463187+00:00"
+  },
+  "search_a_keyword": {
+    "omitted": 0,
+    "omitted_ids": [],
+    "omitted_records": [],
+    "records": [
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Use bun in project A.",
+        "created_at": "2026-09-23T19:12:34.461633+00:00",
+        "id": 2,
+        "key": null,
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "decision",
+        "revision": 1,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": "id:project-a"
+        },
+        "tags": "",
+        "title": "Use bun in project A.",
+        "updated_at": "2026-09-23T19:12:34.461633+00:00"
+      }
+    ]
+  },
+  "search_a_semantic": {
+    "omitted": 0,
+    "omitted_ids": [],
+    "omitted_records": [],
+    "records": [
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Use bun in project A.",
+        "created_at": "2026-09-23T19:12:34.461633+00:00",
+        "id": 2,
+        "key": null,
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "decision",
+        "revision": 1,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": "id:project-a"
+        },
+        "tags": "",
+        "title": "Use bun in project A.",
+        "updated_at": "2026-09-23T19:12:34.461633+00:00"
+      }
+    ]
+  },
+  "search_a_wrong_project": {
+    "omitted": 0,
+    "omitted_ids": [],
+    "omitted_records": [],
+    "records": []
+  },
+  "search_b_keyword": {
+    "omitted": 0,
+    "omitted_ids": [],
+    "omitted_records": [],
+    "records": [
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Use npm in project B.",
+        "created_at": "2026-09-23T19:12:34.461971+00:00",
+        "id": 3,
+        "key": null,
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "decision",
+        "revision": 1,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": "id:project-b"
+        },
+        "tags": "",
+        "title": "Use npm in project B.",
+        "updated_at": "2026-09-23T19:12:34.461971+00:00"
+      }
+    ]
+  },
+  "search_b_semantic": {
+    "omitted": 0,
+    "omitted_ids": [],
+    "omitted_records": [],
+    "records": [
+      {
+        "archived": false,
+        "confirmed": true,
+        "content": "Use npm in project B.",
+        "created_at": "2026-09-23T19:12:34.461971+00:00",
+        "id": 3,
+        "key": null,
+        "memory_type": "knowledge",
+        "provenance": {
+          "device": "synthetic-mac",
+          "harness": "fixture",
+          "source": "synthetic Go compatibility fixture"
+        },
+        "purpose": "decision",
+        "revision": 1,
+        "scope": {
+          "device": null,
+          "legacy": false,
+          "platform": null,
+          "project": "id:project-b"
+        },
+        "tags": "",
+        "title": "Use npm in project B.",
+        "updated_at": "2026-09-23T19:12:34.461971+00:00"
+      }
+    ]
+  },
+  "wrong_scope": null
+}

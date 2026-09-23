@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.0 (unreleased): Go-only shared memory
+
+- One authenticated Go/SQLite memory service with `context`, `store`, `search`, `get`, and `archive`.
+- One stateless Go client for Codex Desktop, Cursor, and Claude Code on macOS and Windows. AGENTS.md is the sole standing-instruction format.
+- Scoped records, explicit corrections with revision conflicts, provenance, full history, idempotent retries, and copy-only migration/backup.
+- Portable Go-only bundles tested on Mac and Work HP with synthetic data. Live deployment and final app revalidation remain open.
+- Retired the Rust CLI and local code-search feature. Entries below describe earlier releases, not active commands.
+
 ## 1.0.1
 
 Security hardening and quality sprint.

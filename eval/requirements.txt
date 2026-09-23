@@ -1,1 +1,0 @@
-# No external dependencies — uses stdlib only (urllib, sqlite3, json)

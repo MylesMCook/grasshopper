@@ -1,0 +1,22 @@
+{
+  "documents": [
+    {"id": 1, "text": "Repository uses Bun to install JavaScript dependencies; npm is not supported for this project."},
+    {"id": 2, "text": "Encrypted database backups run every Tuesday at 02:00 and are retained for thirty days."},
+    {"id": 3, "text": "The memory service listens only on loopback; remote access must pass through the private VPN."},
+    {"id": 4, "text": "The mobile app forces dark mode, but desktop appearance follows the operating system theme."},
+    {"id": 5, "text": "Search combines FTS5 keyword results with cosine similarity over normalized embeddings."},
+    {"id": 6, "text": "If model inference fails, the service returns keyword search results after a short timeout."},
+    {"id": 7, "text": "A successful restore drill is required before deleting any older backup snapshots."},
+    {"id": 8, "text": "Use semantic HTML controls so keyboard users can reach every action."}
+  ],
+  "queries": [
+    {"expected": 1, "text": "Which tool should install front-end packages?"},
+    {"expected": 2, "text": "When are archive copies made?"},
+    {"expected": 3, "text": "How can another computer connect to the recall API?"},
+    {"expected": 4, "text": "Does the laptop force a dark appearance?"},
+    {"expected": 5, "text": "What combines lexical and vector matching?"},
+    {"expected": 6, "text": "If the neural model crashes, can I still find records?"},
+    {"expected": 7, "text": "What must happen before pruning earlier backups?"},
+    {"expected": 8, "text": "Can someone operate the interface without a mouse?"}
+  ]
+}

@@ -1,10 +1,7 @@
-/target
 *.db
+!tests/fixtures/go-compat/memory.db
 *.db-wal
 *.db-shm
-*.hnsw
 .env
 .fastembed_cache/
-CLAUDE.md
-bench/corpora/
-bench/results/
+/target

@@ -1,0 +1,6 @@
+# Merge only after approval. This is a bridge, not a local database server.
+[mcp_servers.grasshopper]
+command = "ABSOLUTE_GRASSHOPPER_BINARY"
+args = ["bridge", "--config", "ABSOLUTE_CLIENT_CONFIG"]
+startup_timeout_sec = 8
+tool_timeout_sec = 8

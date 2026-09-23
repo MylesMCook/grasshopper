@@ -1,0 +1,218 @@
+// Package gomcp adapts the Go memory store to authenticated MCP.
+// It exposes no code indexing or server-filesystem tool.
+package gomcp
+
+import (
+	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"errors"
+	"net/http"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/MylesMCook/grasshopper/internal/gomemory"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+type Embedder interface {
+	EmbedDocument(string) ([]float32, error)
+	EmbedQuery(string) ([]float32, error)
+}
+
+type Backend struct {
+	Store            *gomemory.Writer
+	Embedder         Embedder
+	Model            string
+	InferenceTimeout time.Duration
+}
+
+type contextInput struct {
+	Scope  gomemory.Scope `json:"scope"`
+	Budget *int           `json:"budget,omitempty"`
+}
+type getInput struct {
+	Scope    gomemory.Scope `json:"scope"`
+	ID       int64          `json:"id"`
+	Revision *int64         `json:"revision,omitempty"`
+}
+type searchInput struct {
+	Scope  gomemory.Scope `json:"scope"`
+	Query  string         `json:"query"`
+	Limit  *int           `json:"limit,omitempty"`
+	Budget *int           `json:"budget,omitempty"`
+}
+type searchOutput struct {
+	Results       gomemory.Page `json:"results"`
+	SemanticReady bool          `json:"semantic_ready"`
+}
+type storeOutput struct {
+	Receipt       gomemory.Receipt `json:"receipt"`
+	ID            int64            `json:"id"`
+	Revision      int64            `json:"revision"`
+	Deduplicated  bool             `json:"deduplicated"`
+	SemanticReady bool             `json:"semantic_ready"`
+}
+
+func objectSchema(properties map[string]any, required ...string) map[string]any {
+	schema := map[string]any{"type": "object", "properties": properties, "additionalProperties": false}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return schema
+}
+func optional(typeName string) map[string]any {
+	return map[string]any{"type": []string{typeName, "null"}}
+}
+func scopeSchema() map[string]any {
+	return objectSchema(map[string]any{"project": optional("string"), "device": optional("string"), "platform": optional("string"), "legacy": map[string]any{"type": "boolean"}})
+}
+func provenanceSchema() map[string]any {
+	return objectSchema(map[string]any{"harness": map[string]any{"type": "string"}, "device": map[string]any{"type": "string"}, "source": map[string]any{"type": "string"}}, "harness", "device", "source")
+}
+func writeSchema() map[string]any {
+	return objectSchema(map[string]any{
+		"scope": scopeSchema(), "content": map[string]any{"type": "string", "maxLength": 32768}, "title": optional("string"), "tags": optional("string"),
+		"memory_type": optional("string"), "purpose": map[string]any{"type": "string", "enum": []string{"preference", "decision", "lesson", "handoff", "observation"}},
+		"confirmed": map[string]any{"type": "boolean"}, "provenance": provenanceSchema(), "request_id": map[string]any{"type": "string"},
+		"key": optional("string"), "id": optional("integer"), "expected_revision": optional("integer"), "restore_revision": optional("integer"),
+	}, "scope", "content", "purpose", "confirmed", "provenance", "request_id")
+}
+
+func NewHandler(backend Backend, token string) (http.Handler, error) {
+	if backend.Store == nil {
+		return nil, errors.New("memory backend required")
+	}
+	if backend.Embedder != nil && backend.Model == "" {
+		return nil, errors.New("embedding model identity required")
+	}
+	if len(token) < 32 || strings.IndexFunc(token, unicode.IsSpace) >= 0 {
+		return nil, errors.New("token must contain at least 32 non-whitespace characters")
+	}
+	inferenceTimeout := backend.InferenceTimeout
+	if inferenceTimeout <= 0 || inferenceTimeout > 10*time.Second {
+		inferenceTimeout = 5 * time.Second
+	}
+	inferenceGate := make(chan struct{}, 1)
+	runInference := func(ctx context.Context, fn func() ([]float32, error)) ([]float32, error) {
+		inferenceCtx, cancel := context.WithTimeout(ctx, inferenceTimeout)
+		defer cancel()
+		select {
+		case inferenceGate <- struct{}{}:
+		case <-inferenceCtx.Done():
+			return nil, inferenceCtx.Err()
+		}
+		type result struct {
+			vector []float32
+			err    error
+		}
+		completed := make(chan result, 1)
+		go func() { defer func() { <-inferenceGate }(); vector, err := fn(); completed <- result{vector, err} }()
+		select {
+		case outcome := <-completed:
+			return outcome.vector, outcome.err
+		case <-inferenceCtx.Done():
+			return nil, inferenceCtx.Err()
+		}
+	}
+	tokenHash := sha256.Sum256([]byte(token))
+	server := mcp.NewServer(&mcp.Implementation{Name: "grasshopper", Version: "2.0.0"}, nil)
+	falseValue := false
+	read := &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}
+	write := &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}
+	mcp.AddTool(server, &mcp.Tool{Name: "context", Title: "Load memory context", Description: "Use this when starting or resuming work to read confirmed preferences, applicable context, and a recent handoff.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "budget": map[string]any{"type": "integer"}}, "scope")},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in contextInput) (*mcp.CallToolResult, gomemory.Page, error) {
+			budget := 16384
+			if in.Budget != nil {
+				budget = *in.Budget
+			}
+			page, err := backend.Store.Context(ctx, in.Scope, budget)
+			return nil, page, err
+		})
+	mcp.AddTool(server, &mcp.Tool{Name: "get", Title: "Get complete memory", Description: "Use this when a full scoped record or earlier revision is needed for inspection.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "id": map[string]any{"type": "integer"}, "revision": optional("integer")}, "scope", "id")},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in getInput) (*mcp.CallToolResult, gomemory.Record, error) {
+			record, err := backend.Store.Get(ctx, in.Scope, in.ID, in.Revision)
+			if err != nil {
+				return nil, gomemory.Record{}, err
+			}
+			if record == nil {
+				return nil, gomemory.Record{}, errors.New("memory_not_found")
+			}
+			return nil, *record, nil
+		})
+	mcp.AddTool(server, &mcp.Tool{Name: "search", Title: "Search scoped memories", Description: "Use this when locating active memories by wording or meaning within explicit scope.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "query": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer"}, "budget": map[string]any{"type": "integer"}}, "scope", "query")},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in searchInput) (*mcp.CallToolResult, searchOutput, error) {
+			limit, budget := 10, 16384
+			if in.Limit != nil {
+				limit = *in.Limit
+			}
+			if in.Budget != nil {
+				budget = *in.Budget
+			}
+			var vector []float32
+			if backend.Embedder != nil {
+				var err error
+				vector, err = runInference(ctx, func() ([]float32, error) { return backend.Embedder.EmbedQuery(in.Query) })
+				if err != nil {
+					vector = nil // Disclose lexical-only recall through semantic_ready.
+				}
+			}
+			page, err := backend.Store.Search(ctx, in.Scope, in.Query, vector, backend.Model, limit, budget)
+			return nil, searchOutput{page, vector != nil}, err
+		})
+	mcp.AddTool(server, &mcp.Tool{Name: "store", Title: "Save or correct memory", Description: "Use this when saving an explicit preference, accepted decision, verified lesson, or concise handoff with provenance and a request ID.", Annotations: write, InputSchema: writeSchema()},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in gomemory.WriteInput) (*mcp.CallToolResult, storeOutput, error) {
+			var vector []float32
+			if backend.Embedder != nil {
+				content := in.Content
+				if in.RestoreRevision != nil {
+					if in.ID == nil {
+						return nil, storeOutput{}, errors.New("restore requires record ID")
+					}
+					prior, err := backend.Store.Get(ctx, in.Scope, *in.ID, in.RestoreRevision)
+					if err != nil {
+						return nil, storeOutput{}, err
+					}
+					if prior == nil {
+						return nil, storeOutput{}, errors.New("revision_not_found")
+					}
+					content = prior.Content
+				}
+				var err error
+				vector, err = runInference(ctx, func() ([]float32, error) { return backend.Embedder.EmbedDocument(content) })
+				if err != nil {
+					return nil, storeOutput{}, err
+				}
+			}
+			receipt, err := backend.Store.Write(ctx, in, vector, backend.Model)
+			return nil, storeOutput{receipt, receipt.ID, receipt.Revision, receipt.Deduplicated, vector != nil}, err
+		})
+	mcp.AddTool(server, &mcp.Tool{Name: "archive", Title: "Archive or restore memory", Description: "Use this when reversibly hiding or restoring a scoped record with an expected revision and request ID.", Annotations: write, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "id": map[string]any{"type": "integer"}, "expected_revision": map[string]any{"type": "integer"}, "archived": map[string]any{"type": "boolean"}, "request_id": map[string]any{"type": "string"}, "provenance": provenanceSchema()}, "scope", "id", "expected_revision", "archived", "request_id", "provenance")},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in gomemory.ArchiveInput) (*mcp.CallToolResult, gomemory.Receipt, error) {
+			receipt, err := backend.Store.Archive(ctx, in)
+			return nil, receipt, err
+		})
+	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: 131072, PropagateRequestCancellation: true})
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", mcpHandler)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("ok\n"))
+	})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if provided == r.Header.Get("Authorization") || provided == "" {
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+			return
+		}
+		providedHash := sha256.Sum256([]byte(provided))
+		if subtle.ConstantTimeCompare(providedHash[:], tokenHash[:]) != 1 {
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		mux.ServeHTTP(w, r.WithContext(ctx))
+	}), nil
+}

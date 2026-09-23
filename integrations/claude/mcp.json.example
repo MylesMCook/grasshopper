@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "grasshopper": {
+      "type": "stdio",
+      "command": "ABSOLUTE_GRASSHOPPER_BINARY",
+      "args": [
+        "bridge",
+        "--config",
+        "ABSOLUTE_CLIENT_CONFIG"
+      ]
+    }
+  }
+}

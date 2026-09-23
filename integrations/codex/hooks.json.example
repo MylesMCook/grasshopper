@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"ABSOLUTE_GRASSHOPPER_BINARY\" hook --config \"ABSOLUTE_CLIENT_CONFIG\" --harness codex",
+            "timeout": 8
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"ABSOLUTE_GRASSHOPPER_BINARY\" hook --config \"ABSOLUTE_CLIENT_CONFIG\" --harness codex",
+            "timeout": 8
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"ABSOLUTE_GRASSHOPPER_BINARY\" hook --config \"ABSOLUTE_CLIENT_CONFIG\" --harness codex",
+            "timeout": 8
+          }
+        ]
+      }
+    ]
+  }
+}

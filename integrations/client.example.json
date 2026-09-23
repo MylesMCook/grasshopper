@@ -1,0 +1,6 @@
+{
+  "url": "https://YOUR-PRIVATE-BACKEND/mcp",
+  "token_env": "GRASSHOPPER_TOKEN",
+  "policy_path": "/absolute/path/to/grasshopper/integrations/policy/AGENTS.md",
+  "device": "YOUR-STABLE-DEVICE-ID"
+}
