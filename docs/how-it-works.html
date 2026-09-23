@@ -70,7 +70,7 @@
 
   <aside class="status" aria-label="Release status">
     <span class="dot" aria-hidden="true"></span>
-    <div><strong>Go-only release candidate; live rollout pending</strong><p>Mac and Work HP builds and synthetic memory tests passed. The Go client worked in Mac Cursor, Mac Codex CLI, and Claude Code on both machines. Fresh Desktop and Work HP Cursor checks remain open. No live data or service changed. <a href="memory-acceptance.md">See exact evidence.</a></p></div>
+    <div><strong>Go-only release candidate; live rollout pending</strong><p>Three-OS CI and synthetic memory tests passed. The Go client worked in Mac Cursor, Mac Codex CLI, and Claude Code on both machines. Fresh Desktop and Work HP Cursor checks remain open. No live data or service changed. <a href="memory-acceptance.md">See exact evidence.</a></p></div>
   </aside>
 
   <section aria-labelledby="architecture">
@@ -102,7 +102,7 @@
   <section aria-labelledby="proof">
     <h2 id="proof">What has been observed</h2>
     <div class="evidence">
-      <article><span class="tag">Observed</span><h3>Go backend and client</h3><ul><li>Go tests and real semantic recall passed on Mac and Windows.</li><li>Scope, revisions, authentication, backup, and immediate search have regression tests.</li><li>Native bundles passed extraction, checksums, authenticated reads, and bounded outages.</li><li>Mac and Work HP exchanged synthetic records through Go clients in both directions.</li></ul></article>
+      <article><span class="tag">Observed</span><h3>Go backend and client</h3><ul><li>Go CI passed on macOS, Windows, and Linux. Real semantic recall passed on Mac and Work HP.</li><li>Scope, revisions, authentication, backup, and immediate search have regression tests.</li><li>Native bundles passed extraction, checksums, authenticated reads, and bounded outages.</li><li>Mac and Work HP exchanged synthetic records through Go clients in both directions.</li></ul></article>
       <article class="pending"><span class="tag">Open release checks</span><h3>Still to observe</h3><ul><li>Run fresh Codex Desktop and Work HP Cursor checks with the packaged Go client.</li><li>Check interactive resume, compaction, and full installation/removal.</li><li>Approve a private host, then rehearse persistent startup and live rollback.</li></ul></article>
     </div>
   </section>

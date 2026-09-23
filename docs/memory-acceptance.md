@@ -8,7 +8,7 @@
 
 | Check | Observed | Limit |
 |---|---|---|
-| Go tests, vet, race | Passed on macOS arm64 and Work HP Windows x64. Scope isolation, confirmed preferences, stale revisions, replay, archive, legacy quarantine, auth, and five-tool MCP are covered. | Automated tests use synthetic data. |
+| Go tests, vet, race | Passed locally on macOS arm64 and Work HP Windows x64. [CI passed](https://github.com/MylesMCook/grasshopper/actions/runs/35933965315) on macOS, Windows, and Linux; race checks ran on macOS and Linux. Scope, revisions, replay, archive, legacy quarantine, auth, and five-tool MCP are covered. | Automated tests use synthetic data. |
 | Real semantic recall | Pinned BGE ONNX ran on both OSes. New content was found by different wording without a restart. The small eight-query set scored 7/8 top-1 and 8/8 top-3. | Not a quality benchmark for a real profile. |
 | Backup and migration | Consistent backup, copy-only re-embedding, ID/history preservation, and Go reopen after accepted writes passed on synthetic databases. | No live migration or service-manager rollback. |
 | Go-only bundles | Mac arm64 and Windows x64 archives passed extraction and SHA-256 checks. Extracted servers returned 401 without auth and 200 with auth. Extracted Go clients listed five tools and loaded context; stopped-backend hooks did not claim a save. | No signed installer or persistent installation. |
