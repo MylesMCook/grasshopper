@@ -31,14 +31,24 @@ pinned BGE model, vet, native builds, and extracted server authentication
 passed. All three authenticated visualizer APIs returned a newly saved
 synthetic record. Windows needed a test-script correction to parse MCP's SSE
 reply; the server acknowledged the write throughout.
-The source for these OS tests was `75b417f`. Mac's later link-fixed client and
-server candidates passed all internal SHA-256 entries and local Markdown-link
-checks. Isolated Codex and Claude client install/update/removal passed on all
-three OSes. Cursor's project MCP path passed live CLI reads, but native
-marketplace installation remains untested. Windows and Linux final archive
-rebuilds are still pending. The Mac 2.0.0 extracted client stopped-backend hook returned in 0.08 seconds with no
+The source for these OS tests was `75b417f`. Isolated Codex and Claude client
+install/update/removal passed on all three OSes. Cursor's project MCP path
+passed live CLI reads, but native marketplace installation remains untested.
+The Mac 2.0.0 extracted client stopped-backend hook returned in 0.08 seconds with no
 save claim. Its extracted server's real BGE search returned the synthetic record
 by different wording with `semantic_ready=true`.
+
+**Published package:** [v2.0.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.0)
+contains six native client/server archives built from `45a7e08` and a release
+`SHA256SUMS`. All 25 client entries per OS passed internal SHA-256 checks;
+server checks passed 73 on Mac, 72 on Windows, and 71 on Linux. All packaged
+local Markdown links resolved, and GitHub's published asset digests matched
+the locally checked archives. The final Mac extracted server passed auth,
+visualizer CSS, and a synthetic write/read. Final
+[CI](https://github.com/MylesMCook/grasshopper/actions/runs/36058234153)
+passed on macOS, Windows, and Ubuntu. Windows/Linux final archive changes were
+documentation and visualizer CSS; their earlier native runtime tests were not
+repeated on the final bytes. These are unsigned archives, not installers.
 
 ## Backend and package
 
@@ -96,4 +106,4 @@ No live database, public route, or real profile was changed. No running Grasshop
 
 **Codex hook trust:** The older pilot's trusted hook delivered revision 3 before tool use. The new Code-location pilot initially had no trust and delivered no startup memory. After the user reviewed and trusted its exact `SessionStart` and `SubagentStart` hook hashes, a fresh Codex CLI turn received revision 3 through the current Go client before tool use. The Beelink read above used the same trusted hook with a temporary client URL; the original client config was restored afterward.
 
-**Remaining checks:** Cursor's native Git marketplace installation, Codex compaction/subagent delivery, and final 2.0.0 archive tests are open. Work HP testing is CLI-only and must avoid the user's real work. Beelink remains shared with a separate host-maintenance task. The user will test desktop apps if an issue appears. A software release does not authorize a live database migration or private-route deployment; those require separate approval and recovery checks.
+**Remaining checks:** Cursor's native Git marketplace installation and Codex compaction/subagent delivery are open. Work HP testing is CLI-only and must avoid the user's real work. Beelink remains shared with a separate host-maintenance task. The user will test desktop apps if an issue appears. A software release does not authorize a live database migration or private-route deployment; those require separate approval and recovery checks.
