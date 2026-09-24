@@ -15,7 +15,7 @@ import (
 
 func run() error {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Fprintln(os.Stdout, "grasshopper 2.0.0 (Go client)")
+		fmt.Fprintln(os.Stdout, "grasshopper 2.0.1 (Go client)")
 		return nil
 	}
 	if len(os.Args) == 2 && os.Args[1] == "config-path" {

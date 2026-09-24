@@ -51,7 +51,7 @@ func validateListen(address string) error {
 }
 
 func run() error {
-	var database, library, model, tokenizer, tokenFile, listen string
+	var database, library, model, tokenizer, tokenFile, listen, allowedProxyHost string
 	var createDB, visualizer bool
 	flag.StringVar(&database, "db", "", "Grasshopper database path")
 	flag.BoolVar(&createDB, "create-db", false, "create an empty memory database if missing")
@@ -61,6 +61,7 @@ func run() error {
 	flag.StringVar(&tokenizer, "tokenizer", "", "pinned BGE tokenizer.json")
 	flag.StringVar(&tokenFile, "token-file", "", "private bearer token file")
 	flag.StringVar(&listen, "listen", "127.0.0.1:8106", "loopback listen address")
+	flag.StringVar(&allowedProxyHost, "allowed-proxy-host", "", "exact HTTPS proxy Host, including port")
 	flag.Parse()
 	if database == "" || library == "" || model == "" || tokenizer == "" || tokenFile == "" {
 		return errors.New("db, ONNX library, model, tokenizer, and token file are required")
@@ -91,7 +92,7 @@ func run() error {
 		return err
 	}
 	defer store.Close()
-	handler, err := gomcp.NewHandler(gomcp.Backend{Store: store, Embedder: embedder, Model: goembed.ModelName, Visualizer: visualizer}, token)
+	handler, err := gomcp.NewHandler(gomcp.Backend{Store: store, Embedder: embedder, Model: goembed.ModelName, Visualizer: visualizer, AllowedProxyHost: allowedProxyHost}, token)
 	if err != nil {
 		return err
 	}

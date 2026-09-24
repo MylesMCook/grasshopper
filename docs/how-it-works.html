@@ -76,19 +76,19 @@
 <main>
   <nav class="brand" aria-label="Page"><b>GRASSHOPPER</b><a href="../README.md">Project README</a></nav>
   <header class="hero">
-    <p class="eyebrow">Self-hosted agent memory · Go + SQLite</p>
+    <p class="eyebrow">Self-hosted agent memory</p>
     <h1>A small memory that travels.</h1>
     <p class="lead">Your agents can share the few things worth remembering: preferences, decisions, lessons, and handoffs.</p>
   </header>
-  <aside class="status" aria-label="Release status"><strong>Release check</strong><p>Go packages passed synthetic checks on Mac, Windows, and Ubuntu. Two client integration gaps and live deployment remain. <a href="memory-acceptance.md">See the evidence.</a></p></aside>
+  <aside class="status" aria-label="Release status"><strong>Release check</strong><p>Packages passed synthetic checks on Mac, Windows, and Ubuntu. A private Mac mini service now has an offsite restore check; the final proxy fix and live CLI checks remain. <a href="memory-acceptance.md">See the evidence.</a></p></aside>
 
   <section aria-labelledby="architecture">
     <div class="section-head"><h2 id="architecture">One service, three workspaces</h2><span>01 / Connection</span></div>
     <p class="policy">One canonical <a href="../integrations/policy/AGENTS.md">AGENTS.md memory policy</a> guides every agent. The project’s own AGENTS.md stays authoritative for project work.</p>
     <div class="pipeline" aria-label="Codex, Cursor, and Claude connect through a thin client to one memory service">
       <div class="card"><span class="tag">Your workspace</span><h3>Codex · Cursor · Claude Code</h3><p>Agents load applicable instructions. Startup hooks try memory first; MCP is the fallback. The agent decides what to save.</p></div>
-      <div class="card"><span class="tag">One small client</span><h3>Stateless Go adapter</h3><p>Lifecycle hooks load context; MCP handles reads and writes. No client database or model.</p><div class="tool-line">context · store · search · get · archive</div></div>
-      <div class="card"><span class="tag">Your own host</span><h3>Authenticated Go service</h3><p>SQLite keeps current records and past revisions. Local ONNX enables semantic search. Remote clients cannot index host files.</p></div>
+      <div class="card"><span class="tag">One small client</span><h3>Stateless adapter</h3><p>Lifecycle hooks load context; MCP handles reads and writes. No client database or model.</p><div class="tool-line">context · store · search · get · archive</div></div>
+      <div class="card"><span class="tag">Your own host</span><h3>Authenticated service</h3><p>SQLite keeps current records and past revisions. Local ONNX enables semantic search. Remote clients cannot index host files.</p></div>
     </div>
   </section>
 
@@ -110,8 +110,8 @@
   <section aria-labelledby="proof">
     <div class="section-head"><h2 id="proof">Proof and open work</h2><span>04 / Status</span></div>
     <div class="evidence">
-      <article><span class="tag">Observed</span><h3>Working on synthetic data</h3><ul><li>Go tests cover scope, revisions, authentication, recall, and backup.</li><li>Packages verified on Mac, Work HP, and Beelink.</li><li>All three CLIs received memory before work on all three machines.</li></ul></article>
-      <article><span class="tag">Still open</span><h3>Before a live release</h3><ul><li>Windows Codex Desktop has not been tested with the current package.</li><li>Cursor's local plugin loads context, but its MCP tools need project wiring.</li><li>Private hosting, migration, and rollback need separate approval and proof.</li></ul></article>
+      <article><span class="tag">Observed</span><h3>Working across machines</h3><ul><li>Tests cover scope, revisions, authentication, recall, and backup.</li><li>Packages verified on Mac, Work HP, and Beelink.</li><li>All three CLIs received synthetic memory before work on all three machines.</li><li>A private Mac mini service passed an offsite restore and Beelink read/write.</li></ul></article>
+      <article><span class="tag">Still open</span><h3>Final release checks</h3><ul><li>Publish the proxy fix and test its released binary over the private route.</li><li>Run all three CLIs against the persistent service. Desktop checks are user-led.</li><li>Cursor's local plugin loads context, but its MCP tools need project wiring.</li><li>Legacy-data migration has not been approved or run.</li></ul></article>
     </div>
   </section>
   <footer><span>Evidence updated September 24, 2026.</span><a href="memory-acceptance.md">Test evidence</a><a href="shared-memory.md">Backend and recovery</a><a href="../integrations/plugins/README.md">Client setup</a></footer>

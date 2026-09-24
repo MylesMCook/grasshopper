@@ -7,7 +7,9 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -27,6 +29,7 @@ type Backend struct {
 	Model            string
 	InferenceTimeout time.Duration
 	Visualizer       bool
+	AllowedProxyHost string
 }
 
 type contextInput struct {
@@ -91,6 +94,13 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	if len(token) < 32 || strings.IndexFunc(token, unicode.IsSpace) >= 0 {
 		return nil, errors.New("token must contain at least 32 non-whitespace characters")
 	}
+	if backend.AllowedProxyHost != "" {
+		host, port, err := net.SplitHostPort(backend.AllowedProxyHost)
+		portNumber, portErr := strconv.Atoi(port)
+		if err != nil || portErr != nil || portNumber < 1 || portNumber > 65535 || host == "" || strings.ContainsAny(host, "/@?#\\") || strings.IndexFunc(host, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+			return nil, errors.New("allowed proxy host must be an exact hostname and port")
+		}
+	}
 	inferenceTimeout := backend.InferenceTimeout
 	if inferenceTimeout <= 0 || inferenceTimeout > 10*time.Second {
 		inferenceTimeout = 5 * time.Second
@@ -118,7 +128,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		}
 	}
 	tokenHash := sha256.Sum256([]byte(token))
-	server := mcp.NewServer(&mcp.Implementation{Name: "grasshopper", Version: "2.0.0"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "grasshopper", Version: "2.0.1"}, nil)
 	falseValue := false
 	read := &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}
 	write := &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}
@@ -196,7 +206,26 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		})
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: 131072, PropagateRequestCancellation: true})
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", mcpHandler)
+	mux.Handle("/mcp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The SDK permits only loopback Host headers on a loopback listener.
+		// Tailscale Serve preserves the HTTPS Host, so admit one configured
+		// proxy Host and retain the SDK's default check for every other Host.
+		scheme := "http"
+		if backend.AllowedProxyHost != "" && r.Host == backend.AllowedProxyHost {
+			scheme = "https"
+		}
+		if origin := r.Header.Get("Origin"); origin != "" && origin != scheme+"://"+r.Host {
+			http.Error(w, "invalid Origin header", http.StatusForbidden)
+			return
+		}
+		if scheme == "https" {
+			copy := r.Clone(r.Context())
+			copy.Host = "127.0.0.1"
+			mcpHandler.ServeHTTP(w, copy)
+			return
+		}
+		mcpHandler.ServeHTTP(w, r)
+	}))
 	if backend.Visualizer {
 		mux.HandleFunc("/visualizer/api/context", visualizerContext(backend.Store))
 	}

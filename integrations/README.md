@@ -1,12 +1,12 @@
 # Connect Codex Desktop, Cursor, or Claude Code
 
-All three harnesses use the **same Go client** and the same [memory policy](policy/AGENTS.md). Keep each client configuration local and untracked. No installer changes global settings, another repository, or managed policy.
+All three harnesses use the **same stateless client** and the same [memory policy](policy/AGENTS.md). Keep each client configuration local and untracked. No installer changes global settings, another repository, or managed policy.
 
-**Status:** The Go client passed synthetic checks on Mac, Work HP Windows, and Beelink Linux. Fresh Mac CLI sessions checked shared reads and corrections. The current Codex pilot hook is trusted; a Mac Claude Code 2.1.280 probe needed the AGENTS.md hook fallback. Client plugin packages are under test; [install, update, and remove them](plugins/README.md), or use the manual setup below. [Observed results and open checks](../docs/memory-acceptance.md).
+**Status:** The client passed synthetic checks on Mac, Work HP Windows, and Beelink Linux. Fresh Mac CLI sessions checked shared reads and corrections. The current Codex pilot hook is trusted; a Mac Claude Code 2.1.280 probe needed the AGENTS.md hook fallback. [Install, update, or remove a client package](plugins/README.md), or use the manual setup below. [Observed results and open checks](../docs/memory-acceptance.md).
 
 ## 1. Prepare the client
 
-Build `./cmd/grasshopper` or extract the matching [portable Go bundle](../docs/go-package.md). Use the absolute path to `bin/grasshopper` (macOS) or `bin/grasshopper.exe` (Windows). This client has no writable database and needs no ONNX model.
+Build `./cmd/grasshopper` or extract the matching [portable bundle](../docs/go-package.md). Use the absolute path to `bin/grasshopper` (macOS) or `bin/grasshopper.exe` (Windows). This client has no writable database and needs no ONNX model.
 
 Copy `client.example.json` to a **private, untracked** path on the client machine. Set an approved private HTTPS `/mcp` URL, a stable device ID, and the absolute path to this checkout’s `policy/AGENTS.md`. Choose exactly one credential reference: `token_env` or `token_file`. Keep the token outside Git and arguments. On macOS a token file must be owner-only (`chmod 600`); on Windows restrict its ACL to the intended user and trusted admins. The backend requires a token even behind a proxy.
 

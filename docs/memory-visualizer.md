@@ -8,7 +8,7 @@ The server bundle includes a read-only visualizer. It shows confirmed memories a
 2. Open `http://127.0.0.1:8106/visualizer/` on the server host. Use your actual loopback port if different.
 3. Paste the existing bearer token into the page. Add a durable project ID, device, or platform to see applicable scoped records. Blank fields show global context only.
 
-The token stays in this tab's memory. The page sends it in an Authorization header; it never puts it in a URL, cookie, or browser storage. Disconnect or close the tab to clear it. The blank page shell is public, but every memory read requires the bearer token. Do not use an untrusted browser or screen share while viewing private memories. For access from another machine, configure an approved private HTTPS route and keep Authorization headers out of proxy logs. The Go server itself binds to loopback.
+The token stays in this tab's memory. The page sends it in an Authorization header; it never puts it in a URL, cookie, or browser storage. Disconnect or close the tab to clear it. The blank page shell is public, but every memory read requires the bearer token. Do not use an untrusted browser or screen share while viewing private memories. For access from another machine, configure an approved private HTTPS route and keep Authorization headers out of proxy logs. The server itself binds to loopback.
 
 The page shows full returned records with scope, revision, confirmation, and source. If the response budget omits records, it says how many. Use the MCP `get` tool for a complete omitted record or a prior revision. Archived, legacy, and unconfirmed observation records are not in this context view. The visualizer cannot write, archive, or index files.
 

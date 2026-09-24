@@ -1,6 +1,6 @@
 # Grasshopper client package
 
-This archive contains the same stateless Go bridge for Codex, Cursor, and
+This archive contains the same stateless client for Codex, Cursor, and
 Claude Code. It has no database, model, or credential. A separate private
 Grasshopper server holds the memories.
 

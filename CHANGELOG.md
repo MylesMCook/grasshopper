@@ -1,11 +1,16 @@
 # Changelog
 
-## 2.0.0 (unreleased): Go-only shared memory
+## 2.0.1 (24 September 2026)
 
-- One authenticated Go/SQLite memory service with `context`, `store`, `search`, `get`, and `archive`.
-- One stateless Go client for Codex Desktop, Cursor, and Claude Code on macOS and Windows. AGENTS.md is the sole standing-instruction format.
+- Accept one explicitly configured private HTTPS proxy Host for MCP without relaxing the default Host check for other requests. Reject mismatched Origins.
+- Add regression coverage for the proxy path and document the Mac mini private service and encrypted off-host recovery.
+
+## 2.0.0 (24 September 2026): Shared memory
+
+- One authenticated SQLite memory service with `context`, `store`, `search`, `get`, and `archive`.
+- One stateless client for Codex, Cursor, and Claude Code on macOS, Windows, and Linux. AGENTS.md is the sole standing-instruction format.
 - Scoped records, explicit corrections with revision conflicts, provenance, full history, idempotent retries, and copy-only migration/backup.
-- Portable Go-only bundles tested on Mac and Work HP with synthetic data. Live deployment and final app revalidation remain open.
+- Portable bundles tested on Mac, Work HP, and Beelink with synthetic data. Desktop app revalidation remains user-led.
 - Retired the Rust CLI and local code-search feature. Entries below describe earlier releases, not active commands.
 
 ## 1.0.1

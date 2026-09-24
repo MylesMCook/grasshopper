@@ -1,8 +1,8 @@
 # Grasshopper
 
-Grasshopper is a Go-only, self-hosted memory service for Codex Desktop, Cursor, and Claude Code. One authenticated SQLite backend holds a small set of explicit preferences, accepted decisions, verified lessons, and handoffs. Each harness uses the same stateless Go client. [Download 2.0.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.0) · [See how it works](docs/how-it-works.html).
+Grasshopper is a self-hosted memory service for Codex, Cursor, and Claude Code. One authenticated SQLite backend holds explicit preferences, accepted decisions, verified lessons, and handoffs. Each harness connects through the same stateless client. [Download 2.0.1](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.1) · [See how it works](docs/how-it-works.html).
 
-**Status:** Native Go builds and synthetic CLI checks passed on Mac, Work HP Windows, and Beelink Ubuntu. Windows Codex uses a first-prompt hook; Cursor CLI needs project MCP wiring. Desktop checks remain user-led. No live service or data changed. [See exact evidence](docs/memory-acceptance.md).
+**Status:** Native builds and synthetic CLI checks passed on Mac, Work HP Windows, and Beelink Ubuntu. The Mac mini now hosts a private service with encrypted offsite backups; no old database was migrated. Windows Codex uses a first-prompt hook, and Cursor CLI needs project MCP wiring. Desktop checks remain user-led. [See exact evidence](docs/memory-acceptance.md).
 
 A new host can start an empty memory-only SQLite database with `grasshopper-go-server --create-db --db /private/brain.db` plus the model, runtime, token-file, and loopback flags described in the [portable bundle guide](docs/go-package.md). The flag never replaces an existing database. Remote access still needs an approved private HTTPS route.
 
@@ -29,7 +29,7 @@ go build -o /your/build/grasshopper-go-backup ./cmd/grasshopper-go-backup
 go build -o /your/build/grasshopper-go-migrate ./cmd/grasshopper-go-migrate
 ```
 
-[Portable server bundle](docs/go-package.md) explains how to assemble and verify a server archive. [Client plugin packages](integrations/plugins/README.md) cover installation, updates, and removal; [manual wiring](integrations/README.md) remains available. [Live memory view](docs/memory-visualizer.md) shows current context without a second store. [Mac mini deployment plan](docs/mac-mini-deployment.md) and [backup and rollback guide](docs/shared-memory.md) keep live-data changes approval-gated.
+[Portable server bundle](docs/go-package.md) explains how to assemble and verify a server archive. [Client plugin packages](integrations/plugins/README.md) cover installation, updates, and removal; [manual wiring](integrations/README.md) remains available. [Live memory view](docs/memory-visualizer.md) shows current context without a second store. [Mac mini deployment and recovery](docs/mac-mini-deployment.md) records the private host setup.
 
 The retired Rust code-search CLI is intentionally absent. Use the repository's normal code tools for code search. Grasshopper's remote surface remains memory-only.
 
