@@ -16,7 +16,7 @@ Use a checksum-verified macOS arm64 full bundle. If building from source on the 
 
 For a new installation, create an empty `data/memory.db` with `grasshopper-go-server --create-db` only on its first start, then stop that one-shot process before loading launchd. The launchd example omits `--create-db` so a missing database cannot silently become an empty new one. For a later migration, stop the sole old writer, take a consistent snapshot with `grasshopper-go-backup`, convert a separate copy with `grasshopper-go-migrate`, and verify records and legacy quarantine as in [migration and recovery](shared-memory.md). Never point an older Rust binary at a Go-written database.
 
-Copy [the launchd example](../packaging/macos/com.example.grasshopper.plist) to `~/Library/LaunchAgents/com.myles.grasshopper.plist`. Replace its example username and label; check every binary, model, database, token, and log path. Run `plutil -lint` on the rendered plist. Its executable reads a token file, binds loopback, restarts after failure, and writes logs under the private state directory. It contains no token value.
+Copy [the launchd example](../packaging/macos/com.example.grasshopper.plist) to `~/Library/LaunchAgents/com.myles.grasshopper.plist`. Replace its example username and label; check every binary, model, database, token, and log path. Run `plutil -lint` on the rendered plist. Its executable reads a token file, binds loopback, serves the optional [live memory view](memory-visualizer.md), restarts after failure, and writes logs under the private state directory. It contains no token value.
 
 ## Approved cutover sequence
 

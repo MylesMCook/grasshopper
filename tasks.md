@@ -1,53 +1,46 @@
-# Grasshopper release work
+# Grasshopper 2.0.0 release
 
 Owner: Codex. Mac checkout: `/Users/mylescook/Code/MylesMCook/grasshopper`,
-branch `main`. Work HP is CLI-only while the user does real work there. Beelink
-is shared with a separate host-maintenance task. All current tests use
-synthetic data; no live migration or deployment is approved.
+branch `main`. Work HP checks are CLI-only while the user works there. Beelink
+is shared with a separate host-maintenance task. Preserve unrelated `.build/`
+and `.playwright-cli/` folders.
 
 ## Intended behavior
 
-One authenticated, private Go/SQLite memory service with five tools; one
-stateless Go bridge for Codex, Cursor, and Claude Code; one canonical shared
-`integrations/policy/AGENTS.md`. The client package must be installable,
-updatable, and removable without a second writable memory store or alternate
-standing-instruction file. The former Rust CLI and code search are retired.
+One authenticated Go/SQLite memory service; one stateless Go bridge for Codex,
+Cursor, and Claude; one shared `integrations/policy/AGENTS.md`. The five MCP
+tools remain `context`, `store`, `search`, `get`, and `archive`. A bundled,
+read-only live view shows scoped context without another store. Rust and local
+code search are retired.
 
-## Current state
+## Verified
 
-- Backend, migration/backup, auth, scoped recall, revision conflict, replay,
-  history, and bounded outage checks passed on Mac, Windows, and Linux.
-  [Detailed evidence](docs/memory-acceptance.md). Package commit `38305a0`
-  is pushed to `main`; [its CI](https://github.com/MylesMCook/grasshopper/actions/runs/36042724512)
-  passed on macOS, Windows, and Ubuntu. Earlier milestones: `430cb41`,
-  `86114fd`, and `95ca34a`.
-- Windows prompt fallback `f27bc8f` is pushed to `main`; [its CI](https://github.com/MylesMCook/grasshopper/actions/runs/36052108837)
-  passed on macOS, Windows, and Ubuntu.
-- Mac client package: Codex local install/update and fresh Luna startup context
-  passed; Claude local install/update and fresh Haiku `--plugin-dir` startup
-  context passed. Cursor Composer received startup context from `--plugin-dir`,
-  but plugin-only loading did not register its MCP server.
-- Work HP Windows: Claude/Haiku received startup context; Cursor/Composer
-  fetched it through a project-local MCP source and read allowlist. Codex CLI
-  0.155.1 and task-local 0.156.1/Luna received synthetic record 1 revision 2
-  before tool use from the 0.1.8 prompt hook. Its archive passed 24 hashes;
-  the packaged hook passed a start-then-prompt fallback check. An earlier
-  trusted interactive 0.1.7 turn loaded the record too. With the test server
-  stopped, Codex continued without claiming memory. The isolated plugin,
-  listener, token, and auth link were removed. Desktop remains untested.
-- Beelink Linux: the final archive verified; Codex/Luna, Claude/Haiku, and
-  Cursor/Composer 2.5 Fast received synthetic startup context. Claude read
-  `context` through its plugin MCP. Cursor read it through the project-local
-  MCP source. All task-local listeners were stopped and tokens removed.
-- Package sources and install/update/removal instructions are in
-  [integrations/plugins](integrations/plugins/README.md). Codex and Claude local
-  install, update, and removal paths were rehearsed in isolated configurations.
-  Cursor native Git
-  marketplace/IDE install and uninstall remain unverified.
+- Backend tests, real BGE recall, copy-only migration, backup/restore, and
+  earlier portable bundles passed on Mac, Windows, and Ubuntu. Package CI for
+  `38305a0` and Windows fallback CI for `f27bc8f` passed on all three OSes.
+- Fresh Codex, Cursor, and Claude CLI turns read synthetic memory on all three
+  machines. A later shared-server pilot used one Mac backend: all three OSes
+  read global record 1 revision 2. Direct bridge reads kept project A `bun`,
+  project B `npm`, and a Windows path separate. All pilot forwards, listeners,
+  and token copies were removed.
+- Work HP Codex CLI fresh/second/resume turns and Claude fresh/resume/subagent/
+  compact hooks passed their recorded checks. Mac Cursor CLI needed project MCP
+  wiring; plugin-only loading did not register tools.
+- Mac Chromium showed a new memory in the live view without reload, a clear
+  stale state during outage, and no 390px horizontal overflow. Go tests, vet,
+  race checks, and the example Mac launchd plist pass.
+- Synthetic Mac online backup restored revision 1 after the source advanced to
+  revision 2. No live service or data was changed. See
+  [acceptance evidence](docs/memory-acceptance.md).
 
-## Next action
+## Release gates
 
-Resolve or document Cursor plugin-only MCP loading. Windows Codex resume and
-second-prompt behavior need a direct CLI check beyond the Go regression tests.
-Keep `.build/` and `.playwright-cli/` untouched. A live host cutover requires
-separate deployment approval, verified backup recovery, and rollback rehearsal.
+- Build final 2.0.0 Mac, Windows, and Linux client/server archives from this
+  commit. Verify checksums, fresh install/update/removal, auth, live view,
+  startup context, and stopped-backend behavior. Run final CI and review.
+- Tag and publish the software release after those gates pass. Keep a clear
+  limitation for Cursor native Git marketplace and desktop behavior.
+- Mac mini is the chosen first persistent host. [Deployment plan](docs/mac-mini-deployment.md)
+  is prepared, not applied. Independent off-host backup and explicit
+  supervisor/private-route approval are required before a live service. Do not
+  migrate live data as part of the software release.

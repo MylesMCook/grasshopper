@@ -4,6 +4,20 @@
 
 [Visual overview](how-it-works.html) · [Detailed test history](evidence-history.md) · [Setup and removal](../integrations/README.md)
 
+## 2.0.0 release checks, 24 September 2026
+
+All records below were synthetic. The shared pilot used one Mac loopback Go
+server and temporary SSH forwards to Windows and Linux. Its forwards, listener,
+and remote token copies were removed after the checks.
+
+| Gate | Direct observation | Still open |
+|---|---|---|
+| One shared backend | Work HP Codex CLI 0.156.1 and Claude Code 2.1.280 received global record 1, revision 2, `pebble atlas` before tools. Mac Cursor Agent 2026.09.23 fetched the same revision with one project MCP `context` call. Beelink Codex CLI 0.156.1 and Claude Code 2.1.281 received it in fresh turns; Beelink Cursor Agent fetched it with one project MCP call. Project A `bun`, project B `npm`, and a Windows path stayed scoped in direct bridge reads. | A single six-way agent correction sequence and persistent private HTTPS route have not been tested. These results do not prove Desktop behavior. |
+| Windows lifecycle | Work HP Codex fresh, second prompt, and resume read the current revision; one later resume received revision 4 through hook context before tools. Claude fresh and resume read current revisions. A real Claude subagent received root guidance and revision 5; `/compact` produced a boundary and a successful `SessionStart:compact` hook response. | Codex compaction and independent Codex subagent hook were not isolated. Claude's first model turn after compact was not isolated from a resume hook. |
+| Cursor CLI tool access | On Mac, plugin-only loading did not register tools across four documented/discovered manifest forms. Project `.cursor/mcp.json` plus read allowlist listed five tools and a fresh Composer 2.5 turn fetched the shared record. Beelink's fresh Composer turn did the same with one approved MCP call. [CLI setup](cursor-cli.md). | Native Git marketplace installation and IDE behavior remain untested. |
+| Live memory view | Go HTTP tests cover authorization, scope, updates, and omission. Chromium on Mac showed a new confirmed record within the next three-second refresh, no 390px overflow, and a clear stale state on outage; restart showed the same records. [View guide](memory-visualizer.md). | Other browsers/OS and the final installed server archive remain to be checked. |
+| Mac mini host | No persistent Grasshopper job or route was present. A task-local online backup restored revision 1 after the source advanced to revision 2; restored `get` and `context` matched, and SQLite integrity was `ok`. [Private deployment plan](mac-mini-deployment.md). | No off-host Grasshopper backup or Time Machine destination is configured. No live supervisor, private route, or real database was changed. |
+
 ## Backend and package
 
 | Check | Observed | Limit |
@@ -60,4 +74,4 @@ No live database, public route, or real profile was changed. No running Grasshop
 
 **Codex hook trust:** The older pilot's trusted hook delivered revision 3 before tool use. The new Code-location pilot initially had no trust and delivered no startup memory. After the user reviewed and trusted its exact `SessionStart` and `SubagentStart` hook hashes, a fresh Codex CLI turn received revision 3 through the current Go client before tool use. The Beelink read above used the same trusted hook with a temporary client URL; the original client config was restored afterward.
 
-**Next check:** Cursor's plugin-only MCP registration needs a native marketplace check; the verified project-local CLI path is documented. Windows Codex second-prompt, resume, compaction, and independent subagent behavior remain open. Work HP testing is CLI-only and must avoid the user's real work. Beelink remains shared with a separate host-maintenance task. A private-host startup and rollback rehearsal still needs separate approval. The user will test desktop apps if an issue appears. Do not release or migrate live data on the strength of these synthetic tests alone.
+**Remaining checks:** Cursor's native Git marketplace installation, Codex compaction/subagent delivery, and final 2.0.0 archive tests are open. Work HP testing is CLI-only and must avoid the user's real work. Beelink remains shared with a separate host-maintenance task. The user will test desktop apps if an issue appears. A software release does not authorize a live database migration or private-route deployment; those require separate approval and recovery checks.
