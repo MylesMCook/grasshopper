@@ -114,7 +114,7 @@ func TestClientPluginsPackageThreeHarnessesOnePolicy(t *testing.T) {
 		t.Fatal("Codex MCP bridge missing")
 	}
 	for name, want := range map[string]string{
-		"codex/plugins/grasshopper/hooks/hooks.json":            `"commandWindows": "\"%PLUGIN_ROOT%\\bin\\grasshopper.exe\" hook --harness codex"`,
+		"codex/plugins/grasshopper/hooks/hooks.json":            windowsHookCommand(),
 		"cursor/plugins/grasshopper/.cursor-plugin/plugin.json": `"mcpServers": "./mcp.json"`,
 	} {
 		reader, err := entries[name].Open()
@@ -125,6 +125,9 @@ func TestClientPluginsPackageThreeHarnessesOnePolicy(t *testing.T) {
 		reader.Close()
 		if err != nil || !strings.Contains(string(content), want) {
 			t.Fatalf("missing %q in %s: %v", want, name, err)
+		}
+		if strings.HasPrefix(name, "codex/") && (!strings.Contains(string(content), `"UserPromptSubmit"`) || strings.Contains(string(content), "%PLUGIN_ROOT%")) {
+			t.Fatal("Codex Windows prompt fallback is missing or uses the broken percent-variable launcher")
 		}
 	}
 	if entries["codex/.agents/plugins/marketplace.json"] == nil || entries["cursor/.cursor-plugin/marketplace.json"] == nil || entries["claude/.claude-plugin/marketplace.json"] == nil {

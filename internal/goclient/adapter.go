@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,6 +52,13 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	if harness != "codex" && harness != "cursor" && harness != "claude" {
 		return nil, errors.New("unsupported harness")
 	}
+	event := stringValue(input["hook_event_name"])
+	if event == "" {
+		event = "SessionStart"
+	}
+	if harness == "codex" && event == "UserPromptSubmit" && promptContextRecent(input) {
+		return map[string]any{}, nil
+	}
 	config, err := LoadConfig(configPath)
 	if err != nil {
 		return nil, err
@@ -79,11 +87,7 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 		return nil, err
 	}
 	policy := string(policyBytes)
-	event := stringValue(input["hook_event_name"])
-	if event == "" {
-		event = "SessionStart"
-	}
-	if harness != "cursor" && event != "SessionStart" && event != "SubagentStart" {
+	if harness != "cursor" && event != "SessionStart" && event != "SubagentStart" && !(harness == "codex" && event == "UserPromptSubmit") {
 		return nil, errors.New("unsupported hook event")
 	}
 	scope, scopeErr := ResolveScope(cwd, config.Device)
@@ -129,7 +133,38 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	if harness == "cursor" {
 		return map[string]any{"additional_context": text}, nil
 	}
+	if harness == "codex" && event == "UserPromptSubmit" {
+		markPromptContext(input)
+	}
 	return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": text}}, nil
+}
+
+func promptContextPath(input map[string]any) string {
+	dataDir, sessionID := os.Getenv("PLUGIN_DATA"), stringValue(input["session_id"])
+	if dataDir == "" || sessionID == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(sessionID))
+	return filepath.Join(dataDir, fmt.Sprintf("grasshopper-context-%x.stamp", sum[:16]))
+}
+
+func promptContextRecent(input map[string]any) bool {
+	path := promptContextPath(input)
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && time.Since(info.ModTime()) < time.Hour
+}
+
+func markPromptContext(input map[string]any) {
+	path := promptContextPath(input)
+	if path == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err == nil {
+		_ = os.WriteFile(path, []byte("context attempted\n"), 0600)
+	}
 }
 
 // HookGlobalPart loads Claude's user AGENTS.md through the same hook channel

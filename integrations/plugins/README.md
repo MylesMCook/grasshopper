@@ -26,12 +26,18 @@ means the full path to that directory, with spaces quoted.
 
 | Client | Supported local path | What to verify |
 |---|---|---|
-| Codex CLI/Desktop | `codex plugin marketplace add ABSOLUTE_ARCHIVE/codex`, then `codex plugin add grasshopper@grasshopper-local`. | Review and trust the plugin's `SessionStart` and `SubagentStart` hooks in `/hooks`. Start a fresh task and check a synthetic record before tool use. |
+| Codex CLI/Desktop | `codex plugin marketplace add ABSOLUTE_ARCHIVE/codex`, then `codex plugin add grasshopper@grasshopper-local`. | Review and trust `SessionStart`, `SubagentStart`, and `UserPromptSubmit` in `/hooks`. Start a fresh task and check a synthetic record before tool use. |
 | Claude Code | `claude plugin marketplace add ABSOLUTE_ARCHIVE/claude`, then `claude plugin install grasshopper@grasshopper-local`. | `claude plugin validate ABSOLUTE_ARCHIVE/claude/plugins/grasshopper`, then check a fresh turn. `claude --plugin-dir ABSOLUTE_ARCHIVE/claude/plugins/grasshopper` is a temporary test load. |
 | Cursor Agent CLI | `agent --plugin-dir ABSOLUTE_ARCHIVE/cursor/plugins/grasshopper` is a temporary test load. | Its startup hook delivered context in the Mac package probe, but plugin-only loading did not register its MCP server. Use the project MCP configuration below until native plugin tool loading is verified. |
 
 On Windows, use the same commands in PowerShell with full Windows paths. The
 package selects `grasshopper.exe`. On macOS/Linux, it selects `grasshopper`.
+The Windows Codex prompt hook is a fallback for tested CLI versions that did
+not run `SessionStart`. It loads context before the first model turn, then
+skips repeat loads in that session for one hour. It uses Windows PowerShell,
+which is already part of Windows. A resume within that hour may still need one
+manual `context` call if memory is stale. The desktop app has not been tested
+with this package.
 Cursor's CLI marketplace command currently accepts a Git URL, not a local
 archive. A published Git marketplace and IDE install have not been tested.
 

@@ -2,7 +2,7 @@
 
 Grasshopper is a Go-only, self-hosted memory service for Codex Desktop, Cursor, and Claude Code. One authenticated SQLite backend holds a small set of explicit preferences, accepted decisions, verified lessons, and handoffs. Each harness uses the same stateless Go client. [See how it works](docs/how-it-works.html).
 
-**Status:** Go tests and portable bundles passed on Mac, Work HP Windows, and Beelink Ubuntu. Synthetic records passed between Mac and Work HP. Fresh Codex, Cursor, and Claude Code CLI sessions received startup context on Mac and Beelink. Windows Codex plugin-hook trust and Cursor plugin-only MCP loading remain open. Desktop checks are user-led if an issue appears. No live service or data changed. [See exact evidence](docs/memory-acceptance.md).
+**Status:** Go tests and portable bundles passed on Mac, Work HP Windows, and Beelink Ubuntu. Synthetic records passed between Mac and Work HP. Fresh Codex, Cursor, and Claude Code CLI sessions received memory context on all three machines. Windows Codex uses a first-prompt hook because its tested CLI did not run the startup hook. Cursor's plugin still needs project MCP wiring. Desktop checks are user-led if an issue appears. No live service or data changed. [See exact evidence](docs/memory-acceptance.md).
 
 A new host can start an empty memory-only SQLite database with `grasshopper-go-server --create-db --db /private/brain.db` plus the model, runtime, token-file, and loopback flags described in the [portable bundle guide](docs/go-package.md). The flag never replaces an existing database. Remote access still needs an approved private HTTPS route.
 

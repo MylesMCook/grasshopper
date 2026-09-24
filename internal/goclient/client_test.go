@@ -140,6 +140,57 @@ func TestGoBridgeAndHookUseOneBackend(t *testing.T) {
 	}
 }
 
+func TestCodexPromptFallbackLoadsContextOncePerSession(t *testing.T) {
+	_, config, root := testClientServer(t)
+	t.Setenv("PLUGIN_DATA", t.TempDir())
+	input := map[string]any{"cwd": root, "hook_event_name": "UserPromptSubmit", "session_id": "synthetic-session"}
+	first, err := Hook(config, "codex", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := first["hookSpecificOutput"].(map[string]any)
+	if output["hookEventName"] != "UserPromptSubmit" || !strings.Contains(output["additionalContext"].(string), "Canonical memory policy marker.") {
+		t.Fatalf("prompt hook did not deliver context: %v", first)
+	}
+	second, err := Hook(config, "codex", input)
+	if err != nil || len(second) != 0 {
+		t.Fatalf("prompt hook repeated context in one session: %v, %v", second, err)
+	}
+	input["session_id"] = "fresh-session"
+	third, err := Hook(config, "codex", input)
+	if err != nil || third["hookSpecificOutput"] == nil {
+		t.Fatalf("fresh session lacked context: %v, %v", third, err)
+	}
+	input["session_id"] = "startup-session"
+	input["hook_event_name"] = "SessionStart"
+	if _, err := Hook(config, "codex", input); err != nil {
+		t.Fatal(err)
+	}
+	input["hook_event_name"] = "UserPromptSubmit"
+	if fallback, err := Hook(config, "codex", input); err != nil || fallback["hookSpecificOutput"] == nil {
+		t.Fatalf("prompt fallback was suppressed by startup: %v, %v", fallback, err)
+	}
+}
+
+func TestCodexPromptFallbackOutageDoesNotRetry(t *testing.T) {
+	server, config, root := testClientServer(t)
+	server.Close()
+	t.Setenv("PLUGIN_DATA", t.TempDir())
+	input := map[string]any{"cwd": root, "hook_event_name": "UserPromptSubmit", "session_id": "offline-session"}
+	first, err := Hook(config, "codex", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := first["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
+	if !strings.Contains(text, "context unavailable") || strings.Contains(text, "context loaded") {
+		t.Fatalf("offline prompt hook claimed memory: %s", text)
+	}
+	second, err := Hook(config, "codex", input)
+	if err != nil || len(second) != 0 {
+		t.Fatalf("offline prompt hook retried automatically: %v, %v", second, err)
+	}
+}
+
 func TestGoBridgeOutageIsBoundedAndDoesNotAcknowledgeWrite(t *testing.T) {
 	server, config, root := testClientServer(t)
 	server.Close()

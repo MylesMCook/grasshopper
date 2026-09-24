@@ -25,12 +25,14 @@ standing-instruction file. The former Rust CLI and code search are retired.
   passed; Claude local install/update and fresh Haiku `--plugin-dir` startup
   context passed. Cursor Composer received startup context from `--plugin-dir`,
   but plugin-only loading did not register its MCP server.
-- Work HP Windows: the archive verified, Claude/Haiku received startup context,
-  and Cursor/Composer fetched it through a project-local MCP source and read
-  allowlist. Codex plugin MCP registration passed; first-turn hook failed with
-  the previous hook command. A documented `commandWindows` override is now
-  packaged but still needs a trusted fresh-turn check. SSH later timed out
-  during the banner exchange, so this check could not be completed today.
+- Work HP Windows: Claude/Haiku received startup context; Cursor/Composer
+  fetched it through a project-local MCP source and read allowlist. Codex CLI
+  0.155.1 and task-local 0.156.1/Luna received synthetic record 1 revision 2
+  before tool use from the 0.1.8 prompt hook. Its archive passed 24 hashes;
+  the packaged hook passed a start-then-prompt fallback check. An earlier
+  trusted interactive 0.1.7 turn loaded the record too. With the test server
+  stopped, Codex continued without claiming memory. The isolated plugin,
+  listener, token, and auth link were removed. Desktop remains untested.
 - Beelink Linux: the final archive verified; Codex/Luna, Claude/Haiku, and
   Cursor/Composer 2.5 Fast received synthetic startup context. Claude read
   `context` through its plugin MCP. Cursor read it through the project-local
@@ -43,7 +45,7 @@ standing-instruction file. The former Rust CLI and code search are retired.
 
 ## Next action
 
-Resolve or document Windows Codex hook trust and Cursor
-plugin-only MCP loading. Review the diff, commit narrow changes, and run CI.
+Resolve or document Cursor plugin-only MCP loading. Windows Codex resume and
+second-prompt behavior need a direct CLI check beyond the Go regression tests.
 Keep `.build/` and `.playwright-cli/` untouched. A live host cutover requires
 separate deployment approval, verified backup recovery, and rollback rehearsal.

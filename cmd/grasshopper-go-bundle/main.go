@@ -6,6 +6,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,6 +20,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf16"
 )
 
 type input struct{ name, path string }
@@ -75,6 +78,18 @@ func goNotices(packages ...string) ([]input, error) {
 }
 
 var pluginVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+
+// Codex's Windows hook runner wraps commands in cmd.exe quotes. Resolve the
+// plugin path inside PowerShell so installs under paths with spaces still work.
+func windowsHookCommand() string {
+	script := `& (Join-Path $env:PLUGIN_ROOT 'bin\grasshopper.exe') hook --harness codex; exit $LASTEXITCODE`
+	units := utf16.Encode([]rune(script))
+	data := make([]byte, len(units)*2)
+	for i, unit := range units {
+		binary.LittleEndian.PutUint16(data[i*2:], unit)
+	}
+	return "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + base64.StdEncoding.EncodeToString(data)
+}
 
 func clientPluginFiles(client, target, version, output string) ([]input, func(), error) {
 	if !pluginVersion.MatchString(version) {
@@ -134,7 +149,7 @@ func clientPluginFiles(client, target, version, output string) ([]input, func(),
 			if err != nil {
 				return err
 			}
-			rendered := strings.NewReplacer("{{VERSION}}", version, "{{EXE}}", exe).Replace(string(contents))
+			rendered := strings.NewReplacer("{{VERSION}}", version, "{{EXE}}", exe, "{{WINDOWS_HOOK_COMMAND}}", windowsHookCommand()).Replace(string(contents))
 			if strings.Contains(rendered, "{{") || !json.Valid([]byte(rendered)) {
 				return fmt.Errorf("invalid rendered plugin JSON: %s", path)
 			}
