@@ -21,6 +21,8 @@ standing-instruction file. The former Rust CLI and code search are retired.
   is pushed to `main`; [its CI](https://github.com/MylesMCook/grasshopper/actions/runs/36042724512)
   passed on macOS, Windows, and Ubuntu. Earlier milestones: `430cb41`,
   `86114fd`, and `95ca34a`.
+- Windows prompt fallback `f27bc8f` is pushed to `main`; [its CI](https://github.com/MylesMCook/grasshopper/actions/runs/36052108837)
+  passed on macOS, Windows, and Ubuntu.
 - Mac client package: Codex local install/update and fresh Luna startup context
   passed; Claude local install/update and fresh Haiku `--plugin-dir` startup
   context passed. Cursor Composer received startup context from `--plugin-dir`,
