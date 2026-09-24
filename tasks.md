@@ -17,9 +17,10 @@ standing-instruction file. The former Rust CLI and code search are retired.
 
 - Backend, migration/backup, auth, scoped recall, revision conflict, replay,
   history, and bounded outage checks passed on Mac, Windows, and Linux.
-  [Detailed evidence](docs/memory-acceptance.md). Commits `430cb41`,
-  `86114fd`, and `95ca34a` are on `main`; current packaging edits are not yet
-  committed.
+  [Detailed evidence](docs/memory-acceptance.md). Package commit `38305a0`
+  is pushed to `main`; [its CI](https://github.com/MylesMCook/grasshopper/actions/runs/36042724512)
+  passed on macOS, Windows, and Ubuntu. Earlier milestones: `430cb41`,
+  `86114fd`, and `95ca34a`.
 - Mac client package: Codex local install/update and fresh Luna startup context
   passed; Claude local install/update and fresh Haiku `--plugin-dir` startup
   context passed. Cursor Composer received startup context from `--plugin-dir`,
