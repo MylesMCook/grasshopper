@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -91,8 +92,8 @@ func TestVisualizerScopedContextUpdatesAndRestart(t *testing.T) {
 	}
 	base := server.URL + "/visualizer/api/context"
 	initial := load(base, "{}")
-	if len(initial.Records) != 1 || initial.Records[0].ID != 1 || initial.Records[0].Revision != 2 {
-		t.Fatalf("initial global context: %+v", initial)
+	if len(initial.Records) != 2 || initial.Records[0].ID != 1 || initial.Records[0].Revision != 2 || initial.Records[1].ID != 4 {
+		t.Fatalf("initial cross-platform browse view: %+v", initial)
 	}
 	projectA := load(base, `{"project":"id:project-a"}`)
 	projectB := load(base, `{"project":"id:project-b"}`)
@@ -137,6 +138,94 @@ func TestVisualizerScopedContextUpdatesAndRestart(t *testing.T) {
 	defer restarted.Close()
 	if page := load(restarted.URL+"/visualizer/api/context", "{}"); len(page.Records) != len(updated.Records) {
 		t.Fatalf("restart changed context: before=%d after=%d", len(updated.Records), len(page.Records))
+	}
+}
+
+func TestVisualizerAnyDeviceBrowsesActiveScopedRecords(t *testing.T) {
+	server, store := testServer(t, true)
+	ctx := context.Background()
+	projectA, projectB, retiredProject, observedProject := "id:project-a", "id:project-b", "id:retired-project", "id:observed-project"
+	mac, windows, projectDevice, otherProjectDevice := "synthetic-mac-only", "synthetic-windows-only", "project-a-only", "project-b-only"
+	macos, windowsOS := "macos", "windows"
+	write := func(scope gomemory.Scope, content, requestID string, confirmed bool) int64 {
+		t.Helper()
+		receipt, err := store.Write(ctx, gomemory.WriteInput{
+			Scope: scope, Content: content, Purpose: "lesson", Confirmed: confirmed,
+			Provenance: gomemory.Provenance{Harness: "test", Device: "synthetic", Source: "visualizer device test"},
+			RequestID:  requestID,
+		}, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return receipt.ID
+	}
+	write(gomemory.Scope{Device: &mac, Platform: &macos}, "Mac-only synthetic fact", "visualizer-mac", true)
+	write(gomemory.Scope{Device: &windows, Platform: &windowsOS}, "Windows-only synthetic fact", "visualizer-windows", true)
+	write(gomemory.Scope{Project: &projectA, Device: &projectDevice}, "Project A synthetic fact", "visualizer-project-a", true)
+	write(gomemory.Scope{Project: &projectB, Device: &otherProjectDevice}, "Project B synthetic fact", "visualizer-project-b", true)
+	write(gomemory.Scope{Project: &observedProject}, "Unconfirmed project observation", "visualizer-project-observation", false)
+	retiredProjectID := write(gomemory.Scope{Project: &retiredProject}, "Retired project fact", "visualizer-project-retired", true)
+	if _, err := store.Archive(ctx, gomemory.ArchiveInput{
+		Scope: gomemory.Scope{Project: &retiredProject}, ID: retiredProjectID, ExpectedRevision: 1, Archived: true,
+		RequestID: "visualizer-project-retired-archive", Provenance: gomemory.Provenance{Harness: "test", Device: "synthetic", Source: "visualizer device test"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	observed := "observed-only"
+	write(gomemory.Scope{Device: &observed}, "Unconfirmed synthetic observation", "visualizer-observation", false)
+	retired := "retired-only"
+	retiredID := write(gomemory.Scope{Device: &retired}, "Archived synthetic fact", "visualizer-retired", true)
+	if _, err := store.Archive(ctx, gomemory.ArchiveInput{
+		Scope: gomemory.Scope{Device: &retired}, ID: retiredID, ExpectedRevision: 1, Archived: true,
+		RequestID: "visualizer-retired-archive", Provenance: gomemory.Provenance{Harness: "test", Device: "synthetic", Source: "visualizer device test"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	load := func(scope string) (gomemory.Page, []string, []string) {
+		t.Helper()
+		resp, data := visualizerRequest(t, http.MethodPost, server.URL+"/visualizer/api/context", testToken, scope)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("visualizer scope %s: status=%d body=%s", scope, resp.StatusCode, data)
+		}
+		var view struct {
+			gomemory.Page
+			Devices  []string `json:"devices"`
+			Projects []string `json:"projects"`
+		}
+		if err := json.Unmarshal(data, &view); err != nil {
+			t.Fatal(err)
+		}
+		return view.Page, view.Devices, view.Projects
+	}
+	contains := func(page gomemory.Page, content string) bool {
+		for _, record := range page.Records {
+			if record.Content == content {
+				return true
+			}
+		}
+		return false
+	}
+	global, devices, projects := load(`{}`)
+	if !contains(global, "Mac-only synthetic fact") || !contains(global, "Windows-only synthetic fact") || contains(global, "Project A synthetic fact") || contains(global, "Unconfirmed synthetic observation") || contains(global, "Archived synthetic fact") {
+		t.Fatalf("Any device view mixed scope or omitted active device facts: %+v", global)
+	}
+	agentContext, err := store.Context(ctx, gomemory.Scope{}, 32768)
+	if err != nil || contains(agentContext, "Mac-only synthetic fact") || contains(agentContext, "Windows-only synthetic fact") {
+		t.Fatalf("agent context widened with visualizer browsing: page=%+v err=%v", agentContext, err)
+	}
+	if !slices.Contains(devices, mac) || !slices.Contains(devices, windows) || slices.Contains(devices, projectDevice) || slices.Contains(devices, retired) || slices.Contains(devices, observed) {
+		t.Fatalf("device choices mixed inactive or other-project facts: %v", devices)
+	}
+	if !slices.Contains(projects, projectA) || !slices.Contains(projects, projectB) || slices.Contains(projects, retiredProject) || slices.Contains(projects, observedProject) {
+		t.Fatalf("project choices included inactive or missed active records: %v", projects)
+	}
+	project, projectDevices, _ := load(`{"project":"id:project-a"}`)
+	if !contains(project, "Project A synthetic fact") || contains(project, "Project B synthetic fact") || !slices.Contains(projectDevices, projectDevice) || slices.Contains(projectDevices, otherProjectDevice) {
+		t.Fatalf("project view leaked or omitted scoped device: records=%+v devices=%v", project, projectDevices)
+	}
+	narrow, _, _ := load(`{"device":"synthetic-mac-only","platform":"macos"}`)
+	if !contains(narrow, "Mac-only synthetic fact") || contains(narrow, "Windows-only synthetic fact") {
+		t.Fatalf("selected device/platform was not narrow: %+v", narrow)
 	}
 }
 

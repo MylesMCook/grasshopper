@@ -3,6 +3,7 @@
 :root { color-scheme: light dark; --ink:#282828; --paper:#fff; --surface:#f7f7f5; --muted:#595955; --border:#90908c; --divider:#e1e1de; --link:#125ab8; --success:#087d60; --danger:#a7282a; --focus:#125ab8; }
 @media (prefers-color-scheme: dark) { :root { --ink:#f5f5f2; --paper:#171717; --surface:#222; --muted:#b8b8b4; --border:#777773; --divider:#454545; --link:#9cc8ff; --success:#89d8b8; --danger:#ff9e9e; --focus:#9cc8ff; } }
 * { box-sizing:border-box; }
+[hidden] { display:none !important; }
 html { background:var(--paper); color:var(--ink); }
 body { margin:0; font:1rem/1.5 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
 main { width:min(100% - 40px, 1040px); margin:auto; padding:24px 0 64px; }

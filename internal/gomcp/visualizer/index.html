@@ -14,7 +14,7 @@
     <header class="masthead"><span class="brand">GRASSHOPPER</span><span class="eyebrow">Live memory</span></header>
     <section class="intro" aria-labelledby="page-title">
       <h1 id="page-title">See what your agents remember.</h1>
-      <p>Read confirmed memories and the latest handoff from your own Grasshopper service. This view never writes memory.</p>
+      <p>Browse confirmed memories and the latest handoff from your own Grasshopper service. This view never writes memory.</p>
     </section>
 
     <section class="connection" aria-labelledby="connect-title">
@@ -23,25 +23,27 @@
         <div class="fields">
           <label>Bearer token <input id="token" type="password" autocomplete="off" required spellcheck="false"></label>
         </div>
-        <details class="scope-details"><summary>Scope · global</summary>
+        <details class="scope-details"><summary>View · global project · any device</summary>
           <div class="fields">
-            <label>Project ID <input id="project" type="text" placeholder="Optional · durable ID" spellcheck="false"></label>
-            <label>Device <input id="device" type="text" placeholder="Optional" spellcheck="false"></label>
+            <label>Project <select id="project"><option value="">Global memories</option></select></label>
+            <label id="manual-project-label" hidden>Project ID <input id="manual-project" type="text" placeholder="id: or git: identifier" spellcheck="false"></label>
+            <label>Device <select id="device"><option value="">Any device</option></select></label>
+            <label id="manual-device-label" hidden>Device ID <input id="manual-device" type="text" placeholder="Exact device ID" spellcheck="false"></label>
             <label>Platform <select id="platform"><option value="">Any platform</option><option value="macos">macOS</option><option value="windows">Windows</option><option value="linux">Linux</option></select></label>
           </div>
-          <p class="scope-note">Add a project or device to include its applicable records. Use the exact durable ID stored with the memory.</p>
+          <p class="scope-note">Global memories span projects. Choose a project to include its memories, then narrow by device or platform. A record from another device is context to inspect, not an instruction for this one.</p>
         </details>
         <div class="actions"><button id="connect" type="submit">Connect</button><button id="disconnect" type="button" class="quiet" disabled>Disconnect</button></div>
       </form>
     </section>
 
     <section class="memory" aria-labelledby="memory-title">
-      <div class="section-title memory-heading"><h2 id="memory-title">Current context</h2><span id="status" class="status" role="status" aria-live="polite">Not connected</span></div>
+      <div class="section-title memory-heading"><h2 id="memory-title">Memory in this view</h2><span id="status" class="status" role="status" aria-live="polite">Not connected</span></div>
       <p id="summary" class="summary">Enter a token to load context.</p>
       <p id="omissions" class="omissions" hidden></p>
       <div id="records" class="records" aria-live="off"></div>
     </section>
-    <footer>Live view refreshes every three seconds while connected. Records remain in Grasshopper.</footer>
+    <footer>This view refreshes every three seconds. Agents use only the context for their own project and machine.</footer>
   </main>
 </body>
 </html>

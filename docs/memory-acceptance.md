@@ -4,6 +4,17 @@
 
 [Visual overview](how-it-works.html) · [Detailed test history](evidence-history.md) · [Setup and removal](../integrations/README.md)
 
+## 24 September follow-up: recovery and memory view
+
+| Gate | Observed | Open |
+|---|---|---|
+| Recovery | Fresh encrypted R2 backup restored byte-for-byte. SQLite integrity returned `ok`. A separate server read record 1 at revisions 2 and 1 from the copy. The live writer stayed running. | Reboot, Mac-loss recovery, and Bitwarden sync on another device. |
+| Memory view | A failing regression test established the old empty device view. Synthetic HTTP tests now cover active project/device choices, project isolation, and agent-context separation. Mac Chromium showed Mac and Windows facts, project A without B, working manual entry, no 390px overflow, empty browser storage, and clean Disconnect. | The running 2.0.1 server has the older view until updated. |
+| Main connectors | Earlier fresh Mac Codex and Cursor CLI turns used the shared service. Earlier Mac ↔ Beelink synthetic checks passed. Work HP hooks reached Grasshopper; its Codex/Cursor model turns timed out, without isolating a service defect. | Work HP is deferred. A new Beelink SSH probe stopped at host-key verification before a Grasshopper request. |
+| Lifecycle | Fresh and resumed Codex sessions received updated context. | Codex compaction and independent child `SubagentStart` delivery have not been isolated. Cursor native Git marketplace installation is untested. |
+
+Checks for the new view: `go test -count=1 ./...` with the pinned model, `go vet ./...`, race tests for memory/MCP/client, JavaScript syntax, and `git diff --check` all passed. The test server and browser sessions were stopped.
+
 ## 2.0.1 release check
 
 Six Mac, Windows, and Linux client/server archives were packaged at `dd15c15`; all internal SHA-256 entries and GitHub asset digests match. [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36067286155) passed on that commit. Native tests with the pinned model, vet, race checks, and extracted-server authentication/proxy checks passed on all three systems. Windows and Linux reused binaries tested at code-identical `72a460c`; the intervening commit changed only three documents. The final Mac archive was installed into the private launchd job; authenticated local health, live MCP context, and the scoped visualizer API passed. The private route remains Tailnet-only.

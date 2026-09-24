@@ -73,12 +73,16 @@ func visualizerContext(store *gomemory.Writer) http.HandlerFunc {
 			http.Error(w, "invalid scope", http.StatusBadRequest)
 			return
 		}
-		page, err := store.Context(r.Context(), scope, 32768)
+		page, devices, projects, err := store.BrowseContext(r.Context(), scope, 32768)
 		if err != nil {
 			http.Error(w, "context unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(page)
+		_ = json.NewEncoder(w).Encode(struct {
+			gomemory.Page
+			Devices  []string `json:"devices"`
+			Projects []string `json:"projects"`
+		}{page, devices, projects})
 	}
 }

@@ -7,6 +7,13 @@ const summary = document.getElementById('summary');
 const omissions = document.getElementById('omissions');
 const records = document.getElementById('records');
 const scopeSummary = document.querySelector('.scope-details summary');
+const projectSelect = document.getElementById('project');
+const manualProjectLabel = document.getElementById('manual-project-label');
+const manualProjectInput = document.getElementById('manual-project');
+const deviceSelect = document.getElementById('device');
+const manualDeviceLabel = document.getElementById('manual-device-label');
+const manualDeviceInput = document.getElementById('manual-device');
+const manualChoice = '\u0000manual';
 
 let token = null;
 let active = false;
@@ -14,6 +21,57 @@ let timer = null;
 let inFlight = null;
 let revisions = new Map();
 let hasLoaded = false;
+let knownProjects = [];
+let knownDevices = [];
+
+function option(value, text) {
+  const item = document.createElement('option');
+  item.value = value;
+  item.textContent = text;
+  return item;
+}
+
+function updateOptions(select, values, known, emptyLabel, manualLabel, preserveSelection = true) {
+  const names = Array.isArray(values) ? values.filter(value => typeof value === 'string') : [];
+  if (preserveSelection && JSON.stringify(names) === JSON.stringify(known)) return known;
+  const selected = preserveSelection ? select.value : '';
+  const choices = [option('', emptyLabel)];
+  for (const name of names) choices.push(option(name, name));
+  if (selected && selected !== manualChoice && !names.includes(selected)) choices.push(option(selected, `Selected: ${selected}`));
+  choices.push(option(manualChoice, manualLabel));
+  select.replaceChildren(...choices);
+  select.value = selected;
+  return names;
+}
+
+function updateProjectOptions(projects, preserveSelection = true) {
+  knownProjects = updateOptions(projectSelect, projects, knownProjects, 'Global memories', 'Enter another project ID…', preserveSelection);
+}
+
+function updateDeviceOptions(devices, preserveSelection = true) {
+  knownDevices = updateOptions(deviceSelect, devices, knownDevices, 'Any device', 'Enter another device ID…', preserveSelection);
+}
+
+function showManualProject() {
+  const manual = projectSelect.value === manualChoice;
+  manualProjectLabel.hidden = !manual;
+  manualProjectInput.required = manual;
+  if (manual) manualProjectInput.focus();
+  else manualProjectInput.value = '';
+}
+
+function showManualDevice() {
+  const manual = deviceSelect.value === manualChoice;
+  manualDeviceLabel.hidden = !manual;
+  manualDeviceInput.required = manual;
+  if (manual) manualDeviceInput.focus();
+  else manualDeviceInput.value = '';
+}
+
+updateProjectOptions([], false);
+updateDeviceOptions([], false);
+projectSelect.addEventListener('change', showManualProject);
+deviceSelect.addEventListener('change', showManualDevice);
 
 function setStatus(message, kind = '') {
   status.textContent = message;
@@ -23,7 +81,7 @@ function setStatus(message, kind = '') {
 function setConnected(value) {
   active = value;
   tokenInput.required = !value;
-  connectButton.textContent = value ? 'Refresh scope' : 'Connect';
+  connectButton.textContent = value ? 'Refresh view' : 'Connect';
   disconnectButton.disabled = !value;
 }
 
@@ -40,16 +98,23 @@ function stop(clearRecords = false) {
     revisions = new Map();
     hasLoaded = false;
     summary.textContent = 'Enter a token to load context.';
+    updateProjectOptions([], false);
+    updateDeviceOptions([], false);
+    showManualProject();
+    showManualDevice();
+    scopeInput();
   }
 }
 
 function scopeInput() {
   const scope = {};
-  for (const key of ['project', 'device', 'platform']) {
-    const value = document.getElementById(key).value.trim();
-    if (value) scope[key] = value;
-  }
-  scopeSummary.textContent = Object.keys(scope).length ? `Scope · ${Object.keys(scope).join(' + ')}` : 'Scope · global';
+  const project = projectSelect.value === manualChoice ? manualProjectInput.value.trim() : projectSelect.value;
+  const device = deviceSelect.value === manualChoice ? manualDeviceInput.value.trim() : deviceSelect.value;
+  const platform = document.getElementById('platform').value;
+  if (project) scope.project = project;
+  if (device) scope.device = device;
+  if (platform) scope.platform = platform;
+  scopeSummary.textContent = `View · ${project ? 'one project' : 'global project'} · ${device || 'any device'} · ${platform || 'any platform'}`;
   return scope;
 }
 
@@ -99,7 +164,7 @@ function draw(page) {
   if (!items.length) {
     const empty = document.createElement('p');
     empty.className = 'empty';
-    empty.textContent = 'No confirmed memories or handoff match this scope.';
+    empty.textContent = 'No confirmed memories or handoff match this view.';
     fragment.append(empty);
   }
   records.replaceChildren(fragment);
@@ -130,6 +195,8 @@ async function refresh() {
     if (!response.ok) throw new Error(response.status === 401 ? 'Token rejected' : response.status === 400 ? 'Invalid scope' : 'Service unavailable');
     const page = await response.json();
     if (!active || inFlight !== controller) return;
+    updateProjectOptions(page.projects);
+    updateDeviceOptions(page.devices);
     draw(page);
     setStatus('Live · refreshes every 3 seconds', 'live');
     timer = setTimeout(refresh, 3000);

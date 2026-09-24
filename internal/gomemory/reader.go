@@ -238,6 +238,110 @@ func (r *Reader) Context(ctx context.Context, scope Scope, budget int) (Page, er
 	if err != nil {
 		return Page{}, err
 	}
+	return r.contextKeys(ctx, keys, budget)
+}
+
+// BrowseContext is for the authenticated read-only visualizer. A missing
+// device or platform means all of them; a missing project still means only
+// global project scope. Agent context keeps its narrower applicable-scope rule.
+func (r *Reader) BrowseContext(ctx context.Context, scope Scope, budget int) (Page, []string, []string, error) {
+	if _, err := scope.Key(); err != nil || scope.Legacy {
+		return Page{}, nil, nil, errors.New("invalid visualizer scope")
+	}
+	devices, err := r.browseDevices(ctx, scope)
+	if err != nil {
+		return Page{}, nil, nil, err
+	}
+	knownProjects, err := r.browseProjects(ctx)
+	if err != nil {
+		return Page{}, nil, nil, err
+	}
+	projects := []*string{nil}
+	if scope.Project != nil {
+		projects = append(projects, scope.Project)
+	}
+	selectedDevices := []*string{nil}
+	if scope.Device != nil {
+		selectedDevices = append(selectedDevices, scope.Device)
+	} else {
+		for index := range devices {
+			selectedDevices = append(selectedDevices, &devices[index])
+		}
+	}
+	platforms := []*string{nil}
+	if scope.Platform != nil {
+		platforms = append(platforms, scope.Platform)
+	} else {
+		for _, value := range []string{"macos", "windows", "linux"} {
+			platform := value
+			platforms = append(platforms, &platform)
+		}
+	}
+	keys := make([]string, 0, len(projects)*len(selectedDevices)*len(platforms))
+	for _, project := range projects {
+		for _, device := range selectedDevices {
+			for _, platform := range platforms {
+				key, err := (Scope{Project: project, Device: device, Platform: platform}).Key()
+				if err != nil {
+					return Page{}, nil, nil, err
+				}
+				keys = append(keys, key)
+			}
+		}
+	}
+	page, err := r.contextKeys(ctx, keys, budget)
+	return page, devices, knownProjects, err
+}
+
+func (r *Reader) browseProjects(ctx context.Context) ([]string, error) {
+	const document = "CASE WHEN json_valid(memory_scope) THEN memory_scope ELSE '{}' END"
+	const project = "json_extract(" + document + ", '$.project')"
+	query := "SELECT DISTINCT " + project + " FROM chunks WHERE kind='memory' AND archived=0" +
+		" AND (confirmed=1 OR purpose='handoff') AND " + project + " IS NOT NULL ORDER BY 1"
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	projects := []string{}
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		projects = append(projects, value)
+	}
+	return projects, rows.Err()
+}
+
+func (r *Reader) browseDevices(ctx context.Context, scope Scope) ([]string, error) {
+	// Legacy rows are not JSON. CASE keeps JSON extraction safe even if the
+	// query planner reorders predicates; project filtering happens in SQLite.
+	const document = "CASE WHEN json_valid(memory_scope) THEN memory_scope ELSE '{}' END"
+	const device = "json_extract(" + document + ", '$.device')"
+	const project = "json_extract(" + document + ", '$.project')"
+	const platform = "json_extract(" + document + ", '$.platform')"
+	query := "SELECT DISTINCT " + device + " FROM chunks WHERE kind='memory' AND archived=0" +
+		" AND (confirmed=1 OR purpose='handoff') AND " + device + " IS NOT NULL" +
+		" AND (" + project + " IS NULL OR " + project + "=?)" +
+		" AND (? IS NULL OR " + platform + " IS NULL OR " + platform + "=?) ORDER BY 1"
+	rows, err := r.db.QueryContext(ctx, query, scope.Project, scope.Platform, scope.Platform)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	devices := []string{}
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		devices = append(devices, value)
+	}
+	return devices, rows.Err()
+}
+
+func (r *Reader) contextKeys(ctx context.Context, keys []string, budget int) (Page, error) {
 	if budget < 1024 {
 		budget = 1024
 	} else if budget > 65536 {
