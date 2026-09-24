@@ -2,7 +2,7 @@
 
 All three harnesses use the **same Go client** and the same [memory policy](policy/AGENTS.md). Keep each client configuration local and untracked. No installer changes global settings, another repository, or managed policy.
 
-**Status:** Native Go client and hook checks passed on Mac and Work HP Windows. Synthetic cross-machine reads and corrections passed. Fresh Mac Codex, Cursor, and Claude Code CLI sessions correctly explained a correction through the Go client. App-specific testing is deferred to the user if an issue appears. [Observed results and open checks](../docs/memory-acceptance.md).
+**Status:** The Go client passed synthetic checks on Mac and Work HP Windows. Fresh Mac CLI sessions checked shared reads and corrections. A current Mac Claude Code 2.1.280 probe needed the AGENTS.md hook fallback; Codex CLI loaded root AGENTS.md, but its new project hook still needs explicit trust. Work HP access is paused. [Observed results and open checks](../docs/memory-acceptance.md).
 
 ## 1. Prepare the client
 
@@ -18,11 +18,11 @@ Merge only the Grasshopper entries from the examples below. Replace both placeho
 
 | Harness | Project-local files | Check in the real app |
 |---|---|---|
-| Codex Desktop | Merge `codex/config.toml.example` into `.codex/config.toml`, and `codex/hooks.json.example` into `.codex/hooks.json`. | Trust the project and review hook permissions. A fresh task must receive root AGENTS.md before work. If hook context is absent, it should call `grasshopper/context` once. Test nested guidance before edits. CLI success does not prove Desktop behavior. |
+| Codex Desktop | Merge `codex/config.toml.example` into `.codex/config.toml`, and `codex/hooks.json.example` into `.codex/hooks.json`. | Trust the project, then review and trust the exact hook in `/hooks`. Native root AGENTS.md loads before work. The hook loads memory on start, resume, compaction, and subagent start; if it is absent, call `grasshopper/context` once. CLI success does not prove Desktop behavior. |
 | Cursor | Merge `cursor/mcp.json.example` into `.cursor/mcp.json`, and `cursor/hooks.json.example` into `.cursor/hooks.json`. | Open the intended folder. In Customize → MCPs, enable the project source and reload `grasshopper`. “Local: Connected” alone does not prove Agent can use it. Cursor’s startup hook can race the first turn; use one MCP context fallback. |
-| Claude Code | Merge `claude/mcp.json.example` into `.mcp.json`, and `claude/settings.json.example` into `.claude/settings.json`. | Inspect `/plugin` for the built-in agents-md mod and `/config` for instruction mode. Prefer native `claude-md-or-agents-md`; the hook reads the same policy and ancestor AGENTS.md. Test nested reads and resume separately. Do not create a CLAUDE.md wrapper. |
+| Claude Code | Merge `claude/mcp.json.example` into `.mcp.json`, and `claude/settings.json.example` into `.claude/settings.json`. | Inspect `/plugin` for the built-in agents-md mod and `/config` for instruction mode. Prefer native `claude-md-or-agents-md`. The start hook loads the same canonical policy, applicable AGENTS.md, and memory when native loading is unavailable. Read nested AGENTS.md before touching its files. Do not create a CLAUDE.md wrapper. |
 
-For Claude Code, inspect legacy CLAUDE.md and rule files **through the applicable ancestor directories** before migration. The official option is `pluginConfigs["agents-md@builtin"].options.instructionFiles`; user/explicit/managed settings control it. Do not bypass managed-only mode. Native nested loading can differ for attachments, compaction, and subagents, so the AGENTS.md policy requires direct scoped reads before edits. If the installed client lacks the mod, upgrade it rather than adding another instruction format.
+For Claude Code, inspect legacy CLAUDE.md and rule files **through the applicable ancestor directories** before migration. The official option is `pluginConfigs["agents-md@builtin"].options.instructionFiles`; user/explicit/managed settings control it. Do not bypass managed-only mode. The Mac 2.1.280 fresh session did not load root AGENTS.md natively, although the upstream mod documents support. Its start hook delivered the root file and memory before the first turn; a separate probe read nested AGENTS.md before the nested file. Two small companion hooks read the existing user `~/.claude/AGENTS.md` directly because this headless client denied an on-demand read outside the project and Claude limits each hook message to 10,000 characters. They create no copy; if that file exceeds 17,000 bytes, the hook reports that guidance was not loaded. Check native loading again after upgrades. The hooks run at session/subagent start, not on every prompt or file tool call.
 
 For Cursor Agent CLI:
 

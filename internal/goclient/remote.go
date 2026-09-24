@@ -164,7 +164,7 @@ func matchingSSE(stream io.Reader, id json.RawMessage) ([]byte, error) {
 	return nil, errors.New("backend did not acknowledge request")
 }
 
-func (r *Remote) Context(ctx context.Context, scope Scope) (json.RawMessage, error) {
+func (r *Remote) Context(ctx context.Context, scope Scope, budget int) (json.RawMessage, error) {
 	initialize, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{"protocolVersion": "2025-03-26", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "grasshopper-hook", "version": "1.0"}}})
 	answer, acknowledged, err := r.Request(ctx, initialize)
 	if err != nil || !acknowledged {
@@ -180,7 +180,7 @@ func (r *Remote) Context(ctx context.Context, scope Scope) (json.RawMessage, err
 	if err != nil {
 		return nil, err
 	}
-	call, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]any{"name": "context", "arguments": map[string]any{"scope": scope, "budget": 12000}}})
+	call, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]any{"name": "context", "arguments": map[string]any{"scope": scope, "budget": budget}}})
 	answer, acknowledged, err = r.Request(ctx, call)
 	if err != nil || !acknowledged {
 		return nil, errors.New("context not acknowledged")
@@ -188,13 +188,12 @@ func (r *Remote) Context(ctx context.Context, scope Scope) (json.RawMessage, err
 	var reply struct {
 		Error  json.RawMessage `json:"error"`
 		Result struct {
-			IsError bool `json:"isError"`
+			IsError           bool            `json:"isError"`
+			StructuredContent json.RawMessage `json:"structuredContent"`
 		} `json:"result"`
 	}
-	if json.Unmarshal(answer, &reply) != nil || reply.Error != nil || reply.Result.IsError {
+	if json.Unmarshal(answer, &reply) != nil || reply.Error != nil || reply.Result.IsError || len(reply.Result.StructuredContent) == 0 {
 		return nil, errors.New("context rejected")
 	}
-	var envelope map[string]json.RawMessage
-	_ = json.Unmarshal(answer, &envelope)
-	return envelope["result"], nil
+	return reply.Result.StructuredContent, nil
 }

@@ -31,7 +31,7 @@ go test ./...
 go vet ./...
 go test -race ./internal/gomemory ./internal/gomcp ./internal/goclient
 go build ./cmd/grasshopper             # Stateless client bridge and hooks
-go build ./cmd/grasshopper-go-server   # Existing converted database only
+go build ./cmd/grasshopper-go-server   # Fresh or converted database
 go run ./cmd/grasshopper-go-backup --help
 go run ./cmd/grasshopper-go-migrate --help
 go run ./cmd/grasshopper-go-bundle --help

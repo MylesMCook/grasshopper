@@ -78,27 +78,13 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	if err != nil {
 		return nil, err
 	}
-	target := ""
-	if tool, ok := input["tool_input"].(map[string]any); ok {
-		target = stringValue(tool["file_path"])
-	}
-	directory := cwd
-	if target != "" {
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(cwd, target)
-		}
-		directory = filepath.Dir(target)
-	}
-	guidance, err := applicableGuidance(directory, config.PolicyPath)
-	if err != nil {
-		return nil, err
-	}
 	policy := string(policyBytes)
-	if input["hook_event_name"] == "PreToolUse" {
-		if harness != "claude" {
-			return nil, errors.New("unsupported pre-tool adapter")
-		}
-		return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "PreToolUse", "additionalContext": policy + "\n" + guidance}}, nil
+	event := stringValue(input["hook_event_name"])
+	if event == "" {
+		event = "SessionStart"
+	}
+	if harness != "cursor" && event != "SessionStart" && event != "SubagentStart" {
+		return nil, errors.New("unsupported hook event")
 	}
 	scope, scopeErr := ResolveScope(cwd, config.Device)
 	resolved := scopeErr == nil
@@ -109,24 +95,97 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	status := "Grasshopper context unavailable. Continue work with memory unavailable; do not claim an unacknowledged write was saved."
 	if remote, err := NewRemote(config); err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		loaded, err := remote.Context(ctx, scope)
+		budget := 12000
+		if harness == "claude" {
+			budget = 3000 // Claude previews hook strings above 10,000 characters.
+		}
+		loaded, err := remote.Context(ctx, scope, budget)
 		cancel()
 		if err == nil {
 			encodedScope, _ := json.Marshal(scope)
 			status = fmt.Sprintf("Grasshopper context loaded for %s. project_resolved=%t; unresolved projects load only global/device/platform records. Historical data follows:\n%s", encodedScope, resolved, loaded)
 		}
 	}
-	text := policy + "\n" + guidance + "\n" + status
+	text := policy + "\n" + status
+	if harness == "claude" && len(text) > 8200 {
+		text = policy + "\nGrasshopper context exceeded Claude's startup hook budget. Call grasshopper/context once before substantive work; no records were delivered by this hook."
+	}
+	if harness == "claude" || event == "SubagentStart" {
+		// Claude's native AGENTS.md mod may be unavailable; subagents can omit
+		// project instructions. Keep complete hook context below Claude's cap.
+		guidance, err := applicableGuidance(cwd, config.PolicyPath)
+		if err != nil {
+			return nil, err
+		}
+		if harness != "claude" || len(text)+len(guidance) <= 9000 {
+			text += "\n" + guidance
+		} else {
+			text += fmt.Sprintf("\nBefore substantive work, read the applicable AGENTS.md files from %s. Their full text exceeds the hook budget.\n", cwd)
+		}
+		if harness == "claude" && len(text) > 9000 {
+			return nil, errors.New("Claude startup context exceeds hook budget")
+		}
+	}
 	if harness == "cursor" {
 		return map[string]any{"additional_context": text}, nil
+	}
+	return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": text}}, nil
+}
+
+// HookGlobalPart loads Claude's user AGENTS.md through the same hook channel
+// when native AGENTS.md loading is unavailable. Each part stays below its cap.
+func HookGlobalPart(part int, input map[string]any) (map[string]any, error) {
+	if part != 1 && part != 2 {
+		return nil, errors.New("invalid global guidance part")
 	}
 	event := stringValue(input["hook_event_name"])
 	if event == "" {
 		event = "SessionStart"
 	}
-	if event != "SessionStart" && event != "UserPromptSubmit" && event != "SubagentStart" && event != "PostCompact" {
+	if event != "SessionStart" && event != "SubagentStart" {
 		return nil, errors.New("unsupported hook event")
 	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(home, ".claude", "AGENTS.md")
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]any{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	const chunk = 8500
+	if info.Size() > chunk*2 {
+		message := fmt.Sprintf("User AGENTS.md at %s exceeds the two-part Claude hook limit. Its full guidance was not loaded; use a client with native AGENTS.md support before substantive work.", path)
+		return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": message}}, nil
+	}
+	content, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]any{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(content) > chunk*2 {
+		return nil, errors.New("user AGENTS.md changed while loading")
+	}
+	start := (part - 1) * chunk
+	if start >= len(content) {
+		return map[string]any{}, nil
+	}
+	end := min(start+chunk, len(content))
+	for end < len(content) && end > start && content[end]&0xc0 == 0x80 {
+		end--
+	}
+	if part == 2 {
+		for start > 0 && content[start]&0xc0 == 0x80 {
+			start--
+		}
+	}
+	text := fmt.Sprintf("User AGENTS.md from %s, part %d of 2. Apply the complete file across both parts:\n%s", path, part, content[start:end])
 	return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": text}}, nil
 }
 

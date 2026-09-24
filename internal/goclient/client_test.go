@@ -66,7 +66,7 @@ func TestGoBridgeAndHookUseOneBackend(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(nested, "AGENTS.md"), []byte("Nested marker."), 0600); err != nil {
 		t.Fatal(err)
 	}
-	pretool, err := Hook(config, "claude", map[string]any{"cwd": root, "hook_event_name": "PreToolUse", "tool_input": map[string]any{"file_path": "nested/note.txt"}})
+	pretool, err := Hook(config, "claude", map[string]any{"cwd": nested, "hook_event_name": "SubagentStart"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,6 +75,21 @@ func TestGoBridgeAndHookUseOneBackend(t *testing.T) {
 		if !strings.Contains(guidance, expected) {
 			t.Errorf("missing %q in nested guidance", expected)
 		}
+	}
+	startup, err := Hook(config, "claude", map[string]any{"cwd": nested, "hook_event_name": "SessionStart"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	startupText := startup["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
+	if !strings.Contains(startupText, "Root marker.") || !strings.Contains(startupText, "Nested marker.") {
+		t.Fatal("Claude startup did not load applicable AGENTS.md guidance")
+	}
+	codexStartup, err := Hook(config, "codex", map[string]any{"cwd": nested, "hook_event_name": "SessionStart"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(codexStartup["hookSpecificOutput"].(map[string]any)["additionalContext"].(string), "Root marker.") {
+		t.Fatal("Codex startup duplicated native AGENTS.md guidance")
 	}
 	contextOutput, err := Hook(config, "cursor", map[string]any{"cwd": root})
 	if err != nil {
@@ -85,6 +100,9 @@ func TestGoBridgeAndHookUseOneBackend(t *testing.T) {
 		if !strings.Contains(loaded, expected) {
 			t.Errorf("missing %q in context", expected)
 		}
+	}
+	if strings.Contains(loaded, `"structuredContent"`) || strings.Contains(loaded, `"content":[`) {
+		t.Fatal("hook repeated the MCP text and structured payload")
 	}
 	input := strings.Join([]string{
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
@@ -121,6 +139,63 @@ func TestGoBridgeOutageIsBoundedAndDoesNotAcknowledgeWrite(t *testing.T) {
 	text := result["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
 	if !strings.Contains(text, "context unavailable") || !strings.Contains(text, "project_resolved=true") && strings.Contains(text, "context loaded") {
 		t.Fatalf("offline hook claimed context: %s", text)
+	}
+}
+
+func TestClaudeGlobalGuidanceParts(t *testing.T) {
+	_, config, root := testClientServer(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	global := filepath.Join(home, ".claude", "AGENTS.md")
+	if err := os.MkdirAll(filepath.Dir(global), 0700); err != nil {
+		t.Fatal(err)
+	}
+	content := "GLOBAL-TAIL:" + strings.Repeat("x", 8487) + "é" + strings.Repeat("y", 3800)
+	if err := os.WriteFile(global, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("Root marker."), 0600); err != nil {
+		t.Fatal(err)
+	}
+	input := map[string]any{"cwd": root, "hook_event_name": "SessionStart"}
+	result, err := Hook(config, "claude", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := result["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
+	if len(output) > 9000 || !strings.Contains(output, "Root marker.") || strings.Contains(output, "GLOBAL-TAIL:") {
+		t.Fatalf("main hook repeated or lost guidance: %d bytes", len(output))
+	}
+	var joined string
+	for part := 1; part <= 2; part++ {
+		result, err := HookGlobalPart(part, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		chunk := result["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
+		if len(chunk) > 10000 {
+			t.Fatalf("global part %d exceeded Claude's hook limit", part)
+		}
+		_, text, ok := strings.Cut(chunk, ":\n")
+		if !ok {
+			t.Fatalf("global part %d lacks label", part)
+		}
+		joined += text
+	}
+	if joined != content {
+		t.Fatal("global AGENTS.md parts lost or repeated content")
+	}
+	if err := os.WriteFile(global, []byte(strings.Repeat("z", 17001)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	tooLarge, err := HookGlobalPart(1, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	warning := tooLarge["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
+	if !strings.Contains(warning, "full guidance was not loaded") || strings.Contains(warning, strings.Repeat("z", 100)) {
+		t.Fatal("oversized guidance was silently truncated or emitted")
 	}
 }
 

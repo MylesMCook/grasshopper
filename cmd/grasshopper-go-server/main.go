@@ -1,5 +1,4 @@
-// grasshopper-go-server serves an existing, fully re-embedded Grasshopper
-// database. It does not create or migrate databases.
+// grasshopper-go-server serves an existing database or creates a new one on request.
 package main
 
 import (
@@ -53,7 +52,9 @@ func validateListen(address string) error {
 
 func run() error {
 	var database, library, model, tokenizer, tokenFile, listen string
-	flag.StringVar(&database, "db", "", "existing, re-embedded Grasshopper database")
+	var createDB bool
+	flag.StringVar(&database, "db", "", "Grasshopper database path")
+	flag.BoolVar(&createDB, "create-db", false, "create an empty memory database if missing")
 	flag.StringVar(&library, "onnx-library", "", "local ONNX Runtime shared library")
 	flag.StringVar(&model, "model", "", "pinned BGE ONNX model")
 	flag.StringVar(&tokenizer, "tokenizer", "", "pinned BGE tokenizer.json")
@@ -75,6 +76,15 @@ func run() error {
 		return err
 	}
 	defer embedder.Close()
+	if createDB {
+		if _, err := os.Stat(database); errors.Is(err, os.ErrNotExist) {
+			if err := gomemory.CreateEmpty(database); err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
+	}
 	store, err := gomemory.OpenWritableExisting(database, goembed.ModelName, goembed.Dimensions)
 	if err != nil {
 		return err

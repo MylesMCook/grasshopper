@@ -36,6 +36,7 @@ func run() error {
 		flags := flag.NewFlagSet("hook", flag.ContinueOnError)
 		config := flags.String("config", "", "client configuration path")
 		harness := flags.String("harness", "", "codex, cursor, or claude")
+		globalPart := flags.Int("global-part", 0, "Claude user AGENTS.md part (1 or 2)")
 		if err := flags.Parse(os.Args[2:]); err != nil {
 			return err
 		}
@@ -46,7 +47,15 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		output, err := goclient.Hook(*config, *harness, input)
+		var output map[string]any
+		if *globalPart != 0 {
+			if *harness != "claude" {
+				return errors.New("global guidance parts are Claude-only")
+			}
+			output, err = goclient.HookGlobalPart(*globalPart, input)
+		} else {
+			output, err = goclient.Hook(*config, *harness, input)
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Grasshopper hook unavailable; no persistence acknowledged")
 			return nil

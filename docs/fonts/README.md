@@ -1,0 +1,1 @@
+The visual guide bundles the Latin subsets of [Newsreader](https://fonts.google.com/specimen/Newsreader) and [Geist Mono](https://fonts.google.com/specimen/Geist+Mono) from Google Fonts. Their SIL Open Font Licenses are beside the font files. Serif and monospace fallbacks remain available.

@@ -5,109 +5,116 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <link rel="icon" href="data:,">
-  <title>Grasshopper shared memory | How it works</title>
+  <title>Grasshopper — How it works</title>
   <style>
-    :root { color-scheme: light; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #182329; background: #f3f6f1; }
+    @font-face { font-family: "Newsreader"; src: url("fonts/newsreader-latin.woff2") format("woff2"); font-style: normal; font-weight: 400; font-display: swap; }
+    @font-face { font-family: "Geist Mono"; src: url("fonts/geist-mono-latin.woff2") format("woff2"); font-style: normal; font-weight: 400 600; font-display: swap; }
+    :root {
+      color-scheme: light;
+      --ink: #282828; --paper: #fff; --surface: #f7f7f5;
+      --muted: #595955; --divider: #e1e1de; --link: #125ab8; --warning: #8a5100;
+      --display: "Newsreader", Georgia, serif;
+      --body: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--ink); background: var(--paper); font-family: var(--body);
+    }
     * { box-sizing: border-box; }
     body { margin: 0; line-height: 1.5; }
-    main { max-width: 1100px; padding: 32px 24px 72px; margin: auto; }
-    h1, h2, h3, p { margin-top: 0; }
-    h1 { max-width: 780px; font-size: clamp(2.4rem, 6vw, 4.4rem); line-height: 1.04; letter-spacing: -.045em; margin-bottom: 20px; }
-    h2 { font-size: clamp(1.4rem, 3vw, 2rem); letter-spacing: -.025em; margin-bottom: 18px; }
-    h3 { font-size: 1.06rem; margin-bottom: 8px; }
-    p { color: #43545a; }
-    a { color: #116350; text-underline-offset: 3px; }
-    a:focus-visible { outline: 3px solid #d17c1d; outline-offset: 3px; }
-    .eyebrow { color: #bddfc9; font-size: .8rem; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
-    .hero { background: #153c35; color: #fff; border-radius: 24px; padding: clamp(28px, 5vw, 58px); position: relative; overflow: hidden; }
-    .hero::after { content: ""; position: absolute; width: 310px; height: 310px; right: -115px; top: -115px; border: 1px solid #85b49d; border-radius: 50%; pointer-events: none; }
-    .hero p { color: #e3eee8; max-width: 670px; font-size: 1.12rem; margin-bottom: 0; }
-    .status { margin: 22px 0 44px; padding: 17px 21px; display: flex; align-items: flex-start; gap: 14px; border: 1px solid #e7c78e; background: #fff9e9; border-radius: 14px; }
-    .status strong { color: #6b4612; }
-    .status p { margin: 3px 0 0; font-size: .95rem; }
-    .dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: #b56d13; margin-top: 7px; }
-    section { margin-top: 48px; }
-    .policy { background: #e6eee9; border: 1px solid #bdd2c3; border-radius: 14px; padding: 16px 20px; display: flex; gap: 14px; align-items: center; }
-    .policy b { color: #174c3d; white-space: nowrap; }
-    .policy span { color: #405850; }
-    .pipeline { margin-top: 18px; display: grid; grid-template-columns: 1.25fr .95fr 1.15fr; gap: 28px; align-items: stretch; }
-    .pipe-card { min-width: 0; background: #fff; border: 1px solid #d6e1d8; border-radius: 18px; padding: 23px; position: relative; box-shadow: 0 8px 24px #0000000d; }
-    .pipe-card:not(:last-child)::after { content: "→"; position: absolute; color: #33816a; font-size: 1.8rem; font-weight: 700; right: -24px; top: 45%; }
-    .pipe-card p { font-size: .93rem; margin-bottom: 0; }
-    .client-list { display: grid; gap: 7px; margin: 13px 0; }
-    .client-list span { padding: 7px 11px; border-radius: 8px; background: #f0f5f0; font-weight: 650; }
-    .tag { display: inline-block; font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #246451; margin-bottom: 10px; }
-    .tool-line { border-top: 1px solid #e0e8e1; margin-top: 14px; padding-top: 14px; font-size: .88rem; font-weight: 700; color: #245845; word-spacing: 5px; }
-    .rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-    .rule { padding: 22px; border: 1px solid #d7e3da; border-radius: 16px; background: #fff; }
-    .rule .number { display: inline-flex; width: 30px; height: 30px; border-radius: 50%; align-items: center; justify-content: center; color: #fff; background: #21755e; font-weight: 800; font-size: .85rem; margin-bottom: 13px; }
-    .rule p { margin-bottom: 0; font-size: .94rem; }
-    .scope { background: #173b34; color: #fff; border-radius: 18px; padding: 27px; }
-    .scope h2 { margin-bottom: 10px; }
-    .scope p { color: #cfe0d6; }
-    .scope-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-    .scope-grid div { padding: 15px; border: 1px solid #6a9785; border-radius: 11px; background: #ffffff0d; }
-    .scope-grid b { display: block; margin-bottom: 4px; }
-    .scope-grid span { color: #d7e9dd; font-size: .89rem; }
-    .evidence { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .evidence article { border-radius: 16px; padding: 22px; background: #fff; border: 1px solid #d7e3da; }
-    .evidence article.pending { border-color: #e5cd9b; background: #fffaf0; }
-    .evidence ul { padding-left: 20px; margin: 8px 0 0; color: #43545a; }
-    .evidence li + li { margin-top: 7px; }
-    footer { margin-top: 50px; padding-top: 18px; border-top: 1px solid #cbd9cc; font-size: .88rem; color: #53635c; }
-    footer a + a { margin-left: 18px; }
-    @media (max-width: 760px) { .pipeline, .rules, .scope-grid, .evidence { grid-template-columns: 1fr; } .pipe-card:not(:last-child)::after { content: "↓"; right: 48%; bottom: -29px; top: auto; } .policy { align-items: flex-start; flex-direction: column; } .policy b { white-space: normal; } .hero::after { display: none; } }
-    @media print { :root { background: #fff; } main { padding: 0; } .hero, .scope { print-color-adjust: exact; } .pipe-card, .rule, .evidence article { break-inside: avoid; box-shadow: none; } footer { margin-top: 25px; } }
+    main { width: min(100% - 40px, 1040px); margin: auto; padding: 32px 0 72px; }
+    h1, h2, h3, p { margin: 0; }
+    h1, h2 { font-family: var(--display); font-weight: 400; }
+    h1 { max-width: 12ch; font-size: clamp(3.5rem, 8vw, 5rem); line-height: 1.04; letter-spacing: .005em; }
+    h2 { font-size: clamp(2rem, 4vw, 2.5rem); line-height: 1.15; }
+    h3 { font-size: 1rem; font-weight: 600; }
+    p, li { max-width: 72ch; }
+    a { color: var(--link); text-underline-offset: 3px; }
+    a:focus-visible { outline: 3px solid var(--link); outline-offset: 3px; }
+    .brand, .eyebrow, .tag, .step { font-size: .78rem; letter-spacing: .09em; text-transform: uppercase; }
+    .brand { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--divider); }
+    .brand a { color: var(--muted); }
+    .hero { padding: 72px 0 56px; border-bottom: 1px solid var(--ink); }
+    .eyebrow { color: var(--muted); margin-bottom: 24px; }
+    .lead { max-width: 36ch; margin-top: 26px; font-family: var(--display); font-size: clamp(1.3rem, 2.5vw, 1.55rem); line-height: 1.45; }
+    .status { display: grid; grid-template-columns: 160px 1fr; gap: 24px; padding: 24px 0; border-bottom: 1px solid var(--divider); }
+    .status strong { color: var(--warning); }
+    .status p, .policy, .card p, .scope-grid span, .evidence ul { color: var(--muted); font-size: .9rem; }
+    section { padding-top: 64px; }
+    .section-head { display: flex; justify-content: space-between; gap: 24px; align-items: baseline; padding-bottom: 16px; border-bottom: 1px solid var(--ink); }
+    .section-head span { color: var(--muted); font-size: .8rem; }
+    .policy { margin-top: 24px; }
+    .pipeline, .scope-grid, .rules, .evidence { display: grid; gap: 28px; margin-top: 28px; }
+    .pipeline, .scope-grid { grid-template-columns: repeat(3, 1fr); }
+    .pipeline { border-top: 1px solid var(--divider); gap: 0; }
+    .pipeline .card { padding: 24px 24px 16px 0; position: relative; }
+    .pipeline .card + .card { border-left: 1px solid var(--divider); padding-left: 24px; }
+    .pipeline .card:not(:last-child)::after { content: "→"; position: absolute; right: -10px; top: 18px; z-index: 1; background: var(--paper); color: var(--muted); }
+    .tag, .step { display: block; color: var(--muted); margin-bottom: 16px; }
+    .card p { margin-top: 12px; }
+    .tool-line { display: inline-block; margin-top: 18px; padding: 6px 8px; background: var(--surface); font-size: .8rem; }
+    .scope-grid div, .rule { border-top: 1px solid var(--divider); padding-top: 18px; }
+    .scope-grid b { display: block; margin-bottom: 8px; }
+    .rules, .evidence { grid-template-columns: repeat(2, 1fr); }
+    .rule p { margin-top: 10px; color: var(--muted); font-size: .9rem; }
+    .evidence article { background: var(--surface); padding: 24px; }
+    .evidence h3 { margin-bottom: 16px; }
+    .evidence ul { margin: 0; padding-left: 20px; }
+    .evidence li + li { margin-top: 10px; }
+    footer { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--divider); font-size: .8rem; color: var(--muted); }
+    @media (max-width: 700px) {
+      main { width: min(100% - 32px, 1040px); padding-top: 20px; }
+      .hero { padding: 48px 0 40px; }
+      .status, .pipeline, .scope-grid, .rules, .evidence { grid-template-columns: 1fr; }
+      .pipeline .card, .pipeline .card + .card { border-left: 0; border-bottom: 1px solid var(--divider); padding: 20px 0; }
+      .pipeline .card:not(:last-child)::after { content: "↓"; top: auto; bottom: -11px; right: 18px; }
+      section { padding-top: 48px; }
+      .section-head { display: block; }
+      .section-head span { display: block; margin-top: 8px; }
+    }
+    @media print { main { width: 100%; padding: 0; } section { padding-top: 32px; } .card, .rule, .evidence article { break-inside: avoid; } }
   </style>
 </head>
 <body>
 <main>
+  <nav class="brand" aria-label="Page"><b>GRASSHOPPER</b><a href="../README.md">Project README</a></nav>
   <header class="hero">
-    <div class="eyebrow">Go-only release candidate</div>
-    <h1>One memory, wherever you work.</h1>
-    <p>Grasshopper lets Codex Desktop, Cursor, and Claude Code share one authenticated Go memory service. The coding agent chooses a few durable facts to save; Grasshopper keeps them scoped, inspectable, and correctable.</p>
+    <p class="eyebrow">Self-hosted agent memory · Go + SQLite</p>
+    <h1>A small memory that travels.</h1>
+    <p class="lead">Your agents can share the few things worth remembering: preferences, decisions, lessons, and handoffs.</p>
   </header>
-
-  <aside class="status" aria-label="Release status">
-    <span class="dot" aria-hidden="true"></span>
-    <div><strong>Go-only release candidate; live rollout pending</strong><p>Native Go checks passed on Mac, Windows, and Beelink Linux, including a restored Linux bundle. Fresh Mac Codex, Cursor, and Claude Code CLI sessions explained a corrected preference. App-specific checks are deferred unless an issue appears. <a href="memory-acceptance.md">See exact evidence.</a></p></div>
-  </aside>
+  <aside class="status" aria-label="Release status"><strong>Release check</strong><p>The Go backend and clients passed synthetic tests on macOS, Windows, and Ubuntu. Live deployment is still pending. <a href="memory-acceptance.md">See what was actually tested.</a></p></aside>
 
   <section aria-labelledby="architecture">
-    <h2 id="architecture">How the pieces connect</h2>
-    <div class="policy"><b>One canonical AGENTS.md policy</b><span>Each harness loads the same memory-use guidance. Repository AGENTS.md files remain the source for standing project instructions.</span></div>
-    <div class="pipeline" aria-label="Three clients connect through a thin adapter to one authenticated Grasshopper service">
-      <div class="pipe-card"><span class="tag">Your agents</span><h3>Three familiar workspaces</h3><div class="client-list"><span>Codex Desktop</span><span>Cursor</span><span>Claude Code</span></div><p>Each keeps its normal workflow. Startup hooks try to load context; if none arrives, the agent requests it once. The agent decides what deserves a memory.</p></div>
-      <div class="pipe-card"><span class="tag">Thin client adapter</span><h3>One shared connection</h3><p>A small Go bridge sends bounded MCP requests over an authenticated private link. It reads AGENTS.md guidance and keeps no writable local memory database.</p><div class="tool-line">context · store · search · get · archive</div></div>
-      <div class="pipe-card"><span class="tag">Self-hosted backend</span><h3>Grasshopper + SQLite</h3><p>One service holds records, revision history, provenance, and search data. Local ONNX models support semantic recall. Remote clients cannot index the server’s files.</p></div>
+    <div class="section-head"><h2 id="architecture">One service, three workspaces</h2><span>01 / Connection</span></div>
+    <p class="policy">One canonical <a href="../integrations/policy/AGENTS.md">AGENTS.md memory policy</a> guides every agent. The project’s own AGENTS.md stays authoritative for project work.</p>
+    <div class="pipeline" aria-label="Codex, Cursor, and Claude connect through a thin client to one memory service">
+      <div class="card"><span class="tag">Your workspace</span><h3>Codex · Cursor · Claude Code</h3><p>Agents load applicable instructions. Startup hooks try memory first; MCP is the fallback. The agent decides what to save.</p></div>
+      <div class="card"><span class="tag">One small client</span><h3>Stateless Go adapter</h3><p>Lifecycle hooks load context; MCP handles reads and writes. No client database or model.</p><div class="tool-line">context · store · search · get · archive</div></div>
+      <div class="card"><span class="tag">Your own host</span><h3>Authenticated Go service</h3><p>SQLite keeps current records and past revisions. Local ONNX enables semantic search. Remote clients cannot index host files.</p></div>
     </div>
   </section>
 
-  <section class="scope" aria-labelledby="scope-heading">
-    <h2 id="scope-heading">The right fact reaches the right place</h2>
-    <p>Every write has an explicit scope. Reads filter by scope before choosing results.</p>
-    <div class="scope-grid"><div><b>Global</b><span>A confirmed preference can follow you into another project.</span></div><div><b>Project</b><span>A bun decision in project A stays separate from npm in project B.</span></div><div><b>Device &amp; OS</b><span>A Windows path does not become a macOS instruction.</span></div></div>
+  <section aria-labelledby="scope">
+    <div class="section-head"><h2 id="scope">Only where it belongs</h2><span>02 / Scope</span></div>
+    <div class="scope-grid"><div><b>Global</b><span>A confirmed preference follows you into another project.</span></div><div><b>Project</b><span>One repo’s bun decision stays separate from another repo’s npm decision.</span></div><div><b>Device &amp; OS</b><span>A Windows path does not become a Mac instruction.</span></div></div>
   </section>
 
   <section aria-labelledby="lifecycle">
-    <h2 id="lifecycle">A memory’s life</h2>
+    <div class="section-head"><h2 id="lifecycle">Useful, inspectable, correctable</h2><span>03 / Record life</span></div>
     <div class="rules">
-      <article class="rule"><span class="number">1</span><h3>Start with context</h3><p>Active confirmed preferences, applicable decisions and lessons, and a recent handoff load directly. Whole records are returned within a budget; omitted IDs are disclosed.</p></article>
-      <article class="rule"><span class="number">2</span><h3>Save only what lasts</h3><p>The agent saves explicit preferences, accepted decisions, verified lessons, or a concise handoff with a source. It does not mine transcripts or turn guesses into profile facts.</p></article>
-      <article class="rule"><span class="number">3</span><h3>Correct without losing history</h3><p>A correction names the record and expected revision. Concurrent edits conflict instead of silently replacing each other. Older revisions remain available for inspection and restoration.</p></article>
-      <article class="rule"><span class="number">4</span><h3>Recall and recover</h3><p>Scoped keyword and vector search finds current records; full get preserves qualifications. Archive is reversible. Consistent backups support migration. A post-write Go backup/reopen passed; a live service cutover remains open.</p></article>
+      <article class="rule"><span class="step">01 / Load</span><h3>Start with real context</h3><p>Confirmed preferences and applicable records load directly. The response names anything omitted by its budget.</p></article>
+      <article class="rule"><span class="step">02 / Save</span><h3>Keep the signal</h3><p>Save explicit preferences, accepted decisions, verified lessons, and concise handoffs with their source.</p></article>
+      <article class="rule"><span class="step">03 / Correct</span><h3>History stays visible</h3><p>A correction needs the current revision. Conflicting edits fail; earlier versions remain readable and restorable.</p></article>
+      <article class="rule"><span class="step">04 / Recover</span><h3>Read the full record</h3><p>Scoped search finds current content. Full get keeps qualifications intact. Archive is reversible.</p></article>
     </div>
   </section>
 
   <section aria-labelledby="proof">
-    <h2 id="proof">What has been observed</h2>
+    <div class="section-head"><h2 id="proof">Proof and open work</h2><span>04 / Status</span></div>
     <div class="evidence">
-      <article><span class="tag">Observed</span><h3>Go backend and client</h3><ul><li>Go CI passed on three OSes. Real semantic recall also passed on Mac, Work HP, and Beelink.</li><li>Scope, revisions, authentication, backup, and immediate search have regression tests.</li><li>Mac, Windows, and Linux bundles passed extraction, checksums, and authenticated reads.</li><li>Mac and Work HP exchanged synthetic records through Go clients in both directions.</li></ul></article>
-      <article class="pending"><span class="tag">Open release checks</span><h3>Still to observe</h3><ul><li>Run the state-change check through Work HP Cursor and Claude Code CLIs.</li><li>Check CLI resume, compaction, and full installation/removal.</li><li>Approve a private host, then rehearse persistent startup and live rollback.</li></ul></article>
+      <article><span class="tag">Observed</span><h3>Working on synthetic data</h3><ul><li>Go tests cover scope, revisions, authentication, recall, and backup.</li><li>Native backend checks passed on Mac, Work HP, and Beelink.</li><li>Fresh Mac CLI sessions checked cross-agent reads and corrections.</li></ul></article>
+      <article><span class="tag">Not yet claimed</span><h3>Before a live release</h3><ul><li>Claude Code on this Mac needed an AGENTS.md hook fallback in a fresh probe.</li><li>Codex project hooks require explicit trust; fresh CLI hook delivery still needs a trusted run.</li><li>Private hosting, live-data migration, and rollback need separate approval and proof.</li></ul></article>
     </div>
   </section>
-
-  <footer>Evidence as of September 23, 2026. <a href="memory-acceptance.md">Acceptance evidence</a><a href="shared-memory.md">Backend and recovery</a><a href="../integrations/README.md">Client setup and removal</a></footer>
+  <footer><span>Evidence updated September 23, 2026.</span><a href="memory-acceptance.md">Test evidence</a><a href="shared-memory.md">Backend and recovery</a><a href="../integrations/README.md">Client setup</a></footer>
 </main>
 </body>
 </html>

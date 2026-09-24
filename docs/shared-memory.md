@@ -14,6 +14,8 @@ A confirmed preference enters context directly, independent of semantic score or
 
 The client normalizes a Git origin remote into `git:host/CaseSensitivePath`, removing credentials. Project-local `grasshopper.project-id` overrides it when needed. A folder without either has unresolved project scope; it receives only applicable global/device/platform context. Device and OS data never become general project guidance.
 
+For a new installation, `grasshopper-go-server --create-db --db /private/brain.db` creates an empty memory-only database with the required tables and indexes. It never overwrites an existing file. Supply the pinned model, runtime, token file, and loopback flags shown below; keep the database and token outside an extracted bundle. Test an authenticated read and a synthetic write, then make and reopen a consistent backup before relying on it.
+
 ## Prepare a cutover
 
 1. Stop only the approved writer before the final snapshot. First rehearse with a synthetic or private copy. Keep the original binary, configuration, and database untouched.
@@ -22,7 +24,7 @@ The client normalizes a Git origin remote into `git:host/CaseSensitivePath`, rem
 4. Check IDs, legacy counts, revisions, scoped context/search, full-record reads, and semantic recall on the shadow copy. Keep the backup offline and private; it contains memories and request history.
 5. Only after deployment approval, configure a loopback Go server against the verified shadow database with a private token file. Confirm unauthenticated `/healthz` is 401, authenticated health is 200, and the five-tool client path works over the approved private route.
 
-Run `grasshopper-go-server --db /private/shadow.db --onnx-library /private/libonnxruntime --model /private/model.onnx --tokenizer /private/tokenizer.json --token-file /private/token --listen 127.0.0.1:8106` only as a task-local trial until a persistent service is approved. The server accepts only an existing fully converted database, checks pinned model digests, and binds an explicit loopback IP. Never put a token in a CLI argument, tracked file, log, or export. Remote links require approved private HTTPS transport. The client rejects remote plaintext URLs, embedded URL credentials, redirects, and oversized responses; timeouts are bounded.
+Run `grasshopper-go-server --db /private/shadow.db --onnx-library /private/libonnxruntime --model /private/model.onnx --tokenizer /private/tokenizer.json --token-file /private/token --listen 127.0.0.1:8106` only as a task-local trial until a persistent service is approved. The server accepts only an existing fully converted database unless `--create-db` explicitly creates a new one. It checks pinned model digests and binds an explicit loopback IP. Never put a token in a CLI argument, tracked file, log, or export. Remote links require approved private HTTPS transport. The client rejects remote plaintext URLs, embedded URL credentials, redirects, and oversized responses; timeouts are bounded.
 
 ## Rollback
 
