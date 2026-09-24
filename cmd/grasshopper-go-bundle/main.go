@@ -287,7 +287,7 @@ func run() error {
 	flag.StringVar(&client, "client", "", "native Go client bridge binary")
 	flag.BoolVar(&clientPlugins, "client-plugins", false, "package three native client plugins without the server")
 	flag.StringVar(&target, "target", "", "client plugin target: darwin-arm64, windows-amd64, or linux-amd64")
-	flag.StringVar(&version, "plugin-version", "0.1.0", "client plugin version")
+	flag.StringVar(&version, "plugin-version", "2.0.0", "client plugin version")
 	flag.StringVar(&server, "server", "", "native Go server binary")
 	flag.StringVar(&backup, "backup", "", "native Go backup binary")
 	flag.StringVar(&migrate, "migrate", "", "native Go migration binary")

@@ -12,6 +12,12 @@ Provide the pinned BGE model and tokenizer, matching ONNX Runtime library, runti
 
 The model and tokenizer must match the SHA-256 digests in `internal/goembed/bge.go`; server startup verifies them. Build separately on each operating system so each archive contains its native ONNX library.
 
+## Versioned client archives
+
+From the repository, run `scripts/build-client-release.sh 2.0.0 /private/output` on macOS or Linux. It builds the stateless client for macOS arm64, Windows x64, and Linux x64, then packages each target's three plugin manifests with the same version and shared `AGENTS.md`. The command refuses to replace an existing archive. Verify each extracted `SHA256SUMS` before installation; the [client guide](../integrations/plugins/README.md) covers a fresh install, update, and removal.
+
+Build the server archive separately on its target OS with the matching ONNX library and pinned model. Client archives do not contain a database, model, token, or server. Rebuild all archives from the final release commit after any code or visual-guide change.
+
 ## Try or remove
 
 1. Extract into a new private task-local directory (`unzip` preserves executable bits on macOS and Linux). Check every `SHA256SUMS` entry (`shasum -a 256 -c SHA256SUMS` on macOS, `sha256sum -c SHA256SUMS` on Linux, `Get-FileHash -Algorithm SHA256` on Windows).
