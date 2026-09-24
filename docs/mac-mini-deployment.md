@@ -2,7 +2,9 @@
 
 **Running with a fresh database.** Grasshopper listens on `127.0.0.1:8106` under the `com.myles.grasshopper` launchd job. Tailscale Serve maps private HTTPS port `8456` to that loopback listener. Funnel is off. Existing Serve mappings were compared before and after; none changed. No legacy database was migrated.
 
-The private state is under `~/Library/Application Support/Grasshopper`: `app` holds the checksum-verified server bundle, `data` the sole writable database, `secrets` the bearer token and backup credentials, and `backups` and `logs` the local snapshots and service output. Keep these directories private. Never put a token, filled client config, or database in a release archive.
+The private state is under `~/Library/Application Support/Grasshopper`: `app` holds the verified server binary, model, and runtime; `data` holds the sole writable database; `secrets` holds the bearer token and backup credentials; `backups` and `logs` hold local snapshots and service output. Keep these directories private. Never put a token, filled client config, or database in a release archive.
+
+**24 September view update:** The server binary now comes from clean source commit `5e19b96`, ahead of the published 2.0.1 archive. The old binary and plist were copied to a private task-local rollback directory before restarting only `com.myles.grasshopper`. Local and Tailnet health, anonymous rejection, the new view API, and a historical MCP read passed afterward. The database and route were unchanged. The live view is empty because all synthetic pilot records are archived; no personal profile was seeded. See [verification](memory-acceptance.md). A new portable patch archive has not been published.
 
 ## Backup and recovery
 

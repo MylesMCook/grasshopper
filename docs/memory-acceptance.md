@@ -1,6 +1,6 @@
 # What has been verified
 
-**Current state:** [Grasshopper 2.0.1](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.1) is published, and its checked Mac server archive is running privately on the Mac mini. Encrypted off-host backup and restore passed. Synthetic backend and package checks passed on Mac, Work HP Windows, and Beelink Ubuntu. Mac Codex, Cursor, and Claude CLIs read the persistent endpoint; Work HP Codex and Cursor model-turn probes remain unverified. No legacy database was migrated. Desktop checks are user-led if an issue appears.
+**Current state:** [Grasshopper 2.0.1](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.1) is published. The private Mac mini service now runs the memory-view update built from clean commit `5e19b96`; no new portable release has been published. Encrypted off-host backup and restore passed. Mac Codex, Cursor, and Claude CLIs read the persistent endpoint; Work HP Codex and Cursor model turns remain unverified. No legacy data was migrated or personal profile seeded. Desktop checks are user-led if an issue appears.
 
 [Visual overview](how-it-works.html) · [Detailed test history](evidence-history.md) · [Setup and removal](../integrations/README.md)
 
@@ -9,11 +9,13 @@
 | Gate | Observed | Open |
 |---|---|---|
 | Recovery | Fresh encrypted R2 backup restored byte-for-byte. SQLite integrity returned `ok`. A separate server read record 1 at revisions 2 and 1 from the copy. The live writer stayed running. | Reboot, Mac-loss recovery, and Bitwarden sync on another device. |
-| Memory view | A failing regression test established the old empty device view. Synthetic HTTP tests now cover active project/device choices, project isolation, and agent-context separation. Mac Chromium showed Mac and Windows facts, project A without B, working manual entry, no 390px overflow, empty browser storage, and clean Disconnect. | The running 2.0.1 server has the older view until updated. |
+| Memory view | A failing regression test established the old empty device view. Synthetic HTTP tests cover active project/device choices, project isolation, and agent-context separation. Mac Chromium showed Mac and Windows facts, project A without B, working manual entry, no 390px overflow, empty browser storage, and clean Disconnect. The updated view shell and authenticated API now respond through the private route. | The live database has no active records to display; live-route browser interaction was not repeated. |
 | Main connectors | Earlier fresh Mac Codex and Cursor CLI turns used the shared service. Earlier Mac ↔ Beelink synthetic checks passed. Work HP hooks reached Grasshopper; its Codex/Cursor model turns timed out, without isolating a service defect. | Work HP is deferred. A new Beelink SSH probe stopped at host-key verification before a Grasshopper request. |
 | Lifecycle | Fresh and resumed Codex sessions received updated context. | Codex compaction and independent child `SubagentStart` delivery have not been isolated. Cursor native Git marketplace installation is untested. |
 
 Checks for the new view: `go test -count=1 ./...` with the pinned model, `go vet ./...`, race tests for memory/MCP/client, JavaScript syntax, and `git diff --check` all passed. The test server and browser sessions were stopped.
+
+**Mac mini update:** The new binary identified clean commit `5e19b96`. Before restart, the database passed SQLite integrity and the old binary/plist were copied to a private task-local rollback directory. Only `com.myles.grasshopper` was restarted. Afterward, it listened on `127.0.0.1:8106`; local and Tailnet health were `200` with the token and `401` without it. Anonymous visualizer and MCP requests returned `401`. The private view API returned empty active records and project/device lists, as expected after synthetic pilot cleanup. Private MCP `get` read record 1 at revisions 2 and 1. The R2 backup job retained its daily schedule and last exit code 0. Tailscale Serve kept the existing Tailnet-only `8456 → 8106` mapping. No data, client config, or other service was changed.
 
 ## 2.0.1 release check
 
