@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.example.grasshopper</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/you/Library/Application Support/Grasshopper/app/bin/grasshopper-go-server</string>
+    <string>--db</string>
+    <string>/Users/you/Library/Application Support/Grasshopper/data/memory.db</string>
+    <string>--onnx-library</string>
+    <string>/Users/you/Library/Application Support/Grasshopper/app/runtime/libonnxruntime.dylib</string>
+    <string>--model</string>
+    <string>/Users/you/Library/Application Support/Grasshopper/app/models/bge-small-en-v1.5/model.onnx</string>
+    <string>--tokenizer</string>
+    <string>/Users/you/Library/Application Support/Grasshopper/app/models/bge-small-en-v1.5/tokenizer.json</string>
+    <string>--token-file</string>
+    <string>/Users/you/Library/Application Support/Grasshopper/secrets/token</string>
+    <string>--listen</string>
+    <string>127.0.0.1:8106</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>Umask</key>
+  <integer>63</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/you/Library/Application Support/Grasshopper/logs/server.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/you/Library/Application Support/Grasshopper/logs/server.err.log</string>
+</dict>
+</plist>
