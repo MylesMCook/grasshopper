@@ -157,6 +157,19 @@ func addFile(writer *zip.Writer, file input, sums *strings.Builder) error {
 	return nil
 }
 
+func runtimeLibraryEntry(library string) (string, error) {
+	switch strings.ToLower(filepath.Ext(library)) {
+	case ".dll":
+		return "runtime/onnxruntime.dll", nil
+	case ".dylib":
+		return "runtime/libonnxruntime.dylib", nil
+	case ".so":
+		return "runtime/libonnxruntime.so", nil
+	default:
+		return "", fmt.Errorf("unsupported ONNX library extension: %s", filepath.Base(library))
+	}
+}
+
 func run() error {
 	var output, client, server, backup, migrate, library, model, tokenizer, runtimeLicense, runtimeNotices string
 	flag.StringVar(&output, "output", "", "new zip archive path")
@@ -173,16 +186,20 @@ func run() error {
 	if output == "" {
 		return errors.New("output is required")
 	}
-	exe, lib := "", "libonnxruntime.dylib"
+	exe := ""
 	if strings.EqualFold(filepath.Ext(server), ".exe") {
-		exe, lib = ".exe", "onnxruntime.dll"
+		exe = ".exe"
+	}
+	lib, err := runtimeLibraryEntry(library)
+	if err != nil {
+		return err
 	}
 	files := []input{
 		{"bin/grasshopper" + exe, client},
 		{"bin/grasshopper-go-server" + exe, server},
 		{"bin/grasshopper-go-backup" + exe, backup},
 		{"bin/grasshopper-go-migrate" + exe, migrate},
-		{"runtime/" + lib, library},
+		{lib, library},
 		{"models/bge-small-en-v1.5/model.onnx", model},
 		{"models/bge-small-en-v1.5/tokenizer.json", tokenizer},
 		{"licenses/Grasshopper-LICENSE", "LICENSE"},

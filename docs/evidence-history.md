@@ -1,6 +1,6 @@
 # Shared-memory acceptance
 
-**Current release boundary:** The active source is Go-only. The retired Rust backend and bridge results below are historical compatibility evidence, not checks of the shipped client. Native Go backend/client tests and Go-only portable bundles passed on macOS arm64 and Work HP Windows x64. A fresh actual-harness pass with the packaged Go client, interactive lifecycle checks, and approved persistent deployment remain open. The thirteen user-supplied criteria remain the behavior contract.
+**Current release boundary:** The active source is Go-only. The retired Rust backend and bridge results below are historical compatibility evidence, not checks of the shipped client. Native Go backend/client tests and portable bundles passed on macOS arm64, Work HP Windows x64, and Beelink Ubuntu x64. Fresh Codex Desktop and Work HP Cursor checks with the packaged Go client, interactive lifecycle checks, and approved persistent deployment remain open. The thirteen user-supplied criteria remain the behavior contract. [Current Linux evidence](memory-acceptance.md) is kept in the short acceptance report.
 
 ## Final Go-only client evidence (2026-09-23)
 

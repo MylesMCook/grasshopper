@@ -63,3 +63,22 @@ func TestBundleRejectsUnsafeEntriesAndMissingFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestRuntimeLibraryEntryUsesNativeExtension(t *testing.T) {
+	for _, test := range []struct {
+		path string
+		want string
+	}{
+		{"/lib/libonnxruntime.so", "runtime/libonnxruntime.so"},
+		{"/lib/libonnxruntime.dylib", "runtime/libonnxruntime.dylib"},
+		{"C:\\runtime\\onnxruntime.dll", "runtime/onnxruntime.dll"},
+	} {
+		got, err := runtimeLibraryEntry(test.path)
+		if err != nil || got != test.want {
+			t.Errorf("runtimeLibraryEntry(%q) = %q, %v; want %q", test.path, got, err, test.want)
+		}
+	}
+	if _, err := runtimeLibraryEntry("/lib/onnxruntime.txt"); err == nil {
+		t.Fatal("accepted unsupported ONNX library extension")
+	}
+}

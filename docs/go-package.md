@@ -1,6 +1,6 @@
 # Portable Go bundle
 
-A task-local archive was built, extracted, checksum-checked, run, and removed on macOS arm64 and Work HP Windows x64. This is a portable package candidate, not a signed installer or a live deployment.
+Task-local archives were built, extracted, checksum-checked, and run on macOS arm64, Work HP Windows x64, and Beelink Ubuntu x64. The Linux pilot used a restored synthetic database and left Beelink's running older service untouched. These are portable package candidates, not signed installers or live deployments.
 
 ## Build
 
@@ -12,8 +12,8 @@ The model and tokenizer must match the SHA-256 digests in `internal/goembed/bge.
 
 ## Try or remove
 
-1. Extract into a new private task-local directory (`unzip` on macOS preserves executable bits). Check every `SHA256SUMS` entry (`shasum -a 256 -c SHA256SUMS` on macOS, `Get-FileHash -Algorithm SHA256` on Windows).
-2. Keep the token and database **outside** the extracted directory. Start `bin/grasshopper-go-server` with `--db`, `--onnx-library`, `--model`, `--tokenizer`, `--token-file`, and an explicit loopback `--listen`. Windows binaries have `.exe`; the ONNX library is `runtime/onnxruntime.dll`. macOS uses `runtime/libonnxruntime.dylib`.
+1. Extract into a new private task-local directory (`unzip` preserves executable bits on macOS and Linux). Check every `SHA256SUMS` entry (`shasum -a 256 -c SHA256SUMS` on macOS, `sha256sum -c SHA256SUMS` on Linux, `Get-FileHash -Algorithm SHA256` on Windows).
+2. Keep the token and database **outside** the extracted directory. Start `bin/grasshopper-go-server` with `--db`, `--onnx-library`, `--model`, `--tokenizer`, `--token-file`, and an explicit loopback `--listen`. Windows binaries have `.exe`; the ONNX library is `runtime/onnxruntime.dll`. macOS uses `runtime/libonnxruntime.dylib`; Linux uses `runtime/libonnxruntime.so`.
 3. Confirm unauthenticated `/healthz` is 401 and authenticated `/healthz` is 200. Use the packaged `bin/grasshopper bridge --config ABSOLUTE_CLIENT_CONFIG` for MCP and `hook` for lifecycle context. Stop the task-local server and remove only that extracted directory to undo the trial.
 
 Use [the recovery runbook](shared-memory.md) before any live cutover. Persistent service installation, private routing, and migration of live data require separate approval and verification.
