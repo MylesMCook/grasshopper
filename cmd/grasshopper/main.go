@@ -18,6 +18,14 @@ func run() error {
 		fmt.Fprintln(os.Stdout, "grasshopper 2.0.0 (Go client)")
 		return nil
 	}
+	if len(os.Args) == 2 && os.Args[1] == "config-path" {
+		path, err := goclient.ConfigPath("")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stdout, path)
+		return nil
+	}
 	if len(os.Args) < 2 {
 		return errors.New("use bridge or hook")
 	}
@@ -28,10 +36,11 @@ func run() error {
 		if err := flags.Parse(os.Args[2:]); err != nil {
 			return err
 		}
-		if *config == "" {
-			return errors.New("bridge needs --config")
+		path, err := goclient.ConfigPath(*config)
+		if err != nil {
+			return err
 		}
-		return goclient.Bridge(context.Background(), *config, os.Stdin, os.Stdout)
+		return goclient.Bridge(context.Background(), path, os.Stdin, os.Stdout)
 	case "hook":
 		flags := flag.NewFlagSet("hook", flag.ContinueOnError)
 		config := flags.String("config", "", "client configuration path")
@@ -40,8 +49,12 @@ func run() error {
 		if err := flags.Parse(os.Args[2:]); err != nil {
 			return err
 		}
-		if *config == "" || *harness == "" {
-			return errors.New("hook needs --config and --harness")
+		if *harness == "" {
+			return errors.New("hook needs --harness")
+		}
+		path, err := goclient.ConfigPath(*config)
+		if err != nil {
+			return err
 		}
 		input, err := goclient.ParseHookInput(os.Stdin)
 		if err != nil {
@@ -54,7 +67,7 @@ func run() error {
 			}
 			output, err = goclient.HookGlobalPart(*globalPart, input)
 		} else {
-			output, err = goclient.Hook(*config, *harness, input)
+			output, err = goclient.Hook(path, *harness, input)
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Grasshopper hook unavailable; no persistence acknowledged")

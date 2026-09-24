@@ -1,24 +1,48 @@
-# Shared agent memory release
+# Grasshopper release work
 
-Owner: Codex. Machine: macOS arm64. Checkout: `/Users/mylescook/Code/MylesMCook/grasshopper`, branch `main`. Synthetic work only; no live deployment or data migration.
+Owner: Codex. Mac checkout: `/Users/mylescook/Code/MylesMCook/grasshopper`,
+branch `main`. Work HP is CLI-only while the user does real work there. Beelink
+is shared with a separate host-maintenance task. All current tests use
+synthetic data; no live migration or deployment is approved.
 
 ## Intended behavior
 
-One authenticated, private Go/SQLite service with `context`, `store`, `search`, `get`, and `archive`; one stateless Go client for Codex Desktop, Cursor, and Claude Code on macOS and Windows; one canonical `integrations/policy/AGENTS.md`. Scope, confirmed preferences, revision history, provenance, idempotency, full reads, and backup/rollback remain inspectable. The old Rust CLI and code search are retired by user decision.
+One authenticated, private Go/SQLite memory service with five tools; one
+stateless Go bridge for Codex, Cursor, and Claude Code; one canonical shared
+`integrations/policy/AGENTS.md`. The client package must be installable,
+updatable, and removable without a second writable memory store or alternate
+standing-instruction file. The former Rust CLI and code search are retired.
 
-## Current evidence
+## Current state
 
-- Go backend, model-backed recall, migration/backup, authentication, revision conflicts, idempotency, immediate search, archive/restore, and scope isolation passed local automated checks on Mac and Work HP. Synthetic desktop pilots on both machines exchanged Go-backed records through the former Rust bridge; exact limits are in [acceptance evidence](docs/memory-acceptance.md).
-- The native Go client passed transport/context/outage checks on Mac, Work HP, and Beelink. Fresh Mac Cursor GUI, Mac/Work HP Claude Code, and Mac Codex CLI sessions used it across both machine directions. App-specific checks remain unverified and are deferred by user choice; use CLIs for agent testing.
-- Beelink Ubuntu 24.04.4 x64 passed the full Go suite with real BGE, vet, race checks, authenticated five-tool client/server behavior, backup/reopen, and an extracted Linux archive with 52 valid checksums. Its existing older Grasshopper services on 8106/8107 remained active; the synthetic listener on 18106 was stopped and its token removed. The Linux archive is in task-local evidence. See [acceptance evidence](docs/memory-acceptance.md).
-- The Linux bundle fix is pushed to `main` as `430cb41`. [CI for that commit](https://github.com/MylesMCook/grasshopper/actions/runs/35948655567) passed tests, vet, and builds on macOS, Windows, and Linux; race checks passed on macOS and Linux. The extracted Linux bundle also passed on Beelink.
-- Native hook and fresh-host setup changes are pushed to `main` as `86114fd`. [CI for that implementation](https://github.com/MylesMCook/grasshopper/actions/runs/35958415641) passed tests, vet, and builds on macOS, Windows, and Linux; race checks passed on macOS and Linux. The final Mac archive had 66 valid checksums, and its extracted server created a fresh synthetic database with 401/200 authentication behavior.
-- Root/nested AGENTS.md loading was observed in pilot desktop sessions, with the Windows Codex nested read order self-reported rather than independently traced. Interactive resume/compaction and full install/removal remain unverified.
-- [State-evolution research check](docs/research-state-evolution.md): synthetic bank/retrieval checks and fresh Codex, Cursor, and Claude Code CLI answers passed on macOS. Cursor's project-local CLI example needed a required empty `deny` array and inclusion in the portable bundle. The corrected exact example passed headless reads and fresh readback; headless write was rejected, while interactive one-time approval acknowledged a synthetic correction. Work HP CLI and longer correction chains remain open.
-- No live Grasshopper service was confirmed on this Mac. Do not infer one from historical documentation. No persistent route, supervisor, real profile, or live database has been touched.
-- Current Mac probe: Claude Code 2.1.280 did not load root AGENTS.md natively. The `SessionStart` fallback delivered the root marker and synthetic memory before tool use; another turn read nested guidance before its file. Claude resume picked up a correction from revision 2 to 3 without a tool call. A fresh tool-free turn received the existing 15 KB user AGENTS.md through two bounded hook parts; a spawned tool-free subagent also reported the same context. Codex CLI 0.156.1 loaded root and user guidance natively, traced nested AGENTS.md before its file, and read revision 3 with an explicit MCP fallback. Its project hook lacked trust and did not deliver startup memory. Hooks run at session/subagent start, not on every prompt.
-- A task-local fresh Go database was created with `--create-db`; authenticated store/get/semantic search and restart persistence passed. The option refuses overwrite in unit coverage. A new Mac archive passed 66 checksums and its extracted server started a fresh database. The visual guide follows the requested Myles design tokens and bundled fonts; browser checks passed at desktop and 390px width.
+- Backend, migration/backup, auth, scoped recall, revision conflict, replay,
+  history, and bounded outage checks passed on Mac, Windows, and Linux.
+  [Detailed evidence](docs/memory-acceptance.md). Commits `430cb41`,
+  `86114fd`, and `95ca34a` are on `main`; current packaging edits are not yet
+  committed.
+- Mac client package: Codex local install/update and fresh Luna startup context
+  passed; Claude local install/update and fresh Haiku `--plugin-dir` startup
+  context passed. Cursor Composer received startup context from `--plugin-dir`,
+  but plugin-only loading did not register its MCP server.
+- Work HP Windows: the archive verified, Claude/Haiku received startup context,
+  and Cursor/Composer fetched it through a project-local MCP source and read
+  allowlist. Codex plugin MCP registration passed; first-turn hook failed with
+  the previous hook command. A documented `commandWindows` override is now
+  packaged but still needs a trusted fresh-turn check. SSH later timed out
+  during the banner exchange, so this check could not be completed today.
+- Beelink Linux: the final archive verified; Codex/Luna, Claude/Haiku, and
+  Cursor/Composer 2.5 Fast received synthetic startup context. Claude read
+  `context` through its plugin MCP. Cursor read it through the project-local
+  MCP source. All task-local listeners were stopped and tokens removed.
+- Package sources and install/update/removal instructions are in
+  [integrations/plugins](integrations/plugins/README.md). Codex and Claude local
+  install, update, and removal paths were rehearsed in isolated configurations.
+  Cursor native Git
+  marketplace/IDE install and uninstall remain unverified.
 
 ## Next action
 
-Work HP access is paused at the user's request; do nothing there until they explicitly resume it. On Mac, trust and test the task-local Codex hook, then check CLI resume/compaction and a longer correction chain. App-specific testing is deferred to the user if a problem appears. A live cutover remains a separately approved step after host inspection, backup verification, and a rollback rehearsal. Preserve unrelated `.build/` and `.playwright-cli/` directories.
+Resolve or document Windows Codex hook trust and Cursor
+plugin-only MCP loading. Review the diff, commit narrow changes, and run CI.
+Keep `.build/` and `.playwright-cli/` untouched. A live host cutover requires
+separate deployment approval, verified backup recovery, and rollback rehearsal.

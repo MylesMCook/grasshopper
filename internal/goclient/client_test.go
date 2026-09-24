@@ -19,6 +19,26 @@ import (
 
 const testToken = "synthetic-client-token-0123456789-abcdef"
 
+func TestInstalledClientUsesOneConfigAndPolicy(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "client.json")
+	if err := os.WriteFile(configPath, []byte(`{"url":"https://example.invalid/mcp","token_env":"GRASSHOPPER_TEST_TOKEN","device":"test-device"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GRASSHOPPER_CLIENT_CONFIG", configPath)
+	path, err := ConfigPath("")
+	if err != nil || path != configPath {
+		t.Fatalf("plugin config path = %q: %v", path, err)
+	}
+	if path, err := ConfigPath("explicit.json"); err != nil || path != "explicit.json" {
+		t.Fatalf("explicit config path = %q: %v", path, err)
+	}
+	config, err := LoadConfig(configPath)
+	if err != nil || config.PolicyPath != filepath.Join(root, "AGENTS.md") {
+		t.Fatalf("shared policy path = %q: %v", config.PolicyPath, err)
+	}
+}
+
 func testClientServer(t *testing.T) (*httptest.Server, string, string) {
 	t.Helper()
 	source := filepath.Join("..", "..", "tests", "fixtures", "go-compat", "memory.db")

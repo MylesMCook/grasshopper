@@ -1,0 +1,6 @@
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "\"${PLUGIN_ROOT}/bin/grasshopper{{EXE}}\" hook --harness codex", "commandWindows": "\"%PLUGIN_ROOT%\\bin\\grasshopper.exe\" hook --harness codex", "timeout": 8}]}],
+    "SubagentStart": [{"hooks": [{"type": "command", "command": "\"${PLUGIN_ROOT}/bin/grasshopper{{EXE}}\" hook --harness codex", "commandWindows": "\"%PLUGIN_ROOT%\\bin\\grasshopper.exe\" hook --harness codex", "timeout": 8}]}]
+  }
+}

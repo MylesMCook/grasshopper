@@ -2,7 +2,7 @@
 
 All three harnesses use the **same Go client** and the same [memory policy](policy/AGENTS.md). Keep each client configuration local and untracked. No installer changes global settings, another repository, or managed policy.
 
-**Status:** The Go client passed synthetic checks on Mac and Work HP Windows. Fresh Mac CLI sessions checked shared reads and corrections. A current Mac Claude Code 2.1.280 probe needed the AGENTS.md hook fallback; Codex CLI loaded root AGENTS.md, but its new project hook still needs explicit trust. Work HP access is paused. [Observed results and open checks](../docs/memory-acceptance.md).
+**Status:** The Go client passed synthetic checks on Mac, Work HP Windows, and Beelink Linux. Fresh Mac CLI sessions checked shared reads and corrections. The current Codex pilot hook is trusted; a Mac Claude Code 2.1.280 probe needed the AGENTS.md hook fallback. Client plugin packages are under test; [install, update, and remove them](plugins/README.md), or use the manual setup below. [Observed results and open checks](../docs/memory-acceptance.md).
 
 ## 1. Prepare the client
 
@@ -30,7 +30,7 @@ For Cursor Agent CLI:
 2. Merge [the CLI permission example](cursor/cli.json.example) into `.cursor/cli.json`. It auto-approves only `context`, `get`, and `search`. Keep the required empty `deny` array.
 3. Use interactive mode for corrections. An unlisted `store` prompts for one-time approval; headless mode rejects it and must report **not saved**. Avoid `--approve-mcps` in normal use because it approves every configured server.
 
-The Mac synthetic check observed both read and write behavior. Recheck [Cursor's CLI configuration](https://prod.cursor.com/docs/cli/reference/configuration), [permissions](https://prod.cursor.com/docs/cli/reference/permissions), and [MCP commands](https://prod.cursor.com/docs/cli/mcp) after a client upgrade.
+The Mac synthetic check observed both read and write behavior through a project MCP source. On Work HP, the package's startup hook supplied context but its plugin-only MCP did not register for the CLI; a project-local MCP source and read-tool allowlist enabled a fresh read. Mac plugin-only loading likewise delivered startup context but had no registered Grasshopper MCP tool. Keep the project-local MCP setup for Cursor CLI until native plugin tool loading is proven. Recheck [Cursor's CLI configuration](https://prod.cursor.com/docs/cli/reference/configuration), [permissions](https://prod.cursor.com/docs/cli/reference/permissions), and [MCP commands](https://prod.cursor.com/docs/cli/mcp) after a client upgrade.
 
 ## 3. Verify and remove
 

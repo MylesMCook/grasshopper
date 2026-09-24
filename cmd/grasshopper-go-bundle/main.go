@@ -15,14 +15,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
 
 type input struct{ name, path string }
 
-func goNotices() ([]input, error) {
-	command := exec.Command("go", "list", "-buildvcs=false", "-deps", "-json", "./cmd/grasshopper", "./cmd/grasshopper-go-server", "./cmd/grasshopper-go-backup", "./cmd/grasshopper-go-migrate")
+func goNotices(packages ...string) ([]input, error) {
+	if len(packages) == 0 {
+		packages = []string{"./cmd/grasshopper", "./cmd/grasshopper-go-server", "./cmd/grasshopper-go-backup", "./cmd/grasshopper-go-migrate"}
+	}
+	command := exec.Command("go", append([]string{"list", "-buildvcs=false", "-deps", "-json"}, packages...)...)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	output, err := command.Output()
@@ -68,6 +72,97 @@ func goNotices() ([]input, error) {
 	}
 	sort.Slice(notices, func(i, j int) bool { return notices[i].name < notices[j].name })
 	return notices, nil
+}
+
+var pluginVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+
+func clientPluginFiles(client, target, version, output string) ([]input, func(), error) {
+	if !pluginVersion.MatchString(version) {
+		return nil, nil, errors.New("plugin version must be major.minor.patch")
+	}
+	exe := ""
+	switch target {
+	case "darwin-arm64", "linux-amd64":
+		if strings.EqualFold(filepath.Ext(client), ".exe") {
+			return nil, nil, errors.New("Unix client must not have .exe suffix")
+		}
+	case "windows-amd64":
+		if !strings.EqualFold(filepath.Ext(client), ".exe") {
+			return nil, nil, errors.New("Windows client must have .exe suffix")
+		}
+		exe = ".exe"
+	default:
+		return nil, nil, errors.New("target must be darwin-arm64, windows-amd64, or linux-amd64")
+	}
+	if info, err := os.Stat(client); err != nil || !info.Mode().IsRegular() {
+		return nil, nil, errors.New("client binary must be a regular file")
+	}
+	temp, err := os.MkdirTemp(filepath.Dir(output), ".grasshopper-client-plugins-*")
+	if err != nil {
+		return nil, nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(temp) }
+	files := []input{
+		{"policy/AGENTS.md", "integrations/policy/AGENTS.md"},
+		{"client.example.json", "integrations/plugins/client.example.json"},
+		{"cursor-mcp.example.json", "integrations/cursor/mcp.json.example"},
+		{"cursor-cli.example.json", "integrations/cursor/cli.json.example"},
+		{"INSTALL.md", "integrations/plugins/README.md"},
+		{"LICENSE", "LICENSE"},
+	}
+	marketplacePaths := map[string]string{
+		"codex":  ".agents/plugins/marketplace.json",
+		"cursor": ".cursor-plugin/marketplace.json",
+		"claude": ".claude-plugin/marketplace.json",
+	}
+	for _, harness := range []string{"codex", "cursor", "claude"} {
+		root := harness + "/plugins/grasshopper/"
+		files = append(files, input{root + "bin/grasshopper" + exe, client}, input{root + "LICENSE", "LICENSE"})
+		files = append(files, input{harness + "/" + marketplacePaths[harness], "integrations/plugins/marketplaces/" + harness + ".json"})
+		source := filepath.Join("integrations", "plugins", harness)
+		err := filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			if !entry.Type().IsRegular() {
+				return fmt.Errorf("plugin template is not a regular file: %s", path)
+			}
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			rendered := strings.NewReplacer("{{VERSION}}", version, "{{EXE}}", exe).Replace(string(contents))
+			if strings.Contains(rendered, "{{") || !json.Valid([]byte(rendered)) {
+				return fmt.Errorf("invalid rendered plugin JSON: %s", path)
+			}
+			relative, err := filepath.Rel(source, path)
+			if err != nil {
+				return err
+			}
+			staged := filepath.Join(temp, harness, relative)
+			if err := os.MkdirAll(filepath.Dir(staged), 0700); err != nil {
+				return err
+			}
+			if err := os.WriteFile(staged, []byte(rendered), 0600); err != nil {
+				return err
+			}
+			files = append(files, input{root + filepath.ToSlash(relative), staged})
+			return nil
+		})
+		if err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+	}
+	notices, err := goNotices("./cmd/grasshopper")
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	return append(files, notices...), cleanup, nil
 }
 
 func bundle(output string, files []input) error {
@@ -171,9 +266,13 @@ func runtimeLibraryEntry(library string) (string, error) {
 }
 
 func run() error {
-	var output, client, server, backup, migrate, library, model, tokenizer, runtimeLicense, runtimeNotices string
+	var output, client, server, backup, migrate, library, model, tokenizer, runtimeLicense, runtimeNotices, target, version string
+	var clientPlugins bool
 	flag.StringVar(&output, "output", "", "new zip archive path")
 	flag.StringVar(&client, "client", "", "native Go client bridge binary")
+	flag.BoolVar(&clientPlugins, "client-plugins", false, "package three native client plugins without the server")
+	flag.StringVar(&target, "target", "", "client plugin target: darwin-arm64, windows-amd64, or linux-amd64")
+	flag.StringVar(&version, "plugin-version", "0.1.0", "client plugin version")
 	flag.StringVar(&server, "server", "", "native Go server binary")
 	flag.StringVar(&backup, "backup", "", "native Go backup binary")
 	flag.StringVar(&migrate, "migrate", "", "native Go migration binary")
@@ -185,6 +284,14 @@ func run() error {
 	flag.Parse()
 	if output == "" {
 		return errors.New("output is required")
+	}
+	if clientPlugins {
+		files, cleanup, err := clientPluginFiles(client, target, version, output)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		return bundle(output, files)
 	}
 	exe := ""
 	if strings.EqualFold(filepath.Ext(server), ".exe") {

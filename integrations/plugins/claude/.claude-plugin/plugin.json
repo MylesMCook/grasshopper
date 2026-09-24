@@ -1,0 +1,6 @@
+{
+  "name": "grasshopper",
+  "version": "{{VERSION}}",
+  "description": "Shared, self-hosted agent memory",
+  "author": {"name": "Myles Cook"}
+}

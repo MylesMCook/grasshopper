@@ -80,7 +80,7 @@
     <h1>A small memory that travels.</h1>
     <p class="lead">Your agents can share the few things worth remembering: preferences, decisions, lessons, and handoffs.</p>
   </header>
-  <aside class="status" aria-label="Release status"><strong>Release check</strong><p>The Go backend and clients passed synthetic tests on macOS, Windows, and Ubuntu. Live deployment is still pending. <a href="memory-acceptance.md">See what was actually tested.</a></p></aside>
+  <aside class="status" aria-label="Release status"><strong>Release check</strong><p>Go packages passed synthetic checks on Mac, Windows, and Ubuntu. Two client integration gaps and live deployment remain. <a href="memory-acceptance.md">See the evidence.</a></p></aside>
 
   <section aria-labelledby="architecture">
     <div class="section-head"><h2 id="architecture">One service, three workspaces</h2><span>01 / Connection</span></div>
@@ -110,11 +110,11 @@
   <section aria-labelledby="proof">
     <div class="section-head"><h2 id="proof">Proof and open work</h2><span>04 / Status</span></div>
     <div class="evidence">
-      <article><span class="tag">Observed</span><h3>Working on synthetic data</h3><ul><li>Go tests cover scope, revisions, authentication, recall, and backup.</li><li>Native backend checks passed on Mac, Work HP, and Beelink.</li><li>Fresh Mac CLI sessions checked cross-agent reads and corrections.</li></ul></article>
-      <article><span class="tag">Not yet claimed</span><h3>Before a live release</h3><ul><li>Claude Code on this Mac needed an AGENTS.md hook fallback in a fresh probe.</li><li>Codex project hooks require explicit trust; fresh CLI hook delivery still needs a trusted run.</li><li>Private hosting, live-data migration, and rollback need separate approval and proof.</li></ul></article>
+      <article><span class="tag">Observed</span><h3>Working on synthetic data</h3><ul><li>Go tests cover scope, revisions, authentication, recall, and backup.</li><li>Packages verified on Mac, Work HP, and Beelink.</li><li>All three CLIs received startup memory on Mac and Beelink.</li></ul></article>
+      <article><span class="tag">Still open</span><h3>Before a live release</h3><ul><li>Windows Codex needs a trusted check of its new plugin hook.</li><li>Cursor's local plugin loads context, but its MCP tools need project wiring.</li><li>Private hosting, migration, and rollback need separate approval and proof.</li></ul></article>
     </div>
   </section>
-  <footer><span>Evidence updated September 23, 2026.</span><a href="memory-acceptance.md">Test evidence</a><a href="shared-memory.md">Backend and recovery</a><a href="../integrations/README.md">Client setup</a></footer>
+  <footer><span>Evidence updated September 24, 2026.</span><a href="memory-acceptance.md">Test evidence</a><a href="shared-memory.md">Backend and recovery</a><a href="../integrations/plugins/README.md">Client setup</a></footer>
 </main>
 </body>
 </html>

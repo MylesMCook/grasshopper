@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [{"command": "\"${CURSOR_PLUGIN_ROOT}/bin/grasshopper{{EXE}}\" hook --harness cursor", "timeout": 8}]
+  }
+}

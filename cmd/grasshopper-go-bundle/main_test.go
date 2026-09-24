@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -44,6 +45,90 @@ func TestBundleIncludesChecksumsAndRejectsOverwrite(t *testing.T) {
 	}
 	if err := bundle(output, []input{{"bin/grasshopper-go-server", source}}); err == nil {
 		t.Fatal("archive was overwritten")
+	}
+}
+
+func TestClientPluginsPackageThreeHarnessesOnePolicy(t *testing.T) {
+	working, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(filepath.Join(working, "..", "..")); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(working)
+	dir := t.TempDir()
+	client := filepath.Join(dir, "grasshopper")
+	if err := os.WriteFile(client, []byte("synthetic client binary"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(dir, "client-plugins.zip")
+	files, cleanup, err := clientPluginFiles(client, "darwin-arm64", "0.1.0", output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if err := bundle(output, files); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := zip.OpenReader(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	entries := map[string]*zip.File{}
+	for _, entry := range archive.File {
+		entries[entry.Name] = entry
+		if strings.Contains(entry.Name, "token") || strings.HasSuffix(entry.Name, ".db") || strings.Contains(entry.Name, "model.onnx") {
+			t.Fatalf("private or server data included: %s", entry.Name)
+		}
+	}
+	if entries["policy/AGENTS.md"] == nil || entries["cursor-mcp.example.json"] == nil || entries["cursor-cli.example.json"] == nil || entries["SHA256SUMS"] == nil {
+		t.Fatal("canonical policy, Cursor examples, or checksums missing")
+	}
+	for _, harness := range []string{"codex", "cursor", "claude"} {
+		root := harness + "/plugins/grasshopper/"
+		if entries[root+"bin/grasshopper"] == nil || entries[root+"hooks/hooks.json"] == nil {
+			t.Fatalf("%s binary or hooks missing", harness)
+		}
+		var manifest string
+		switch harness {
+		case "codex":
+			manifest = root + ".codex-plugin/plugin.json"
+		case "cursor":
+			manifest = root + ".cursor-plugin/plugin.json"
+		case "claude":
+			manifest = root + ".claude-plugin/plugin.json"
+		}
+		reader, err := entries[manifest].Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil || !json.Valid(content) || !strings.Contains(string(content), `"version": "0.1.0"`) {
+			t.Fatalf("invalid %s manifest: %s, %v", harness, content, err)
+		}
+	}
+	if entries["codex/plugins/grasshopper/.mcp.json"] == nil {
+		t.Fatal("Codex MCP bridge missing")
+	}
+	for name, want := range map[string]string{
+		"codex/plugins/grasshopper/hooks/hooks.json":            `"commandWindows": "\"%PLUGIN_ROOT%\\bin\\grasshopper.exe\" hook --harness codex"`,
+		"cursor/plugins/grasshopper/.cursor-plugin/plugin.json": `"mcpServers": "./mcp.json"`,
+	} {
+		reader, err := entries[name].Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil || !strings.Contains(string(content), want) {
+			t.Fatalf("missing %q in %s: %v", want, name, err)
+		}
+	}
+	if entries["codex/.agents/plugins/marketplace.json"] == nil || entries["cursor/.cursor-plugin/marketplace.json"] == nil || entries["claude/.claude-plugin/marketplace.json"] == nil {
+		t.Fatal("one or more marketplace manifests missing")
 	}
 }
 

@@ -1,0 +1,5 @@
+{
+  "url": "https://YOUR-PRIVATE-BACKEND/mcp",
+  "token_file": "/absolute/private/path/to/token",
+  "device": "YOUR-STABLE-DEVICE-ID"
+}

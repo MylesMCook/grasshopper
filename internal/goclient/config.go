@@ -24,6 +24,22 @@ type Config struct {
 	Device     string `json:"device"`
 }
 
+// ConfigPath lets installed plugins use one client configuration without
+// embedding machine-specific paths in their manifests.
+func ConfigPath(explicit string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	if path := os.Getenv("GRASSHOPPER_CLIENT_CONFIG"); path != "" {
+		return path, nil
+	}
+	directory, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(directory, "grasshopper", "client.json"), nil
+}
+
 func LoadConfig(path string) (Config, error) {
 	var config Config
 	file, err := os.Open(path)
@@ -46,6 +62,9 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if config.Device == "" || len(config.Device) > 512 || strings.IndexFunc(config.Device, unicode.IsControl) >= 0 {
 		return config, errors.New("invalid device ID")
+	}
+	if config.PolicyPath == "" {
+		config.PolicyPath = filepath.Join(filepath.Dir(path), "AGENTS.md")
 	}
 	return config, nil
 }

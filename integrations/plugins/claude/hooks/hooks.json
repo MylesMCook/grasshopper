@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [
+      {"type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/grasshopper{{EXE}}\" hook --harness claude", "timeout": 8},
+      {"type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/grasshopper{{EXE}}\" hook --harness claude --global-part 1", "timeout": 8},
+      {"type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/grasshopper{{EXE}}\" hook --harness claude --global-part 2", "timeout": 8}
+    ]}],
+    "SubagentStart": [{"hooks": [
+      {"type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/grasshopper{{EXE}}\" hook --harness claude", "timeout": 8},
+      {"type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/grasshopper{{EXE}}\" hook --harness claude --global-part 1", "timeout": 8},
+      {"type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/grasshopper{{EXE}}\" hook --harness claude --global-part 2", "timeout": 8}
+    ]}]
+  }
+}

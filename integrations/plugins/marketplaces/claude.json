@@ -1,0 +1,9 @@
+{
+  "name": "grasshopper-local",
+  "owner": {"name": "Myles Cook"},
+  "plugins": [{
+    "name": "grasshopper",
+    "source": "./plugins/grasshopper",
+    "description": "Shared, self-hosted agent memory"
+  }]
+}
