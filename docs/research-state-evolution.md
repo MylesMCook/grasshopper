@@ -27,8 +27,13 @@ The result supports the **bank and lexical retrieval** parts of this question. H
 
 **Three real CLI passes on macOS arm64:** Codex CLI 0.155.1, Cursor Agent CLI 2026.09.23-86fc751, and Claude Code 2.1.280 used the native Go bridge and a disposable, authenticated Go server with real BGE. Each fresh, read-only session fetched record 1 revisions 1 and 2, correctly reported “concise” → “direct,” retained the source-reference requirement, and cited provenance. Codex called `context` then `get`; Cursor and Claude called `get` for both revisions without a `context` call in their tool traces. No memory write occurred. Event traces are in the task-local `2026-09-23-grasshopper-temporal-experiment/run/` folder.
 
-Cursor's first headless run rejected `get` as unapproved and looped. A second run passed after a **project-local, read-only MCP allowlist** was added to `.cursor/cli.json`; no global permission setting changed. This is evidence for the CLI configuration, not for the Cursor desktop app.
+The Cursor CLI check found two setup gaps:
+
+- Grasshopper advertised `readOnlyHint=true` for its reads, but Cursor classified `get` as non-read-only and rejected it in headless mode. A project-local `Mcp(grasshopper:...)` allowlist fixed the read.
+- The first published example omitted Cursor's required `permissions.deny` array. The corrected example loaded unchanged in a fresh project and appeared in a new Mac archive and `SHA256SUMS`.
+
+With that exact example, two headless `get` calls passed. A headless `store` was rejected without changing the database. Interactive Cursor prompted for `store`; one-time approval acknowledged revision 3, and a fresh CLI read returned revisions 3 and 2. No global permission setting changed. These results do not establish desktop-app behavior.
 
 ## Next experiment
 
-Repeat the state-change probe on Work HP through the Cursor and Claude Code CLIs, then test a longer correction chain and an ambiguous historical question. If an agent misses the prior state, test a bounded history view through the existing `get` operation before changing active search or adding a tool. Desktop-app testing is user-led only if a problem appears; CLI results do not establish app behavior.
+Test a longer correction chain and an ambiguous historical question on Mac. Work HP checks are paused until the user explicitly resumes access. If an agent misses the prior state, test a bounded history view through the existing `get` operation before changing active search or adding a tool. Desktop-app testing is user-led only if a problem appears; CLI results do not establish app behavior.

@@ -214,6 +214,7 @@ func run() error {
 		{"integrations/codex/hooks.json.example", "integrations/codex/hooks.json.example"},
 		{"integrations/cursor/mcp.json.example", "integrations/cursor/mcp.json.example"},
 		{"integrations/cursor/hooks.json.example", "integrations/cursor/hooks.json.example"},
+		{"integrations/cursor/cli.json.example", "integrations/cursor/cli.json.example"},
 		{"integrations/claude/mcp.json.example", "integrations/claude/mcp.json.example"},
 		{"integrations/claude/settings.json.example", "integrations/claude/settings.json.example"},
 	}

@@ -139,6 +139,10 @@ func TestMCPAuthenticatedFiveToolContract(t *testing.T) {
 			names := make([]string, 0, len(listed.Tools))
 			for _, tool := range listed.Tools {
 				names = append(names, tool.Name)
+				wantReadOnly := tool.Name == "context" || tool.Name == "get" || tool.Name == "search"
+				if tool.Annotations == nil || tool.Annotations.ReadOnlyHint != wantReadOnly {
+					t.Fatalf("%s read-only annotation: %+v", tool.Name, tool.Annotations)
+				}
 			}
 			sort.Strings(names)
 			if !reflect.DeepEqual(names, []string{"archive", "context", "get", "search", "store"}) {

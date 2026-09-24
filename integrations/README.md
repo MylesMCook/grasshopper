@@ -24,12 +24,18 @@ Merge only the Grasshopper entries from the examples below. Replace both placeho
 
 For Claude Code, inspect legacy CLAUDE.md and rule files **through the applicable ancestor directories** before migration. The official option is `pluginConfigs["agents-md@builtin"].options.instructionFiles`; user/explicit/managed settings control it. Do not bypass managed-only mode. Native nested loading can differ for attachments, compaction, and subagents, so the AGENTS.md policy requires direct scoped reads before edits. If the installed client lacks the mod, upgrade it rather than adding another instruction format.
 
-For headless Cursor Agent CLI reads, merge [the project-local permission example](cursor/cli.json.example) into `.cursor/cli.json`. It allows only Grasshopper `context`, `get`, and `search`; writes still require approval. The first Mac headless run rejected `get` and looped, while a fresh run with this allowlist passed. Check [Cursor's CLI permission syntax](https://prod.cursor.com/docs/cli/reference/permissions) before changing it for a newer client. Do not use an unrestricted run mode to bypass the read approval.
+For Cursor Agent CLI:
+
+1. From the project, run `agent mcp list`. If Grasshopper needs approval, run `agent mcp enable grasshopper`. Confirm with `agent mcp list-tools grasshopper`. Server approval is separate from tool approval.
+2. Merge [the CLI permission example](cursor/cli.json.example) into `.cursor/cli.json`. It auto-approves only `context`, `get`, and `search`. Keep the required empty `deny` array.
+3. Use interactive mode for corrections. An unlisted `store` prompts for one-time approval; headless mode rejects it and must report **not saved**. Avoid `--approve-mcps` in normal use because it approves every configured server.
+
+The Mac synthetic check observed both read and write behavior. Recheck [Cursor's CLI configuration](https://prod.cursor.com/docs/cli/reference/configuration), [permissions](https://prod.cursor.com/docs/cli/reference/permissions), and [MCP commands](https://prod.cursor.com/docs/cli/mcp) after a client upgrade.
 
 ## 3. Verify and remove
 
 In a fresh session, check root AGENTS.md, active global record ID/revision, project/device filtering, a user-approved synthetic correction with readback, and a stopped-backend attempt. A connected MCP server or hook log alone is not evidence that the first model turn had context. Writes count only after an ID/revision acknowledgement. Hooks read; the active agent decides what to save. Network work has a five-second client deadline; it must not block coding or loop on retries.
 
-To remove, delete **only** Grasshopper’s MCP and hook entries, then remove the local client configuration and secret reference if unused elsewhere. Leave other settings, memories, canonical policy, and AGENTS.md files in place. No CLAUDE.md, Cursor rule file, or client database is created by setup or removal.
+To remove, delete **only** Grasshopper’s MCP, hook, and Cursor CLI permission entries. Remove the local client configuration and secret reference if unused elsewhere. Disable the Cursor CLI source only if no other project uses it. Leave other settings, memories, canonical policy, and AGENTS.md files in place. No CLAUDE.md, Cursor rule file, or client database is created by setup or removal.
 
 Official references checked during the pilot: [Codex hooks](https://developers.openai.com/codex/hooks), [Codex MCP](https://developers.openai.com/codex/mcp), [Cursor hooks](https://cursor.com/docs/hooks), [Cursor MCP](https://cursor.com/docs/mcp), [Claude hooks](https://code.claude.com/docs/en/hooks), [Claude agents-md mod](https://github.com/anthropics/claude-code/tree/main/mods/agents-md).
