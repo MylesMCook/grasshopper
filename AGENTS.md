@@ -8,8 +8,8 @@ in its scope.
 
 ## Product boundary
 
-Grasshopper is one authenticated, self-hosted Go/SQLite memory service. Codex
-Desktop, Cursor, and Claude Code use one stateless Go bridge. Clients do not
+Grasshopper is one authenticated, self-hosted SQLite memory service. Codex
+Desktop, Cursor, and Claude Code use one stateless client. Clients do not
 maintain writable memory databases. The remote service exposes only `context`,
 `store`, `search`, `get`, and `archive`; it cannot index server files.
 
@@ -20,7 +20,7 @@ project context. Keep confirmed preferences stable until an explicit correction
 with expected revision. Preserve record IDs, provenance, revision history,
 legacy quarantine, and idempotency. New writes must be searchable immediately.
 
-Local code search from the old Rust CLI is retired for the Go-only release.
+Local code search from the old Rust CLI is retired for this release.
 Do not restore a second language runtime, separate writable store, transcript
 mining service, or parallel instruction files.
 
@@ -51,7 +51,7 @@ model tests a real-model pass. The model and tokenizer digests are pinned in
   hook adapter. `cmd/` contains their binaries and the archive builder.
 - Keep shared behavioral policy only in `integrations/policy/AGENTS.md`; use
   root or genuinely narrower nested AGENTS.md for project instructions.
-- Use synthetic or shadow database copies for tests. The Go migration never
+- Use synthetic or shadow database copies for tests. The migration never
   mutates its source. Back up and rehearse recovery before any live cutover.
 - Keep credentials out of Git, output, logs, exports, and repository identity.
   Bind the server to explicit loopback; private routing requires approval.

@@ -5,3 +5,7 @@
 .env
 .fastembed_cache/
 /target
+
+# Local tool output
+/.build/
+/.playwright-cli/
