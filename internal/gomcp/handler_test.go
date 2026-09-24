@@ -55,14 +55,14 @@ func (b bearerTransport) RoundTrip(request *http.Request) (*http.Response, error
 	return b.base.RoundTrip(copy)
 }
 
-func testServer(t *testing.T) (*httptest.Server, *gomemory.Writer) {
+func testServer(t *testing.T, visualizer ...bool) (*httptest.Server, *gomemory.Writer) {
 	t.Helper()
 	source := filepath.Join("..", "..", "tests", "fixtures", "go-compat", "memory.db")
 	w, err := gomemory.OpenWritableCopy(context.Background(), source, filepath.Join(t.TempDir(), "server-copy.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewHandler(Backend{Store: w}, testToken)
+	handler, err := NewHandler(Backend{Store: w, Visualizer: len(visualizer) > 0 && visualizer[0]}, testToken)
 	if err != nil {
 		t.Fatal(err)
 	}

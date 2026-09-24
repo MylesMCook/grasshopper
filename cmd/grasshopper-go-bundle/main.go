@@ -335,6 +335,7 @@ func run() error {
 		{"docs/evidence-history.md", "docs/evidence-history.md"},
 		{"docs/research-state-evolution.md", "docs/research-state-evolution.md"},
 		{"docs/shared-memory.md", "docs/shared-memory.md"},
+		{"docs/memory-visualizer.md", "docs/memory-visualizer.md"},
 		{"docs/fonts/newsreader-latin.woff2", "docs/fonts/newsreader-latin.woff2"},
 		{"docs/fonts/geist-mono-latin.woff2", "docs/fonts/geist-mono-latin.woff2"},
 		{"docs/fonts/OFL-newsreader.txt", "docs/fonts/OFL-newsreader.txt"},

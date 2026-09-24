@@ -26,6 +26,7 @@ type Backend struct {
 	Embedder         Embedder
 	Model            string
 	InferenceTimeout time.Duration
+	Visualizer       bool
 }
 
 type contextInput struct {
@@ -196,11 +197,17 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: 131072, PropagateRequestCancellation: true})
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcpHandler)
+	if backend.Visualizer {
+		mux.HandleFunc("/visualizer/api/context", visualizerContext(backend.Store))
+	}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if backend.Visualizer && visualizerAsset(w, r) {
+			return
+		}
 		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if provided == r.Header.Get("Authorization") || provided == "" {
 			http.Error(w, "authentication required", http.StatusUnauthorized)

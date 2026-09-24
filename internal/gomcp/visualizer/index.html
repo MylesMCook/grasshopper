@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/visualizer/style.css">
+  <script src="/visualizer/app.js" defer></script>
+  <title>Grasshopper · Live memory</title>
+</head>
+<body>
+  <main>
+    <header class="masthead"><span class="brand">GRASSHOPPER</span><span class="eyebrow">Live memory</span></header>
+    <section class="intro" aria-labelledby="page-title">
+      <h1 id="page-title">See what your agents remember.</h1>
+      <p>Read confirmed memories and the latest handoff from your own Grasshopper service. This view never writes memory.</p>
+    </section>
+
+    <section class="connection" aria-labelledby="connect-title">
+      <div class="section-title"><h2 id="connect-title">Connect</h2><p>Token stays in this tab and is cleared when you disconnect.</p></div>
+      <form id="connection-form" autocomplete="off">
+        <div class="fields">
+          <label>Bearer token <input id="token" type="password" autocomplete="off" required spellcheck="false"></label>
+        </div>
+        <details class="scope-details"><summary>Scope · global</summary>
+          <div class="fields">
+            <label>Project ID <input id="project" type="text" placeholder="Optional · durable ID" spellcheck="false"></label>
+            <label>Device <input id="device" type="text" placeholder="Optional" spellcheck="false"></label>
+            <label>Platform <select id="platform"><option value="">Any platform</option><option value="macos">macOS</option><option value="windows">Windows</option><option value="linux">Linux</option></select></label>
+          </div>
+          <p class="scope-note">Add a project or device to include its applicable records. Use the exact durable ID stored with the memory.</p>
+        </details>
+        <div class="actions"><button id="connect" type="submit">Connect</button><button id="disconnect" type="button" class="quiet" disabled>Disconnect</button></div>
+      </form>
+    </section>
+
+    <section class="memory" aria-labelledby="memory-title">
+      <div class="section-title memory-heading"><h2 id="memory-title">Current context</h2><span id="status" class="status" role="status" aria-live="polite">Not connected</span></div>
+      <p id="summary" class="summary">Enter a token to load context.</p>
+      <p id="omissions" class="omissions" hidden></p>
+      <div id="records" class="records" aria-live="off"></div>
+    </section>
+    <footer>Live view refreshes every three seconds while connected. Records remain in Grasshopper.</footer>
+  </main>
+</body>
+</html>

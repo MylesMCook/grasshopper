@@ -52,9 +52,10 @@ func validateListen(address string) error {
 
 func run() error {
 	var database, library, model, tokenizer, tokenFile, listen string
-	var createDB bool
+	var createDB, visualizer bool
 	flag.StringVar(&database, "db", "", "Grasshopper database path")
 	flag.BoolVar(&createDB, "create-db", false, "create an empty memory database if missing")
+	flag.BoolVar(&visualizer, "visualizer", false, "serve optional read-only live memory view at /visualizer/")
 	flag.StringVar(&library, "onnx-library", "", "local ONNX Runtime shared library")
 	flag.StringVar(&model, "model", "", "pinned BGE ONNX model")
 	flag.StringVar(&tokenizer, "tokenizer", "", "pinned BGE tokenizer.json")
@@ -90,7 +91,7 @@ func run() error {
 		return err
 	}
 	defer store.Close()
-	handler, err := gomcp.NewHandler(gomcp.Backend{Store: store, Embedder: embedder, Model: goembed.ModelName}, token)
+	handler, err := gomcp.NewHandler(gomcp.Backend{Store: store, Embedder: embedder, Model: goembed.ModelName, Visualizer: visualizer}, token)
 	if err != nil {
 		return err
 	}

@@ -1,5 +1,7 @@
 # Portable Go bundle
 
+The optional [live memory view](memory-visualizer.md) is built into the server binary. Enable it with `--visualizer`; it adds no runtime dependency or writable client store.
+
 Task-local archives were built, extracted, checksum-checked, and run on macOS arm64, Work HP Windows x64, and Beelink Ubuntu x64. The Linux pilot used a restored synthetic database and left Beelink's running older service untouched. These are portable package candidates, not signed installers or live deployments.
 
 ## Build
