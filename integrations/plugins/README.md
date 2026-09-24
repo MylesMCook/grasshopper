@@ -54,6 +54,8 @@ not use it as a normal permission policy. A headless write needs an interactive
 approval or a separately reviewed permission change. The session-start hook
 can race the first turn, so the canonical policy asks for one `context` call
 when startup memory is absent.
+The [Cursor CLI test record](../../docs/cursor-cli.md) shows the working MCP
+path and the tested `--plugin-dir` limit.
 
 Loaded hooks, connected MCP, and a valid config are separate checks. In a
 fresh task, report a synthetic record's ID and revision before calling tools.
