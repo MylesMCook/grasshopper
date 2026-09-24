@@ -83,8 +83,26 @@ func TestClientPluginsPackageThreeHarnessesOnePolicy(t *testing.T) {
 			t.Fatalf("private or server data included: %s", entry.Name)
 		}
 	}
-	if entries["policy/AGENTS.md"] == nil || entries["cursor-mcp.example.json"] == nil || entries["cursor-cli.example.json"] == nil || entries["SHA256SUMS"] == nil {
-		t.Fatal("canonical policy, Cursor examples, or checksums missing")
+	if entries["policy/AGENTS.md"] == nil || entries["cursor-mcp.example.json"] == nil || entries["cursor-cli.example.json"] == nil || entries["cursor-cli.md"] == nil || entries["SHA256SUMS"] == nil {
+		t.Fatal("canonical policy, Cursor setup, or checksums missing")
+	}
+	installReader, err := entries["INSTALL.md"].Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	installGuide, err := io.ReadAll(installReader)
+	installReader.Close()
+	if err != nil || !strings.Contains(string(installGuide), "(cursor-cli.md)") || strings.Contains(string(installGuide), "../../docs/cursor-cli.md") {
+		t.Fatalf("client install guide has a broken Cursor evidence link: %v", err)
+	}
+	cursorReader, err := entries["cursor-cli.md"].Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursorGuide, err := io.ReadAll(cursorReader)
+	cursorReader.Close()
+	if err != nil || !strings.Contains(string(cursorGuide), "(INSTALL.md)") {
+		t.Fatalf("client Cursor guide has a broken install link: %v", err)
 	}
 	for _, harness := range []string{"codex", "cursor", "claude"} {
 		root := harness + "/plugins/grasshopper/"

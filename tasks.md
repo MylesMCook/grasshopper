@@ -29,6 +29,11 @@ code search are retired.
 - Mac Chromium showed a new memory in the live view without reload, a clear
   stale state during outage, and no 390px horizontal overflow. Go tests, vet,
   race checks, and the example Mac launchd plist pass.
+- Native 2.0.0 candidates passed real BGE tests, vet, archive checksums, and
+  extracted-server auth/live-view reads on Mac, Windows, and Linux. A package
+  review found broken guide links; the fixed Mac candidates now pass link and
+  checksum checks. Isolated Codex and Claude install/update/removal passed on
+  all three OSes. Windows/Linux need one final rebuild from the fix.
 - Synthetic Mac online backup restored revision 1 after the source advanced to
   revision 2. No live service or data was changed. See
   [acceptance evidence](docs/memory-acceptance.md).

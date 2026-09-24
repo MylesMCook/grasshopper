@@ -15,8 +15,30 @@ and remote token copies were removed after the checks.
 | One shared backend | Work HP Codex CLI 0.156.1 and Claude Code 2.1.280 received global record 1, revision 2, `pebble atlas` before tools. Mac Cursor Agent 2026.09.23 fetched the same revision with one project MCP `context` call. Beelink Codex CLI 0.156.1 and Claude Code 2.1.281 received it in fresh turns; Beelink Cursor Agent fetched it with one project MCP call. Project A `bun`, project B `npm`, and a Windows path stayed scoped in direct bridge reads. | A single six-way agent correction sequence and persistent private HTTPS route have not been tested. These results do not prove Desktop behavior. |
 | Windows lifecycle | Work HP Codex fresh, second prompt, and resume read the current revision; one later resume received revision 4 through hook context before tools. Claude fresh and resume read current revisions. A real Claude subagent received root guidance and revision 5; `/compact` produced a boundary and a successful `SessionStart:compact` hook response. | Codex compaction and independent Codex subagent hook were not isolated. Claude's first model turn after compact was not isolated from a resume hook. |
 | Cursor CLI tool access | On Mac, plugin-only loading did not register tools across four documented/discovered manifest forms. Project `.cursor/mcp.json` plus read allowlist listed five tools and a fresh Composer 2.5 turn fetched the shared record. Beelink's fresh Composer turn did the same with one approved MCP call. [CLI setup](cursor-cli.md). | Native Git marketplace installation and IDE behavior remain untested. |
-| Live memory view | Go HTTP tests cover authorization, scope, updates, and omission. Chromium on Mac showed a new confirmed record within the next three-second refresh, no 390px overflow, and a clear stale state on outage; restart showed the same records. [View guide](memory-visualizer.md). | Other browsers/OS and the final installed server archive remain to be checked. |
+| Live memory view | Go HTTP tests cover authorization, scope, updates, and omission. Chromium on Mac showed a new confirmed record within the next three-second refresh, no 390px overflow, and a clear stale state on outage; restart showed the same records. Extracted server archives on Mac, Windows, and Linux returned 401 without auth and displayed a newly saved synthetic revision through the authenticated view API. [View guide](memory-visualizer.md). | Browser behavior on Windows/Linux and a persistent private HTTPS route remain untested. |
 | Mac mini host | No persistent Grasshopper job or route was present. A task-local online backup restored revision 1 after the source advanced to revision 2; restored `get` and `context` matched, and SQLite integrity was `ok`. [Private deployment plan](mac-mini-deployment.md). | No off-host Grasshopper backup or Time Machine destination is configured. No live supervisor, private route, or real database was changed. |
+
+**Live-view accessibility:** In Mac Chromium, keyboard focus followed the
+form's reading order and had a visible outline. At 200% page zoom, the form
+and records reflowed without horizontal scrolling. A custom 32px browser root
+font now gives body and record text 32px; the heading still fits a 390px
+viewport. Tested light/dark status, focus, and control colors met their
+respective text or non-text contrast thresholds. This was a synthetic browser
+check, not an all-browser accessibility certification.
+
+**Native 2.0.0 rehearsal:** On Mac, Windows, and Linux, Go tests with the real
+pinned BGE model, vet, native builds, and extracted server authentication
+passed. All three authenticated visualizer APIs returned a newly saved
+synthetic record. Windows needed a test-script correction to parse MCP's SSE
+reply; the server acknowledged the write throughout.
+The source for these OS tests was `75b417f`. Mac's later link-fixed client and
+server candidates passed all internal SHA-256 entries and local Markdown-link
+checks. Isolated Codex and Claude client install/update/removal passed on all
+three OSes. Cursor's project MCP path passed live CLI reads, but native
+marketplace installation remains untested. Windows and Linux final archive
+rebuilds are still pending. The Mac 2.0.0 extracted client stopped-backend hook returned in 0.08 seconds with no
+save claim. Its extracted server's real BGE search returned the synthetic record
+by different wording with `semantic_ready=true`.
 
 ## Backend and package
 
