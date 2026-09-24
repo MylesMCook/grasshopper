@@ -2,7 +2,7 @@
 
 **Verified path:** add Grasshopper to the project's `.cursor/mcp.json` and
 approve its read tools in `.cursor/cli.json`. The [client package guide](../integrations/plugins/README.md)
-provides both templates. The Go bridge still connects to the same authenticated
+provides both templates. The client still connects to the same authenticated
 backend; these files only tell Cursor how to start and approve it.
 
 In the project's Git root, run `agent mcp list` and
@@ -10,6 +10,10 @@ In the project's Git root, run `agent mcp list` and
 `store`, `search`, `get`, and `archive`. In a fresh Agent CLI turn, call
 `context` once if startup context is absent. Approve writes deliberately;
 the packaged `.cursor/cli.json` example pre-approves reads only.
+For a headless read test, use normal `agent --print` mode. `--mode ask`
+rejected an MCP call even with the project read allowlist; normal mode
+accepted `Mcp(grasshopper:context)`. Pass the stable `id:` or `git:` project
+scope shown by the startup hook, never the folder name.
 
 ## What the CLI test established
 

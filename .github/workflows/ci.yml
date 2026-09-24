@@ -1,4 +1,4 @@
-name: Go CI
+name: Grasshopper CI
 
 on:
   push:

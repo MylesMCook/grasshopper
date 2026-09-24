@@ -54,6 +54,9 @@ not use it as a normal permission policy. A headless write needs an interactive
 approval or a separately reviewed permission change. The session-start hook
 can race the first turn, so the canonical policy asks for one `context` call
 when startup memory is absent.
+For a headless MCP read, use normal `agent --print` mode. `--mode ask` denied
+the call in the Beelink pilot even with the project read allowlist; normal mode
+accepted it. Use the stable `id:` or `git:` scope from the hook.
 The [Cursor CLI test record](../../docs/cursor-cli.md) shows the working MCP
 path and the tested `--plugin-dir` limit.
 

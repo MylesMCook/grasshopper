@@ -4,6 +4,7 @@
 
 - Accept one explicitly configured private HTTPS proxy Host for MCP without relaxing the default Host check for other requests. Reject mismatched Origins.
 - Add regression coverage for the proxy path and document the Mac mini private service and encrypted off-host recovery.
+- Clarify stable project and platform scope in the MCP tool schema and shared AGENTS.md policy so agents can load the right context when startup hooks are unavailable.
 
 ## 2.0.0 (24 September 2026): Shared memory
 

@@ -70,7 +70,16 @@ func optional(typeName string) map[string]any {
 	return map[string]any{"type": []string{typeName, "null"}}
 }
 func scopeSchema() map[string]any {
-	return objectSchema(map[string]any{"project": optional("string"), "device": optional("string"), "platform": optional("string"), "legacy": map[string]any{"type": "boolean"}})
+	project := optional("string")
+	project["description"] = "Stable project identity, never a folder path: id:<grasshopper.project-id> from local Git config, or git:<normalized origin host/repository path>. Omit if unresolved."
+	device := optional("string")
+	device["description"] = "Stable device ID from client configuration; omit if unknown."
+	platform := optional("string")
+	platform["description"] = "Use exactly macos, windows, or linux; never Darwin, win32, or an OS version. Omit if unknown."
+	platform["enum"] = []any{"macos", "windows", "linux", nil}
+	schema := objectSchema(map[string]any{"project": project, "device": device, "platform": platform, "legacy": map[string]any{"type": "boolean"}})
+	schema["description"] = "Read and write only records applicable to this explicit scope."
+	return schema
 }
 func provenanceSchema() map[string]any {
 	return objectSchema(map[string]any{"harness": map[string]any{"type": "string"}, "device": map[string]any{"type": "string"}, "source": map[string]any{"type": "string"}}, "harness", "device", "source")
@@ -132,7 +141,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	falseValue := false
 	read := &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}
 	write := &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}
-	mcp.AddTool(server, &mcp.Tool{Name: "context", Title: "Load memory context", Description: "Use this when starting or resuming work to read confirmed preferences, applicable context, and a recent handoff.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "budget": map[string]any{"type": "integer"}}, "scope")},
+	mcp.AddTool(server, &mcp.Tool{Name: "context", Title: "Load memory context", Description: "Read confirmed preferences, applicable context, and a recent handoff. For project scope, use id:<local grasshopper.project-id> or git:<normalized origin host/path>; never a folder path. Omit project if unresolved.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "budget": map[string]any{"type": "integer"}}, "scope")},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in contextInput) (*mcp.CallToolResult, gomemory.Page, error) {
 			budget := 16384
 			if in.Budget != nil {

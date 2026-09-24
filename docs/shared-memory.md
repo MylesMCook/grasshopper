@@ -4,7 +4,7 @@ No live Grasshopper database has been migrated or replaced. Inspect the actual h
 
 ## Memory contract
 
-The authenticated HTTP MCP surface has exactly five tools: `context`, `store`, `search`, `get`, and `archive`. It has no server-filesystem indexing or code-search operation. The stateless Go client forwards MCP requests and reads canonical AGENTS.md guidance; it has no writable database.
+The authenticated HTTP MCP surface has exactly five tools: `context`, `store`, `search`, `get`, and `archive`. It has no server-filesystem indexing or code-search operation. The stateless client forwards MCP requests and reads canonical AGENTS.md guidance; it has no writable database.
 
 Every write names an exact scope. `{}` explicitly means global; `project`, `device`, and `platform` can be combined. Context and search include global and matching subsets, filtering in SQLite before ranking. Full reads and mutations use the record's exact scope. Legacy unknown-scope rows never join ordinary context or search. Scope avoids accidental mixing; a bearer token still grants access to the whole personal store. Restricted data requires server-enforced boundaries or another deployment.
 

@@ -1,5 +1,5 @@
-// grasshopper is the Go-only stateless client for Codex Desktop, Cursor, and
-// Claude Code. It never stores memory locally.
+// grasshopper is the stateless client for Codex, Cursor, and Claude Code.
+// It never stores memory locally.
 package main
 
 import (

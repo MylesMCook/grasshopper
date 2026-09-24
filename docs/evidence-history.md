@@ -1,6 +1,6 @@
 # Shared-memory acceptance
 
-**Current release boundary:** The active source is Go-only. The retired Rust backend and bridge results below are historical compatibility evidence, not checks of the shipped client. Native Go backend/client tests and portable bundles passed on macOS arm64, Work HP Windows x64, and Beelink Ubuntu x64. A fresh three-CLI correction-history check passed on Mac; Work HP CLI lifecycle checks and approved persistent deployment remain open. App-specific testing is deferred to the user if an issue appears. The thirteen user-supplied criteria remain the behavior contract. [Current evidence](memory-acceptance.md) is kept in the short acceptance report.
+**Current release boundary:** Grasshopper is running privately on the Mac mini with an encrypted off-host backup and a Tailnet-only route. The retired Rust backend and bridge results below are historical evidence, not checks of the shipped client. This file preserves earlier test detail; [current evidence](memory-acceptance.md) records what passed on the running service and where testing remains open.
 
 ## Final Go-only client evidence (2026-09-23)
 

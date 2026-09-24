@@ -10,6 +10,8 @@ Build `./cmd/grasshopper` or extract the matching [portable bundle](../docs/go-p
 
 Copy `client.example.json` to a **private, untracked** path on the client machine. Set an approved private HTTPS `/mcp` URL, a stable device ID, and the absolute path to this checkout’s `policy/AGENTS.md`. Choose exactly one credential reference: `token_env` or `token_file`. Keep the token outside Git and arguments. On macOS a token file must be owner-only (`chmod 600`); on Windows restrict its ACL to the intended user and trusted admins. The backend requires a token even behind a proxy.
 
+The startup hook resolves project identity. For a manual MCP call, use `project: "id:<configured ID>"` when the repository has local `grasshopper.project-id`, or `project: "git:<normalized origin host/path>"` for a Git remote. A clone folder path is not a project identity.
+
 The client uses normalized Git `origin` for project identity, preserving path case and dropping credentials. Set a project-local `grasshopper.project-id` only when a durable override is intentional. With neither a remote nor an ID, project scope stays unresolved; the client loads only applicable global/device/OS context.
 
 ## 2. Wire one harness

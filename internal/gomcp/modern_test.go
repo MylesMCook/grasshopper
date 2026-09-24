@@ -81,6 +81,33 @@ func TestModernDiscoveryAndStatelessCalls(t *testing.T) {
 	if !ok || len(tools) != 5 {
 		t.Fatalf("modern tool list: %v", listed)
 	}
+	foundContext := false
+	for _, raw := range tools {
+		tool := raw.(map[string]any)
+		if tool["name"] != "context" {
+			continue
+		}
+		foundContext = true
+		if description, _ := tool["description"].(string); !strings.Contains(description, "id:<local grasshopper.project-id>") || !strings.Contains(description, "never a folder path") {
+			t.Fatalf("context tool omitted project scope format: %v", tool["description"])
+		}
+		input := tool["inputSchema"].(map[string]any)
+		properties := input["properties"].(map[string]any)
+		scope := properties["scope"].(map[string]any)
+		scopeProperties := scope["properties"].(map[string]any)
+		project := scopeProperties["project"].(map[string]any)
+		if description, _ := project["description"].(string); !strings.Contains(description, "never a folder path") || !strings.Contains(description, "id:") {
+			t.Fatalf("context tool omitted stable project scope guidance: %v", project)
+		}
+		platform := scopeProperties["platform"].(map[string]any)
+		choices := platform["enum"].([]any)
+		if !slices.Contains(choices, any("macos")) || !slices.Contains(choices, any("windows")) || !slices.Contains(choices, any("linux")) || slices.Contains(choices, any("Darwin")) {
+			t.Fatalf("context tool omitted canonical platform values: %v", platform)
+		}
+	}
+	if !foundContext {
+		t.Fatal("context tool missing")
+	}
 	called := request("tools/call", "context", map[string]any{"name": "context", "arguments": map[string]any{"scope": map[string]any{}}})
 	if called["structuredContent"] == nil || called["content"] == nil {
 		t.Fatalf("modern context result incomplete: %v", called)
