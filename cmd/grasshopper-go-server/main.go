@@ -106,7 +106,7 @@ func run() error {
 	defer stop()
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.Serve(listener) }()
-	fmt.Fprintf(os.Stderr, "Grasshopper Go listening on http://%s/mcp\n", listener.Addr())
+	fmt.Fprintf(os.Stderr, "Grasshopper listening on http://%s/mcp\n", listener.Addr())
 	select {
 	case <-ctx.Done():
 	case err := <-errCh:
@@ -121,7 +121,7 @@ func run() error {
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "Grasshopper Go:", err)
+		fmt.Fprintln(os.Stderr, "Grasshopper:", err)
 		os.Exit(1)
 	}
 }

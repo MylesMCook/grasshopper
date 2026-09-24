@@ -307,11 +307,11 @@ func run() error {
 	var output, client, server, backup, migrate, library, model, tokenizer, runtimeLicense, runtimeNotices, target, version string
 	var clientPlugins bool
 	flag.StringVar(&output, "output", "", "new zip archive path")
-	flag.StringVar(&client, "client", "", "native Go client bridge binary")
+	flag.StringVar(&client, "client", "", "native client bridge binary")
 	flag.BoolVar(&clientPlugins, "client-plugins", false, "package three native client plugins without the server")
 	flag.StringVar(&target, "target", "", "client plugin target: darwin-arm64, windows-amd64, or linux-amd64")
 	flag.StringVar(&version, "plugin-version", "2.0.1", "client plugin version")
-	flag.StringVar(&server, "server", "", "native Go server binary")
+	flag.StringVar(&server, "server", "", "native server binary")
 	flag.StringVar(&backup, "backup", "", "native Go backup binary")
 	flag.StringVar(&migrate, "migrate", "", "native Go migration binary")
 	flag.StringVar(&library, "onnx-library", "", "ONNX Runtime shared library")
