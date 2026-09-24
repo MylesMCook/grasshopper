@@ -2,7 +2,7 @@
 
 All three harnesses use the **same Go client** and the same [memory policy](policy/AGENTS.md). Keep each client configuration local and untracked. No installer changes global settings, another repository, or managed policy.
 
-**Status:** Native Go bridge and hook checks passed on Mac and Work HP Windows. A fresh Mac Cursor GUI correction and Mac/Work HP Claude Code and Codex CLI reads passed through the Go client. Codex Desktop and Work HP Cursor GUI still need a fresh Go-client pass before wider installation. [Observed results and open checks](../docs/memory-acceptance.md).
+**Status:** Native Go client and hook checks passed on Mac and Work HP Windows. Synthetic cross-machine reads and corrections passed. Fresh Mac Codex, Cursor, and Claude Code CLI sessions correctly explained a correction through the Go client. App-specific testing is deferred to the user if an issue appears. [Observed results and open checks](../docs/memory-acceptance.md).
 
 ## 1. Prepare the client
 
@@ -23,6 +23,8 @@ Merge only the Grasshopper entries from the examples below. Replace both placeho
 | Claude Code | Merge `claude/mcp.json.example` into `.mcp.json`, and `claude/settings.json.example` into `.claude/settings.json`. | Inspect `/plugin` for the built-in agents-md mod and `/config` for instruction mode. Prefer native `claude-md-or-agents-md`; the hook reads the same policy and ancestor AGENTS.md. Test nested reads and resume separately. Do not create a CLAUDE.md wrapper. |
 
 For Claude Code, inspect legacy CLAUDE.md and rule files **through the applicable ancestor directories** before migration. The official option is `pluginConfigs["agents-md@builtin"].options.instructionFiles`; user/explicit/managed settings control it. Do not bypass managed-only mode. Native nested loading can differ for attachments, compaction, and subagents, so the AGENTS.md policy requires direct scoped reads before edits. If the installed client lacks the mod, upgrade it rather than adding another instruction format.
+
+For headless Cursor Agent CLI reads, merge [the project-local permission example](cursor/cli.json.example) into `.cursor/cli.json`. It allows only Grasshopper `context`, `get`, and `search`; writes still require approval. The first Mac headless run rejected `get` and looped, while a fresh run with this allowlist passed. Check [Cursor's CLI permission syntax](https://prod.cursor.com/docs/cli/reference/permissions) before changing it for a newer client. Do not use an unrestricted run mode to bypass the read approval.
 
 ## 3. Verify and remove
 

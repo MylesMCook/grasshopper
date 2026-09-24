@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Mcp(grasshopper:context)",
+      "Mcp(grasshopper:get)",
+      "Mcp(grasshopper:search)"
+    ]
+  }
+}

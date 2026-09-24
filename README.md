@@ -2,7 +2,7 @@
 
 Grasshopper is a Go-only, self-hosted memory service for Codex Desktop, Cursor, and Claude Code. One authenticated SQLite backend holds a small set of explicit preferences, accepted decisions, verified lessons, and handoffs. Each harness uses the same stateless Go client. [See how it works](docs/how-it-works.html).
 
-**Status:** Go tests and portable bundles passed on Mac, Work HP Windows, and Beelink Ubuntu. Mac Cursor, Mac Codex CLI, and Claude Code on Mac and Work HP exchanged synthetic records through the Go client. Fresh Codex Desktop and Work HP Cursor GUI checks remain open. No live service or data changed. [See exact evidence](docs/memory-acceptance.md).
+**Status:** Go tests and portable bundles passed on Mac, Work HP Windows, and Beelink Ubuntu. Synthetic records passed between Mac and Work HP through the Go client. Fresh Codex, Cursor, and Claude Code CLI sessions also explained a corrected preference on Mac. App-specific checks are deferred to the user if a problem appears. No live service or data changed. [See exact evidence](docs/memory-acceptance.md).
 
 ## What it remembers
 
