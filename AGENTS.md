@@ -12,6 +12,8 @@ Grasshopper is one authenticated, self-hosted SQLite memory service. Codex
 Desktop, Cursor, and Claude Code use one stateless client. Clients do not
 maintain writable memory databases. The remote service exposes only `context`,
 `store`, `search`, `get`, and `archive`; it cannot index server files.
+Make setup and everyday use straightforward across machines and agent harnesses;
+keep the memory model flexible as the product evolves.
 
 Remember explicit preferences, accepted decisions, verified lessons, and short
 handoffs. Scope global/project/device/platform records before retrieval or

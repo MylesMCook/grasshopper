@@ -1,6 +1,6 @@
 # Grasshopper release state
 
-Owner: Codex · Mac mini · main. The root AGENTS.md has a separate user edit; leave it unstaged.
+Owner: Codex · Mac mini · main. Public release is ready for installation and product testing.
 
 ## Released
 
@@ -11,4 +11,4 @@ Owner: Codex · Mac mini · main. The root AGENTS.md has a separate user edit; l
 
 ## Still to verify
 
-Latest-package Codex Desktop and Cursor IDE behavior remains user-led. Codex compaction/subagent refresh, reboot persistence, recovery-note access from another device, and full Mac-loss recovery are untested. Codex hook trust and Cursor MCP approval remain native security steps. Thermos's last fully paired review found one remote-update instruction gap, which was corrected and parent-checked; another fresh pair could not start because the agent-thread limit was reached.
+Latest-package Codex Desktop and Cursor IDE behavior remains user-led. Codex compaction/subagent refresh, reboot persistence, recovery-note access from another device, and full Mac-loss recovery are untested. Codex hook trust and Cursor MCP approval remain native security steps. The private Mac mini service has not yet been upgraded from 2.2.1 to 2.2.4.
