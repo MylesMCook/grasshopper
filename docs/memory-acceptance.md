@@ -6,6 +6,7 @@ This records tests actually run for [2.2.5](https://github.com/MylesMCook/grassh
 
 - [CI 36189022975](https://github.com/MylesMCook/grasshopper/actions/runs/36189022975) passed tests, vet, and native builds on macOS, Linux, and Windows, plus race checks on Mac and Linux. All seven release archives passed 280 internal checksums; GitHub asset hashes and the published `SHA256SUMS` matched local files.
 - A fresh extracted Mac server loaded the pinned ONNX model, returned 401 without a token and 200 with one, served current record 10 revision 6 plus revision 5 under full project/device/OS scope, and reported semantic search ready. The new scoped `get` regression failed before the fix. Tests also reject other-project, other-platform, and legacy reads.
+- Beelink Ubuntu downloaded the published 2.2.5 Linux server, verified its archive and 57 internal hashes, created a fresh synthetic database, rejected anonymous health, accepted authenticated health, saved and fully read a scoped decision, and reported semantic search ready. Its task-local listener and synthetic database were removed.
 - Installer tests cover exact Cursor and Claude read permissions, preservation of other settings, idempotence, malformed config, and rollback. No write permission is preapproved. Backend tests cover scoped recall, corrections, concurrency conflicts, idempotency, history, archive/restore, and authentication.
 
 ## Actual clients
@@ -24,4 +25,4 @@ All three direct 2.2.5 hook outage probes reported an unavailable backend within
 - Beelink Ubuntu restored the latest encrypted R2 snapshot using a Bitwarden note retrieved there, checked SQLite integrity (10 records, 24 revisions), and served record 10 revision 6 from a separate 2.2.4 loopback server. The test listener, restored database, vault session, and temporary credentials were removed. The Mac then uploaded a new postrelease backup; its local snapshot passed integrity and contains revision 7 with 25 historical revisions. This is independent-host recovery evidence, not an actual failover.
 - The [public site](https://usegrasshopper.com/) returned 200 for home, setup, and memory view. All three 2.2.5 server download links returned 200. Public `/mcp` and `/visualizer/` returned 404. The private viewer remained available.
 
-Not yet observed: current Codex Desktop and Cursor IDE sessions, compaction/subagent refresh, reboot persistence, and actual host failover. Work HP was not touched for 2.2.5; no legacy database was migrated.
+Not yet observed: current Codex Desktop and Cursor IDE sessions, Windows 2.2.5 runtime, compaction/subagent refresh, reboot persistence, and actual host failover. Work HP was not touched for 2.2.5; no legacy database was migrated.
