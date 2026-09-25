@@ -2,7 +2,7 @@
 
 The [How it works](how-it-works.html) page is built into the server at `/about/`. The optional [live memory view](memory-visualizer.md) is at `/visualizer/` when enabled with `--visualizer`. Neither adds a writable client store.
 
-The [2.0.2 release](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.2) has six checksum-checked, unsigned portable archives for macOS, Windows, and Linux. See [verification](memory-acceptance.md) for which binaries actually ran on each operating system. The Mac mini private service is a separate installation from the release archive.
+The [latest published release](https://github.com/MylesMCook/grasshopper/releases/latest) has checksum-checked, unsigned portable archives for macOS, Windows, and Linux. See [verification](memory-acceptance.md) for which binaries actually ran on each operating system. The Mac mini private service is a separate installation from the release archive. The `--quickstart` flow below is in source and needs a new release before it is available from that link.
 
 ## Build
 
@@ -21,8 +21,10 @@ Build the server archive separately on its target OS with the matching ONNX libr
 ## Try or remove
 
 1. Extract into a new private task-local directory (`unzip` preserves executable bits on macOS and Linux). Check every `SHA256SUMS` entry (`shasum -a 256 -c SHA256SUMS` on macOS, `sha256sum -c SHA256SUMS` on Linux, `Get-FileHash -Algorithm SHA256` on Windows).
-2. Keep the token and database **outside** the extracted directory. Start `bin/grasshopper-go-server` with `--db`, `--onnx-library`, `--model`, `--tokenizer`, `--token-file`, and an explicit loopback `--listen`. Add `--create-db` for a new, empty memory database; it never overwrites an existing file. Omit it when opening a converted legacy database. For a private HTTPS proxy that preserves its Host header, also set `--allowed-proxy-host` to that exact hostname and port. Windows binaries have `.exe`; the ONNX library is `runtime/onnxruntime.dll`. macOS uses `runtime/libonnxruntime.dylib`; Linux uses `runtime/libonnxruntime.so`.
-3. Confirm unauthenticated `/healthz` is 401 and authenticated `/healthz` is 200. Use the packaged `bin/grasshopper bridge --config ABSOLUTE_CLIENT_CONFIG` for MCP and `hook` for lifecycle context. Stop the task-local server and remove only that extracted directory to undo the trial.
+2. From the extracted directory, run `./bin/grasshopper-go-server --quickstart` on macOS or Linux, or `.\bin\grasshopper-go-server.exe --quickstart` in Windows PowerShell. It creates an empty database and private token in your user Grasshopper data directory, then prints the local memory-view address and token-file path. Open the token file locally to connect the view; do not put its contents in chat, Git, or a command line. A second run reuses complete state and never resets it. Use `--data-dir ABSOLUTE_PATH` for an isolated trial. Stop with Ctrl-C.
+3. Confirm unauthenticated `/healthz` is 401 and authenticated `/healthz` is 200. Use the packaged `bin/grasshopper bridge --config ABSOLUTE_CLIENT_CONFIG` for MCP and `hook` for lifecycle context. Removing the extracted directory removes only the program; remove a task-local `--data-dir` separately if you want to discard its synthetic trial data.
+
+Existing or converted databases still use manual flags: `--db`, `--onnx-library`, `--model`, `--tokenizer`, `--token-file`, and explicit loopback `--listen`. `--create-db` initializes a missing database and never overwrites an existing file. A private HTTPS proxy that preserves its Host header also needs `--allowed-proxy-host` set to that exact hostname and port. Quickstart does not add remote access, automatic startup, or backups.
 
 Use [the recovery runbook](shared-memory.md) before any live cutover. Persistent service installation, private routing, and migration of live data require separate approval and verification.
 

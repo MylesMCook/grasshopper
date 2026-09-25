@@ -1,6 +1,6 @@
 # Public Grasshopper site
 
-`usegrasshopper.com` serves two static pages: a short introduction and a memory-view
+`usegrasshopper.com` serves a short introduction, a local setup guide, and a memory-view
 link. Visitors enter their own server address at `/view/`; the page remembers only
 that address in the browser, then opens the server's `/visualizer/`. It does not
 accept tokens, proxy requests, or hold memories. Visitors enter their token on
@@ -15,15 +15,16 @@ the Worker to the `usegrasshopper.com` custom domain. The response header
 `Cache-Control: public, max-age=0, no-transform` prevents Cloudflare from injecting
 its analytics script into a page whose CSP allows only first-party scripts.
 
-After deployment, check `/` and `/view/` in a browser, and confirm that `/mcp`
+After deployment, check `/`, `/setup/`, and `/view/` in a browser, and confirm that `/mcp`
 and `/visualizer/` return 404 on the public domain. For a site rollback, find the
 previous version with `wrangler deployments list --name grasshopper-site`, then
 run `wrangler rollback VERSION_ID -c web/wrangler.jsonc`. This changes only the
 public site; it does not touch a private memory server.
 
-The repository is private, so the public site labels installation as a private
-pilot. Do not add links to its private GitHub releases until those files are
-actually public.
+The source setup page links to the 2.1.0 server archives and client guide. Do
+not deploy it until those assets are published and the repository is public;
+otherwise the download buttons lead to private pages. The current public site
+still labels installation as a private pilot.
 
 The public pages allow two exact style hashes used by Codex Annotate in the
 tested app build. Keep `unsafe-inline` disabled. If annotation breaks after a
