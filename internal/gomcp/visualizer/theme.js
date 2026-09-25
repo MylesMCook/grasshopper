@@ -24,10 +24,3 @@ themeButton.addEventListener('click', () => {
 });
 systemTheme.addEventListener('change', updateThemeButton);
 updateThemeButton();
-
-// A source-file preview has no /visualizer/ route; the packaged local server does.
-if (location.protocol === 'file:') {
-  for (const link of document.querySelectorAll('a[href="/visualizer/"]')) {
-    link.href = 'http://127.0.0.1:8106/visualizer/';
-  }
-}

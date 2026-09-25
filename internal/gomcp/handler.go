@@ -265,9 +265,6 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if websiteAsset(w, r, backend.VisualizerStyleHashes) {
-			return
-		}
 		if backend.Visualizer && visualizerAsset(w, r, backend.VisualizerStyleHashes) {
 			return
 		}

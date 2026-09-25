@@ -13,7 +13,7 @@ import (
 // The page is public so a browser can open it without putting a bearer token
 // in a URL or cookie. It contains no memory data; the API still requires auth.
 //
-//go:embed visualizer/index.html visualizer/app.js visualizer/style.css visualizer/*.woff2
+//go:embed visualizer/index.html visualizer/app.js visualizer/theme.js visualizer/style.css visualizer/*.woff2
 var visualizerFiles embed.FS
 
 func visualizerAsset(w http.ResponseWriter, r *http.Request, styleHashes []string) bool {
@@ -23,6 +23,8 @@ func visualizerAsset(w http.ResponseWriter, r *http.Request, styleHashes []strin
 		filename, contentType = "index.html", "text/html; charset=utf-8"
 	case "/visualizer/app.js":
 		filename, contentType = "app.js", "text/javascript; charset=utf-8"
+	case "/visualizer/theme.js":
+		filename, contentType = "theme.js", "text/javascript; charset=utf-8"
 	case "/visualizer/style.css":
 		filename, contentType = "style.css", "text/css; charset=utf-8"
 	case "/visualizer/newsreader-latin.woff2":

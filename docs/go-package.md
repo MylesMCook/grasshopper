@@ -1,8 +1,8 @@
 # Portable Grasshopper bundle
 
-The [How it works](how-it-works.html) page is built into the server at `/about/`. The optional [live memory view](memory-visualizer.md) is at `/visualizer/` when enabled with `--visualizer`. Neither adds a writable client store.
+The public [Grasshopper site](https://usegrasshopper.com/) explains how it works and how to set it up. The private server serves only the optional [live memory view](memory-visualizer.md) at `/visualizer/` when enabled. It adds no writable client store.
 
-The [latest published release](https://github.com/MylesMCook/grasshopper/releases/latest) has checksum-checked, unsigned portable archives for macOS, Windows, and Linux. See [verification](memory-acceptance.md) for which binaries actually ran on each operating system. The Mac mini private service is a separate installation from the release archive. The `--quickstart` flow below is in source and needs a new release before it is available from that link.
+The [latest published release](https://github.com/MylesMCook/grasshopper/releases/latest) has checksum-checked, unsigned portable archives for macOS, Windows, and Linux. See [verification](memory-acceptance.md) for which binaries actually ran on each operating system. The Mac mini private service is a separate installation from the release archive. Check the published release version before using the `--quickstart` command below; it starts with 2.1.0.
 
 ## Build
 

@@ -8,7 +8,8 @@ mkdir -p "$output/fonts" "$output/view" "$output/setup"
 cp "$root/web/public/index.html" "$root/web/public/connect.js" "$root/web/public/_headers" "$root/web/public/404.html" "$output/"
 cp "$root/web/public/view/index.html" "$output/view/"
 cp "$root/web/public/setup/index.html" "$output/setup/"
-cp "$root/docs/site.css" "$root/docs/theme.js" "$output/"
+cp "$root/docs/site.css" "$output/"
+cp "$root/internal/gomcp/visualizer/theme.js" "$output/theme.js"
 cp "$root/docs/fonts/newsreader-latin.woff2" "$root/docs/fonts/geist-mono-latin.woff2" "$output/fonts/"
 
 # Change the HTML asset hashes when _headers changes; otherwise Wrangler can
