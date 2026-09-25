@@ -19,7 +19,7 @@ func TestBundleIncludesChecksumsAndRejectsOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := filepath.Join(dir, "release.zip")
-	if err := bundle(output, []input{{"bin/grasshopper-go-server", source}}); err != nil {
+	if err := bundle(output, []input{{"bin/grasshopper-server", source}}); err != nil {
 		t.Fatal(err)
 	}
 	archive, err := zip.OpenReader(output)
@@ -27,7 +27,7 @@ func TestBundleIncludesChecksumsAndRejectsOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer archive.Close()
-	if len(archive.File) != 2 || archive.File[0].Name != "bin/grasshopper-go-server" || archive.File[1].Name != "SHA256SUMS" {
+	if len(archive.File) != 2 || archive.File[0].Name != "bin/grasshopper-server" || archive.File[1].Name != "SHA256SUMS" {
 		t.Fatalf("unexpected entries: %+v", archive.File)
 	}
 	reader, err := archive.File[1].Open()
@@ -40,10 +40,10 @@ func TestBundleIncludesChecksumsAndRejectsOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	hash := sha256.Sum256([]byte("synthetic executable"))
-	if !strings.Contains(string(sums), hex.EncodeToString(hash[:])+"  bin/grasshopper-go-server") {
+	if !strings.Contains(string(sums), hex.EncodeToString(hash[:])+"  bin/grasshopper-server") {
 		t.Fatalf("missing checksum: %s", sums)
 	}
-	if err := bundle(output, []input{{"bin/grasshopper-go-server", source}}); err == nil {
+	if err := bundle(output, []input{{"bin/grasshopper-server", source}}); err == nil {
 		t.Fatal("archive was overwritten")
 	}
 }
@@ -83,7 +83,7 @@ func TestClientPluginsPackageThreeHarnessesOnePolicy(t *testing.T) {
 			t.Fatalf("private or server data included: %s", entry.Name)
 		}
 	}
-	if entries["policy/AGENTS.md"] == nil || entries["cursor-mcp.example.json"] == nil || entries["cursor-cli.example.json"] == nil || entries["cursor-cli.md"] == nil || entries["SHA256SUMS"] == nil {
+	if entries["bin/grasshopper"] == nil || entries["policy/AGENTS.md"] == nil || entries["cursor-mcp.example.json"] == nil || entries["cursor-cli.example.json"] == nil || entries["cursor-cli.md"] == nil || entries["SHA256SUMS"] == nil {
 		t.Fatal("canonical policy, Cursor setup, or checksums missing")
 	}
 	installReader, err := entries["INSTALL.md"].Open()

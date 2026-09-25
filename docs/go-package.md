@@ -2,7 +2,7 @@
 
 The public [Grasshopper site](https://usegrasshopper.com/) explains how it works and how to set it up. The private server serves only the optional [live memory view](memory-visualizer.md) at `/visualizer/` when enabled. It adds no writable client store.
 
-The [latest published release](https://github.com/MylesMCook/grasshopper/releases/latest) has checksum-checked, unsigned portable archives for macOS, Windows, and Linux. See [verification](memory-acceptance.md) for which binaries actually ran on each operating system. The Mac mini private service is a separate installation from the release archive. Check the published release version before using the `--quickstart` command below; it starts with 2.1.0.
+The [latest published release](https://github.com/MylesMCook/grasshopper/releases/latest) has checksum-checked, unsigned portable archives for macOS, Windows, and Linux. See [verification](memory-acceptance.md) for which binaries actually ran on each operating system. The Mac mini private service is a separate installation from the release archive.
 
 ## Build
 
@@ -21,7 +21,7 @@ Build the server archive separately on its target OS with the matching ONNX libr
 ## Try or remove
 
 1. Extract into a new private task-local directory (`unzip` preserves executable bits on macOS and Linux). Check every `SHA256SUMS` entry (`shasum -a 256 -c SHA256SUMS` on macOS, `sha256sum -c SHA256SUMS` on Linux, `Get-FileHash -Algorithm SHA256` on Windows).
-2. From the extracted directory, run `./bin/grasshopper-go-server --quickstart` on macOS or Linux, or `.\bin\grasshopper-go-server.exe --quickstart` in Windows PowerShell. It creates an empty database and private token in your user Grasshopper data directory, then prints the local memory-view address and token-file path. Open the token file locally to connect the view; do not put its contents in chat, Git, or a command line. A second run reuses complete state and never resets it. Use `--data-dir ABSOLUTE_PATH` for an isolated trial. Stop with Ctrl-C.
+2. From the extracted directory, run `./bin/grasshopper-server --quickstart` on macOS or Linux, or `.\bin\grasshopper-server.exe --quickstart` in Windows PowerShell. It creates an empty database and private token in your user Grasshopper data directory, then prints the local memory-view address and token-file path. Open the token file locally to connect the view; do not put its contents in chat, Git, or a command line. A second run reuses complete state and never resets it. Use `--data-dir ABSOLUTE_PATH` for an isolated trial. Stop with Ctrl-C.
 3. Confirm unauthenticated `/healthz` is 401 and authenticated `/healthz` is 200. Use the packaged `bin/grasshopper bridge --config ABSOLUTE_CLIENT_CONFIG` for MCP and `hook` for lifecycle context. Removing the extracted directory removes only the program; remove a task-local `--data-dir` separately if you want to discard its synthetic trial data.
 
 Existing or converted databases still use manual flags: `--db`, `--onnx-library`, `--model`, `--tokenizer`, `--token-file`, and explicit loopback `--listen`. `--create-db` initializes a missing database and never overwrites an existing file. A private HTTPS proxy that preserves its Host header also needs `--allowed-proxy-host` set to that exact hostname and port. Quickstart does not add remote access, automatic startup, or backups.
@@ -29,3 +29,5 @@ Existing or converted databases still use manual flags: `--db`, `--onnx-library`
 Use [the recovery runbook](shared-memory.md) before any live cutover. Persistent service installation, private routing, and migration of live data require separate approval and verification.
 
 The fresh database contains no profile. Keep its parent directory private, back it up after accepted writes, and connect clients only through the authenticated `/mcp` endpoint. A loopback trial needs no proxy; remote use needs a private HTTPS route you control.
+
+For an update, extract the new server archive separately. Run its `grasshopper-backup --quickstart` command before stopping the old server; add the original `--data-dir` if you chose one. It creates and checks a new local snapshot without replacing an earlier backup. Keep an off-host copy. Then restart with the new `grasshopper-server` binary and the same state directory and listen settings. Retain the old binary until authenticated health and a full-record read pass. [Client updates](../integrations/plugins/README.md#update) use `grasshopper setup --update` from the new client archive.

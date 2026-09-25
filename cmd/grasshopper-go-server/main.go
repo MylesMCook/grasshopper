@@ -1,4 +1,4 @@
-// grasshopper-go-server serves an existing database or creates a new one on request.
+// The Grasshopper server serves an existing database or creates a new one on request.
 package main
 
 import (
@@ -22,6 +22,8 @@ import (
 	"github.com/MylesMCook/grasshopper/internal/gomcp"
 	"github.com/MylesMCook/grasshopper/internal/gomemory"
 )
+
+var serverVersion = "dev"
 
 func readToken(path string) (string, error) {
 	info, err := os.Stat(path)
@@ -141,7 +143,8 @@ func quickstartState(dir string) (database, tokenFile string, err error) {
 
 func run() error {
 	var database, library, model, tokenizer, tokenFile, listen, allowedProxyHost, visualizerStyleHashes, dataDir string
-	var createDB, visualizer, quickstart bool
+	var createDB, visualizer, quickstart, showVersion bool
+	flag.BoolVar(&showVersion, "version", false, "show the server version")
 	flag.StringVar(&database, "db", "", "Grasshopper database path")
 	flag.BoolVar(&quickstart, "quickstart", false, "start a private server from an extracted bundle")
 	flag.StringVar(&dataDir, "data-dir", "", "quickstart state directory (default: user config directory/Grasshopper)")
@@ -155,6 +158,10 @@ func run() error {
 	flag.StringVar(&listen, "listen", "127.0.0.1:8106", "loopback listen address")
 	flag.StringVar(&allowedProxyHost, "allowed-proxy-host", "", "exact HTTPS proxy Host, including port")
 	flag.Parse()
+	if showVersion {
+		fmt.Println("grasshopper server " + serverVersion)
+		return nil
+	}
 	if quickstart {
 		if database != "" || library != "" || model != "" || tokenizer != "" || tokenFile != "" || createDB || allowedProxyHost != "" {
 			return errors.New("quickstart cannot be combined with manual database, model, token, proxy, or create-db flags")

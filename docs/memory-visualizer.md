@@ -4,7 +4,7 @@ The server bundle includes a read-only visualizer. It shows confirmed memories a
 
 ## Start
 
-1. Start `grasshopper-go-server` with its normal database, model, token, and loopback flags. Add `--visualizer` to enable the view.
+1. Start `grasshopper-server` with its normal database, model, token, and loopback flags. Add `--visualizer` to enable the view.
 2. Open `http://127.0.0.1:8106/visualizer/` on the server host. Use your actual loopback port if different.
 3. Paste the existing bearer token once. The default shows global memories across devices and platforms. Choose a known project to add its records. Choose a device or platform to narrow the view.
 

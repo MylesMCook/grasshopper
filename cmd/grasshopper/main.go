@@ -13,9 +13,11 @@ import (
 	"github.com/MylesMCook/grasshopper/internal/goclient"
 )
 
+var clientVersion = "dev"
+
 func run() error {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Fprintln(os.Stdout, "grasshopper 2.1.0")
+		fmt.Fprintln(os.Stdout, "grasshopper "+clientVersion)
 		return nil
 	}
 	if len(os.Args) == 2 && os.Args[1] == "config-path" {
@@ -30,6 +32,8 @@ func run() error {
 		return errors.New("use bridge or hook")
 	}
 	switch os.Args[1] {
+	case "setup":
+		return setupClient(os.Args[2:])
 	case "configure":
 		return configure(os.Args[2:])
 	case "check":
@@ -81,7 +85,7 @@ func run() error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(output)
 	default:
-		return errors.New("use configure, check, cursor, bridge, hook, or config-path")
+		return errors.New("use setup, configure, check, cursor, bridge, hook, or config-path")
 	}
 }
 

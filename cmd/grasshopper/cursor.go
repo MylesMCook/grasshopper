@@ -118,6 +118,10 @@ func grasshopperExecutable(path string) bool {
 }
 
 func cursorWiring(dir, configPath, binary string, install, update bool) error {
+	return cursorWiringWithOptions(dir, configPath, binary, install, update, false, true)
+}
+
+func cursorWiringWithOptions(dir, configPath, binary string, install, update, dryRun, report bool) error {
 	mcpPath, hooksPath := filepath.Join(dir, "mcp.json"), filepath.Join(dir, "hooks.json")
 	mcp, err := readJSONObject(mcpPath)
 	if err != nil {
@@ -199,6 +203,9 @@ func cursorWiring(dir, configPath, binary string, install, update bool) error {
 			hooks["hooks"] = events
 		}
 	}
+	if dryRun {
+		return nil
+	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
@@ -208,9 +215,9 @@ func cursorWiring(dir, configPath, binary string, install, update bool) error {
 	if err := writeJSONObject(hooksPath, hooks); err != nil {
 		return err
 	}
-	if install {
+	if install && report {
 		fmt.Fprintln(os.Stdout, "Cursor MCP and startup hook installed. Run `agent mcp enable grasshopper` once to approve this local server.")
-	} else {
+	} else if !install && report {
 		fmt.Fprintln(os.Stdout, "Cursor Grasshopper MCP and startup hook removed. Shared client config and token remain available to other agents.")
 	}
 	return nil

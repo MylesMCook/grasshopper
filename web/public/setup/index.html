@@ -15,30 +15,39 @@
     <header class="top"><a class="brand" href="/">GRASSHOPPER</a><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button><nav aria-label="Page"><a href="/#how">How it works</a><a href="/setup/" aria-current="page">Set up</a><a href="/view/">Memory view</a></nav></header>
     <main class="view-main">
       <h1>Start your own copy.</h1>
-      <p class="lead">Download once. Run one command. Grasshopper creates an empty, private memory store on your machine.</p>
+      <p class="lead">Start a private server, then connect the agents you use. Your memories stay on that server.</p>
       <section aria-labelledby="download-title">
         <div class="heading"><h2 id="download-title">1. Download your server</h2></div>
         <p class="intro">Choose the machine that will hold your memories. The archives are unsigned, so your operating system may ask you to confirm before opening them.</p>
         <div class="grid downloads">
-          <article><h3>Mac · Apple silicon</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.1.0/grasshopper-server-darwin-arm64-2.1.0.zip">Download Mac server</a></p></article>
-          <article><h3>Windows · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.1.0/grasshopper-server-windows-amd64-2.1.0.zip">Download Windows server</a></p></article>
-          <article><h3>Linux · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.1.0/grasshopper-server-linux-amd64-2.1.0.zip">Download Linux server</a></p></article>
+          <article><h3>Mac · Apple silicon</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.0/grasshopper-server-darwin-arm64-2.2.0.zip">Download Mac server</a></p></article>
+          <article><h3>Windows · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.0/grasshopper-server-windows-amd64-2.2.0.zip">Download Windows server</a></p></article>
+          <article><h3>Linux · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.0/grasshopper-server-linux-amd64-2.2.0.zip">Download Linux server</a></p></article>
         </div>
-        <p class="note">The <a href="https://github.com/MylesMCook/grasshopper/releases/tag/v2.1.0">release page</a> includes SHA-256 checksums. The bundle contains the local model and runtime; no compiler is needed.</p>
+        <p class="note">The <a href="https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.0">release page</a> includes SHA-256 checksums. The bundle includes the model and runtime; no compiler is needed.</p>
       </section>
       <section aria-labelledby="run-title">
         <div class="heading"><h2 id="run-title">2. Run it locally</h2></div>
         <p class="intro">Extract the zip. In a terminal inside the extracted folder, run the command for your system:</p>
         <div class="grid downloads">
-          <article><h3>Mac or Linux</h3><pre><code>./bin/grasshopper-go-server --quickstart</code></pre></article>
-          <article><h3>Windows PowerShell</h3><pre><code>.\bin\grasshopper-go-server.exe --quickstart</code></pre></article>
+          <article><h3>Mac or Linux</h3><pre><code>./bin/grasshopper-server --quickstart</code></pre></article>
+          <article><h3>Windows PowerShell</h3><pre><code>.\bin\grasshopper-server.exe --quickstart</code></pre></article>
         </div>
         <p class="note">Grasshopper prints a local memory-view address and the path to your access-token file. Open the address on that machine, then enter the token from the file. The token is never printed by the server. Stop the server with Ctrl-C; run the same command to reopen your memories. A partial setup fails rather than resetting existing files.</p>
       </section>
       <section aria-labelledby="connect-title">
         <div class="heading"><h2 id="connect-title">3. Connect an agent</h2></div>
-        <p class="intro">Download the client for each agent machine: <a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.1.0/grasshopper-client-darwin-arm64-2.1.0.zip">Mac</a>, <a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.1.0/grasshopper-client-windows-amd64-2.1.0.zip">Windows</a>, or <a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.1.0/grasshopper-client-linux-amd64-2.1.0.zip">Linux</a>. Follow the <a href="https://github.com/MylesMCook/grasshopper/blob/main/integrations/plugins/README.md">client guide</a> to connect Codex, Cursor, or Claude Code. They share one server. For another machine, give that server a private HTTPS address first.</p>
-        <p class="note">Your server owns the token and memories. <a href="/view/">Memory view</a> opens the view on a server you choose. This public website never handles your token.</p>
+        <p class="intro">Download the client on each agent machine: <a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.0/grasshopper-client-darwin-arm64-2.2.0.zip">Mac</a>, <a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.0/grasshopper-client-windows-amd64-2.2.0.zip">Windows</a>, or <a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.0/grasshopper-client-linux-amd64-2.2.0.zip">Linux</a>. Extract it and run one command from that folder:</p>
+        <div class="grid downloads">
+          <article><h3>Mac or Linux</h3><pre><code>./bin/grasshopper setup</code></pre></article>
+          <article><h3>Windows PowerShell</h3><pre><code>.\bin\grasshopper.exe setup</code></pre></article>
+        </div>
+        <p class="note">That checks a server on the same machine and installs Codex and Cursor. Add Claude Code with <code>--agents codex,cursor,claude</code>. For another machine, use its private HTTPS address and a securely copied token file; the <a href="https://github.com/MylesMCook/grasshopper/blob/main/integrations/plugins/README.md">client guide</a> shows the exact command. Codex and Cursor may ask you to approve their new hooks or MCP source.</p>
+        <p class="note">Updating? Keep the old folder, extract the new one, and run <code>setup --update</code>. Make a checked backup before replacing a server binary. <a href="/view/">Memory view</a> opens a server you choose. This public site never handles your token.</p>
+      </section>
+      <section aria-labelledby="try-title">
+        <div class="heading"><h2 id="try-title">4. Try one real memory</h2></div>
+        <p class="intro">A new server starts empty. Tell one agent a preference or project decision you actually want kept. Ask for its record ID and revision. In a fresh session with another agent, ask what it remembers. Use <a href="/view/">Memory view</a> to inspect it.</p>
       </section>
     </main>
     <footer><span>Grasshopper</span><a href="/#privacy">Privacy</a></footer>

@@ -1,4 +1,4 @@
-// grasshopper-go-bundle assembles a portable server and client archive. It
+// The bundle tool assembles a portable server and client archive. It
 // deliberately excludes credentials, databases, and machine configuration.
 package main
 
@@ -140,6 +140,7 @@ func clientPluginFiles(client, target, version, output string) ([]input, func(),
 		return nil, nil, err
 	}
 	files := []input{
+		{"bin/grasshopper" + exe, client},
 		{"policy/AGENTS.md", "integrations/policy/AGENTS.md"},
 		{"client.example.json", "integrations/plugins/client.example.json"},
 		{"cursor-mcp.example.json", "integrations/cursor/mcp.json.example"},
@@ -310,7 +311,7 @@ func run() error {
 	flag.StringVar(&client, "client", "", "native client bridge binary")
 	flag.BoolVar(&clientPlugins, "client-plugins", false, "package three native client plugins without the server")
 	flag.StringVar(&target, "target", "", "client plugin target: darwin-arm64, windows-amd64, or linux-amd64")
-	flag.StringVar(&version, "plugin-version", "2.1.0", "client plugin version")
+	flag.StringVar(&version, "plugin-version", "2.2.0", "client plugin version")
 	flag.StringVar(&server, "server", "", "native server binary")
 	flag.StringVar(&backup, "backup", "", "backup executable")
 	flag.StringVar(&migrate, "migrate", "", "migration executable")
@@ -341,9 +342,9 @@ func run() error {
 	}
 	files := []input{
 		{"bin/grasshopper" + exe, client},
-		{"bin/grasshopper-go-server" + exe, server},
-		{"bin/grasshopper-go-backup" + exe, backup},
-		{"bin/grasshopper-go-migrate" + exe, migrate},
+		{"bin/grasshopper-server" + exe, server},
+		{"bin/grasshopper-backup" + exe, backup},
+		{"bin/grasshopper-migrate" + exe, migrate},
 		{lib, library},
 		{"models/bge-small-en-v1.5/model.onnx", model},
 		{"models/bge-small-en-v1.5/tokenizer.json", tokenizer},

@@ -2,6 +2,12 @@
 
 Owner: Codex. Machine: Mac mini. Checkout: `/Users/mylescook/Code/MylesMCook/grasshopper`, branch `main`. Beelink has a separate host-maintenance task. Preserve unrelated ignored build and browser files.
 
+## Active: simpler install and update
+
+- A new client `setup` command checks the server before changing settings, then installs selected Codex, Cursor, and Claude wiring. Local quickstart defaults need no flags; remote clients pass the private `/mcp` URL and a local token-file path. `--update` replaces Grasshopper-only wiring with rollback on failure. A server-backup `--quickstart` mode makes a checked local snapshot before a binary swap. The website and install guide now show this path. These changes are **uncommitted and unpublished**; the live site still links to 2.1.0.
+- Unit tests, vet, race checks, real-model recall, and Mac extracted-package trials passed. Isolated Codex 0.156.1 and Claude Code 2.1.280 installed 2.2.0, updated to 2.2.1, and removed cleanly. Cursor config was installed, updated, and removed in a task-local directory. The synthetic server rejected an offline setup without writing config; a deliberately invalid Codex update restored its previous plugin and config. A server backup retained a synthetic record; the new and previous server binaries each reopened that same record. Final-source Mac client and server archives passed 26/70 checksums and quickstart, setup, backup, version, and outage checks. [Details](docs/memory-acceptance.md).
+- Next: final diff/security review, rebuild versioned archives from the final commit, CI on all three OSes, extracted package checks, public release, then website deployment. Do not update the running Mac mini service without its own approved restart. Fresh model turns in the new isolated profiles still need native hook/MCP approval; no Desktop or IDE behavior is inferred from CLI installation.
+
 ## Shipped and checked
 
 - [2.1.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.1.0) is public from `47fb666`. Seven uploaded asset digests matched the six checked archives and external `SHA256SUMS`. [Final CI](https://github.com/MylesMCook/grasshopper/actions/runs/36094500976) passed Mac, Linux, and Windows. Extracted server archives ran with isolated data on Mac mini, Beelink, and Work HP. Physical Windows client `configure`, `check`, Cursor wiring, and bounded outage passed. All test servers are stopped.

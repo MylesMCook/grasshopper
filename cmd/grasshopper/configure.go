@@ -87,6 +87,10 @@ func privateFile(path string, data []byte) error {
 }
 
 func configure(args []string) error {
+	return configureWithReport(args, true)
+}
+
+func configureWithReport(args []string, report bool) error {
 	flags := flag.NewFlagSet("configure", flag.ContinueOnError)
 	url := flags.String("url", "", "private Grasshopper /mcp URL")
 	tokenFile := flags.String("token-file", "", "absolute path to an existing private token file")
@@ -157,6 +161,8 @@ func configure(args []string) error {
 	if err := privateFile(configPath, encoded); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stdout, "Client configured: %s\nShared policy: %s\nToken remains in its existing file.\n", configPath, installedPolicy)
+	if report {
+		fmt.Fprintf(os.Stdout, "Client configured: %s\nShared policy: %s\nToken remains in its existing file.\n", configPath, installedPolicy)
+	}
 	return nil
 }
