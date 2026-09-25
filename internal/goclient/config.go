@@ -119,3 +119,15 @@ func (c Config) endpoint() (*url.URL, error) {
 	}
 	return endpoint, nil
 }
+
+// PairingBase validates the normal MCP address and returns its server origin.
+func PairingBase(address string) (string, error) {
+	endpoint, err := (Config{URL: address}).endpoint()
+	if err != nil {
+		return "", err
+	}
+	if endpoint.Path != "/mcp" || endpoint.RawPath != "" {
+		return "", errors.New("server address must end in /mcp")
+	}
+	return endpoint.Scheme + "://" + endpoint.Host, nil
+}

@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/MylesMCook/grasshopper/internal/goclient"
 )
 
 func setupFixture(t *testing.T) (string, string, string, string) {
@@ -104,6 +106,22 @@ func TestSetupConnectsMarketplacePluginWithoutChangingAgents(t *testing.T) {
 	}
 	if err := setupClientWithRoot(args, root, run); err != nil {
 		t.Fatal("same connection should be repeatable:", err)
+	}
+}
+
+func TestSetupUpdateReusesSavedRemoteAddressAndDeviceToken(t *testing.T) {
+	root, token, config, _ := setupFixture(t)
+	server := setupServer(t, true)
+	run := func(string, ...string) ([]byte, error) { t.Fatal("agent settings changed"); return nil, nil }
+	if err := setupClientWithRoot([]string{"--agents", "none", "--url", server.URL + "/mcp", "--token-file", token, "--device", "remote-device", "--config", config}, root, run); err != nil {
+		t.Fatal(err)
+	}
+	if err := setupClientWithRoot([]string{"--agents", "none", "--update", "--config", config}, root, run); err != nil {
+		t.Fatalf("update forgot saved remote settings: %v", err)
+	}
+	got, err := goclient.LoadConfig(config)
+	if err != nil || got.URL != server.URL+"/mcp" || got.TokenFile != token || got.Device != "remote-device" {
+		t.Fatalf("update changed connection: %+v %v", got, err)
 	}
 }
 

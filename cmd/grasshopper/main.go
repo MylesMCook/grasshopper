@@ -32,6 +32,8 @@ func run() error {
 		return errors.New("use bridge or hook")
 	}
 	switch os.Args[1] {
+	case "connect":
+		return connectClient(os.Args[2:])
 	case "setup":
 		return setupClient(os.Args[2:])
 	case "configure":
@@ -85,7 +87,7 @@ func run() error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(output)
 	default:
-		return errors.New("use setup, configure, check, cursor, bridge, hook, or config-path")
+		return errors.New("use connect, setup, configure, check, cursor, bridge, hook, or config-path")
 	}
 }
 

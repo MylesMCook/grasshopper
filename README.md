@@ -20,7 +20,7 @@ Windows PowerShell:
 .\bin\grasshopper-server.exe --quickstart
 ```
 
-This creates an empty database and a token file without overwriting existing state. Keep the server running. Agents on another machine need its **private HTTPS** MCP address and a token file on that machine. A token grants access to the whole store; project scope is not access control. Never put the token in chat or Git.
+This creates an empty database and a master token without overwriting existing state. Keep the server running. Open its memory view and connect once with that token. For other machines, give the server a **private HTTPS** address. Keep the master token on the server and out of chat and Git.
 
 ## Connect an agent
 
@@ -43,29 +43,25 @@ agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git
 
 Install your OS entry in Agent CLI's Plugins menu or the IDE's **Customize → Plugins**.
 
-For Codex or Cursor, ask the agent: **Use the connect-grasshopper skill.** Give it the private MCP address and the **path** to your token file. Approve Codex hooks or Cursor MCP when prompted. On Windows Cursor Agent CLI, keep the default user-level MCP location.
+In your server's connected memory view, open **Connect another device** and copy the address. For Codex or Cursor, ask the agent: **Use the connect-grasshopper skill with this address: [paste address].** It shows a code. Approve the matching device and code in the same view. No server token is copied. Approve Codex hooks or Cursor MCP when prompted. On Windows Cursor Agent CLI, keep the default user-level MCP location.
 
 Setup allows Grasshopper's three read tools in Cursor Agent CLI and Claude Code. Saving or archiving a memory still uses each agent's normal approval.
 
 ### Claude Code
 
-Download the [client archive for your machine](https://github.com/MylesMCook/grasshopper/releases/latest), check it against the release's `SHA256SUMS`, and extract it. On the server machine, run:
+Download the [client archive for your machine](https://github.com/MylesMCook/grasshopper/releases/latest), check it against the release's `SHA256SUMS`, and extract it. Run:
 
 ```sh
-./bin/grasshopper setup --agents claude
+./bin/grasshopper connect --agents claude --url https://your-private-server/mcp
 ```
 
 On Windows PowerShell:
 
 ```powershell
-.\bin\grasshopper.exe setup --agents claude
+.\bin\grasshopper.exe connect --agents claude --url https://your-private-server/mcp
 ```
 
-From another machine, provide its private address and local token-file path:
-
-```sh
-./bin/grasshopper setup --agents claude --url https://your-private-server/mcp --token-file /absolute/path/to/token-file
-```
+Approve the matching code in the server's memory view.
 
 Start a fresh session. Ask the agent what it received before tool use, then save one real preference or decision. A new server has no memories yet.
 
@@ -87,17 +83,13 @@ agent plugin marketplace remove grasshopper-marketplace
 agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace
 ```
 
-Claude Code: extract the new client beside the old one, then reconnect. If the server is on another machine, repeat the same address and token-file path you used at setup. Remove Grasshopper in Claude Code's plugin manager when done.
+Claude Code: extract the new client beside the old one and update it. Remove Grasshopper in Claude Code's plugin manager when done.
 
 ```sh
 ./bin/grasshopper setup --agents claude --update
 ```
 
-Remote server:
-
-```sh
-./bin/grasshopper setup --agents claude --update --url https://your-private-server/mcp --token-file /absolute/path/to/token-file
-```
+The update reuses this machine's saved server address and device token. In the memory view, you can disconnect a device without changing other agents. A device token grants access to the whole store; project scope is not access control.
 
 ## Back up and update the server
 

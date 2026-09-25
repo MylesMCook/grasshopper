@@ -45,6 +45,18 @@
       <p id="omissions" class="omissions" hidden></p>
       <div id="records" class="records" aria-live="off"></div>
     </section>
+
+    <details id="device-panel" class="device-panel" hidden>
+      <summary>Connect another device</summary>
+      <div class="device-panel-content">
+        <p>Give your agent this server address. Then approve the matching code here.</p>
+        <div class="address-row"><code id="server-address"></code><button id="copy-server-address" type="button" class="quiet">Copy address</button></div>
+        <p id="device-status" class="device-status" role="status" aria-live="polite"></p>
+        <div id="pending-devices" class="device-list"></div>
+        <h3>Connected devices</h3>
+        <div id="connected-devices" class="device-list"></div>
+      </div>
+    </details>
   </main>
 </body>
 </html>
