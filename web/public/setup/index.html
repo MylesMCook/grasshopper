@@ -20,11 +20,11 @@
         <div class="heading"><h2 id="download-title">1. Download your server</h2></div>
         <p class="intro">Choose the machine that will hold your memories. The archives are unsigned, so your operating system may ask you to confirm before opening them.</p>
         <div class="grid downloads">
-          <article><h3>Mac · Apple silicon</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.0/grasshopper-server-darwin-arm64-2.2.0.zip">Download Mac server</a></p></article>
-          <article><h3>Windows · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.0/grasshopper-server-windows-amd64-2.2.0.zip">Download Windows server</a></p></article>
-          <article><h3>Linux · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.0/grasshopper-server-linux-amd64-2.2.0.zip">Download Linux server</a></p></article>
+          <article><h3>Mac · Apple silicon</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.1/grasshopper-server-darwin-arm64-2.2.1.zip">Download Mac server</a></p></article>
+          <article><h3>Windows · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.1/grasshopper-server-windows-amd64-2.2.1.zip">Download Windows server</a></p></article>
+          <article><h3>Linux · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.1/grasshopper-server-linux-amd64-2.2.1.zip">Download Linux server</a></p></article>
         </div>
-        <p class="note">The <a href="https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.0">release page</a> includes SHA-256 checksums. The bundle includes the model and runtime; no compiler is needed.</p>
+        <p class="note">The <a href="https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.1">release page</a> includes SHA-256 checksums. The bundle includes the model and runtime; no compiler is needed.</p>
       </section>
       <section aria-labelledby="run-title">
         <div class="heading"><h2 id="run-title">2. Run it locally</h2></div>
@@ -37,13 +37,9 @@
       </section>
       <section aria-labelledby="connect-title">
         <div class="heading"><h2 id="connect-title">3. Connect an agent</h2></div>
-        <p class="intro">Download the client on each agent machine: <a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.0/grasshopper-client-darwin-arm64-2.2.0.zip">Mac</a>, <a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.0/grasshopper-client-windows-amd64-2.2.0.zip">Windows</a>, or <a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.0/grasshopper-client-linux-amd64-2.2.0.zip">Linux</a>. Extract it and run one command from that folder:</p>
-        <div class="grid downloads">
-          <article><h3>Mac or Linux</h3><pre><code>./bin/grasshopper setup</code></pre></article>
-          <article><h3>Windows PowerShell</h3><pre><code>.\bin\grasshopper.exe setup</code></pre></article>
-        </div>
-        <p class="note">That checks a server on the same machine and installs Codex and Cursor. Add Claude Code with <code>--agents codex,cursor,claude</code>. For another machine, use its private HTTPS address and a securely copied token file; the <a href="https://github.com/MylesMCook/grasshopper/blob/main/integrations/plugins/README.md">client guide</a> shows the exact command. Codex and Cursor may ask you to approve their new hooks or MCP source.</p>
-        <p class="note">Updating? Keep the old folder, extract the new one, and run <code>setup --update</code>. Make a checked backup before replacing a server binary. <a href="/view/">Memory view</a> opens a server you choose. This public site never handles your token.</p>
+        <p class="intro">For Codex or Cursor, <a href="https://github.com/MylesMCook/grasshopper/blob/main/integrations/plugins/marketplace-README.md">install the Grasshopper connector</a> for this machine. Ask its <strong>connect-grasshopper</strong> skill to use your server address and token-file path. Each connector reads and writes the same server; it keeps no memory database.</p>
+        <p class="note">For Claude Code, or if you prefer a downloaded client, use the <a href="https://github.com/MylesMCook/grasshopper/blob/main/integrations/plugins/README.md">client package guide</a>. Codex hook trust and Cursor MCP approval are native security steps. On another machine, use your private HTTPS server address and a token file on that machine.</p>
+        <p class="note">Updating? Follow the <a href="https://github.com/MylesMCook/grasshopper/blob/main/integrations/plugins/marketplace-README.md#update-or-remove">connector update steps</a>. Make a checked backup before replacing a server binary. <a href="/view/">Memory view</a> opens a server you choose. This public site never handles your token.</p>
       </section>
       <section aria-labelledby="try-title">
         <div class="heading"><h2 id="try-title">4. Try one real memory</h2></div>
