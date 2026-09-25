@@ -2,11 +2,11 @@
 
 Owner: Codex. Machine: Mac mini. Checkout: `/Users/mylescook/Code/MylesMCook/grasshopper`, branch `main`. Beelink has a separate host-maintenance task. Preserve unrelated ignored build and browser files.
 
-## Active: simpler install and update
+## Current release
 
-- A new client `setup` command checks the server before changing settings, then installs selected Codex, Cursor, and Claude wiring. Local quickstart defaults need no flags; remote clients pass the private `/mcp` URL and a local token-file path. `--update` replaces Grasshopper-only wiring with rollback on failure. A server-backup `--quickstart` mode makes a checked local snapshot before a binary swap. The website and install guide now show this path. These changes are **uncommitted and unpublished**; the live site still links to 2.1.0.
-- Unit tests, vet, race checks, real-model recall, and Mac extracted-package trials passed. Isolated Codex 0.156.1 and Claude Code 2.1.280 installed 2.2.0, updated to 2.2.1, and removed cleanly. Cursor config was installed, updated, and removed in a task-local directory. The synthetic server rejected an offline setup without writing config; a deliberately invalid Codex update restored its previous plugin and config. A server backup retained a synthetic record; the new and previous server binaries each reopened that same record. Final-source Mac client and server archives passed 26/70 checksums and quickstart, setup, backup, version, and outage checks. [Details](docs/memory-acceptance.md).
-- Next: final diff/security review, rebuild versioned archives from the final commit, CI on all three OSes, extracted package checks, public release, then website deployment. Do not update the running Mac mini service without its own approved restart. Fresh model turns in the new isolated profiles still need native hook/MCP approval; no Desktop or IDE behavior is inferred from CLI installation.
+- [2.2.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.0) is public from `f07ba78`. The client `setup` command checks the private server before connecting selected agents; `--update` replaces Grasshopper-only wiring with rollback on failure. The server archive has a checked quickstart backup command. The [live setup page](https://usegrasshopper.com/setup/) links to all six downloads.
+- [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36099946990) passed on Mac, Linux, and Windows. All six archives match their native CI binaries and 288 internal checksums. Extracted Mac and Beelink Linux packages passed quickstart, authentication, client setup, backup integrity, and outage checks. Isolated Codex and Claude native plugin install/update/removal passed on Mac. [Evidence](docs/memory-acceptance.md).
+- The running Mac mini service and database were not updated. The new Windows archive has CI coverage but no physical-host smoke test. New installer model turns and Desktop/IDE behavior still need separate checks; Codex hook trust and Cursor MCP approval remain native steps.
 
 ## Shipped and checked
 
@@ -15,11 +15,11 @@ Owner: Codex. Machine: Mac mini. Checkout: `/Users/mylescook/Code/MylesMCook/gra
 - All six tracked READMEs now have separate jobs: project entry, client setup, manual wiring, Codex Git marketplace, website operations, and font licenses. Relative links, bundled-guide links, GitHub rendering, tests, and the site dry run passed. Commit `6d3e96e` is pushed; the older 2.1.0 archive still contains its original INSTALL.md.
 - The published Mac client is installed in the Grasshopper application folder. Its config points to the existing private loopback server and token file without copying the token. Fresh Codex, Cursor, and Claude Code CLI turns received confirmed global record 8 revision 1 before tools. Codex created synthetic project record 9; Cursor corrected it at revision 2; Codex read both revisions and archived it at revision 3. Active project context then omitted it. No confirmed preference was changed.
 - Isolated Codex and Claude Code profiles installed and removed both an earlier task-local and the final package. Cursor updated from the earlier binary to the final path, then removed Grasshopper while retaining unrelated MCP and hooks. The real Mac installs remain active.
-- The private Mac mini service still runs its earlier checked binary with encrypted off-host backups and a signed 30-day viewer session. Release 2.1.0 has **not** replaced that live binary. [Behavior and recovery evidence](docs/memory-acceptance.md).
+- The private Mac mini service still runs its earlier checked binary with encrypted off-host backups and a signed 30-day viewer session. Release 2.2.0 has **not** replaced that live binary. [Behavior and recovery evidence](docs/memory-acceptance.md).
 
 ## Next checks
 
 - Codex hook trust and Cursor MCP approval remain native security steps. A future plugin version should be checked for changed hook commands before approving it.
 - Test fresh Codex and Cursor **model turns** on Work HP with the published client when the machine is free. Package checks passed there, but no current-release model turn did. Desktop/IDE checks are user-led if an issue appears.
 - Cursor's native Git marketplace path, Codex compaction and independent subagent startup, reboot persistence, recovery-note sync on another device, and Mac-loss recovery remain unverified. Legacy-data migration is separate and unapproved.
-- To update the live Mac service to the 2.1.0 binary and remove its obsolete local `/about/` route, first verify a current backup and rollback binary, then get approval for that specific restart.
+- To update the live Mac service to the 2.2.0 binary and remove its obsolete local `/about/` route, first verify a current backup and rollback binary, then get approval for that specific restart.
