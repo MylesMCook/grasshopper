@@ -17,5 +17,5 @@
   },
   "mcpServers": "./.mcp.json",
   "name": "grasshopper-macos",
-  "version": "2.2.4"
+  "version": "2.2.5"
 }

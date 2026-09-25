@@ -38,6 +38,8 @@ For direct MCP calls, use `project: "id:<ID>"` from `grasshopper.project-id` or
 `project: "git:<host/path>"` from Git origin, never a folder path. The client
 hook resolves this automatically. Use `platform: "macos"`, `"windows"`, or
 `"linux"`; omit unknown scope fields.
+Use the current project, device, and platform scope for `get` and `search`.
+For a correction or archive, use the record's exact stored scope.
 
 ## Correct and verify
 

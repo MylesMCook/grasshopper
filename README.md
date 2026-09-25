@@ -45,6 +45,8 @@ Install your OS entry in Agent CLI's Plugins menu or the IDE's **Customize → P
 
 For Codex or Cursor, ask the agent: **Use the connect-grasshopper skill.** Give it the private MCP address and the **path** to your token file. Approve Codex hooks or Cursor MCP when prompted. On Windows Cursor Agent CLI, keep the default user-level MCP location.
 
+Setup allows Grasshopper's three read tools in Cursor Agent CLI and Claude Code. Saving or archiving a memory still uses each agent's normal approval.
+
 ### Claude Code
 
 Download the [client archive for your machine](https://github.com/MylesMCook/grasshopper/releases/latest), check it against the release's `SHA256SUMS`, and extract it. On the server machine, run:
