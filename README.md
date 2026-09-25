@@ -1,60 +1,40 @@
-# Grasshopper marketplace
+# Set up Grasshopper
 
-**One server, many agents.** Your private server owns the memories. Install a
-small connector on each machine; connectors keep no memory database or token.
+Grasshopper keeps memories on **one private server**. Install a connector on each agent machine; connectors do not keep a second memory database.
 
-[What passed and what did not](https://github.com/MylesMCook/grasshopper/blob/main/docs/memory-acceptance.md#marketplace-pilot-25-september).
+## 1. Start the server
 
-## Install
+Download the [server archive for your machine](https://github.com/MylesMCook/grasshopper/releases/latest), verify its `SHA256SUMS`, and extract it. In that folder, run:
 
-1. [Start a server](https://usegrasshopper.com/setup/) and keep its HTTPS
-   `/mcp` address and token file ready.
-2. Add this marketplace. Choose `grasshopper-macos` for Apple Silicon,
-   `grasshopper-windows` for Windows x64, or `grasshopper-linux` for Linux x64.
+| Mac or Linux | Windows PowerShell |
+|---|---|
+| `./bin/grasshopper-server --quickstart` | `.\bin\grasshopper-server.exe --quickstart` |
 
-   **Codex**
+The first run creates an empty database and a private token file, then prints their locations and the local memory-view address. It will not overwrite existing state. Keep the server running. For another machine to connect, give it a private HTTPS `/mcp` address and place the token in a private file **on that machine**. Never paste the token into chat or Git.
 
-   ```sh
-   codex plugin marketplace add MylesMCook/grasshopper --ref marketplace
-   codex plugin add grasshopper-macos@grasshopper-marketplace
-   ```
+## 2. Connect an agent
 
-   **Cursor Agent CLI**
+**Codex:** Add the [Grasshopper marketplace](https://github.com/MylesMCook/grasshopper/tree/marketplace), then install the entry for this machine:
 
-   ```sh
-   agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace
-   ```
+```sh
+codex plugin marketplace add MylesMCook/grasshopper --ref marketplace
+codex plugin add grasshopper-macos@grasshopper-marketplace
+```
 
-   In Cursor Agent CLI, run `agent`, then `/plugins` and install your OS entry.
-   In the IDE, use **Customize → Plugins**. The CLI has no noninteractive
-   plugin-install command.
-3. Ask the agent: **Use the connect-grasshopper skill.** Give it the server
-   address and the *path* to a token file on this machine. Do not paste the
-   token into chat. For Cursor Agent CLI, the skill adds its MCP entry to your
-   user-level Cursor config. Keep that default on Windows.
-4. In Codex, review and trust Grasshopper's hooks with `/hooks`. In Cursor
-   Agent CLI, run `agent mcp enable grasshopper`. Start a fresh session and ask
-   which known memory arrived before tools. If none did, call `context` once.
+Replace `macos` with `windows` or `linux` as needed.
+
+**Cursor:** Run `agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace`. In Agent CLI, open `/plugins` and install your OS entry. In the IDE, use **Customize → Plugins**.
+
+Then ask the agent: **Use the connect-grasshopper skill.** Give it the server's `/mcp` address and the *path* to the token file on this machine. The skill checks authentication before saving Grasshopper-only settings. For Cursor Agent CLI on Windows, keep its default user-level MCP location; project-level MCP approval can fail on the tested CLI version.
+
+**Claude Code:** Download the [client archive](https://github.com/MylesMCook/grasshopper/releases/latest) for this machine, check `SHA256SUMS`, and extract it. Run `./bin/grasshopper setup --agents claude` (`.\bin\grasshopper.exe setup --agents claude` on Windows). For a remote server, add `--url https://your-private-server/mcp --token-file /absolute/path/to/token-file`. Add `--device stable-name` if the hostname may change. The same package can configure Codex or Cursor with `--agents codex,cursor` when the marketplace is unavailable.
+
+Review Codex hooks in `/hooks` and enable Grasshopper MCP in Cursor if prompted. Start a **fresh** session and ask which known memory arrived before tool use. If none did, call `context` once. A new server has no memories until you save one explicit preference or decision.
 
 ## Update or remove
 
-For Codex, run `codex plugin marketplace upgrade grasshopper-marketplace`,
-then `codex plugin add` for your OS entry. For Cursor Agent CLI, open
-`/plugin list` and uninstall Grasshopper, then run:
+- **Codex:** `codex plugin marketplace upgrade grasshopper-marketplace`, then repeat `codex plugin add` for your OS entry. Remove with `codex plugin remove ENTRY@grasshopper-marketplace`, then `codex plugin marketplace remove grasshopper-marketplace`.
+- **Cursor Agent CLI:** Uninstall Grasshopper in `/plugin list`, remove the marketplace with `agent plugin marketplace remove grasshopper-marketplace`, then add it again and reinstall your OS entry. Its `marketplace update` can report success while keeping an old Git snapshot. Remove the MCP entry with `agent mcp disable grasshopper` if you enabled it.
+- **Claude Code or manual package:** Extract the new client beside the old one and repeat `grasshopper setup --agents claude --update` with the same server flags. Keep the old folder until a fresh session passes. Remove with `claude plugin uninstall grasshopper@grasshopper-local`, then `claude plugin marketplace remove grasshopper-local`.
 
-```sh
-agent plugin marketplace remove grasshopper-marketplace
-agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace
-```
-
-Reinstall your OS entry in `/plugin list` → Marketplace. Cursor Agent CLI
-`marketplace update` can report success while retaining the old Git snapshot;
-the [Cursor-supported workaround](https://forum.cursor.com/t/cli-added-git-marketplace-never-reindexes-plugin-marketplace-update-reports-0-plugins-indexed-and-cache-stays-pinned-to-the-first-commit/169587/7)
-is remove and re-add. After either harness updates, run the connect skill
-with `--update`, then `check` and test a fresh session. Keep the old package
-until the new one passes.
-
-Remove the plugin in its harness. Removing a connector does not delete server
-memories. Keep the shared config and token file if another agent uses them.
-
-For a manual recovery path, see the [client guide](https://github.com/MylesMCook/grasshopper/blob/main/integrations/plugins/README.md).
+After any connector update, run its connect skill with `--update` or the new package's `setup --update`, then `grasshopper check` and a fresh-session read. Removing a connector does **not** delete server memories. [Back up and update the server](https://github.com/MylesMCook/grasshopper/blob/main/docs/shared-memory.md) separately.
