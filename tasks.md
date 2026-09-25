@@ -4,6 +4,7 @@ Owner: Codex. Mac checkout: `/Users/mylescook/Code/MylesMCook/grasshopper`, bran
 
 ## Done
 
+- [2.0.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.2) is published with the current memory view in six checked portable archives. [Final CI](https://github.com/MylesMCook/grasshopper/actions/runs/36079552814) passed on Mac, Windows, and Linux. Extracted Mac and Linux servers passed synthetic authentication and view smoke checks; uploaded asset digests match local files. Windows 2.0.2 ran in CI, not on a physical Windows host.
 - [2.0.1](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.1) is published with six checked Mac, Windows, and Linux archives from `dd15c15`; final [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36067286155) passed.
 - The checked Mac server runs privately with encrypted off-host backups. After synthetic pilot cleanup, the latest off-host restore matched the source bytes, passed SQLite integrity, and retained the archived record and its prior revision. No legacy records were migrated.
 - A fresh 24 September R2 backup restored byte-for-byte; SQLite integrity passed, and a separate server read current and prior revisions. The live service was not interrupted.
@@ -16,4 +17,3 @@ Owner: Codex. Mac checkout: `/Users/mylescook/Code/MylesMCook/grasshopper`, bran
 - Prioritize Codex across machines and Codex ↔ Cursor on the same and different machines. Work HP model-turn timeouts are not a release gate: the hooks reached the service, and no Grasshopper defect was isolated. Leave Work HP alone until the user asks for another check; desktop checks are user-led if an issue appears.
 - Codex compaction and independent subagent hook delivery remain unisolated; fresh and resume behavior already passed. Cursor's native Git marketplace install remains untested. The later Beelink CLI pilot used a verified SSH hostname and host key.
 - Reboot persistence, Bitwarden recovery-note sync on another device, and Mac-loss recovery remain untested. Reboot or persistent service changes require separate Host Safety approval. Legacy-data migration remains separate and unapproved.
-- Package 2.0.2 from native Mac, Windows, and Linux CI binaries. Verify archive contents, native startup, and checksums before publishing; the published 2.0.1 archives contain the older view.

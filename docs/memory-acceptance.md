@@ -1,8 +1,12 @@
 # What has been verified
 
-**Current state:** The private Mac mini service runs the memory-view update from clean commit `5e19b96`. Encrypted off-host backup and restore passed. Fresh Codex and Cursor CLI turns on Mac mini and Beelink read the same live project memory. Work HP Codex and Cursor model turns remain unverified. No legacy data was migrated or personal profile seeded. Desktop checks are user-led if an issue appears.
+**Current state:** [Grasshopper 2.0.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.2) is published. The private Mac mini service runs the same memory-view implementation from clean commit `5e19b96`; it was not replaced for this package release. Encrypted off-host backup and restore passed. Fresh Codex and Cursor CLI turns on Mac mini and Beelink read the same live project memory. Work HP Codex and Cursor model turns remain unverified. No legacy data was migrated or personal profile seeded. Desktop checks are user-led if an issue appears.
 
 [Visual overview](how-it-works.html) · [Detailed test history](evidence-history.md) · [Setup and removal](../integrations/README.md)
+
+## 2.0.2 release check
+
+[CI](https://github.com/MylesMCook/grasshopper/actions/runs/36079552814) passed tests, vet, native builds, and the configured race checks on the release commit `d3212c9` across Mac, Windows, and Linux. The six client/server archives passed every internal SHA-256 entry; GitHub's seven asset digests match the six archives and external `SHA256SUMS` file. All three client manifests identify version 2.0.2. The Mac and Linux server archives were extracted and started with synthetic databases: authenticated health and visualizer API reads returned 200, anonymous reads returned 401, and the public static view shell loaded. Beelink's temporary smoke token was removed and its test server stopped. Windows 2.0.2 binaries were built and tested in CI and verified as PE x64 files; the Windows archive was not run on a physical host. No live database or service was changed for packaging.
 
 ## Same Git project: fresh CLI turns on two machines
 

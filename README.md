@@ -1,6 +1,6 @@
 # Grasshopper
 
-Grasshopper is a self-hosted memory service for Codex, Cursor, and Claude Code. One authenticated SQLite backend holds explicit preferences, accepted decisions, verified lessons, and handoffs. Each harness connects through the same stateless client. [Download releases](https://github.com/MylesMCook/grasshopper/releases) · [See how it works](docs/how-it-works.html).
+Grasshopper is a self-hosted memory service for Codex, Cursor, and Claude Code. One authenticated SQLite backend holds explicit preferences, accepted decisions, verified lessons, and handoffs. Each harness connects through the same stateless client. [Download 2.0.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.2) · [See how it works](docs/how-it-works.html).
 
 **Status:** Native builds and synthetic CLI checks passed on Mac, Work HP Windows, and Beelink Ubuntu. The Mac mini now hosts a private service with encrypted offsite backups; no old database was migrated. Windows Codex uses a first-prompt hook, and Cursor CLI needs project MCP wiring. Desktop checks remain user-led. [See exact evidence](docs/memory-acceptance.md).
 
