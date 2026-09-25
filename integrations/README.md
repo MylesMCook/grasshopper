@@ -1,8 +1,8 @@
 # Connect Codex Desktop, Cursor, or Claude Code
 
-All three harnesses use the **same stateless client** and the same [memory policy](policy/AGENTS.md). Keep each client configuration local and untracked. No installer changes global settings, another repository, or managed policy.
+All three harnesses use the **same stateless client** and the same [memory policy](policy/AGENTS.md). Keep each client configuration local and untracked. The package installer changes only the Grasshopper entries in the harness configuration you choose; it does not touch managed policy or another repository.
 
-**Status:** The client passed synthetic checks on Mac, Work HP Windows, and Beelink Linux. Fresh Mac CLI sessions checked shared reads and corrections. The current Codex pilot hook is trusted; a Mac Claude Code 2.1.280 probe needed the AGENTS.md hook fallback. [Install, update, or remove a client package](plugins/README.md), or use the manual setup below. [Observed results and open checks](../docs/memory-acceptance.md).
+**Start with the [client package guide](plugins/README.md).** It has the shortest install, check, update, and removal steps. The manual wiring below is for custom setups. Fresh Mac Codex and Cursor CLI turns received and corrected synthetic shared memory; extracted Mac, Linux, and Windows packages passed their documented checks. Desktop and IDE behavior still needs its own observation. [Test evidence](../docs/memory-acceptance.md).
 
 ## 1. Prepare the client
 
@@ -38,6 +38,6 @@ The Mac synthetic check observed both read and write behavior through a project 
 
 In a fresh session, check root AGENTS.md, active global record ID/revision, project/device filtering, a user-approved synthetic correction with readback, and a stopped-backend attempt. A connected MCP server or hook log alone is not evidence that the first model turn had context. Writes count only after an ID/revision acknowledgement. Hooks read; the active agent decides what to save. Network work has a five-second client deadline; it must not block coding or loop on retries.
 
-To remove, delete **only** Grasshopper’s MCP, hook, and Cursor CLI permission entries. Remove the local client configuration and secret reference if unused elsewhere. Disable the Cursor CLI source only if no other project uses it. Leave other settings, memories, canonical policy, and AGENTS.md files in place. No CLAUDE.md, Cursor rule file, or client database is created by setup or removal.
+To remove a package install, follow the [removal commands](plugins/README.md). For manual wiring, delete **only** Grasshopper’s MCP, hook, and Cursor CLI permission entries. Remove the local client configuration and secret reference if unused elsewhere. Disable the Cursor CLI source only if no other project uses it. Leave other settings, memories, canonical policy, and AGENTS.md files in place. No CLAUDE.md, Cursor rule file, or client database is created by setup or removal.
 
 Official references checked during the pilot: [Codex hooks](https://developers.openai.com/codex/hooks), [Codex MCP](https://developers.openai.com/codex/mcp), [Cursor hooks](https://cursor.com/docs/hooks), [Cursor MCP](https://cursor.com/docs/mcp), [Claude hooks](https://code.claude.com/docs/en/hooks), [Claude agents-md mod](https://github.com/anthropics/claude-code/tree/main/mods/agents-md).
