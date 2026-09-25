@@ -159,7 +159,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		providedHash := sha256.Sum256([]byte(provided))
 		return subtle.ConstantTimeCompare(providedHash[:], tokenHash[:]) == 1
 	}
-	server := mcp.NewServer(&mcp.Implementation{Name: "grasshopper", Version: "2.0.2"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "grasshopper", Version: "2.1.0"}, nil)
 	falseValue := false
 	read := &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}
 	write := &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}
