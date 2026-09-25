@@ -29,8 +29,8 @@ For Claude Code, inspect legacy CLAUDE.md and rule files **through the applicabl
 For Cursor Agent CLI:
 
 1. From the project, run `agent mcp list`. If Grasshopper needs approval, run `agent mcp enable grasshopper`. Confirm with `agent mcp list-tools grasshopper`. Server approval is separate from tool approval.
-2. Merge [the CLI permission example](cursor/cli.json.example) into `.cursor/cli.json`. It auto-approves only `context`, `get`, and `search`. Keep the required empty `deny` array.
-3. Use interactive mode for corrections. An unlisted `store` prompts for one-time approval; headless mode rejects it and must report **not saved**. Avoid `--approve-mcps` in normal use because it approves every configured server.
+2. Merge [the CLI permission example](cursor/cli.json.example) into `.cursor/cli.json`. It lists only `context`, `get`, and `search` as preapproved tools. Keep the required `deny` array.
+3. For a headless read check on the tested CLI version, use `agent --print --auto-review`; default `--print` rejected the read in fresh Mac and Beelink workspaces despite the allowlist. Use interactive mode for corrections and verify the returned ID and revision. Never call a rejected or timed-out write saved. Avoid `--force` and `--approve-mcps` as routine workarounds.
 
 The Mac synthetic check observed both read and write behavior through a project MCP source. On Work HP, the package's startup hook supplied context but its plugin-only MCP did not register for the CLI; a project-local MCP source and read-tool allowlist enabled a fresh read. Mac plugin-only loading likewise delivered startup context but had no registered Grasshopper MCP tool. Keep the project-local MCP setup for Cursor CLI until native plugin tool loading is proven. Recheck [Cursor's CLI configuration](https://prod.cursor.com/docs/cli/reference/configuration), [permissions](https://prod.cursor.com/docs/cli/reference/permissions), and [MCP commands](https://prod.cursor.com/docs/cli/mcp) after a client upgrade.
 

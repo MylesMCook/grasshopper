@@ -137,7 +137,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		}
 	}
 	tokenHash := sha256.Sum256([]byte(token))
-	server := mcp.NewServer(&mcp.Implementation{Name: "grasshopper", Version: "2.0.1"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "grasshopper", Version: "2.0.2"}, nil)
 	falseValue := false
 	read := &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}
 	write := &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}

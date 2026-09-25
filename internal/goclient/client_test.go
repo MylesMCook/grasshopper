@@ -292,6 +292,74 @@ func TestProjectIdentityAndUnresolvedScope(t *testing.T) {
 	}
 }
 
+func TestSameOriginAcrossClonePathsSharesProjectMemory(t *testing.T) {
+	root := t.TempDir()
+	makeClone := func(name, remote string) string {
+		t.Helper()
+		path := filepath.Join(root, name, "checkout")
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", remote}} {
+			if output, err := exec.Command("git", append([]string{"-C", path}, args...)...).CombinedOutput(); err != nil {
+				t.Fatalf("git fixture: %v: %s", err, output)
+			}
+		}
+		return path
+	}
+	macPath := makeClone("mac", "https://user:credential@github.com/Owner/SameRepo.git")
+	linuxPath := makeClone("linux", "git@github.com:Owner/SameRepo.git")
+	mac, err := ResolveScope(macPath, "mac-device")
+	if err != nil {
+		t.Fatal(err)
+	}
+	linux, err := ResolveScope(linuxPath, "linux-device")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *mac.Project != "git:github.com/Owner/SameRepo" || *mac.Project != *linux.Project {
+		t.Fatalf("clone paths or remote syntax split one project: mac=%v linux=%v", mac.Project, linux.Project)
+	}
+
+	source := filepath.Join("..", "..", "tests", "fixtures", "go-compat", "memory.db")
+	store, err := gomemory.OpenWritableCopy(context.Background(), source, filepath.Join(root, "shared.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	projectOnly := gomemory.Scope{Project: mac.Project}
+	receipt, err := store.Write(context.Background(), gomemory.WriteInput{
+		Scope: projectOnly, Content: "Synthetic same-project decision.", Purpose: "decision", Confirmed: true,
+		Provenance: gomemory.Provenance{Harness: "codex", Device: "mac-device", Source: "synthetic cross-clone test"},
+		RequestID:  "cross-clone-project-decision",
+	}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	linuxPlatform := "linux"
+	seen, err := store.Context(context.Background(), gomemory.Scope{Project: linux.Project, Device: linux.Device, Platform: &linuxPlatform}, 16000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, record := range seen.Records {
+		found = found || record.ID == receipt.ID
+	}
+	if !found {
+		t.Fatal("second clone did not receive project-only memory")
+	}
+	other := "git:github.com/Owner/OtherRepo"
+	unrelated, err := store.Context(context.Background(), gomemory.Scope{Project: &other, Device: linux.Device, Platform: &linuxPlatform}, 16000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range unrelated.Records {
+		if record.ID == receipt.ID {
+			t.Fatal("project memory leaked to unrelated repository")
+		}
+	}
+}
+
 func TestPrivateTokenFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(path, []byte(testToken+"\n"), 0600); err != nil {

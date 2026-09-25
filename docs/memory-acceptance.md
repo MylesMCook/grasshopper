@@ -1,8 +1,21 @@
 # What has been verified
 
-**Current state:** [Grasshopper 2.0.1](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.1) is published. The private Mac mini service now runs the memory-view update built from clean commit `5e19b96`; no new portable release has been published. Encrypted off-host backup and restore passed. Mac Codex, Cursor, and Claude CLIs read the persistent endpoint; Work HP Codex and Cursor model turns remain unverified. No legacy data was migrated or personal profile seeded. Desktop checks are user-led if an issue appears.
+**Current state:** The private Mac mini service runs the memory-view update from clean commit `5e19b96`. Encrypted off-host backup and restore passed. Fresh Codex and Cursor CLI turns on Mac mini and Beelink read the same live project memory. Work HP Codex and Cursor model turns remain unverified. No legacy data was migrated or personal profile seeded. Desktop checks are user-led if an issue appears.
 
 [Visual overview](how-it-works.html) · [Detailed test history](evidence-history.md) · [Setup and removal](../integrations/README.md)
+
+## Same Git project: fresh CLI turns on two machines
+
+Task-local clones had different paths and the same normalized Git `origin`: `git:github.com/MylesMCook/grasshopper`. A synthetic project-only handoff, record 7 revision 1, was written to the live private service. It was not a user preference.
+
+| Client | Actual result |
+|---|---|
+| Mac mini Codex CLI 0.156.1 | Fresh turn called MCP `context` once and read record 7, revision 1, including an unseen marker. |
+| Beelink Codex CLI 0.156.1 | Fresh turn independently called MCP `context` and read the same record and revision. |
+| Mac mini Cursor Agent CLI 2026.09.23-86fc751, Composer 2.5 | Fresh `--print --auto-review` turn called MCP `context` once and read the same record. A second turn passed using the packaged exact read-tool allowlist. |
+| Beelink Cursor Agent CLI 2026.09.23-86fc751, Composer 2.5 | Fresh `--print --auto-review` turn called MCP `context` once and read the same record. |
+
+Default headless Cursor `--print` rejected the MCP read on both machines even after server approval; `--auto-review` succeeded. Beelink's forced CLI sandbox stopped at local AppArmor, before a model turn. No host policy was changed. All four successful turns were CLI tests, not desktop-app tests. The synthetic record was archived at revision 2; active context omitted it and historical `get` retained revision 1. Private receipts are in `~/Documents/Codex/2026-09-24-grasshopper-cross-device-project/cli`.
 
 ## 24 September follow-up: recovery and memory view
 
@@ -10,7 +23,7 @@
 |---|---|---|
 | Recovery | Fresh encrypted R2 backup restored byte-for-byte. SQLite integrity returned `ok`. A separate server read record 1 at revisions 2 and 1 from the copy. The live writer stayed running. | Reboot, Mac-loss recovery, and Bitwarden sync on another device. |
 | Memory view | A failing regression test established the old empty device view. Synthetic HTTP tests cover active project/device choices, project isolation, and agent-context separation. Mac Chromium showed Mac and Windows facts, project A without B, working manual entry, no 390px overflow, empty browser storage, and clean Disconnect. The updated view shell and authenticated API now respond through the private route. | The live database has no active records to display; live-route browser interaction was not repeated. |
-| Main connectors | Earlier fresh Mac Codex and Cursor CLI turns used the shared service. Earlier Mac ↔ Beelink synthetic checks passed. Work HP hooks reached Grasshopper; its Codex/Cursor model turns timed out, without isolating a service defect. | Work HP is deferred. A new Beelink SSH probe stopped at host-key verification before a Grasshopper request. |
+| Main connectors | Fresh Mac mini and Beelink Codex/Cursor CLI turns each read the same live project record. Work HP hooks reached Grasshopper; its Codex/Cursor model turns timed out, without isolating a service defect. | Work HP is deferred. Cursor native marketplace installation remains untested. |
 | Lifecycle | Fresh and resumed Codex sessions received updated context. | Codex compaction and independent child `SubagentStart` delivery have not been isolated. Cursor native Git marketplace installation is untested. |
 
 Checks for the new view: `go test -count=1 ./...` with the pinned model, `go vet ./...`, race tests for memory/MCP/client, JavaScript syntax, and `git diff --check` all passed. The test server and browser sessions were stopped.

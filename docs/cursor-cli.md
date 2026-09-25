@@ -10,10 +10,13 @@ In the project's Git root, run `agent mcp list` and
 `store`, `search`, `get`, and `archive`. In a fresh Agent CLI turn, call
 `context` once if startup context is absent. Approve writes deliberately;
 the packaged `.cursor/cli.json` example pre-approves reads only.
-For a headless read test, use normal `agent --print` mode. `--mode ask`
-rejected an MCP call even with the project read allowlist; normal mode
-accepted `Mcp(grasshopper:context)`. Pass the stable `id:` or `git:` project
-scope shown by the startup hook, never the folder name.
+For a headless read test on Cursor Agent CLI `2026.09.23-86fc751`, use
+`agent --print --auto-review`. In fresh Mac and Beelink workspaces, default
+`--print` rejected `context` despite an enabled server and the project read
+allowlist; `--auto-review` completed the scoped read on both. `--mode ask`
+also rejected MCP in an earlier pilot. Keep `store` and `archive` out of the
+read allowlist. Do not use `--force` or `--approve-mcps` as a workaround.
+Pass the stable `id:` or `git:` project scope, never the folder name.
 
 ## What the CLI test established
 
@@ -31,6 +34,13 @@ The current Cursor Plugin manifest, default `mcp.json` discovery, the
 documented `command` plus `cwd` form, and a root Agent Plugins manifest gave
 the same result. This limits the tested `--plugin-dir` path; it does not prove
 that a marketplace-installed plugin or Cursor IDE behaves the same way.
+
+In a later live Mac mini test, fresh Mac and Beelink Composer 2.5 turns each
+read synthetic project record 7, revision 1, with the same unseen marker via
+the private service and `--auto-review`. Codex CLI on both machines fetched
+that record through one MCP `context` call. The record was archived after the
+test. Beelink's forced CLI sandbox could not start because of local AppArmor;
+the CLI's documented default allowlist mode ran without changing host policy.
 
 Cursor's [plugin reference](https://cursor.com/docs/reference/plugins) documents
 plugin MCP components and `${CURSOR_PLUGIN_ROOT}` expansion. Its
