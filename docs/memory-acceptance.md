@@ -2,6 +2,14 @@
 
 **Release evidence:** [Grasshopper 2.2.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.0) is public. The private Mac mini service has a memory view, Codex annotation allowance, and signed browser session; its binary and database were not changed for 2.2.0. Encrypted off-host backup and restore passed earlier. Fresh Codex and Cursor CLI turns on Mac mini and Beelink read the same live project memory in earlier checks. Work HP Codex and Cursor model turns remain unverified. No legacy data was migrated or personal profile seeded.
 
+## Marketplace pilot, Mac mini, 25 September
+
+- Three OS-specific Codex/Cursor plugins were built with one stateless client each. Their manifests passed plugin validation, all ZIP checksums passed, and Go tests, vet, and changed-client race tests passed. Windows and Linux packages were built on Mac, not run on their target OSes.
+- Codex CLI 0.156.1 installed and removed the Mac plugin in an isolated profile. The bundled client authenticated against the private server. The isolated profile had no model sign-in, so this did not test a first model turn.
+- Cursor Agent CLI 2026.09.23-86fc751 read confirmed record 8 through a project MCP entry. A plugin hook emitted the pilot device ID, but an existing global hook also fired. A clean plugin-only first turn and a marketplace install remain unverified. With the backend stopped, the bundled hook returned unavailable in under one second and claimed no save.
+
+The Git marketplace branch is not published. No live server, database, or agent installation changed in this pilot.
+
 ## 2.2.0 release and public setup page
 
 - The tag points to `f07ba78`. [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36099946990) passed tests, vet, and native builds on Mac, Linux, and Windows, plus Mac/Linux race checks. A first Windows CI run found a test fixture missing `.exe`; the fixture was fixed and the final run passed.

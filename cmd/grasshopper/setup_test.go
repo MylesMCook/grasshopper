@@ -15,7 +15,7 @@ import (
 func setupFixture(t *testing.T) (string, string, string, string) {
 	t.Helper()
 	root := t.TempDir()
-	for _, path := range []string{"policy/AGENTS.md", "codex/.agents/plugins/marketplace.json", "claude/.claude-plugin/marketplace.json", "cursor/plugins/grasshopper/bin/" + testClientName()} {
+	for _, path := range []string{"policy/AGENTS.md", "bin/" + testClientName(), "codex/.agents/plugins/marketplace.json", "claude/.claude-plugin/marketplace.json", "cursor/plugins/grasshopper/bin/" + testClientName()} {
 		full := filepath.Join(root, path)
 		if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
 			t.Fatal(err)
@@ -85,6 +85,87 @@ func TestSetupRejectsBadAuthenticationBeforeChanges(t *testing.T) {
 	}
 	if _, err := os.Stat(cursorDir); !os.IsNotExist(err) {
 		t.Fatal("bad authentication wrote Cursor config")
+	}
+}
+
+func TestSetupConnectsMarketplacePluginWithoutChangingAgents(t *testing.T) {
+	root, token, config, cursorDir := setupFixture(t)
+	server := setupServer(t, true)
+	run := func(string, ...string) ([]byte, error) { t.Fatal("agent settings changed"); return nil, nil }
+	args := []string{"--url", server.URL + "/mcp", "--token-file", token, "--device", "test", "--agents", "none", "--config", config, "--cursor-dir", cursorDir}
+	if err := setupClientWithRoot(args, root, run); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(config); err != nil {
+		t.Fatal("client configuration missing:", err)
+	}
+	if _, err := os.Stat(cursorDir); !os.IsNotExist(err) {
+		t.Fatal("connect changed Cursor settings")
+	}
+	if err := setupClientWithRoot(args, root, run); err != nil {
+		t.Fatal("same connection should be repeatable:", err)
+	}
+}
+
+func TestMarketplaceConnectRejectsBadTokenWithoutSavingConfig(t *testing.T) {
+	root, token, config, _ := setupFixture(t)
+	server := setupServer(t, false)
+	run := func(string, ...string) ([]byte, error) { t.Fatal("agent settings changed"); return nil, nil }
+	err := setupClientWithRoot([]string{"--agents", "none", "--url", server.URL + "/mcp", "--token-file", token, "--device", "test", "--config", config}, root, run)
+	if err == nil {
+		t.Fatal("bad token accepted")
+	}
+	if _, statErr := os.Stat(config); !os.IsNotExist(statErr) {
+		t.Fatal("bad token wrote client config")
+	}
+}
+
+func TestMarketplaceConnectAddsCursorCLIToolsWithoutSecondHook(t *testing.T) {
+	root, token, config, cursorDir := setupFixture(t)
+	server := setupServer(t, true)
+	run := func(string, ...string) ([]byte, error) { t.Fatal("native plugin command ran"); return nil, nil }
+	args := []string{"--agents", "none", "--cursor-cli", "--url", server.URL + "/mcp", "--token-file", token, "--device", "test", "--config", config, "--cursor-dir", cursorDir}
+	if err := setupClientWithRoot(args, root, run); err != nil {
+		t.Fatal(err)
+	}
+	mcp, err := readJSONObject(filepath.Join(cursorDir, "mcp.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	servers, _ := jsonObject(mcp["mcpServers"])
+	if servers["grasshopper"] == nil {
+		t.Fatal("Cursor CLI MCP missing")
+	}
+	if _, err := os.Stat(filepath.Join(cursorDir, "hooks.json")); !os.IsNotExist(err) {
+		t.Fatal("CLI setup wrote a duplicate startup hook")
+	}
+	if err := setupClientWithRoot(args, root, run); err != nil {
+		t.Fatal("repeat connect failed:", err)
+	}
+	newRoot := t.TempDir()
+	for _, relative := range []string{"policy/AGENTS.md", "bin/" + testClientName()} {
+		path := filepath.Join(newRoot, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := setupClientWithRoot(append(args, "--update"), newRoot, run); err != nil {
+		t.Fatal("marketplace client update failed:", err)
+	}
+	mcp, err = readJSONObject(filepath.Join(cursorDir, "mcp.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	servers, _ = jsonObject(mcp["mcpServers"])
+	entry, _ := jsonObject(servers["grasshopper"])
+	if entry["command"] != filepath.Join(newRoot, "bin", testClientName()) {
+		t.Fatal("Cursor CLI still points at the old plugin after update")
+	}
+	if _, err := os.Stat(filepath.Join(cursorDir, "hooks.json")); !os.IsNotExist(err) {
+		t.Fatal("update wrote a duplicate startup hook")
 	}
 }
 

@@ -121,6 +121,47 @@ func cursorWiring(dir, configPath, binary string, install, update bool) error {
 	return cursorWiringWithOptions(dir, configPath, binary, install, update, false, true)
 }
 
+func grasshopperMCPEntry(binary, configPath string) map[string]any {
+	return map[string]any{"type": "stdio", "command": binary, "args": []string{"bridge", "--config", configPath}}
+}
+
+// Cursor Agent CLI does not currently register plugin MCP servers from
+// --plugin-dir. Add only its MCP entry; the marketplace plugin owns the hook.
+func cursorMCPOnly(dir, configPath, binary string, update, dryRun bool) error {
+	path := filepath.Join(dir, "mcp.json")
+	mcp, err := readJSONObject(path)
+	if err != nil {
+		return err
+	}
+	servers, ok := jsonObject(mcp["mcpServers"])
+	if mcp["mcpServers"] != nil && !ok {
+		return errors.New("Cursor mcpServers must be an object")
+	}
+	if !ok {
+		servers = map[string]any{}
+	}
+	expected := grasshopperMCPEntry(binary, configPath)
+	if existing, exists := servers["grasshopper"]; exists {
+		entry, valid := jsonObject(existing)
+		command, _ := entry["command"].(string)
+		if !valid || !grasshopperExecutable(command) {
+			return errors.New("Cursor already has an unrelated grasshopper MCP entry")
+		}
+		if !sameJSON(existing, expected) && !update {
+			return errors.New("Cursor Grasshopper MCP differs; inspect it before using --update")
+		}
+	}
+	if dryRun {
+		return nil
+	}
+	servers["grasshopper"] = expected
+	mcp["mcpServers"] = servers
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	return writeJSONObject(path, mcp)
+}
+
 func cursorWiringWithOptions(dir, configPath, binary string, install, update, dryRun, report bool) error {
 	mcpPath, hooksPath := filepath.Join(dir, "mcp.json"), filepath.Join(dir, "hooks.json")
 	mcp, err := readJSONObject(mcpPath)
@@ -138,7 +179,7 @@ func cursorWiringWithOptions(dir, configPath, binary string, install, update, dr
 	if !ok {
 		servers = map[string]any{}
 	}
-	expected := map[string]any{"type": "stdio", "command": binary, "args": []string{"bridge", "--config", configPath}}
+	expected := grasshopperMCPEntry(binary, configPath)
 	if existing, exists := servers["grasshopper"]; exists {
 		entry, valid := jsonObject(existing)
 		command, _ := entry["command"].(string)

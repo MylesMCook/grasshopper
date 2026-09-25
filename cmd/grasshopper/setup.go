@@ -266,9 +266,10 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	url := flags.String("url", "http://127.0.0.1:8106/mcp", "private Grasshopper /mcp URL")
 	tokenFile := flags.String("token-file", "", "absolute path to an existing private token file (defaults to local quickstart token)")
 	device := flags.String("device", "", "stable device ID (defaults to this machine's hostname)")
-	agents := flags.String("agents", "codex,cursor", "agents to connect: codex,cursor,claude")
+	agents := flags.String("agents", "codex,cursor", "agents to connect: codex,cursor,claude, or none for a marketplace plugin")
 	configArg := flags.String("config", "", "client configuration path")
 	cursorDir := flags.String("cursor-dir", "", "Cursor user .cursor directory")
+	cursorCLI := flags.Bool("cursor-cli", false, "configure Cursor Agent CLI MCP only; the marketplace plugin supplies its hook")
 	update := flags.Bool("update", false, "replace this machine's existing Grasshopper client wiring")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -278,6 +279,9 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	}
 	if flags.NArg() != 0 {
 		return errors.New("unexpected setup arguments")
+	}
+	if *cursorCLI && *agents != "none" {
+		return errors.New("--cursor-cli requires --agents none")
 	}
 	if *tokenFile == "" {
 		base, err := os.UserConfigDir()
@@ -295,8 +299,11 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	}
 	selected := map[string]bool{}
 	for _, name := range strings.Split(*agents, ",") {
+		if name == "none" && *agents == "none" {
+			break
+		}
 		if name != "codex" && name != "cursor" && name != "claude" {
-			return fmt.Errorf("unknown agent %q; choose codex,cursor,claude", name)
+			return fmt.Errorf("unknown agent %q; choose codex,cursor,claude, or none", name)
 		}
 		selected[name] = true
 	}
@@ -368,8 +375,20 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 		}
 		*cursorDir = filepath.Join(home, ".cursor")
 	}
-	if selected["cursor"] && !filepath.IsAbs(*cursorDir) {
+	if (selected["cursor"] || *cursorCLI) && !filepath.IsAbs(*cursorDir) {
 		return errors.New("Cursor directory must be absolute")
+	}
+	if *cursorCLI {
+		binary := filepath.Join(root, "bin", "grasshopper")
+		if os.PathSeparator == '\\' {
+			binary += ".exe"
+		}
+		if info, err := os.Stat(binary); err != nil || !info.Mode().IsRegular() {
+			return errors.New("marketplace client binary is missing")
+		}
+		if err := cursorMCPOnly(*cursorDir, configPath, binary, *update, true); err != nil {
+			return err
+		}
 	}
 	if selected["cursor"] {
 		binary := filepath.Join(root, "cursor", "plugins", "grasshopper", "bin", "grasshopper")
@@ -411,6 +430,8 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	paths := []string{configPath, filepath.Join(filepath.Dir(configPath), "AGENTS.md")}
 	if selected["cursor"] {
 		paths = append(paths, filepath.Join(*cursorDir, "mcp.json"), filepath.Join(*cursorDir, "hooks.json"))
+	} else if *cursorCLI {
+		paths = append(paths, filepath.Join(*cursorDir, "mcp.json"))
 	}
 	var saved []savedFile
 	for _, path := range paths {
@@ -465,7 +486,20 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 			return err
 		}
 	}
-	fmt.Fprintf(os.Stdout, "Grasshopper installed for %s. Token stays in its existing file.\n", *agents)
+	if *cursorCLI {
+		binary := filepath.Join(root, "bin", "grasshopper")
+		if os.PathSeparator == '\\' {
+			binary += ".exe"
+		}
+		if err := cursorMCPOnly(*cursorDir, configPath, binary, *update, false); err != nil {
+			return err
+		}
+	}
+	if *agents == "none" {
+		fmt.Fprintln(os.Stdout, "Grasshopper connected. Token stays in its existing file.")
+	} else {
+		fmt.Fprintf(os.Stdout, "Grasshopper installed for %s. Token stays in its existing file.\n", *agents)
+	}
 	fmt.Fprintln(os.Stdout, "Start a fresh session. Check a known memory, or save one real preference and read it from another agent.")
 	if selected["codex"] {
 		fmt.Fprintln(os.Stdout, "Codex: review and trust Grasshopper startup hooks in /hooks.")

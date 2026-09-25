@@ -306,10 +306,15 @@ func runtimeLibraryEntry(library string) (string, error) {
 
 func run() error {
 	var output, client, server, backup, migrate, library, model, tokenizer, runtimeLicense, runtimeNotices, target, version string
-	var clientPlugins bool
+	var macClient, windowsClient, linuxClient string
+	var clientPlugins, marketplacePlugins bool
 	flag.StringVar(&output, "output", "", "new zip archive path")
 	flag.StringVar(&client, "client", "", "native client bridge binary")
 	flag.BoolVar(&clientPlugins, "client-plugins", false, "package three native client plugins without the server")
+	flag.BoolVar(&marketplacePlugins, "marketplace-plugins", false, "package OS-specific Codex and Cursor marketplace plugins")
+	flag.StringVar(&macClient, "client-macos", "", "macOS arm64 client for marketplace")
+	flag.StringVar(&windowsClient, "client-windows", "", "Windows amd64 client for marketplace")
+	flag.StringVar(&linuxClient, "client-linux", "", "Linux amd64 client for marketplace")
 	flag.StringVar(&target, "target", "", "client plugin target: darwin-arm64, windows-amd64, or linux-amd64")
 	flag.StringVar(&version, "plugin-version", "2.2.0", "client plugin version")
 	flag.StringVar(&server, "server", "", "native server binary")
@@ -323,6 +328,16 @@ func run() error {
 	flag.Parse()
 	if output == "" {
 		return errors.New("output is required")
+	}
+	if marketplacePlugins {
+		files, cleanup, err := marketplaceFiles(map[string]string{
+			"darwin-arm64": macClient, "windows-amd64": windowsClient, "linux-amd64": linuxClient,
+		}, version, output)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		return bundle(output, files)
 	}
 	if clientPlugins {
 		files, cleanup, err := clientPluginFiles(client, target, version, output)

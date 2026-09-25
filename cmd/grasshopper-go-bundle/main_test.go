@@ -153,6 +153,102 @@ func TestClientPluginsPackageThreeHarnessesOnePolicy(t *testing.T) {
 	}
 }
 
+func TestMarketplacePackagesOneStatelessClientPerPlatform(t *testing.T) {
+	working, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(filepath.Join(working, "..", "..")); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(working)
+	dir := t.TempDir()
+	binaries := map[string]string{}
+	for target, name := range map[string]string{
+		"darwin-arm64": "mac", "windows-amd64": "win.exe", "linux-amd64": "linux",
+	} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("synthetic "+target), 0700); err != nil {
+			t.Fatal(err)
+		}
+		binaries[target] = path
+	}
+	output := filepath.Join(dir, "marketplace.zip")
+	files, cleanup, err := marketplaceFiles(binaries, "2.2.0", output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if err := bundle(output, files); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := zip.OpenReader(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	entries := map[string]*zip.File{}
+	for _, entry := range archive.File {
+		entries[entry.Name] = entry
+		if strings.Contains(entry.Name, "token") || strings.HasSuffix(entry.Name, ".db") {
+			t.Fatalf("private state in marketplace: %s", entry.Name)
+		}
+	}
+	for _, slug := range []string{"macos", "windows", "linux"} {
+		root := "plugins/grasshopper-" + slug + "/"
+		exe := ""
+		if slug == "windows" {
+			exe = ".exe"
+		}
+		for _, path := range []string{
+			"bin/grasshopper" + exe, "policy/AGENTS.md", ".codex-plugin/plugin.json",
+			".cursor-plugin/plugin.json", ".mcp.json", "mcp.json",
+			"hooks/hooks.json", "hooks/cursor.json", "skills/connect-grasshopper/SKILL.md",
+		} {
+			if entries[root+path] == nil {
+				t.Errorf("missing %s%s", root, path)
+			}
+		}
+		manifestEntry := entries[root+".codex-plugin/plugin.json"]
+		if manifestEntry == nil {
+			t.Fatal("missing Codex manifest")
+		}
+		manifest, err := manifestEntry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var codex map[string]any
+		err = json.NewDecoder(manifest).Decode(&codex)
+		manifest.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, copied := codex["hooks"]; copied {
+			t.Fatal("Codex hooks must use native hooks/hooks.json discovery")
+		}
+	}
+	for _, path := range []string{".agents/plugins/marketplace.json", ".cursor-plugin/marketplace.json"} {
+		entry := entries[path]
+		if entry == nil {
+			t.Fatal("missing", path)
+		}
+		reader, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil || !json.Valid(data) {
+			t.Fatal("invalid marketplace", path, err)
+		}
+		for _, slug := range []string{"macos", "windows", "linux"} {
+			if !strings.Contains(string(data), "grasshopper-"+slug) {
+				t.Errorf("%s omits %s", path, slug)
+			}
+		}
+	}
+}
+
 func TestBundleRejectsUnsafeEntriesAndMissingFiles(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "file")
