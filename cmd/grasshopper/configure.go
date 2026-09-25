@@ -155,11 +155,15 @@ func configureWithReport(args []string, report bool) error {
 			return err
 		}
 	}
+	previousPolicy, err := snapshotFile(installedPolicy)
+	if err != nil {
+		return err
+	}
 	if err := privateFile(installedPolicy, policy); err != nil {
 		return err
 	}
 	if err := privateFile(configPath, encoded); err != nil {
-		return err
+		return errors.Join(err, previousPolicy.restore())
 	}
 	if report {
 		fmt.Fprintf(os.Stdout, "Client configured: %s\nShared policy: %s\nToken remains in its existing file.\n", configPath, installedPolicy)

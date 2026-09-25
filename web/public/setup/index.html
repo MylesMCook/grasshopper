@@ -20,11 +20,11 @@
         <div class="heading"><h2 id="download-title">1. Download the server</h2></div>
         <p class="intro">Choose the machine that will hold your memories.</p>
         <div class="grid downloads">
-          <article><h3>Mac · Apple silicon</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.3/grasshopper-server-darwin-arm64-2.2.3.zip">Download Mac server</a></p></article>
-          <article><h3>Windows · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.3/grasshopper-server-windows-amd64-2.2.3.zip">Download Windows server</a></p></article>
-          <article><h3>Linux · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.3/grasshopper-server-linux-amd64-2.2.3.zip">Download Linux server</a></p></article>
+          <article><h3>Mac · Apple silicon</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.4/grasshopper-server-darwin-arm64-2.2.4.zip">Download Mac server</a></p></article>
+          <article><h3>Windows · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.4/grasshopper-server-windows-amd64-2.2.4.zip">Download Windows server</a></p></article>
+          <article><h3>Linux · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.4/grasshopper-server-linux-amd64-2.2.4.zip">Download Linux server</a></p></article>
         </div>
-        <p class="note">These archives are unsigned. Check their SHA-256 sums on the <a href="https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.3">release page</a> before opening them.</p>
+        <p class="note">These archives are unsigned. Check their SHA-256 sums on the <a href="https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.4">release page</a> before opening them.</p>
       </section>
       <section aria-labelledby="run-title">
         <div class="heading"><h2 id="run-title">2. Start it</h2></div>
@@ -48,7 +48,7 @@ codex plugin add grasshopper-macos@grasshopper-marketplace</code></pre><p>On Win
       <section aria-labelledby="try-title">
         <div class="heading"><h2 id="try-title">4. Check it</h2></div>
         <p class="intro">Save one real preference with an agent. In a fresh session, ask another agent what arrived before tool use. Open <a href="/view/">Memory view</a> to inspect the record.</p>
-        <p class="note"><a href="#update-remove">Update or remove a connector</a> · <a href="https://github.com/MylesMCook/grasshopper/blob/main/docs/shared-memory.md">Backup and recovery</a></p>
+        <p class="note"><a href="#update-remove">Update or remove a connector</a> · <a href="https://github.com/MylesMCook/grasshopper/blob/main/README.md#back-up-and-update-the-server">Backup and recovery</a></p>
       </section>
       <section id="update-remove" aria-labelledby="update-title">
         <div class="heading"><h2 id="update-title">Update or remove a connector</h2></div>
@@ -60,7 +60,7 @@ codex plugin marketplace remove grasshopper-marketplace</code></pre></details>
 agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace</code></pre><p>To remove Grasshopper, uninstall it in the Plugins list. If you enabled its MCP entry, disable it:</p><pre><code>agent mcp disable grasshopper</code></pre></details>
         <details><summary>Claude Code</summary><p>Extract the new client beside the old one and rerun setup with your original server options:</p><pre><code>./bin/grasshopper setup --agents claude --update</code></pre><p>To remove the plugin and marketplace:</p><pre><code>claude plugin uninstall grasshopper@grasshopper-local
 claude plugin marketplace remove grasshopper-local</code></pre></details>
-        <p class="note">After an update, reconnect with the connect skill in update mode or run the new package's setup update. Check authentication, then test a fresh session. <a href="https://github.com/MylesMCook/grasshopper/blob/main/docs/shared-memory.md">Server updates and backups</a> are separate.</p>
+        <p class="note">After an update, reconnect with the connect skill in update mode or run the new package's setup update. Check authentication, then test a fresh session. <a href="https://github.com/MylesMCook/grasshopper/blob/main/README.md#back-up-and-update-the-server">Server updates and backups</a> are separate.</p>
       </section>
     </main>
     <footer><span>Grasshopper</span><span>This site never reads your memories or token.</span></footer>

@@ -26,6 +26,7 @@ type Embedder interface {
 
 type Backend struct {
 	Store                 *gomemory.Writer
+	Version               string
 	Embedder              Embedder
 	Model                 string
 	InferenceTimeout      time.Duration
@@ -159,7 +160,11 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		providedHash := sha256.Sum256([]byte(provided))
 		return subtle.ConstantTimeCompare(providedHash[:], tokenHash[:]) == 1
 	}
-	server := mcp.NewServer(&mcp.Implementation{Name: "grasshopper", Version: "2.1.0"}, nil)
+	version := backend.Version
+	if version == "" {
+		version = "dev"
+	}
+	server := mcp.NewServer(&mcp.Implementation{Name: "grasshopper", Version: version}, nil)
 	falseValue := false
 	read := &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}
 	write := &mcp.ToolAnnotations{ReadOnlyHint: false, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}

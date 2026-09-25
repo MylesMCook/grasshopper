@@ -30,6 +30,29 @@ func TestNewBGERejectsUnpinnedModelBeforeRuntimeLoad(t *testing.T) {
 	}
 }
 
+func TestBGELongMemoryFitsModelWindow(t *testing.T) {
+	root := os.Getenv("GRASSHOPPER_BGE_TEST_ROOT")
+	if root == "" {
+		t.Skip("set GRASSHOPPER_BGE_TEST_ROOT to run real ONNX inference")
+	}
+	library := os.Getenv("GRASSHOPPER_ONNX_RUNTIME_LIBRARY")
+	if library == "" {
+		library = filepath.Join(root, "go-probe", "onnxruntime-osx-arm64-1.30.0", "lib", "libonnxruntime.dylib")
+	}
+	b, err := NewBGE(library,
+		filepath.Join(root, "models", "bge-small-en-v1.5", "onnx", "model.onnx"),
+		filepath.Join(root, "models", "bge-small-en-v1.5", "tokenizer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	longMemory := strings.Repeat("A useful handoff has several verified details. ", 100)
+	vector, err := b.EmbedDocument(longMemory)
+	if err != nil || len(vector) != Dimensions {
+		t.Fatalf("long memory should remain storable: dimensions=%d error=%v", len(vector), err)
+	}
+}
+
 func TestActualBGERecall(t *testing.T) {
 	root := os.Getenv("GRASSHOPPER_BGE_TEST_ROOT")
 	if root == "" {

@@ -132,6 +132,9 @@ func TestMCPAuthenticatedFiveToolContract(t *testing.T) {
 			if got := session.InitializeResult().ProtocolVersion; got != version {
 				t.Fatalf("negotiated %q, wanted %q", got, version)
 			}
+			if got := session.InitializeResult().ServerInfo.Version; got != "dev" {
+				t.Fatalf("MCP server version = %q, want dev", got)
+			}
 			listed, err := session.ListTools(context.Background(), nil)
 			if err != nil {
 				t.Fatal(err)

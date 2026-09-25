@@ -293,7 +293,7 @@ func run() error {
 	flag.StringVar(&windowsClient, "client-windows", "", "Windows amd64 client for marketplace")
 	flag.StringVar(&linuxClient, "client-linux", "", "Linux amd64 client for marketplace")
 	flag.StringVar(&target, "target", "", "client plugin target: darwin-arm64, windows-amd64, or linux-amd64")
-	flag.StringVar(&version, "plugin-version", "2.2.3", "client plugin version")
+	flag.StringVar(&version, "plugin-version", "2.2.4", "client plugin version")
 	flag.StringVar(&server, "server", "", "native server binary")
 	flag.StringVar(&backup, "backup", "", "backup executable")
 	flag.StringVar(&migrate, "migrate", "", "migration executable")
@@ -344,10 +344,7 @@ func run() error {
 		{"licenses/ONNX-Runtime-LICENSE", runtimeLicense},
 		{"licenses/ONNX-Runtime-ThirdPartyNotices.txt", runtimeNotices},
 		{"licenses/BGE-NOTICE.txt", "docs/BGE-NOTICE.txt"},
-		{"AGENTS.md", "AGENTS.md"},
 		{"README.md", "README.md"},
-		{"docs/memory-acceptance.md", "docs/memory-acceptance.md"},
-		{"docs/shared-memory.md", "docs/shared-memory.md"},
 		{"docs/fonts/OFL-newsreader.txt", "docs/fonts/OFL-newsreader.txt"},
 		{"docs/fonts/OFL-geist-mono.txt", "docs/fonts/OFL-geist-mono.txt"},
 		{"integrations/client.example.json", "integrations/client.example.json"},

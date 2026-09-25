@@ -1,5 +1,4 @@
-// Package goembed runs local BGE inference for the Go memory pilot. Database
-// writes are owned by gomemory, not the embedder.
+// Package goembed runs local BGE inference. Database writes belong to gomemory.
 package goembed
 
 import (
@@ -19,6 +18,7 @@ import (
 
 const ModelName = "BAAI/bge-small-en-v1.5@5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
 const Dimensions = 384
+const maxTokens = 512
 const QueryPrefix = "Represent this sentence for searching relevant passages: "
 const modelSHA256 = "828e1496d7fabb79cfa4dcd84fa38625c0d3d21da474a00f08db0f559940cf35"
 const tokenizerSHA256 = "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66"
@@ -63,10 +63,11 @@ func NewBGE(libraryPath, modelPath, tokenizerPath string) (_ *BGE, err error) {
 	if err = ort.InitializeEnvironment(); err != nil {
 		return nil, err
 	}
-	tokenizer, err := pretrained.FromFile(tokenizerPath)
+	modelTokenizer, err := pretrained.FromFile(tokenizerPath)
 	if err != nil {
 		return nil, err
 	}
+	modelTokenizer.WithTruncation(&tokenizer.TruncationParams{MaxLength: maxTokens, Strategy: tokenizer.LongestFirst})
 	inputs, outputs, err := ort.GetInputOutputInfo(modelPath)
 	if err != nil {
 		return nil, err
@@ -97,7 +98,7 @@ func NewBGE(libraryPath, modelPath, tokenizerPath string) (_ *BGE, err error) {
 	if err != nil {
 		return nil, err
 	}
-	return &BGE{tokenizer: tokenizer, session: session, inputNames: inputNames, outputNames: outputNames}, nil
+	return &BGE{tokenizer: modelTokenizer, session: session, inputNames: inputNames, outputNames: outputNames}, nil
 }
 
 func verifyDigest(path, expected string) error {

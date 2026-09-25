@@ -235,7 +235,7 @@ func run() error {
 	if visualizerStyleHashes != "" {
 		styleHashes = strings.Split(visualizerStyleHashes, ",")
 	}
-	handler, err := gomcp.NewHandler(gomcp.Backend{Store: store, Embedder: embedder, Model: goembed.ModelName, Visualizer: visualizer, VisualizerStyleHashes: styleHashes, AllowedProxyHost: allowedProxyHost}, token)
+	handler, err := gomcp.NewHandler(gomcp.Backend{Store: store, Version: serverVersion, Embedder: embedder, Model: goembed.ModelName, Visualizer: visualizer, VisualizerStyleHashes: styleHashes, AllowedProxyHost: allowedProxyHost}, token)
 	if err != nil {
 		return err
 	}

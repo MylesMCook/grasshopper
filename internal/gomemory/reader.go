@@ -191,46 +191,12 @@ func scanRecord(row scanner) (Record, error) {
 }
 
 func (r *Reader) Get(ctx context.Context, scope Scope, id int64, revision *int64) (*Record, error) {
-	key, err := scope.Key()
-	if err != nil {
-		return nil, err
-	}
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
-	current, err := scanRecord(tx.QueryRowContext(ctx,
-		"SELECT "+recordColumns+" FROM chunks WHERE id=? AND kind='memory' AND memory_scope=?", id, key))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if revision == nil || *revision == current.Revision {
-		return &current, nil
-	}
-	var snapshot string
-	err = tx.QueryRowContext(ctx, "SELECT record FROM memory_revisions WHERE memory_id=? AND revision=?", id, *revision).Scan(&snapshot)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var old Record
-	if err := json.Unmarshal([]byte(snapshot), &old); err != nil {
-		return nil, err
-	}
-	oldKey, err := old.Scope.Key()
-	if err != nil {
-		return nil, err
-	}
-	if old.ID != id || old.Revision != *revision || oldKey != key {
-		return nil, errors.New("revision scope mismatch")
-	}
-	return &old, nil
+	return getInTx(ctx, tx, scope, id, revision)
 }
 
 func (r *Reader) Context(ctx context.Context, scope Scope, budget int) (Page, error) {
