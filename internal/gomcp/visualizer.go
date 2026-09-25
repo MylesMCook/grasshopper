@@ -16,7 +16,7 @@ import (
 //go:embed visualizer/index.html visualizer/app.js visualizer/style.css visualizer/*.woff2
 var visualizerFiles embed.FS
 
-func visualizerAsset(w http.ResponseWriter, r *http.Request) bool {
+func visualizerAsset(w http.ResponseWriter, r *http.Request, styleHashes []string) bool {
 	var filename, contentType string
 	switch r.URL.Path {
 	case "/visualizer", "/visualizer/":
@@ -33,7 +33,7 @@ func visualizerAsset(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", staticCSP(styleHashes, filename == "index.html"))
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if r.Method != http.MethodGet {
@@ -48,6 +48,16 @@ func visualizerAsset(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("Content-Type", contentType)
 	_, _ = w.Write(contents)
 	return true
+}
+
+func staticCSP(styleHashes []string, document bool) string {
+	styleSource := "'self'"
+	if document {
+		for _, hash := range styleHashes {
+			styleSource += " '" + hash + "'"
+		}
+	}
+	return "default-src 'none'; script-src 'self'; style-src " + styleSource + "; font-src 'self'; img-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 }
 
 func visualizerContext(store *gomemory.Writer) http.HandlerFunc {

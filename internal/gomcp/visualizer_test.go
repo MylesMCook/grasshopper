@@ -2,6 +2,7 @@ package gomcp
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -57,11 +58,11 @@ func TestVisualizerShellDoesNotContainMemoryAndAPIRequiresBearer(t *testing.T) {
 		if resp.StatusCode != http.StatusOK || len(data) == 0 || resp.Header.Get("Cache-Control") != "no-store" {
 			t.Fatalf("public shell asset %s: status=%d bytes=%d", path, resp.StatusCode, len(data))
 		}
-		if path == "/visualizer/" && (!strings.Contains(string(data), "See what your agents remember") || strings.Contains(string(data), "answer-style")) {
+		if path == "/visualizer/" && (!strings.Contains(string(data), "What your agents remember.") || strings.Contains(string(data), "answer-style")) {
 			t.Fatal("shell missing its title or embedded a memory")
 		}
-		if strings.Contains(path, ".js") && (!strings.Contains(string(data), "textContent") || strings.Contains(string(data), "localStorage")) {
-			t.Fatal("client does not render text safely or stores token")
+		if path == "/visualizer/app.js" && (strings.Contains(string(data), "localStorage") || !strings.Contains(string(data), "textContent")) {
+			t.Fatal("memory view must render text safely without storing credentials")
 		}
 	}
 	for _, bearer := range []string{"", "wrong-token"} {
@@ -73,6 +74,38 @@ func TestVisualizerShellDoesNotContainMemoryAndAPIRequiresBearer(t *testing.T) {
 	resp, _ = visualizerRequest(t, http.MethodPost, server.URL+"/visualizer/app.js", "")
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("asset accepted POST: %d", resp.StatusCode)
+	}
+}
+
+func TestVisualizerAnnotationStyleHashesAreOptInAndValidated(t *testing.T) {
+	server, store := testServer(t, true)
+	resp, _ := visualizerRequest(t, http.MethodGet, server.URL+"/visualizer/", "")
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "style-src 'self';") || strings.Contains(csp, "sha256-") {
+		t.Fatalf("default style policy changed: %q", csp)
+	}
+	hash := "sha256-" + base64.StdEncoding.EncodeToString(make([]byte, 32))
+	otherHash := "sha256-" + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("x", 32)))
+	for _, invalid := range []string{"'unsafe-inline'", "sha256-short", "sha256-" + strings.Repeat("A", 44)} {
+		if _, err := NewHandler(Backend{Store: store, Visualizer: true, VisualizerStyleHashes: []string{invalid}}, testToken); err == nil {
+			t.Fatalf("accepted invalid style hash %q", invalid)
+		}
+	}
+	if _, err := NewHandler(Backend{Store: store, VisualizerStyleHashes: []string{hash}}, testToken); err == nil {
+		t.Fatal("accepted style hash with visualizer disabled")
+	}
+	handler, err := NewHandler(Backend{Store: store, Visualizer: true, VisualizerStyleHashes: []string{hash, otherHash}}, testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withHash := httptest.NewServer(handler)
+	defer withHash.Close()
+	resp, _ = visualizerRequest(t, http.MethodGet, withHash.URL+"/visualizer/", "")
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "style-src 'self' '"+hash+"' '"+otherHash+"';") || strings.Contains(csp, "unsafe-inline") {
+		t.Fatalf("opt-in style policy: %q", csp)
+	}
+	resp, _ = visualizerRequest(t, http.MethodGet, withHash.URL+"/visualizer/app.js", "")
+	if strings.Contains(resp.Header.Get("Content-Security-Policy"), hash) {
+		t.Fatal("annotation hash widened non-document response")
 	}
 }
 

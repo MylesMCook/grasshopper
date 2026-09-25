@@ -6,24 +6,27 @@
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/visualizer/style.css">
+  <script src="/about/theme.js" defer></script>
   <script src="/visualizer/app.js" defer></script>
   <title>Grasshopper · Live memory</title>
 </head>
 <body>
   <main>
-    <header class="masthead"><span class="brand">GRASSHOPPER</span><span class="eyebrow">Live memory</span></header>
+    <header class="masthead"><span class="brand">GRASSHOPPER</span><div class="masthead-actions"><a href="/about/">How it works</a><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button></div></header>
     <section class="intro" aria-labelledby="page-title">
-      <h1 id="page-title">See what your agents remember.</h1>
-      <p>Browse confirmed memories and the latest handoff from your own Grasshopper service. This view never writes memory.</p>
+      <h1 id="page-title">What your agents remember.</h1>
+      <p>Your saved preferences, decisions, and handoffs in one place.</p>
     </section>
 
     <section class="connection" aria-labelledby="connect-title">
-      <div class="section-title"><h2 id="connect-title">Connect</h2><p>Token stays in this tab and is cleared when you disconnect.</p></div>
+      <h2 id="connect-title" class="visually-hidden">Connection</h2>
       <form id="connection-form" autocomplete="off">
-        <div class="fields">
-          <label>Bearer token <input id="token" type="password" autocomplete="off" required spellcheck="false"></label>
+        <div id="token-field" class="token-field">
+          <label>Access token <input id="token" type="password" autocomplete="off" required spellcheck="false"></label>
+          <p>This browser stays connected for 30 days. Disconnect to forget it.</p>
         </div>
-        <details class="scope-details"><summary>View · global project · any device</summary>
+        <div class="actions"><button id="connect" type="submit">Connect</button><button id="disconnect" type="button" class="quiet" disabled>Disconnect</button></div>
+        <details class="scope-details"><summary>Scope · global · any device</summary>
           <div class="fields">
             <label>Project <select id="project"><option value="">Global memories</option></select></label>
             <label id="manual-project-label" hidden>Project ID <input id="manual-project" type="text" placeholder="id: or git: identifier" spellcheck="false"></label>
@@ -31,19 +34,17 @@
             <label id="manual-device-label" hidden>Device ID <input id="manual-device" type="text" placeholder="Exact device ID" spellcheck="false"></label>
             <label>Platform <select id="platform"><option value="">Any platform</option><option value="macos">macOS</option><option value="windows">Windows</option><option value="linux">Linux</option></select></label>
           </div>
-          <p class="scope-note">Global memories span projects. Choose a project to include its memories, then narrow by device or platform. A record from another device is context to inspect, not an instruction for this one.</p>
+          <p class="scope-note">Choose a project or device to narrow this view. Agents still receive only their own applicable context.</p>
         </details>
-        <div class="actions"><button id="connect" type="submit">Connect</button><button id="disconnect" type="button" class="quiet" disabled>Disconnect</button></div>
       </form>
     </section>
 
     <section class="memory" aria-labelledby="memory-title">
-      <div class="section-title memory-heading"><h2 id="memory-title">Memory in this view</h2><span id="status" class="status" role="status" aria-live="polite">Not connected</span></div>
-      <p id="summary" class="summary">Enter a token to load context.</p>
+      <div class="section-title memory-heading"><h2 id="memory-title">Saved memories</h2><span id="status" class="status" role="status" aria-live="polite">Not connected</span></div>
+      <p id="summary" class="summary">Connect to see what is saved.</p>
       <p id="omissions" class="omissions" hidden></p>
       <div id="records" class="records" aria-live="off"></div>
     </section>
-    <footer>This view refreshes every three seconds. Agents use only the context for their own project and machine.</footer>
   </main>
 </body>
 </html>

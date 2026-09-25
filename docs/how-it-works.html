@@ -3,118 +3,54 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="light dark">
   <link rel="icon" href="data:,">
-  <title>Grasshopper — How it works</title>
-  <style>
-    @font-face { font-family: "Newsreader"; src: url("fonts/newsreader-latin.woff2") format("woff2"); font-style: normal; font-weight: 400; font-display: swap; }
-    @font-face { font-family: "Geist Mono"; src: url("fonts/geist-mono-latin.woff2") format("woff2"); font-style: normal; font-weight: 400 600; font-display: swap; }
-    :root {
-      color-scheme: light;
-      --ink: #282828; --paper: #fff; --surface: #f7f7f5;
-      --muted: #595955; --divider: #e1e1de; --link: #125ab8; --warning: #8a5100;
-      --display: "Newsreader", Georgia, serif;
-      --body: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-      color: var(--ink); background: var(--paper); font-family: var(--body);
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; line-height: 1.5; }
-    main { width: min(100% - 40px, 1040px); margin: auto; padding: 32px 0 72px; }
-    h1, h2, h3, p { margin: 0; }
-    h1, h2 { font-family: var(--display); font-weight: 400; }
-    h1 { max-width: 12ch; font-size: clamp(3.5rem, 8vw, 5rem); line-height: 1.04; letter-spacing: .005em; }
-    h2 { font-size: clamp(2rem, 4vw, 2.5rem); line-height: 1.15; }
-    h3 { font-size: 1rem; font-weight: 600; }
-    p, li { max-width: 72ch; }
-    a { color: var(--link); text-underline-offset: 3px; }
-    a:focus-visible { outline: 3px solid var(--link); outline-offset: 3px; }
-    .brand, .eyebrow, .tag, .step { font-size: .78rem; letter-spacing: .09em; text-transform: uppercase; }
-    .brand { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--divider); }
-    .brand a { color: var(--muted); }
-    .hero { padding: 72px 0 56px; border-bottom: 1px solid var(--ink); }
-    .eyebrow { color: var(--muted); margin-bottom: 24px; }
-    .lead { max-width: 36ch; margin-top: 26px; font-family: var(--display); font-size: clamp(1.3rem, 2.5vw, 1.55rem); line-height: 1.45; }
-    .status { display: grid; grid-template-columns: 160px 1fr; gap: 24px; padding: 24px 0; border-bottom: 1px solid var(--divider); }
-    .status strong { color: var(--warning); }
-    .status p, .policy, .card p, .scope-grid span, .evidence ul { color: var(--muted); font-size: .9rem; }
-    section { padding-top: 64px; }
-    .section-head { display: flex; justify-content: space-between; gap: 24px; align-items: baseline; padding-bottom: 16px; border-bottom: 1px solid var(--ink); }
-    .section-head span { color: var(--muted); font-size: .8rem; }
-    .policy { margin-top: 24px; }
-    .pipeline, .scope-grid, .rules, .evidence { display: grid; gap: 28px; margin-top: 28px; }
-    .pipeline, .scope-grid { grid-template-columns: repeat(3, 1fr); }
-    .pipeline { border-top: 1px solid var(--divider); gap: 0; }
-    .pipeline .card { padding: 24px 24px 16px 0; position: relative; }
-    .pipeline .card + .card { border-left: 1px solid var(--divider); padding-left: 24px; }
-    .pipeline .card:not(:last-child)::after { content: "→"; position: absolute; right: -10px; top: 18px; z-index: 1; background: var(--paper); color: var(--muted); }
-    .tag, .step { display: block; color: var(--muted); margin-bottom: 16px; }
-    .card p { margin-top: 12px; }
-    .tool-line { display: inline-block; margin-top: 18px; padding: 6px 8px; background: var(--surface); font-size: .8rem; }
-    .scope-grid div, .rule { border-top: 1px solid var(--divider); padding-top: 18px; }
-    .scope-grid b { display: block; margin-bottom: 8px; }
-    .rules, .evidence { grid-template-columns: repeat(2, 1fr); }
-    .rule p { margin-top: 10px; color: var(--muted); font-size: .9rem; }
-    .evidence article { background: var(--surface); padding: 24px; }
-    .evidence h3 { margin-bottom: 16px; }
-    .evidence ul { margin: 0; padding-left: 20px; }
-    .evidence li + li { margin-top: 10px; }
-    footer { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--divider); font-size: .8rem; color: var(--muted); }
-    @media (max-width: 700px) {
-      main { width: min(100% - 32px, 1040px); padding-top: 20px; }
-      .hero { padding: 48px 0 40px; }
-      .status, .pipeline, .scope-grid, .rules, .evidence { grid-template-columns: 1fr; }
-      .pipeline .card, .pipeline .card + .card { border-left: 0; border-bottom: 1px solid var(--divider); padding: 20px 0; }
-      .pipeline .card:not(:last-child)::after { content: "↓"; top: auto; bottom: -11px; right: 18px; }
-      section { padding-top: 48px; }
-      .section-head { display: block; }
-      .section-head span { display: block; margin-top: 8px; }
-    }
-    @media print { main { width: 100%; padding: 0; } section { padding-top: 32px; } .card, .rule, .evidence article { break-inside: avoid; } }
-  </style>
+  <title>Grasshopper — Memory for your coding agents</title>
+  <meta name="description" content="Keep useful memories in one private place. Codex, Cursor, and Claude Code can read the same preferences, decisions, lessons, and handoffs.">
+  <link rel="stylesheet" href="site.css">
+  <script src="theme.js" defer></script>
 </head>
 <body>
-<main>
-  <nav class="brand" aria-label="Page"><b>GRASSHOPPER</b><a href="../README.md">Project README</a></nav>
-  <header class="hero">
-    <p class="eyebrow">Self-hosted agent memory</p>
-    <h1>A small memory that travels.</h1>
-    <p class="lead">Your agents can share the few things worth remembering: preferences, decisions, lessons, and handoffs.</p>
-  </header>
-  <aside class="status" aria-label="Release status"><strong>Release checks</strong><p>Packages passed synthetic checks on Mac, Windows, and Ubuntu. The private Mac mini service passed an offsite restore and a cross-machine memory read. <a href="memory-acceptance.md">See current evidence and open checks.</a></p></aside>
-
-  <section aria-labelledby="architecture">
-    <div class="section-head"><h2 id="architecture">One service, three workspaces</h2><span>01 / Connection</span></div>
-    <p class="policy">One canonical <a href="../integrations/policy/AGENTS.md">AGENTS.md memory policy</a> guides every agent. The project’s own AGENTS.md stays authoritative for project work.</p>
-    <div class="pipeline" aria-label="Codex, Cursor, and Claude connect through a thin client to one memory service">
-      <div class="card"><span class="tag">Your workspace</span><h3>Codex · Cursor · Claude Code</h3><p>Agents load applicable instructions. Startup hooks try memory first; MCP is the fallback. The agent decides what to save.</p></div>
-      <div class="card"><span class="tag">One small client</span><h3>Stateless adapter</h3><p>Lifecycle hooks load context; MCP handles reads and writes. No client database or model.</p><div class="tool-line">context · store · search · get · archive</div></div>
-      <div class="card"><span class="tag">Your own host</span><h3>Authenticated service</h3><p>SQLite keeps current records and past revisions. Local ONNX enables semantic search. Remote clients cannot index host files.</p></div>
-    </div>
-  </section>
-
-  <section aria-labelledby="scope">
-    <div class="section-head"><h2 id="scope">Only where it belongs</h2><span>02 / Scope</span></div>
-    <div class="scope-grid"><div><b>Global</b><span>A confirmed preference follows you into another project.</span></div><div><b>Project</b><span>One repo’s bun decision stays separate from another repo’s npm decision.</span></div><div><b>Device &amp; OS</b><span>A Windows path does not become a Mac instruction.</span></div></div>
-  </section>
-
-  <section aria-labelledby="lifecycle">
-    <div class="section-head"><h2 id="lifecycle">Useful, inspectable, correctable</h2><span>03 / Record life</span></div>
-    <div class="rules">
-      <article class="rule"><span class="step">01 / Load</span><h3>Start with real context</h3><p>Confirmed preferences and applicable records load directly. The response names anything omitted by its budget.</p></article>
-      <article class="rule"><span class="step">02 / Save</span><h3>Keep the signal</h3><p>Save explicit preferences, accepted decisions, verified lessons, and concise handoffs with their source.</p></article>
-      <article class="rule"><span class="step">03 / Correct</span><h3>History stays visible</h3><p>A correction needs the current revision. Conflicting edits fail; earlier versions remain readable and restorable.</p></article>
-      <article class="rule"><span class="step">04 / Recover</span><h3>Read the full record</h3><p>Scoped search finds current content. Full get keeps qualifications intact. Archive is reversible.</p></article>
-    </div>
-  </section>
-
-  <section aria-labelledby="proof">
-    <div class="section-head"><h2 id="proof">Proof and open work</h2><span>04 / Status</span></div>
-    <div class="evidence">
-      <article><span class="tag">Observed</span><h3>Working across machines</h3><ul><li>Tests cover scope, revisions, authentication, recall, and backup.</li><li>Packages verified on Mac, Work HP, and Beelink.</li><li>All three CLIs received synthetic memory before work on all three machines.</li><li>A private Mac mini service passed an offsite restore and Beelink read/write.</li></ul></article>
-      <article><span class="tag">Still open</span><h3>Final release checks</h3><ul><li>Publish the proxy fix and test its released binary over the private route.</li><li>Run all three CLIs against the persistent service. Desktop checks are user-led.</li><li>Cursor's local plugin loads context, but its MCP tools need project wiring.</li><li>Legacy-data migration has not been approved or run.</li></ul></article>
-    </div>
-  </section>
-  <footer><span>Evidence updated September 24, 2026.</span><a href="memory-acceptance.md">Test evidence</a><a href="shared-memory.md">Backend and recovery</a><a href="../integrations/plugins/README.md">Client setup</a></footer>
-</main>
+  <div class="wrap">
+    <header class="top"><span class="brand">GRASSHOPPER</span><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button><nav aria-label="Page"><a href="#how">How it works</a><a href="#setup">Set it up</a><a href="/visualizer/">Memory view</a></nav></header>
+    <main>
+      <div class="hero">
+        <h1>Memory for your coding agents.</h1>
+        <p class="lead">Tell one agent what matters. Codex, Cursor, and Claude Code can find it later, even on another machine.</p>
+        <div class="actions"><a class="primary" href="https://github.com/MylesMCook/grasshopper/releases/latest">Get Grasshopper</a><a href="#how">See how it works</a></div>
+      </div>
+      <section id="how" aria-labelledby="how-title">
+        <div class="heading"><h2 id="how-title">Keep the few things worth keeping.</h2></div>
+        <p class="intro">Grasshopper saves explicit preferences, accepted decisions, verified lessons, and short handoffs. It does not collect whole conversations. Your agents share one private memory service instead of writing separate local memory databases.</p>
+        <div class="grid">
+          <article><h3>1. Say what to remember</h3><p>Ask an agent to save a preference or decision. It records the source, where it applies, and a revision number.</p></article>
+          <article><h3>2. Pick up elsewhere</h3><p>A fresh agent loads your confirmed preferences and the memories that fit the current project and machine.</p></article>
+          <article><h3>3. Correct it when things change</h3><p>An explicit correction becomes the current version. You can still inspect or restore earlier versions.</p></article>
+        </div>
+        <div class="example"><h3>For example</h3><p>“Use bun in this repository” stays with that Git project. “Use npm in the other repository” stays there. A Windows-only path stays on Windows.</p></div>
+      </section>
+      <section aria-labelledby="view-title">
+        <div class="heading"><h2 id="view-title">See what your agents can see.</h2></div>
+        <p class="intro"><a href="/visualizer/">Open the memory view</a> to browse current memories. Choose a project or device to see why a record applies. The view reads the same service as your agents; it does not create another store. Connect once in your browser, then use Disconnect to forget that browser session.</p>
+        <p class="note">The view shows active records. Ask an agent for an earlier revision or a full record when you need its history.</p>
+      </section>
+      <section id="setup" aria-labelledby="setup-title">
+        <div class="heading"><h2 id="setup-title">Run your own copy.</h2></div>
+        <div class="steps">
+          <div class="step"><span class="number">01</span><div><h3>Start the private server</h3><p>Use the release bundle to create a new SQLite database on a host you control. Keep its model files and token on that host.</p></div></div>
+          <div class="step"><span class="number">02</span><div><h3>Connect your agents</h3><p>Install the small client on each machine. Point each one to the same authenticated service. Codex can use the Grasshopper marketplace plugin. Keep the shared memory policy in one <code>AGENTS.md</code>.</p></div></div>
+          <div class="step"><span class="number">03</span><div><h3>Try one real preference</h3><p>Save something you explicitly want remembered. Open a fresh agent session in another project or on another machine and ask what it knows. Check the record in the view.</p></div></div>
+        </div>
+        <div class="links"><a href="https://github.com/MylesMCook/grasshopper/blob/main/docs/go-package.md">Server setup</a><a href="https://github.com/MylesMCook/grasshopper/blob/main/integrations/plugins/README.md">Client setup and removal</a><a href="https://github.com/MylesMCook/grasshopper/blob/main/plugins/grasshopper/README.md">Grasshopper marketplace</a><a href="/visualizer/">Open the memory view</a></div>
+      </section>
+      <section id="trust" aria-labelledby="trust-title">
+        <div class="heading"><h2 id="trust-title">Private by design. Honest about proof.</h2></div>
+        <p class="intro">The server needs a token for memory reads and writes. Project names keep memories from mixing; they are not access controls. Use a separate service or server-enforced boundary for restricted data. Keep secrets and full transcripts out of memory.</p>
+        <p class="intro">The current release has automated checks and recorded client and machine trials. The test record says exactly which behavior was observed, and which desktop and recovery checks remain open.</p>
+        <div class="links"><a href="https://github.com/MylesMCook/grasshopper/blob/main/docs/memory-acceptance.md">What has been tested</a><a href="https://github.com/MylesMCook/grasshopper/blob/main/docs/shared-memory.md">Data, backup, and recovery</a><a href="https://github.com/MylesMCook/grasshopper/blob/main/integrations/policy/AGENTS.md">Shared memory policy</a></div>
+      </section>
+    </main>
+    <footer><span>Self-hosted by design.</span><a href="#trust">Privacy &amp; status</a><a href="https://github.com/MylesMCook/grasshopper">Source</a><a href="https://github.com/MylesMCook/grasshopper#readme">README</a></footer>
+  </div>
 </body>
 </html>

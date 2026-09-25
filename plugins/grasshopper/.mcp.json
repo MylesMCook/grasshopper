@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "grasshopper": {
+      "command": "grasshopper",
+      "args": ["bridge"]
+    }
+  }
+}

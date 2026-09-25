@@ -41,6 +41,15 @@ with this package.
 Cursor's CLI marketplace command currently accepts a Git URL, not a local
 archive. A published Git marketplace and IDE install have not been tested.
 
+### Grasshopper marketplace for Codex
+
+The [Grasshopper repository](../../plugins/grasshopper/README.md) also has its
+own Codex marketplace. It installs MCP wiring and hooks, but expects the client
+binary and shared config above to be installed first. Use it instead of the
+archive's `grasshopper-local` Codex plugin, not alongside it. The source
+repository currently requires access; fresh Git-backed installation remains
+untested.
+
 ### Cursor CLI tool access
 
 In the intended Git workspace, merge `cursor-mcp.example.json` into

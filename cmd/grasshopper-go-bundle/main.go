@@ -357,6 +357,8 @@ func run() error {
 		{"docs/cursor-cli.md", "docs/cursor-cli.md"},
 		{"docs/mac-mini-deployment.md", "docs/mac-mini-deployment.md"},
 		{"docs/how-it-works.html", "docs/how-it-works.html"},
+		{"docs/site.css", "docs/site.css"},
+		{"docs/theme.js", "docs/theme.js"},
 		{"docs/memory-acceptance.md", "docs/memory-acceptance.md"},
 		{"docs/evidence-history.md", "docs/evidence-history.md"},
 		{"docs/go-transition.md", "docs/go-transition.md"},

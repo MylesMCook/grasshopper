@@ -1,8 +1,8 @@
 # Portable Grasshopper bundle
 
-The optional [live memory view](memory-visualizer.md) is built into the server binary. Enable it with `--visualizer`; it adds no runtime dependency or writable client store.
+The [How it works](how-it-works.html) page is built into the server at `/about/`. The optional [live memory view](memory-visualizer.md) is at `/visualizer/` when enabled with `--visualizer`. Neither adds a writable client store.
 
-The 2.0.0 archives were built, extracted, checksum-checked, and run on macOS arm64, Work HP Windows x64, and Beelink Ubuntu x64. They are unsigned portable archives. The Mac mini private service is a separate installation from the release archive.
+The [2.0.2 release](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.2) has six checksum-checked, unsigned portable archives for macOS, Windows, and Linux. See [verification](memory-acceptance.md) for which binaries actually ran on each operating system. The Mac mini private service is a separate installation from the release archive.
 
 ## Build
 

@@ -1,40 +1,22 @@
 # Grasshopper
 
-Grasshopper is a self-hosted memory service for Codex, Cursor, and Claude Code. One authenticated SQLite backend holds explicit preferences, accepted decisions, verified lessons, and handoffs. Each harness connects through the same stateless client. [Download 2.0.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.2) · [See how it works](docs/how-it-works.html).
+Grasshopper keeps a few useful memories in one private place. Codex, Cursor,
+and Claude Code can share your explicit preferences, project decisions, verified
+lessons, and short handoffs across machines.
 
-**Status:** Native builds and synthetic CLI checks passed on Mac, Work HP Windows, and Beelink Ubuntu. The Mac mini now hosts a private service with encrypted offsite backups; no old database was migrated. Windows Codex uses a first-prompt hook, and Cursor CLI needs project MCP wiring. Desktop checks remain user-led. [See exact evidence](docs/memory-acceptance.md).
+[See how it works](docs/how-it-works.html) · [Download the latest release](https://github.com/MylesMCook/grasshopper/releases/latest) · [See what has been tested](docs/memory-acceptance.md)
 
-A new host can start an empty memory-only SQLite database with `grasshopper-go-server --create-db --db /private/brain.db` plus the model, runtime, token-file, and loopback flags described in the [portable bundle guide](docs/go-package.md). The flag never replaces an existing database. Remote access still needs an approved private HTTPS route.
+## Start here
 
-## What it remembers
+1. [Run the server](docs/go-package.md) on a host you control. It holds the only writable memory database.
+2. [Connect your agents](integrations/plugins/README.md) to that same service. Codex users can install the plugin from [Grasshopper's own marketplace](plugins/grasshopper/README.md).
+3. Save one explicit preference, then check it in a fresh session and in the [memory view](docs/memory-visualizer.md).
 
-- Global confirmed preferences that follow the user between projects.
-- Project decisions keyed by normalized Git remote or an explicit durable ID.
-- Device and OS facts that apply only where they belong.
-- Short handoffs tied to verified work.
+The server requires authentication. Memories can be corrected by revision and
+archived without losing their history. Project scope keeps records from mixing,
+but it is not an access boundary. Keep restricted work in a separate deployment.
 
-`context` loads applicable whole records directly. `store` requires an explicit scope and source; a correction uses a stable ID/key plus expected revision. `search` uses scoped keyword and local ONNX vector recall. `get` returns the full record or a historical revision. `archive` reversibly removes an active record. Similarity never silently replaces content. Unknown-scope legacy records stay out of normal recall.
-
-## Build and test
-
-Use Go 1.27.1 or the version in `go.mod`. The server needs the pinned BGE ONNX model, tokenizer, and matching ONNX Runtime library. Clients need neither the model nor a local database.
-
-```sh
-go test ./...
-go vet ./...
-go test -race ./internal/gomemory ./internal/gomcp ./internal/goclient
-go build -o /your/build/grasshopper ./cmd/grasshopper
-go build -o /your/build/grasshopper-go-server ./cmd/grasshopper-go-server
-go build -o /your/build/grasshopper-go-backup ./cmd/grasshopper-go-backup
-go build -o /your/build/grasshopper-go-migrate ./cmd/grasshopper-go-migrate
-```
-
-[Portable server bundle](docs/go-package.md) explains how to assemble and verify a server archive. [Client plugin packages](integrations/plugins/README.md) cover installation, updates, and removal; [manual wiring](integrations/README.md) remains available. [Live memory view](docs/memory-visualizer.md) shows current context without a second store. [Mac mini deployment and recovery](docs/mac-mini-deployment.md) records the private host setup.
-
-The retired Rust code-search CLI is intentionally absent. Use the repository's normal code tools for code search. Grasshopper's remote surface remains memory-only.
-
-## Security and operation
-
-The server binds to an explicit loopback address and requires a bearer token, including for health checks. Put credentials in approved secret management, not Git, CLI arguments, or logs. Remote access needs a separately approved private HTTPS route. Project scope prevents accidental mixing; it does not authorize access to data. Restricted employer data needs a separate access boundary or deployment.
-
-[AGENTS.md](AGENTS.md) governs repository work; [the one shared memory policy](integrations/policy/AGENTS.md) governs memory use in all three harnesses. No alternate standing-instruction format is generated.
+For development, see [repository instructions](AGENTS.md). For data handling and
+recovery, see [the operator guide](docs/shared-memory.md). The
+[shared memory policy](integrations/policy/AGENTS.md) is the only standing
+instruction file maintained for all three agents.

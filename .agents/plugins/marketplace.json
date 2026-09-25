@@ -1,0 +1,20 @@
+{
+  "name": "grasshopper-marketplace",
+  "interface": {
+    "displayName": "Grasshopper"
+  },
+  "plugins": [
+    {
+      "name": "grasshopper",
+      "source": {
+        "source": "local",
+        "path": "./plugins/grasshopper"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

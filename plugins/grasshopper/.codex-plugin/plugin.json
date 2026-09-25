@@ -1,0 +1,25 @@
+{
+  "name": "grasshopper",
+  "version": "0.1.0",
+  "description": "Connect Codex to one private Grasshopper memory service.",
+  "author": {"name": "Myles Cook", "url": "https://github.com/MylesMCook"},
+  "homepage": "https://github.com/MylesMCook/grasshopper",
+  "repository": "https://github.com/MylesMCook/grasshopper",
+  "license": "MIT",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Grasshopper",
+    "shortDescription": "Share a few useful memories across agents.",
+    "longDescription": "Connect Codex to your authenticated Grasshopper service for scoped preferences, project decisions, lessons, and handoffs. Requires the Grasshopper client and a private server.",
+    "developerName": "Myles Cook",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/MylesMCook/grasshopper",
+    "defaultPrompt": [
+      "Load my Grasshopper context for this project.",
+      "Show the saved decisions for this project.",
+      "Save this decision with its scope and source."
+    ],
+    "brandColor": "#282828"
+  }
+}

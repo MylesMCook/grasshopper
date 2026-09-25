@@ -1,5 +1,6 @@
 const form = document.getElementById('connection-form');
 const tokenInput = document.getElementById('token');
+const tokenField = document.getElementById('token-field');
 const connectButton = document.getElementById('connect');
 const disconnectButton = document.getElementById('disconnect');
 const status = document.getElementById('status');
@@ -15,14 +16,15 @@ const manualDeviceLabel = document.getElementById('manual-device-label');
 const manualDeviceInput = document.getElementById('manual-device');
 const manualChoice = '\u0000manual';
 
-let token = null;
 let active = false;
+let loggingIn = false;
 let timer = null;
 let inFlight = null;
 let revisions = new Map();
 let hasLoaded = false;
 let knownProjects = [];
 let knownDevices = [];
+let lastSignature = '';
 
 function option(value, text) {
   const item = document.createElement('option');
@@ -74,20 +76,21 @@ projectSelect.addEventListener('change', showManualProject);
 deviceSelect.addEventListener('change', showManualDevice);
 
 function setStatus(message, kind = '') {
-  status.textContent = message;
-  status.className = `status ${kind}`;
+  if (status.textContent !== message) status.textContent = message;
+  const className = `status ${kind}`;
+  if (status.className !== className) status.className = className;
 }
 
 function setConnected(value) {
   active = value;
   tokenInput.required = !value;
-  connectButton.textContent = value ? 'Refresh view' : 'Connect';
+  tokenField.hidden = value;
+  connectButton.textContent = value ? 'Refresh' : 'Connect';
   disconnectButton.disabled = !value;
 }
 
 function stop(clearRecords = false) {
   setConnected(false);
-  token = null;
   clearTimeout(timer);
   timer = null;
   if (inFlight) inFlight.abort();
@@ -96,8 +99,9 @@ function stop(clearRecords = false) {
     records.replaceChildren();
     omissions.hidden = true;
     revisions = new Map();
+    lastSignature = '';
     hasLoaded = false;
-    summary.textContent = 'Enter a token to load context.';
+    summary.textContent = 'Connect to see what is saved.';
     updateProjectOptions([], false);
     updateDeviceOptions([], false);
     showManualProject();
@@ -114,7 +118,10 @@ function scopeInput() {
   if (project) scope.project = project;
   if (device) scope.device = device;
   if (platform) scope.platform = platform;
-  scopeSummary.textContent = `View · ${project ? 'one project' : 'global project'} · ${device || 'any device'} · ${platform || 'any platform'}`;
+  const view = [project ? 'one project' : 'global', device ? 'one device' : 'all devices'];
+  if (platform) view.push(platform);
+  const description = `Scope · ${view.join(' · ')}`;
+  if (scopeSummary.textContent !== description) scopeSummary.textContent = description;
   return scope;
 }
 
@@ -125,58 +132,71 @@ function label(text) {
 }
 
 function draw(page) {
+  const items = page.records || [];
+  const omitted = page.omitted || 0;
+  omissions.hidden = !omitted;
+  if (omitted) {
+    const ids = (page.omitted_ids || []).join(', ');
+    const message = `${omitted} ${omitted === 1 ? 'memory was' : 'memories were'} left out because this view is full.${ids ? ` IDs: ${ids}.` : ''} Use Grasshopper get to read the full record.`;
+    if (omissions.textContent !== message) omissions.textContent = message;
+  }
+  const signature = JSON.stringify(items.map(record => [record.id, record.revision, record.title, record.content, record.scope, record.provenance, record.confirmed, record.purpose]));
+  const selection = window.getSelection();
+  const selectingRecord = selection && !selection.isCollapsed && (records.contains(selection.anchorNode) || records.contains(selection.focusNode));
+  if (hasLoaded && (signature === lastSignature || selectingRecord)) return;
+
   const next = new Map();
   const fragment = document.createDocumentFragment();
-  const items = page.records || [];
   for (const record of items) {
     const key = `${record.id}`;
     next.set(key, record.revision);
     const article = document.createElement('article');
     article.className = 'record';
     if (hasLoaded && revisions.get(key) !== record.revision) article.classList.add('changed');
-    const side = document.createElement('div');
+    const top = document.createElement('div');
+    top.className = 'record-top';
     const kind = document.createElement('p');
     kind.className = 'record-kind';
     kind.textContent = record.purpose || 'Memory';
-    side.append(kind);
-    const body = document.createElement('div');
+    const scope = record.scope || {};
+    const scopeLabel = document.createElement('p');
+    scopeLabel.className = 'record-scope';
+    scopeLabel.textContent = scope.project ? `Project · ${scope.project.split('/').pop()}` : scope.device ? 'Device' : scope.platform || 'Global';
+    top.append(kind, scopeLabel);
     const heading = document.createElement('h3');
     heading.textContent = record.title || `Memory #${record.id}`;
     const content = document.createElement('p');
     content.className = 'record-content';
     content.textContent = record.content;
+    const details = document.createElement('details');
+    details.className = 'record-details';
+    const detailsLabel = document.createElement('summary');
+    detailsLabel.textContent = `Details · #${record.id} · revision ${record.revision}`;
     const meta = document.createElement('div');
     meta.className = 'record-meta';
-    const scope = record.scope || {};
     const dimensions = [scope.project && `Project ${scope.project}`, scope.device && `Device ${scope.device}`, scope.platform && `Platform ${scope.platform}`].filter(Boolean);
     meta.append(
-      label(`ID ${record.id} · revision ${record.revision}`),
       label(dimensions.length ? dimensions.join(' · ') : 'Global'),
       label(record.confirmed ? 'Confirmed' : 'Handoff'),
       label(`Source: ${record.provenance?.source || 'Unknown'}`),
       label(`Agent: ${record.provenance?.harness || 'Unknown'}`),
       label(`Source device: ${record.provenance?.device || 'Unknown'}`)
     );
-    body.append(heading, content, meta);
-    article.append(side, body);
+    details.append(detailsLabel, meta);
+    article.append(top, heading, content, details);
     fragment.append(article);
   }
   if (!items.length) {
     const empty = document.createElement('p');
     empty.className = 'empty';
-    empty.textContent = 'No confirmed memories or handoff match this view.';
+    empty.textContent = 'No memories here yet. Ask an agent to save one, then check back.';
     fragment.append(empty);
   }
   records.replaceChildren(fragment);
   revisions = next;
+  lastSignature = signature;
   hasLoaded = true;
-  summary.textContent = `${items.length} ${items.length === 1 ? 'record' : 'records'} · updated ${new Date().toLocaleTimeString()}`;
-  const omitted = page.omitted || 0;
-  omissions.hidden = !omitted;
-  if (omitted) {
-    const ids = (page.omitted_ids || []).join(', ');
-    omissions.textContent = `${omitted} ${omitted === 1 ? 'record was' : 'records were'} omitted by the response limit.${ids ? ` IDs: ${ids}.` : ''} Use Grasshopper get for full content.`;
-  }
+  summary.textContent = `${items.length} ${items.length === 1 ? 'memory' : 'memories'}`;
 }
 
 async function refresh() {
@@ -187,50 +207,101 @@ async function refresh() {
   try {
     const response = await fetch('/visualizer/api/context', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(scopeInput()),
       cache: 'no-store',
+      credentials: 'same-origin',
       signal: controller.signal
     });
-    if (!response.ok) throw new Error(response.status === 401 ? 'Token rejected' : response.status === 400 ? 'Invalid scope' : 'Service unavailable');
+    if (!response.ok) throw new Error(response.status === 401 ? 'Connection expired' : response.status === 400 ? 'Scope not recognized' : 'Service unavailable');
     const page = await response.json();
     if (!active || inFlight !== controller) return;
     updateProjectOptions(page.projects);
     updateDeviceOptions(page.devices);
     draw(page);
-    setStatus('Live · refreshes every 3 seconds', 'live');
+    setStatus('Live · remembered here', 'live');
     timer = setTimeout(refresh, 3000);
   } catch (error) {
     if (inFlight !== controller) return;
-    const message = error.name === 'AbortError' ? 'Timed out' : error instanceof TypeError ? 'Service unavailable' : error.message;
-    stop(message === 'Token rejected');
+    const message = error.name === 'AbortError' ? 'Request timed out' : error instanceof TypeError ? 'Service unavailable' : error.message;
+    stop(message === 'Connection expired');
     setStatus(message, 'error');
-    if (message !== 'Token rejected') summary.textContent = hasLoaded ? `${message}. Showing the last received context; reconnect to resume.` : `${message}. No context was loaded; reconnect to retry.`;
+    summary.textContent = message === 'Connection expired' ? 'Connect again to see your memories.' : hasLoaded ? 'Showing the last results. Reconnect to refresh.' : 'No memories loaded. Reconnect to retry.';
   } finally {
     clearTimeout(timeout);
     if (inFlight === controller) inFlight = null;
   }
 }
 
-form.addEventListener('submit', event => {
+async function sessionRequest(method, bearer) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    return await fetch('/visualizer/api/session', {
+      method,
+      headers: bearer ? { Authorization: `Bearer ${bearer}` } : {},
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+form.addEventListener('submit', async event => {
   event.preventDefault();
-  if (tokenInput.value) token = tokenInput.value;
+  if (active) {
+    clearTimeout(timer);
+    refresh();
+    return;
+  }
+  if (loggingIn || !tokenInput.value) return;
+  const bearer = tokenInput.value;
   tokenInput.value = '';
-  if (!token) return;
-  clearTimeout(timer);
-  if (inFlight) inFlight.abort();
-  inFlight = null;
-  records.replaceChildren();
-  revisions = new Map();
-  hasLoaded = false;
-  omissions.hidden = true;
-  setConnected(true);
+  loggingIn = true;
+  connectButton.disabled = true;
   setStatus('Connecting');
-  summary.textContent = 'Loading context…';
-  refresh();
+  try {
+    const response = await sessionRequest('POST', bearer);
+    if (!response.ok) throw new Error(response.status === 401 ? 'Access token rejected' : 'Could not connect');
+    stop(true);
+    setConnected(true);
+    summary.textContent = 'Loading memories…';
+    refresh();
+  } catch (error) {
+    setStatus(error.name === 'AbortError' ? 'Request timed out' : error instanceof TypeError ? 'Service unavailable' : error.message, 'error');
+  } finally {
+    loggingIn = false;
+    connectButton.disabled = false;
+  }
 });
 
-disconnectButton.addEventListener('click', () => {
-  stop(true);
-  setStatus('Not connected');
+disconnectButton.addEventListener('click', async () => {
+  disconnectButton.disabled = true;
+  try {
+    const response = await sessionRequest('DELETE');
+    if (!response.ok) throw new Error('Could not disconnect');
+    stop(true);
+    setStatus('Not connected');
+  } catch (error) {
+    disconnectButton.disabled = false;
+    setStatus('Could not disconnect. Try again when the service is available.', 'error');
+  }
 });
+
+(async () => {
+  try {
+    const response = await sessionRequest('GET');
+    if (!response.ok) throw new Error('Service unavailable');
+    const session = await response.json();
+    if (session.connected && !loggingIn && !active) {
+      setConnected(true);
+      setStatus('Connecting');
+      summary.textContent = 'Loading memories…';
+      refresh();
+    }
+  } catch {
+    if (!loggingIn && !active) setStatus('Service unavailable', 'error');
+  }
+})();

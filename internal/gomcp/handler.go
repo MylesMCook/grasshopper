@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"net"
 	"net/http"
@@ -24,12 +25,13 @@ type Embedder interface {
 }
 
 type Backend struct {
-	Store            *gomemory.Writer
-	Embedder         Embedder
-	Model            string
-	InferenceTimeout time.Duration
-	Visualizer       bool
-	AllowedProxyHost string
+	Store                 *gomemory.Writer
+	Embedder              Embedder
+	Model                 string
+	InferenceTimeout      time.Duration
+	Visualizer            bool
+	VisualizerStyleHashes []string
+	AllowedProxyHost      string
 }
 
 type contextInput struct {
@@ -110,6 +112,18 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			return nil, errors.New("allowed proxy host must be an exact hostname and port")
 		}
 	}
+	if len(backend.VisualizerStyleHashes) > 4 || (!backend.Visualizer && len(backend.VisualizerStyleHashes) > 0) {
+		return nil, errors.New("visualizer style hashes require an enabled visualizer and at most four hashes")
+	}
+	for _, hash := range backend.VisualizerStyleHashes {
+		if !strings.HasPrefix(hash, "sha256-") {
+			return nil, errors.New("visualizer style hash must be SHA-256")
+		}
+		digest, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(hash, "sha256-"))
+		if err != nil || len(digest) != sha256.Size || base64.StdEncoding.EncodeToString(digest) != strings.TrimPrefix(hash, "sha256-") {
+			return nil, errors.New("visualizer style hash must be a canonical SHA-256 digest")
+		}
+	}
 	inferenceTimeout := backend.InferenceTimeout
 	if inferenceTimeout <= 0 || inferenceTimeout > 10*time.Second {
 		inferenceTimeout = 5 * time.Second
@@ -137,6 +151,14 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		}
 	}
 	tokenHash := sha256.Sum256([]byte(token))
+	bearerValid := func(r *http.Request) bool {
+		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if provided == r.Header.Get("Authorization") || provided == "" {
+			return false
+		}
+		providedHash := sha256.Sum256([]byte(provided))
+		return subtle.ConstantTimeCompare(providedHash[:], tokenHash[:]) == 1
+	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "grasshopper", Version: "2.0.2"}, nil)
 	falseValue := false
 	read := &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: &falseValue, OpenWorldHint: &falseValue}
@@ -243,16 +265,27 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if backend.Visualizer && visualizerAsset(w, r) {
+		if websiteAsset(w, r, backend.VisualizerStyleHashes) {
 			return
 		}
-		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if provided == r.Header.Get("Authorization") || provided == "" {
-			http.Error(w, "authentication required", http.StatusUnauthorized)
+		if backend.Visualizer && visualizerAsset(w, r, backend.VisualizerStyleHashes) {
 			return
 		}
-		providedHash := sha256.Sum256([]byte(provided))
-		if subtle.ConstantTimeCompare(providedHash[:], tokenHash[:]) != 1 {
+		if backend.Visualizer && r.URL.Path == "/visualizer/api/session" {
+			visualizerSession(w, r, tokenHash[:], bearerValid(r), backend.AllowedProxyHost)
+			return
+		}
+		authorized := bearerValid(r)
+		if !authorized && backend.Visualizer && r.URL.Path == "/visualizer/api/context" {
+			if cookie, err := r.Cookie(visualizerCookieName); err == nil && validVisualizerSession(cookie.Value, tokenHash[:], time.Now()) {
+				if r.Header.Get("Origin") != visualizerOrigin(r, backend.AllowedProxyHost) {
+					http.Error(w, "invalid Origin header", http.StatusForbidden)
+					return
+				}
+				authorized = true
+			}
+		}
+		if !authorized {
 			http.Error(w, "authentication required", http.StatusUnauthorized)
 			return
 		}
