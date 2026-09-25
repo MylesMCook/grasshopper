@@ -12,10 +12,10 @@
     "defaultPrompt": "Use the connect-grasshopper skill to connect to my private server.",
     "developerName": "Grasshopper",
     "displayName": "Grasshopper for macos",
-    "longDescription": "Connect this agent to your private Grasshopper server. The plugin keeps no memory database or token.",
+    "longDescription": "Connect this agent to your private Grasshopper server. The plugin includes no token or writable memory database; connection creates a revocable device credential.",
     "shortDescription": "Shared memory from your private server."
   },
   "mcpServers": "./.mcp.json",
   "name": "grasshopper-macos",
-  "version": "2.2.5"
+  "version": "2.3.0"
 }
