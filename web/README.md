@@ -24,3 +24,9 @@ public site; it does not touch a private memory server.
 The repository is private, so the public site labels installation as a private
 pilot. Do not add links to its private GitHub releases until those files are
 actually public.
+
+The public pages allow two exact style hashes used by Codex Annotate in the
+tested app build. Keep `unsafe-inline` disabled. If annotation breaks after a
+Codex update, inspect the new blocked styles before changing the hashes.
+`web/build.sh` changes each page asset when `_headers` changes so a header-only
+deployment cannot leave the previous policy at the edge.
