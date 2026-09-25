@@ -8,6 +8,7 @@ Owner: Codex. Mac checkout: `/Users/mylescook/Code/MylesMCook/grasshopper`, bran
 - The checked Mac server runs privately with encrypted off-host backups. After synthetic pilot cleanup, the latest off-host restore matched the source bytes, passed SQLite integrity, and retained the archived record and its prior revision. No legacy records were migrated.
 - A fresh 24 September R2 backup restored byte-for-byte; SQLite integrity passed, and a separate server read current and prior revisions. The live service was not interrupted.
 - The memory view now browses active global memories across devices, offers known project and device IDs with manual entry, and explains cross-device context. Commit `5e19b96` is pushed; Mac, Windows, and Linux CI passed. Synthetic HTTP and Chromium checks covered scope, project isolation, and 390px layout. The Mac mini now runs this clean-commit binary on its existing private route; authenticated health, view API, and historical MCP read passed after restart. No active records remain after pilot cleanup.
+- Mac mini and Beelink clones with the same Git `origin`, different paths, and different checkout commits independently resolved the same project ID. Synthetic project-only records traveled in both directions through the live service; an unrelated project saw none. Both records were archived with history intact. See [acceptance evidence](docs/memory-acceptance.md).
 
 ## Open checks
 

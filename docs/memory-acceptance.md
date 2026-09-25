@@ -17,6 +17,14 @@ Checks for the new view: `go test -count=1 ./...` with the pinned model, `go vet
 
 **Mac mini update:** The new binary identified clean commit `5e19b96`. Before restart, the database passed SQLite integrity and the old binary/plist were copied to a private task-local rollback directory. Only `com.myles.grasshopper` was restarted. Afterward, it listened on `127.0.0.1:8106`; local and Tailnet health were `200` with the token and `401` without it. Anonymous visualizer and MCP requests returned `401`. The private view API returned empty active records and project/device lists, as expected after synthetic pilot cleanup. Private MCP `get` read record 1 at revisions 2 and 1. The R2 backup job retained its daily schedule and last exit code 0. Tailscale Serve kept the existing Tailnet-only `8456 → 8106` mapping. No data, client config, or other service was changed.
 
+**Same repo on Mac mini and Beelink (24 September):** The Mac clone (`9b42774`) and older Beelink clone (`d306eb7`) had the same HTTPS `origin`, different paths, and no project-ID override. Both 2.0.1 hooks independently resolved `git:github.com/MylesMCook/grasshopper` and reached the live Mac service.
+
+- Mac saved synthetic project-only handoff 5. Beelink's `context` returned revision 1.
+- Beelink saved handoff 6. Mac's `context` returned revision 1. An unrelated project scope returned neither.
+- The opposite machine archived each record at revision 2. Active context omitted them; `get` retained revisions 1 and 2. The temporary Beelink credential and config were removed.
+
+This proves the physical two-machine hook and MCP path, not a fresh Codex or Cursor model turn. Git aliases, repo renames, and local ID overrides remain untested. Private receipts are in `~/Documents/Codex/2026-09-24-grasshopper-cross-device-project`.
+
 ## 2.0.1 release check
 
 Six Mac, Windows, and Linux client/server archives were packaged at `dd15c15`; all internal SHA-256 entries and GitHub asset digests match. [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36067286155) passed on that commit. Native tests with the pinned model, vet, race checks, and extracted-server authentication/proxy checks passed on all three systems. Windows and Linux reused binaries tested at code-identical `72a460c`; the intervening commit changed only three documents. The final Mac archive was installed into the private launchd job; authenticated local health, live MCP context, and the scoped visualizer API passed. The private route remains Tailnet-only.
