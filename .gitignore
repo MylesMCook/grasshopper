@@ -9,3 +9,6 @@
 # Local tool output
 /.build/
 /.playwright-cli/
+/web/dist/
+/.wrangler/
+/web/.wrangler/

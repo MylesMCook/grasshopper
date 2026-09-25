@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Grasshopper keeps useful memories in one private place for Codex, Cursor, and Claude Code.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/site.css">
+  <script src="/theme.js" defer></script>
+  <title>Grasshopper · Memory for your coding agents</title>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top"><a class="brand" href="/">GRASSHOPPER</a><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button><nav aria-label="Page"><a href="#how">How it works</a><a href="/view/">Memory view</a></nav></header>
+    <main>
+      <div class="hero">
+        <h1>Memory for your coding agents.</h1>
+        <p class="lead">Tell one agent what matters. Codex, Cursor, and Claude Code can find it later, even on another machine.</p>
+        <div class="actions"><a class="primary" href="#setup">Set up Grasshopper</a></div>
+      </div>
+      <section id="how" aria-labelledby="how-title">
+        <div class="heading"><h2 id="how-title">Keep what matters.</h2></div>
+        <p class="intro">Grasshopper keeps explicit preferences, project decisions, verified lessons, and short handoffs in one private service. Each record says where it applies. Corrections keep the earlier versions available.</p>
+        <p class="note">For example, “Use bun in this repository” stays with that Git project. A Windows-only path stays on Windows.</p>
+      </section>
+      <section id="setup" aria-labelledby="setup-title">
+        <div class="heading"><h2 id="setup-title">Run your own copy.</h2></div>
+        <div class="steps">
+          <div class="step"><span class="number">01</span><div><h3>Start a private server</h3><p>Keep the memory database and access token on a host you control.</p></div></div>
+          <div class="step"><span class="number">02</span><div><h3>Connect your agents</h3><p>Point Codex, Cursor, or Claude Code at that same service.</p></div></div>
+          <div class="step"><span class="number">03</span><div><h3>Try one preference</h3><p>Save it with one agent, then check it from another session.</p></div></div>
+        </div>
+        <p class="note pilot-note">Grasshopper is in a private pilot. Public downloads and setup instructions are being prepared.</p>
+      </section>
+    </main>
+    <footer id="privacy"><span>Grasshopper</span><span>This site never reads your memories or token.</span></footer>
+  </div>
+</body>
+</html>

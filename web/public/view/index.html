@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Open the memory view on your own Grasshopper server.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/site.css">
+  <script src="/theme.js" defer></script>
+  <script src="/connect.js" defer></script>
+  <title>Memory view · Grasshopper</title>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top"><a class="brand" href="/">GRASSHOPPER</a><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button><nav aria-label="Page"><a href="/#how">How it works</a><a href="/#setup">Set up</a><a href="/view/" aria-current="page">Memory view</a></nav></header>
+    <main class="view-main">
+      <h1>Open your memory view.</h1>
+      <p class="lead">Enter the address of your own Grasshopper server. Your access token is entered there, never on this site.</p>
+      <form id="server-form" class="server-form" novalidate>
+        <label for="server-address">Your server address</label>
+        <div class="server-form-row"><input id="server-address" type="url" inputmode="url" autocomplete="url" placeholder="https://memory.example.com" required spellcheck="false"><button type="submit">Open view</button></div>
+        <p id="server-error" class="form-error" role="alert" hidden></p>
+        <p class="note">This browser can remember the address. Your token and memories stay on your server.</p>
+      </form>
+    </main>
+    <footer><span>Grasshopper</span><a href="/#privacy">Privacy</a></footer>
+  </div>
+</body>
+</html>

@@ -4,7 +4,7 @@ Grasshopper keeps a few useful memories in one private place. Codex, Cursor,
 and Claude Code can share your explicit preferences, project decisions, verified
 lessons, and short handoffs across machines.
 
-[See how it works](docs/how-it-works.html) · [Download the latest release](https://github.com/MylesMCook/grasshopper/releases/latest) · [See what has been tested](docs/memory-acceptance.md)
+[See how it works](https://usegrasshopper.com/) · [Download the latest release](https://github.com/MylesMCook/grasshopper/releases/latest) · [See what has been tested](docs/memory-acceptance.md)
 
 ## Start here
 
