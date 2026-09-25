@@ -30,6 +30,12 @@ func run() error {
 		return errors.New("use bridge or hook")
 	}
 	switch os.Args[1] {
+	case "configure":
+		return configure(os.Args[2:])
+	case "check":
+		return checkConnection(os.Args[2:])
+	case "cursor":
+		return cursorCommand(os.Args[2:])
 	case "bridge":
 		flags := flag.NewFlagSet("bridge", flag.ContinueOnError)
 		config := flags.String("config", "", "client configuration path")
@@ -75,7 +81,7 @@ func run() error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(output)
 	default:
-		return errors.New("use bridge or hook")
+		return errors.New("use configure, check, cursor, bridge, hook, or config-path")
 	}
 }
 

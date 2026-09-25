@@ -2,6 +2,17 @@
 
 **Current state:** [Grasshopper 2.0.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.0.2) is the latest published release; 2.1.0 remains a draft. The private Mac mini service has a newer memory view, Codex annotation allowance, and signed browser session. Encrypted off-host backup and restore passed. Fresh Codex and Cursor CLI turns on Mac mini and Beelink read the same live project memory. Work HP Codex and Cursor model turns remain unverified. No legacy data was migrated or personal profile seeded.
 
+## Fresh client setup pilot, Mac mini, 24 September
+
+All records below were synthetic on a task-local loopback server. The current client added `configure`, `check`, and `cursor install/remove`; tests cover private config permissions, no token copy, explicit updates, and narrow Cursor MCP/hook merge and removal. `go test ./...`, `go vet ./...`, and `git diff --check` passed. The new `check` command returned an authenticated context receipt while the server ran and a clear failure after it stopped, without printing a token or memory content.
+
+| Harness | First turn | Correction and readback | Backend down |
+|---|---|---|---|
+| Codex CLI 0.156.1, macOS 27.0 | After native `/hooks` review and trust of the package's three hooks, a fresh tool-free turn reported global key `synthetic-plugin-phrase`, revision 3, `silver heron`. Its JSON trace contains no tool call. Before trust, startup context was absent. | With MCP, Codex corrected Cursor's revision 2 to revision 3 and read both revisions. Direct MCP `get` confirmed the receipt. | A fresh turn finished in 6.3 seconds, reported memory unavailable, and made no write claim. |
+| Cursor Agent CLI 2026.09.23-86fc751, macOS 27.0 | With user-level MCP and hook entries from `cursor install` and one `agent mcp enable grasshopper`, a fresh tool-free turn reported revision 1, `amber finch`, from startup context. | A separate fresh turn corrected revision 1 to revision 2, `cobalt reed`, then read the current and prior revisions. Direct MCP `get` confirmed both. | A fresh turn completed in about 8 seconds, reported startup context unavailable, and made no save claim. |
+
+Cursor's CLI approval was disabled and its task-local MCP/hook entries removed after the test. The temporary Codex marketplace/plugin registration is removed after this pilot. Codex hook trust is a real client security step; the installer cannot silently approve it. These results do not prove Codex Desktop or Cursor IDE first-turn behavior. They do not prove physical Windows packaging or a public-site installation.
+
 [Public site](https://usegrasshopper.com/) · [Detailed test history](evidence-history.md) · [Setup and removal](../integrations/README.md)
 
 ## Prepared site, browser session, and marketplace

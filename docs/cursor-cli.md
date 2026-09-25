@@ -1,17 +1,19 @@
 # Cursor Agent CLI: MCP tool access
 
-**Verified path:** add Grasshopper to the project's `.cursor/mcp.json` and
-approve its read tools in `.cursor/cli.json`. The [client package guide](../integrations/plugins/README.md)
-provides both templates. The client still connects to the same authenticated
-backend; these files only tell Cursor how to start and approve it.
+**Verified path:** the client package's `grasshopper cursor install` command
+adds one MCP entry and a startup hook to Cursor's user configuration. The
+[client package guide](../integrations/plugins/README.md) has the exact steps.
+The client still connects to the same authenticated backend; Cursor gets no
+writable memory database.
 
-In the project's Git root, run `agent mcp list` and
+In a fresh Agent workspace, run `agent mcp enable grasshopper` once, then
+`agent mcp list` and
 `agent mcp list-tools grasshopper`. A connected server lists `context`,
 `store`, `search`, `get`, and `archive`. In a fresh Agent CLI turn, call
 `context` once if startup context is absent. Approve writes deliberately;
-the packaged `.cursor/cli.json` example pre-approves reads only.
+the installer does not pre-approve them.
 For a headless read test on Cursor Agent CLI `2026.09.23-86fc751`, use
-`agent --print --auto-review`. In fresh Mac and Beelink workspaces, default
+`agent --print --auto-review` against synthetic data only. In fresh Mac and Beelink workspaces, default
 `--print` rejected `context` despite an enabled server and the project read
 allowlist; `--auto-review` completed the scoped read on both. `--mode ask`
 also rejected MCP in an earlier pilot. Keep `store` and `archive` out of the
