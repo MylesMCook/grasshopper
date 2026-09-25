@@ -98,7 +98,7 @@ func marketplaceFiles(binaries map[string]string, version, output string) ([]inp
 			"interface": map[string]any{
 				"displayName":      "Grasshopper for " + platform.slug,
 				"shortDescription": "Shared memory from your private server.",
-				"longDescription":  "Connect this agent to your private Grasshopper server. The plugin keeps no memory database or token.",
+				"longDescription":  "Connect this agent to your private Grasshopper server. The plugin includes no token or writable memory database; connection creates a revocable device credential.",
 				"developerName":    "Grasshopper",
 				"defaultPrompt":    "Use the connect-grasshopper skill to connect to my private server.",
 				"category":         "Productivity",

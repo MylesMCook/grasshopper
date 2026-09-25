@@ -8,3 +8,7 @@ Owner: Codex · Mac mini · `main` (release code `e26a1f6`).
 - Beelink independently retrieved the recovery note, restored R2, and read record 10 revision 6 from a separate loopback server. Its published 2.2.5 Linux package also passed a fresh synthetic store/get/semantic smoke. Temporary secrets, test data, and listeners were removed. A postrelease R2 backup and repository check passed; its local snapshot contains revision 7.
 
 Still to verify: current Codex Desktop and Cursor IDE behavior, Windows 2.2.5 runtime, compaction/subagent refresh, reboot persistence, and actual host failover. Work HP was not changed in this release. See [observed behavior](docs/memory-acceptance.md); do not infer app behavior from CLI passes.
+
+## Next: device pairing
+
+Owner: Codex · Mac mini · `codex/device-pairing` (unreleased 2.3.0 candidate). Marketplace connection needs one private server address and viewer approval, never a copied master token. Synthetic Mac browser and CLI pairing, authenticated read, revocation, interrupted-setup retry, and a 2.2.5-to-2.3.0 shadow-database upgrade and binary rollback passed; see [evidence](docs/memory-acceptance.md). The Mac server, Mac/Linux/Windows clients, and marketplace archives have verified internal checksums. Next: native Codex and Cursor fresh-install checks, Windows native server CI, then approved live backup, release, rollout, and site update. The 2.2.5 service and marketplace remain unchanged.

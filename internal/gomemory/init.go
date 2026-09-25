@@ -56,6 +56,7 @@ func CreateEmpty(path string) error {
 		`CREATE VIRTUAL TABLE chunks_fts USING fts5(title, content, snippet, symbol_name, descriptors, tokenize='porter unicode61')`,
 		`CREATE TABLE memory_requests (request_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, receipt TEXT NOT NULL)`,
 		`CREATE TABLE memory_revisions (memory_id INTEGER NOT NULL REFERENCES chunks(id), revision INTEGER NOT NULL, record TEXT NOT NULL, embedding BLOB, embedding_model TEXT NOT NULL, PRIMARY KEY(memory_id, revision))`,
+		`CREATE TABLE client_tokens (id INTEGER PRIMARY KEY, device TEXT NOT NULL CHECK(length(device) BETWEEN 1 AND 64), token_hash BLOB NOT NULL UNIQUE CHECK(length(token_hash)=32), created_at TEXT NOT NULL, revoked_at TEXT)`,
 		`CREATE UNIQUE INDEX idx_memory_exact ON chunks(memory_scope, memory_type, purpose, confirmed, content_hash) WHERE kind='memory' AND archived=0 AND memory_scope != 'legacy'`,
 		`CREATE UNIQUE INDEX idx_memory_key ON chunks(memory_scope, preference_key) WHERE kind='memory' AND preference_key IS NOT NULL AND memory_scope != 'legacy'`,
 		`CREATE INDEX idx_memory_scope ON chunks(memory_scope, archived) WHERE kind='memory'`,

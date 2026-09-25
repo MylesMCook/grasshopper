@@ -283,6 +283,25 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	if *cursorCLI && *agents != "none" {
 		return errors.New("--cursor-cli requires --agents none")
 	}
+	configPath, err := goclient.ConfigPath(*configArg)
+	if err != nil {
+		return err
+	}
+	if *update {
+		provided := map[string]bool{}
+		flags.Visit(func(item *flag.Flag) { provided[item.Name] = true })
+		if existing, err := goclient.LoadConfig(configPath); err == nil {
+			if !provided["url"] {
+				*url = existing.URL
+			}
+			if !provided["token-file"] {
+				*tokenFile = existing.TokenFile
+			}
+			if !provided["device"] {
+				*device = existing.Device
+			}
+		}
+	}
 	if *tokenFile == "" {
 		base, err := os.UserConfigDir()
 		if err != nil {
@@ -306,10 +325,6 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 			return fmt.Errorf("unknown agent %q; choose codex,cursor,claude, or none", name)
 		}
 		selected[name] = true
-	}
-	configPath, err := goclient.ConfigPath(*configArg)
-	if err != nil {
-		return err
 	}
 	if !filepath.IsAbs(configPath) || !filepath.IsAbs(*tokenFile) {
 		return errors.New("config and token paths must be absolute")

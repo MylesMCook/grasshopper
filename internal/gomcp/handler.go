@@ -106,6 +106,11 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	if len(token) < 32 || strings.IndexFunc(token, unicode.IsSpace) >= 0 {
 		return nil, errors.New("token must contain at least 32 non-whitespace characters")
 	}
+	upgradeCtx, upgradeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer upgradeCancel()
+	if err := backend.Store.EnsureClientTokenSchema(upgradeCtx); err != nil {
+		return nil, err
+	}
 	if backend.AllowedProxyHost != "" {
 		host, port, err := net.SplitHostPort(backend.AllowedProxyHost)
 		portNumber, portErr := strconv.Atoi(port)
@@ -152,13 +157,28 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		}
 	}
 	tokenHash := sha256.Sum256([]byte(token))
-	bearerValid := func(r *http.Request) bool {
+	masterBearerValid := func(r *http.Request) bool {
 		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if provided == r.Header.Get("Authorization") || provided == "" {
 			return false
 		}
 		providedHash := sha256.Sum256([]byte(provided))
 		return subtle.ConstantTimeCompare(providedHash[:], tokenHash[:]) == 1
+	}
+	bearerValid := func(r *http.Request) bool {
+		if masterBearerValid(r) {
+			return true
+		}
+		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if provided == r.Header.Get("Authorization") || len(provided) < 32 || len(provided) > 256 {
+			return false
+		}
+		valid, err := backend.Store.ClientTokenValid(r.Context(), provided)
+		return err == nil && valid
+	}
+	var pairings *pairingManager
+	if backend.Visualizer {
+		pairings = newPairingManager(backend.Store)
 	}
 	version := backend.Version
 	if version == "" {
@@ -273,8 +293,41 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		if backend.Visualizer && visualizerAsset(w, r, backend.VisualizerStyleHashes) {
 			return
 		}
+		if pairings != nil {
+			w.Header().Set("Cache-Control", "no-store")
+			switch r.URL.Path {
+			case "/pair/start":
+				pairings.start(w, r, visualizerOrigin(r, backend.AllowedProxyHost))
+				return
+			case "/pair/poll":
+				pairings.poll(w, r, visualizerOrigin(r, backend.AllowedProxyHost))
+				return
+			case "/visualizer/api/pairings", "/visualizer/api/devices":
+				admin := masterBearerValid(r)
+				if cookie, err := r.Cookie(visualizerCookieName); err == nil && validVisualizerSession(cookie.Value, tokenHash[:], time.Now()) {
+					admin = true
+				}
+				if !admin {
+					http.Error(w, "authentication required", http.StatusUnauthorized)
+					return
+				}
+				origin := visualizerOrigin(r, backend.AllowedProxyHost)
+				if (r.Method != http.MethodGet && r.Header.Get("Origin") != origin) || (r.Header.Get("Origin") != "" && r.Header.Get("Origin") != origin) {
+					http.Error(w, "invalid Origin header", http.StatusForbidden)
+					return
+				}
+				ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+				defer cancel()
+				if r.URL.Path == "/visualizer/api/pairings" {
+					pairings.adminPairings(w, r.WithContext(ctx))
+				} else {
+					pairings.adminDevices(w, r.WithContext(ctx))
+				}
+				return
+			}
+		}
 		if backend.Visualizer && r.URL.Path == "/visualizer/api/session" {
-			visualizerSession(w, r, tokenHash[:], bearerValid(r), backend.AllowedProxyHost)
+			visualizerSession(w, r, tokenHash[:], masterBearerValid(r), backend.AllowedProxyHost)
 			return
 		}
 		authorized := bearerValid(r)

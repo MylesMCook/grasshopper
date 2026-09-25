@@ -15,6 +15,13 @@ const deviceSelect = document.getElementById('device');
 const manualDeviceLabel = document.getElementById('manual-device-label');
 const manualDeviceInput = document.getElementById('manual-device');
 const manualChoice = '\u0000manual';
+const devicePanel = document.getElementById('device-panel');
+const deviceStatus = document.getElementById('device-status');
+const pendingDevices = document.getElementById('pending-devices');
+const connectedDevices = document.getElementById('connected-devices');
+const serverAddress = document.getElementById('server-address');
+const copyServerAddress = document.getElementById('copy-server-address');
+serverAddress.textContent = `${location.origin}/mcp`;
 
 let active = false;
 let loggingIn = false;
@@ -25,6 +32,7 @@ let hasLoaded = false;
 let knownProjects = [];
 let knownDevices = [];
 let lastSignature = '';
+let deviceTimer = null;
 
 function option(value, text) {
   const item = document.createElement('option');
@@ -87,6 +95,8 @@ function setConnected(value) {
   tokenField.hidden = value;
   connectButton.textContent = value ? 'Refresh' : 'Connect';
   disconnectButton.disabled = !value;
+  devicePanel.hidden = !value;
+  if (value && devicePanel.open) refreshDevices();
 }
 
 function stop(clearRecords = false) {
@@ -95,6 +105,9 @@ function stop(clearRecords = false) {
   timer = null;
   if (inFlight) inFlight.abort();
   inFlight = null;
+  clearTimeout(deviceTimer);
+  deviceTimer = null;
+  devicePanel.hidden = true;
   if (clearRecords) {
     records.replaceChildren();
     omissions.hidden = true;
@@ -108,6 +121,99 @@ function stop(clearRecords = false) {
     showManualDevice();
     scopeInput();
   }
+}
+
+copyServerAddress.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(serverAddress.textContent);
+    deviceStatus.textContent = 'Server address copied.';
+  } catch {
+    deviceStatus.textContent = 'Select and copy the address above.';
+  }
+});
+
+devicePanel.addEventListener('toggle', () => {
+  clearTimeout(deviceTimer);
+  deviceTimer = null;
+  if (devicePanel.open && active) refreshDevices();
+});
+
+function deviceRow(text, buttons = []) {
+  const row = document.createElement('div');
+  row.className = 'device-entry';
+  const label = document.createElement('p');
+  label.textContent = text;
+  const actions = document.createElement('div');
+  actions.className = 'device-actions';
+  for (const [caption, action] of buttons) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'quiet';
+    button.textContent = caption;
+    button.addEventListener('click', action);
+    actions.append(button);
+  }
+  row.append(label, actions);
+  return row;
+}
+
+async function deviceRequest(path, method = 'GET', body) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(path, {
+      method, headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: 'same-origin', cache: 'no-store', signal: controller.signal
+    });
+    if (!response.ok) throw new Error('Device controls unavailable');
+    return response.status === 204 ? null : response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function decidePairing(request, decision) {
+  try {
+    await deviceRequest('/visualizer/api/pairings', 'POST', { request_id: request.request_id, code: request.code, decision });
+    deviceStatus.textContent = decision === 'approve' ? `${request.device} approved.` : `${request.device} denied.`;
+    refreshDevices();
+  } catch {
+    deviceStatus.textContent = 'Could not change this request. Try again.';
+  }
+}
+
+async function revokeDevice(device) {
+  if (!window.confirm(`Disconnect ${device.device}? Its agent will lose access immediately.`)) return;
+  try {
+    await deviceRequest('/visualizer/api/devices', 'DELETE', { id: device.id });
+    deviceStatus.textContent = `${device.device} disconnected.`;
+    refreshDevices();
+  } catch {
+    deviceStatus.textContent = 'Could not disconnect this device. Try again.';
+  }
+}
+
+async function refreshDevices() {
+  if (!active || !devicePanel.open) return;
+  clearTimeout(deviceTimer);
+  try {
+    const [pending, devices] = await Promise.all([
+      deviceRequest('/visualizer/api/pairings'), deviceRequest('/visualizer/api/devices')
+    ]);
+    if (!active || !devicePanel.open) return;
+    pendingDevices.replaceChildren(...pending.map(request => deviceRow(
+      `${request.device} · code ${request.code}`,
+      [['Approve', () => decidePairing(request, 'approve')], ['Deny', () => decidePairing(request, 'deny')]]
+    )));
+    const connected = devices.filter(device => !device.revoked_at);
+    connectedDevices.replaceChildren(...connected.map(device => deviceRow(device.device, [['Disconnect', () => revokeDevice(device)]])));
+    if (!pending.length) pendingDevices.replaceChildren(deviceRow('No connection requests waiting.'));
+    if (!connected.length) connectedDevices.replaceChildren(deviceRow('No other devices connected.'));
+  } catch {
+    deviceStatus.textContent = 'Device controls unavailable. Memory view still works.';
+  }
+  if (active && devicePanel.open) deviceTimer = setTimeout(refreshDevices, 5000);
 }
 
 function scopeInput() {
