@@ -1,22 +1,15 @@
 # Grasshopper
 
-Grasshopper keeps a few useful memories in one private place. Codex, Cursor,
-and Claude Code can share your explicit preferences, project decisions, verified
-lessons, and short handoffs across machines.
+Grasshopper keeps your explicit preferences, project decisions, verified lessons, and short handoffs in one private memory service. Codex, Cursor, and Claude Code can read the same records across machines.
 
-[See how it works](https://usegrasshopper.com/) · [Download the latest release](https://github.com/MylesMCook/grasshopper/releases/latest) · [See what has been tested](docs/memory-acceptance.md)
+[How it works](https://usegrasshopper.com/) · [Set up a server](https://usegrasshopper.com/setup/) · [Connect an agent](integrations/plugins/README.md) · [What we tested](docs/memory-acceptance.md)
 
-## Start here
+## Start
 
-1. [Run the server](docs/go-package.md) on a host you control. It holds the only writable memory database.
-2. [Connect your agents](integrations/plugins/README.md) to that same service. Codex users can install the plugin from [Grasshopper's own marketplace](plugins/grasshopper/README.md).
-3. Save one explicit preference, then check it in a fresh session and in the [memory view](docs/memory-visualizer.md).
+1. Run the [server](https://usegrasshopper.com/setup/) on a machine you control. It owns the only writable memory database.
+2. [Connect each agent machine](integrations/plugins/README.md) to that server with a private token file.
+3. Save one explicit preference. In a fresh agent session, check that it arrived before tool use; inspect it in the server's [memory view](docs/memory-visualizer.md).
 
-The server requires authentication. Memories can be corrected by revision and
-archived without losing their history. Project scope keeps records from mixing,
-but it is not an access boundary. Keep restricted work in a separate deployment.
+Memories have scope, source, and revision history. Project scope keeps records from mixing, but it does not restrict access. Use a separate service for data that needs a separate access boundary.
 
-For development, see [repository instructions](AGENTS.md). For data handling and
-recovery, see [the operator guide](docs/shared-memory.md). The
-[shared memory policy](integrations/policy/AGENTS.md) is the only standing
-instruction file maintained for all three agents.
+For repository work, read [AGENTS.md](AGENTS.md). For backups, migration, and recovery, use the [operator guide](docs/shared-memory.md). The [shared AGENTS.md policy](integrations/policy/AGENTS.md) is the one standing memory instruction source for all three agents.

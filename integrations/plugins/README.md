@@ -1,83 +1,79 @@
-# Connect your agents
+# Connect an agent
 
-One Grasshopper server holds the memories. The client archive contains a stateless bridge for Codex, Cursor, and Claude Code. Extract it to a folder you will keep; moving it later breaks local plugin paths. Check SHA256SUMS before running it.
+One client connects Codex, Cursor, and Claude Code to your private Grasshopper server. It stores no memories locally. Use the [server setup](https://usegrasshopper.com/setup/) first.
 
-## 1. Connect once
+## Connect this machine
 
-Have your private server's HTTPS /mcp address and an existing local token file ready. The token file must be private to your account. Grasshopper reads it when needed; setup does not copy it into a plugin or config. On the server host, --quickstart prints its path. On another machine, provision one private token file through a secure channel.
+1. Download its [client archive](https://github.com/MylesMCook/grasshopper/releases/latest), [check `SHA256SUMS`](https://github.com/MylesMCook/grasshopper/blob/main/docs/go-package.md), and extract it to a folder you will keep. Plugin paths break if you move the folder.
+2. Have the server's `/mcp` address and a private token file on **this** machine. The server's `--quickstart` prints the token-file path. Transfer a copy securely to other machines; keep it out of Git and command arguments. Use loopback HTTP on the server host or private HTTPS from another machine.
+3. From the extracted client folder, run the commands for your OS. Replace the address, token path, and device name.
 
-From the extracted client archive, replace the example address, token path, and stable device name:
+Mac or Linux:
 
-~~~sh
+```sh
 ./codex/plugins/grasshopper/bin/grasshopper configure \
   --url https://your-private-server/mcp \
   --token-file /absolute/private/token-file \
-  --device my-mac
-~~~
-
-~~~powershell
-.\codex\plugins\grasshopper\bin\grasshopper.exe configure --url https://your-private-server/mcp --token-file C:\absolute\private\token-file --device my-windows-pc
-~~~
-
-This writes one client config and installs the package's canonical AGENTS.md memory policy beside it. It prints their paths, never the token. A changed config needs an explicit --update. It does not alter repository instructions or install an agent plugin. Repeat setup on each machine that will run an agent.
-
-Run the same binary with check before installing a harness:
-
-~~~sh
+  --device my-machine
 ./codex/plugins/grasshopper/bin/grasshopper check
-~~~
+```
 
-On Windows, use .\codex\plugins\grasshopper\bin\grasshopper.exe check. It makes one bounded, authenticated context read and prints no memory content or token. If it fails, fix the URL, token file, or private route first.
+Windows PowerShell:
 
-## 2. Install the harness you use
+```powershell
+.\codex\plugins\grasshopper\bin\grasshopper.exe configure --url https://your-private-server/mcp --token-file C:\absolute\private\token-file --device my-pc
+.\codex\plugins\grasshopper\bin\grasshopper.exe check
+```
 
-Run these from the extracted archive. All three harnesses use the same client config and backend.
+`configure` writes one private client config and the package's canonical `AGENTS.md` policy. It stores the **path** to the token, not its contents. `check` makes one bounded authenticated read and prints no memories. If it fails, fix the address, token file, or private route before adding an agent. Repeat this step on each agent machine.
+
+## Add the agents you use
+
+Run these from the extracted client folder.
 
 **Codex CLI and Desktop**
 
-~~~sh
+```sh
 codex plugin marketplace add ./codex
 codex plugin add grasshopper@grasshopper-local
-~~~
+```
 
-Start a fresh task. Open /hooks, review the Grasshopper SessionStart and SubagentStart commands, and trust them. Codex skips new plugin hooks until you do. Confirm grasshopper appears under MCP tools. A connected tool alone does not prove the first turn received memory.
+In a fresh task, use `/hooks` to review and trust the Grasshopper startup hooks. Codex skips new hooks until trusted.
 
-**Cursor Agent CLI and local IDE**
+**Cursor Agent CLI and IDE**
 
-~~~sh
+```sh
 ./cursor/plugins/grasshopper/bin/grasshopper cursor install
 agent mcp enable grasshopper
-~~~
+```
 
-The first command merges Grasshopper's MCP server and startup hook into user-level Cursor configuration while preserving other entries. The second approves only that MCP server. Start a fresh Agent session and check a known record. Conflicting Grasshopper entries stop installation; inspect them before trying cursor install --update.
-
-The current Cursor CLI has marketplace management but no plugin-install subcommand. Its native plugin path is still being checked. The supported MCP and hook path above passed a fresh CLI turn. See the [Cursor CLI test record](../../docs/cursor-cli.md). Managed Cursor policies take priority.
+On Windows, use `.\cursor\plugins\grasshopper\bin\grasshopper.exe cursor install`. Approve the Grasshopper MCP source when prompted.
 
 **Claude Code**
 
-~~~sh
+```sh
 claude plugin marketplace add ./claude
 claude plugin install grasshopper@grasshopper-local
-~~~
+```
 
-Start a new Claude Code session and check a known record. Claude's AGENTS.md and hook behavior differ from Codex and Cursor; see the [test record](https://github.com/MylesMCook/grasshopper/blob/main/docs/memory-acceptance.md) before relying on it.
+Review any prompt from Claude Code. All three agents need to be installed and signed in first.
 
-On Windows, use the same steps in PowerShell, with .exe for Grasshopper and full Windows paths. Cursor CLI and Claude Code must already be installed and signed in.
+The Cursor installer merges only Grasshopper's MCP and startup-hook entries into your user configuration. It preserves other entries and stops on a conflicting Grasshopper entry. `agent mcp enable` approves the MCP source; it does not preapprove writes. All three agents use the same config and server. They do not create Claude or Cursor rule files.
 
-## Check the connection
+## Check a fresh session
 
-In a fresh session, ask which Grasshopper preference arrived before tool use. Correct a synthetic record by ID and expected revision, then use get for current and prior revisions. A successful hook does not prove the model saw context. If the backend is down, the agent should continue within a bounded time and say no write was acknowledged.
+Ask the agent which Grasshopper record it received **before tool use**, including its ID and revision. A connected MCP source or successful hook alone does not prove context reached the first turn. Test a correction with a synthetic record, then read both revisions. If the server is down, the agent should continue promptly and must not claim an unacknowledged write was saved.
 
-Cursor headless reads may need agent --print --auto-review on the tested CLI version. A normal headless run can deny an MCP read even when the server is connected. Keep write approval explicit. No client has a writable memory database or alternate instruction file.
+Cursor's tested headless CLI may deny a read without `agent --print --auto-review`; see the [Cursor test record](../../docs/cursor-cli.md). Desktop and IDE first-turn behavior needs its own check. [Observed results](https://github.com/MylesMCook/grasshopper/blob/main/docs/memory-acceptance.md).
 
 ## Update or remove
 
-Keep the old archive until a fresh-session check passes with the new one. Extract the new archive into a new permanent folder, check its checksums, and run its configure command with --update and the same server, token file, and device. Then:
+For an update, keep the old folder until the new one passes a fresh-session check. Extract the new archive to a permanent folder and repeat `configure` with the same values plus `--update`. Then update only the agents you use:
 
-- Codex: run codex plugin remove grasshopper@grasshopper-local, then codex plugin marketplace remove grasshopper-local. Add the new archive's marketplace and plugin; review the new hook definition.
-- Cursor: run the new archive's grasshopper cursor install --update. Its MCP and hook paths move to the new binary. Check a fresh turn before deleting the old archive.
-- Claude Code: uninstall grasshopper@grasshopper-local, remove the old grasshopper-local marketplace, then add and install the new archive.
+- **Codex:** `codex plugin remove grasshopper@grasshopper-local`, then `codex plugin marketplace remove grasshopper-local`. Run the two Codex install commands above from the new folder and review changed hooks.
+- **Cursor:** run the new folder's `grasshopper cursor install --update`. It moves Grasshopper's MCP and hook paths to the new binary.
+- **Claude Code:** `claude plugin uninstall grasshopper@grasshopper-local`, then `claude plugin marketplace remove grasshopper-local`. Run the two Claude install commands above from the new folder.
 
-For removal, use the harness removal commands above without reinstalling. For Cursor, run grasshopper cursor remove from the installed archive and agent mcp disable grasshopper. Removal touches only Grasshopper's MCP and hook entries. Keep the shared client config, token file, and AGENTS.md while another harness uses them; remove them only after all harnesses are disconnected. Removing a client never deletes server memories.
+To remove Grasshopper, run the removal commands for your installed agents without reinstalling. For Cursor, run `grasshopper cursor remove` from the installed client folder, then `agent mcp disable grasshopper`. Keep the shared config, token file, and `AGENTS.md` while any agent still uses them. Removing a client never deletes server memories.
 
-The [Grasshopper Git marketplace](https://github.com/MylesMCook/grasshopper/tree/main/plugins/grasshopper) is a separate Codex route for people who already have the client binary on PATH. Do not install it alongside the archive's local Codex plugin.
+For custom project-local wiring, use the [manual integration examples](https://github.com/MylesMCook/grasshopper/blob/main/integrations/README.md). The separate [Git-backed Codex marketplace](https://github.com/MylesMCook/grasshopper/tree/main/plugins/grasshopper) requires a client binary on Codex's PATH; do not install both Codex plugin routes.

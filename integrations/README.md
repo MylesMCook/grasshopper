@@ -1,43 +1,31 @@
-# Connect Codex Desktop, Cursor, or Claude Code
+# Manual agent wiring
 
-All three harnesses use the **same stateless client** and the same [memory policy](policy/AGENTS.md). Keep each client configuration local and untracked. The package installer changes only the Grasshopper entries in the harness configuration you choose; it does not touch managed policy or another repository.
+Use the [client package guide](plugins/README.md) for normal installation. These examples are for project-local setups or clients the installer cannot configure. They connect to the same server and [AGENTS.md memory policy](policy/AGENTS.md); they do not create another writable store or standing-instruction file.
 
-**Start with the [client package guide](plugins/README.md).** It has the shortest install, check, update, and removal steps. The manual wiring below is for custom setups. Fresh Mac Codex and Cursor CLI turns received and corrected synthetic shared memory; extracted Mac, Linux, and Windows packages passed their documented checks. Desktop and IDE behavior still needs its own observation. [Test evidence](../docs/memory-acceptance.md).
+## Prepare
 
-## 1. Prepare the client
+Build `./cmd/grasshopper` or extract a [client archive](https://github.com/MylesMCook/grasshopper/releases/latest). Copy [client.example.json](client.example.json) to a private, untracked path. Set the server's authenticated `/mcp` URL, stable device ID, and the absolute path to the canonical policy. Set exactly one credential reference: `token_file` or `token_env`. Keep the token out of Git and command arguments. Use loopback HTTP on the server host or private HTTPS from another machine.
 
-Build `./cmd/grasshopper` or extract the matching [portable bundle](../docs/go-package.md). Use the absolute path to `bin/grasshopper` (macOS) or `bin/grasshopper.exe` (Windows). This client has no writable database and needs no ONNX model.
+The client resolves project identity from the normalized Git origin, removing credentials and preserving path case. A local `grasshopper.project-id` is an explicit override. A folder without either has unresolved project scope; it does not become global.
 
-Copy `client.example.json` to a **private, untracked** path on the client machine. Set an approved private HTTPS `/mcp` URL, a stable device ID, and the absolute path to this checkout’s `policy/AGENTS.md`. Choose exactly one credential reference: `token_env` or `token_file`. Keep the token outside Git and arguments. On macOS a token file must be owner-only (`chmod 600`); on Windows restrict its ACL to the intended user and trusted admins. The backend requires a token even behind a proxy.
+## Wire one harness
 
-The startup hook resolves project identity. For a manual MCP call, use `project: "id:<configured ID>"` when the repository has local `grasshopper.project-id`, or `project: "git:<normalized origin host/path>"` for a Git remote. A clone folder path is not a project identity.
+Merge only the Grasshopper entries. Replace placeholder binary and config paths with absolute paths; preserve unrelated and managed settings.
 
-The client uses normalized Git `origin` for project identity, preserving path case and dropping credentials. Set a project-local `grasshopper.project-id` only when a durable override is intentional. With neither a remote nor an ID, project scope stays unresolved; the client loads only applicable global/device/OS context.
+| Harness | Examples | Check |
+| --- | --- | --- |
+| Codex | [MCP config](codex/config.toml.example) and [hooks](codex/hooks.json.example) | Trust the project and review its hook in `/hooks`. Check a fresh first turn; MCP connection alone is not proof. |
+| Cursor | [MCP config](cursor/mcp.json.example), [hooks](cursor/hooks.json.example), and [CLI read permissions](cursor/cli.json.example) | Enable the MCP source, start a fresh Agent chat, and check a known record. The read allowlist covers only `context`, `get`, and `search`; approve writes separately. |
+| Claude Code | [MCP config](claude/mcp.json.example) and [hooks](claude/settings.json.example) | Check the installed `agents-md` mod and instruction-loading mode. The hook loads the same policy when native loading is insufficient. Never add a CLAUDE.md wrapper. |
 
-## 2. Wire one harness
+Claude Code's native AGENTS.md behavior depends on version and settings. Inspect legacy instruction files through the applicable ancestor directories before migrating them, and leave managed modes intact. The [observed loading tests](../docs/memory-acceptance.md) distinguish native loading, hook delivery, nested files, and subagents.
 
-Merge only the Grasshopper entries from the examples below. Replace both placeholders with absolute paths. Preserve existing entries, unrelated hooks, and managed settings. These files are integration wiring, **not** another home for standing instructions.
+For Cursor Agent CLI, run `agent mcp enable grasshopper` if prompted, then `agent mcp list-tools grasshopper`. The tested headless CLI needed `agent --print --auto-review` for synthetic reads; default `--print` denied them. See the [CLI test record](../docs/cursor-cli.md). Do not use force flags to bypass write approval.
 
-| Harness | Project-local files | Check in the real app |
-|---|---|---|
-| Codex Desktop | Merge `codex/config.toml.example` into `.codex/config.toml`, and `codex/hooks.json.example` into `.codex/hooks.json`. | Trust the project, then review and trust the exact hook in `/hooks`. Native root AGENTS.md loads before work. The hook loads memory on start, resume, compaction, and subagent start; if it is absent, call `grasshopper/context` once. CLI success does not prove Desktop behavior. |
-| Cursor | Merge `cursor/mcp.json.example` into `.cursor/mcp.json`, and `cursor/hooks.json.example` into `.cursor/hooks.json`. | Open the intended folder. In Customize → MCPs, enable the project source and reload `grasshopper`. “Local: Connected” alone does not prove Agent can use it. Cursor’s startup hook can race the first turn; use one MCP context fallback. |
-| Claude Code | Merge `claude/mcp.json.example` into `.mcp.json`, and `claude/settings.json.example` into `.claude/settings.json`. | Inspect `/plugin` for the built-in agents-md mod and `/config` for instruction mode. Prefer native `claude-md-or-agents-md`. The start hook loads the same canonical policy, applicable AGENTS.md, and memory when native loading is unavailable. Read nested AGENTS.md before touching its files. Do not create a CLAUDE.md wrapper. |
+## Verify and remove
 
-For Claude Code, inspect legacy CLAUDE.md and rule files **through the applicable ancestor directories** before migration. The official option is `pluginConfigs["agents-md@builtin"].options.instructionFiles`; user/explicit/managed settings control it. Do not bypass managed-only mode. The Mac 2.1.280 fresh session did not load root AGENTS.md natively, although the upstream mod documents support. Its start hook delivered the root file and memory before the first turn; a separate probe read nested AGENTS.md before the nested file. Two small companion hooks read the existing user `~/.claude/AGENTS.md` directly because this headless client denied an on-demand read outside the project and Claude limits each hook message to 10,000 characters. They create no copy; if that file exceeds 17,000 bytes, the hook reports that guidance was not loaded. Check native loading again after upgrades. The hooks run at session/subagent start, not on every prompt or file tool call.
+In a fresh session, check the applicable AGENTS.md, the record ID and revision delivered before tool use, project/device scope, and a synthetic correction with readback. During an outage, coding must continue within a bounded time; a timed-out write is not saved.
 
-For Cursor Agent CLI:
+For removal, delete only Grasshopper's MCP, hook, and Cursor CLI permission entries. Keep the client config, token reference, and policy if another harness uses them. Removing client wiring does not delete server memories.
 
-1. From the project, run `agent mcp list`. If Grasshopper needs approval, run `agent mcp enable grasshopper`. Confirm with `agent mcp list-tools grasshopper`. Server approval is separate from tool approval.
-2. Merge [the CLI permission example](cursor/cli.json.example) into `.cursor/cli.json`. It lists only `context`, `get`, and `search` as preapproved tools. Keep the required `deny` array.
-3. For a headless read check on the tested CLI version, use `agent --print --auto-review`; default `--print` rejected the read in fresh Mac and Beelink workspaces despite the allowlist. Use interactive mode for corrections and verify the returned ID and revision. Never call a rejected or timed-out write saved. Avoid `--force` and `--approve-mcps` as routine workarounds.
-
-The Mac synthetic check observed both read and write behavior through a project MCP source. On Work HP, the package's startup hook supplied context but its plugin-only MCP did not register for the CLI; a project-local MCP source and read-tool allowlist enabled a fresh read. Mac plugin-only loading likewise delivered startup context but had no registered Grasshopper MCP tool. Keep the project-local MCP setup for Cursor CLI until native plugin tool loading is proven. Recheck [Cursor's CLI configuration](https://prod.cursor.com/docs/cli/reference/configuration), [permissions](https://prod.cursor.com/docs/cli/reference/permissions), and [MCP commands](https://prod.cursor.com/docs/cli/mcp) after a client upgrade.
-
-## 3. Verify and remove
-
-In a fresh session, check root AGENTS.md, active global record ID/revision, project/device filtering, a user-approved synthetic correction with readback, and a stopped-backend attempt. A connected MCP server or hook log alone is not evidence that the first model turn had context. Writes count only after an ID/revision acknowledgement. Hooks read; the active agent decides what to save. Network work has a five-second client deadline; it must not block coding or loop on retries.
-
-To remove a package install, follow the [removal commands](plugins/README.md). For manual wiring, delete **only** Grasshopper’s MCP, hook, and Cursor CLI permission entries. Remove the local client configuration and secret reference if unused elsewhere. Disable the Cursor CLI source only if no other project uses it. Leave other settings, memories, canonical policy, and AGENTS.md files in place. No CLAUDE.md, Cursor rule file, or client database is created by setup or removal.
-
-Official references checked during the pilot: [Codex hooks](https://developers.openai.com/codex/hooks), [Codex MCP](https://developers.openai.com/codex/mcp), [Cursor hooks](https://cursor.com/docs/hooks), [Cursor MCP](https://cursor.com/docs/mcp), [Claude hooks](https://code.claude.com/docs/en/hooks), [Claude agents-md mod](https://github.com/anthropics/claude-code/tree/main/mods/agents-md).
+Official references: [Codex hooks](https://developers.openai.com/codex/hooks), [Cursor hooks](https://cursor.com/docs/hooks), [Claude hooks](https://code.claude.com/docs/en/hooks), and [Claude agents-md mod](https://github.com/anthropics/claude-code/tree/main/mods/agents-md).

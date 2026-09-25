@@ -1,31 +1,21 @@
-# Public Grasshopper site
+# Public website
 
-`usegrasshopper.com` serves a short introduction, a local setup guide, and a memory-view
-link. Visitors enter their own server address at `/view/`; the page remembers only
-that address in the browser, then opens the server's `/visualizer/`. It does not
-accept tokens, proxy requests, or hold memories. Visitors enter their token on
-their own server.
+`usegrasshopper.com` explains Grasshopper, links to the release downloads, and lets visitors open their own server's memory view. `/view/` remembers only the server address in the browser. Tokens and memories stay on that server; this site does not proxy them.
 
-Build with `sh web/build.sh`, then run `wrangler deploy --dry-run -c web/wrangler.jsonc`
-from the repository root. The deployment source is `web/dist/`, generated from
-`web/public/` plus the repository's site stylesheet, theme script, and fonts.
-The directory is ignored by Git. Deploy with `wrangler deploy -c web/wrangler.jsonc`
-only after checking the account, domain, and preview behavior. The config attaches
-the Worker to the `usegrasshopper.com` custom domain. The response header
-`Cache-Control: public, max-age=0, no-transform` prevents Cloudflare from injecting
-its analytics script into a page whose CSP allows only first-party scripts.
+## Build and deploy
 
-After deployment, check `/`, `/setup/`, and `/view/` in a browser, and confirm that `/mcp`
-and `/visualizer/` return 404 on the public domain. For a site rollback, find the
-previous version with `wrangler deployments list --name grasshopper-site`, then
-run `wrangler rollback VERSION_ID -c web/wrangler.jsonc`. This changes only the
-public site; it does not touch a private memory server.
+From the repository root:
 
-The live setup page links to the public 2.1.0 server and client archives, plus the client guide.
-After a release change, check each download link before deploying updated copy.
+```sh
+sh web/build.sh
+wrangler deploy --dry-run -c web/wrangler.jsonc
+wrangler deploy -c web/wrangler.jsonc
+```
 
-The public pages allow two exact style hashes used by Codex Annotate in the
-tested app build. Keep `unsafe-inline` disabled. If annotation breaks after a
-Codex update, inspect the new blocked styles before changing the hashes.
-`web/build.sh` changes each page asset when `_headers` changes so a header-only
-deployment cannot leave the previous policy at the edge.
+`web/dist/` is generated from `web/public/`, the shared stylesheet and theme script, and the [licensed fonts](../docs/fonts/README.md). It is ignored by Git. Check the Cloudflare account, domain, preview, and release download links before deploying. The Worker serves the `usegrasshopper.com` custom domain.
+
+## Check and roll back
+
+Open `/`, `/setup/`, and `/view/` in a browser. Check links, theme, narrow-screen layout, and console errors. Public `/mcp` and `/visualizer/` must return 404. To roll back only the website, find the prior version with `wrangler deployments list --name grasshopper-site`, then run `wrangler rollback VERSION_ID -c web/wrangler.jsonc`. A site rollback does not change a private memory server.
+
+The `no-transform` response header prevents Cloudflare from injecting a script blocked by this site's content security policy. Two exact style hashes allow Codex Annotate in the tested app build; keep `unsafe-inline` disabled. If annotation breaks after a Codex update, inspect the blocked styles before changing those hashes. `web/build.sh` changes each page asset when `_headers` changes so a header-only deploy reaches the edge.
