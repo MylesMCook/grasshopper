@@ -9,8 +9,8 @@ This marketplace is being tested. The `marketplace` branch is not published yet.
 
 1. [Start a server](https://usegrasshopper.com/setup/) and keep its HTTPS
    `/mcp` address and token file ready.
-2. Add this marketplace. On macOS, install `grasshopper-macos`; on Windows or
-   Linux, choose `grasshopper-windows` or `grasshopper-linux`.
+2. Add this marketplace. Choose `grasshopper-macos` for Apple Silicon,
+   `grasshopper-windows` for Windows x64, or `grasshopper-linux` for Linux x64.
 
    **Codex**
 
