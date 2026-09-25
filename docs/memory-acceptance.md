@@ -4,7 +4,7 @@ This is observed behavior, not a claim that every app, machine, and recovery pat
 
 ## Backend and packages
 
-- `go test ./...`, `go vet ./...`, and the selected race tests pass on Mac mini. [CI for 2.2.1 source](https://github.com/MylesMCook/grasshopper/actions/runs/36165978676) passed tests, vet, and native builds on macOS, Windows, and Linux.
+- `go test ./...`, `go vet ./...`, and the selected race tests pass on Mac mini. [Final 2.2.1 CI](https://github.com/MylesMCook/grasshopper/actions/runs/36172005751) passed tests, vet, and native builds on macOS, Windows, and Linux.
 - Extracted 2.2.1 client and server archives passed every internal SHA-256 entry on Mac mini, Beelink Ubuntu, and Work HP Windows. Each native server started from an empty task-local state, rejected anonymous `/healthz`, answered an authenticated client check, and made a verified local SQLite snapshot. Scratch listeners were stopped. This does not test persistent startup or live-data migration.
 - Backend regression tests cover scoped context and search, project identity across clone paths, device/OS separation, confirmed preferences, corrections with revision conflicts, idempotent retries, full historical reads, archive/restore, immediate semantic recall, and unauthenticated rejection. These tests do not establish first-turn agent behavior.
 
