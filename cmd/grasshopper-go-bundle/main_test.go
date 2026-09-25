@@ -83,26 +83,17 @@ func TestClientPluginsPackageThreeHarnessesOnePolicy(t *testing.T) {
 			t.Fatalf("private or server data included: %s", entry.Name)
 		}
 	}
-	if entries["bin/grasshopper"] == nil || entries["policy/AGENTS.md"] == nil || entries["cursor-mcp.example.json"] == nil || entries["cursor-cli.example.json"] == nil || entries["cursor-cli.md"] == nil || entries["SHA256SUMS"] == nil {
+	if entries["bin/grasshopper"] == nil || entries["policy/AGENTS.md"] == nil || entries["cursor-mcp.example.json"] == nil || entries["cursor-cli.example.json"] == nil || entries["SHA256SUMS"] == nil {
 		t.Fatal("canonical policy, Cursor setup, or checksums missing")
 	}
-	installReader, err := entries["INSTALL.md"].Open()
+	installReader, err := entries["SETUP.md"].Open()
 	if err != nil {
 		t.Fatal(err)
 	}
 	installGuide, err := io.ReadAll(installReader)
 	installReader.Close()
-	if err != nil || !strings.Contains(string(installGuide), "(cursor-cli.md)") || strings.Contains(string(installGuide), "../../docs/cursor-cli.md") {
-		t.Fatalf("client install guide has a broken Cursor evidence link: %v", err)
-	}
-	cursorReader, err := entries["cursor-cli.md"].Open()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cursorGuide, err := io.ReadAll(cursorReader)
-	cursorReader.Close()
-	if err != nil || !strings.Contains(string(cursorGuide), "(INSTALL.md)") {
-		t.Fatalf("client Cursor guide has a broken install link: %v", err)
+	if err != nil || !strings.Contains(string(installGuide), "Cursor Agent CLI") || entries["INSTALL.md"] != nil || entries["cursor-cli.md"] != nil {
+		t.Fatalf("expected one client setup guide: %v", err)
 	}
 	for _, harness := range []string{"codex", "cursor", "claude"} {
 		root := harness + "/plugins/grasshopper/"
@@ -196,6 +187,9 @@ func TestMarketplacePackagesOneStatelessClientPerPlatform(t *testing.T) {
 	}
 	for _, slug := range []string{"macos", "windows", "linux"} {
 		root := "plugins/grasshopper-" + slug + "/"
+		if entries[root+"README.md"] != nil {
+			t.Fatalf("duplicate %s README in marketplace", slug)
+		}
 		exe := ""
 		if slug == "windows" {
 			exe = ".exe"
@@ -226,6 +220,9 @@ func TestMarketplacePackagesOneStatelessClientPerPlatform(t *testing.T) {
 		if _, copied := codex["hooks"]; copied {
 			t.Fatal("Codex hooks must use native hooks/hooks.json discovery")
 		}
+	}
+	if entries["README.md"] == nil {
+		t.Fatal("marketplace setup guide missing")
 	}
 	for _, path := range []string{".agents/plugins/marketplace.json", ".cursor-plugin/marketplace.json"} {
 		entry := entries[path]

@@ -8,7 +8,7 @@
     a:focus-visible { outline: 3px solid var(--link); outline-offset: 3px; }
     .top { position: sticky; top: 0; z-index: 10; display: grid; grid-template-columns: auto 1fr auto; gap: 12px 24px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--rule); background: var(--paper); }
     .brand { font-size: .8rem; letter-spacing: .08em; font-weight: 600; color: var(--ink); text-decoration: none; }
-    nav, .links, .actions, footer { display: flex; flex-wrap: wrap; gap: 10px 24px; }
+    nav, .actions, footer { display: flex; flex-wrap: wrap; gap: 10px 24px; }
     nav, footer { font-size: .88rem; }
     nav { align-items: center; justify-content: flex-end; grid-column: 2; grid-row: 1; }
     .theme-toggle { grid-column: 3; grid-row: 1; }
@@ -30,19 +30,12 @@
     .heading { padding-bottom: 16px; border-bottom: 1px solid var(--rule); }
     .intro { max-width: 72ch; margin-top: 22px; }
     .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 34px; }
+    .agent-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .grid article { padding-top: 17px; border-top: 1px solid var(--soft); }
-    .grid p, .note, .step p { margin-top: 10px; color: var(--muted); }
+    .grid p, .note { margin-top: 10px; color: var(--muted); }
     .downloads pre { margin: 12px 0 0; padding: 12px; overflow-wrap: anywhere; white-space: pre-wrap; background: var(--surface); font: inherit; }
-    .example { margin-top: 28px; padding: 20px 24px; background: var(--surface); border-left: 3px solid var(--rule); }
-    .example p { margin-top: 10px; }
-    .steps { margin-top: 24px; }
-    .step { display: grid; grid-template-columns: 36px 1fr; gap: 14px; padding: 19px 0; border-bottom: 1px solid var(--soft); }
-    .step .number { color: var(--muted); }
-    .step p { max-width: 70ch; }
-    .links { margin-top: 26px; }
     .note { max-width: 72ch; }
     .server-form { max-width: 720px; margin-top: 28px; }
-    .pilot-note { margin-top: 26px; }
     .server-form label { display: block; margin-bottom: 8px; font-weight: 600; }
     .server-form-row { display: flex; gap: 8px; }
     .server-form input { flex: 1; min-width: 0; min-height: 44px; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 2px; color: var(--ink); background: var(--paper); font: inherit; }
@@ -59,4 +52,4 @@
     :root[data-theme="light"] .primary { color: #fff; background: #282828; }
     :root[data-theme="dark"] .primary { color: #171717; background: #f5f5f2; }
     :root[data-theme="dark"] .server-form button { color: #171717; background: #f5f5f2; border-color: #f5f5f2; }
-    @media print { .wrap { width: 100%; } .hero { padding: 32px 0; } section { padding-top: 32px; } .grid article, .step { break-inside: avoid; } }
+    @media print { .wrap { width: 100%; } .hero { padding: 32px 0; } section { padding-top: 32px; } .grid article { break-inside: avoid; } }

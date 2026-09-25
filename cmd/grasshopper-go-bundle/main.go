@@ -117,25 +117,13 @@ func clientPluginFiles(client, target, version, output string) ([]input, func(),
 		return nil, nil, err
 	}
 	cleanup := func() { _ = os.RemoveAll(temp) }
-	guide, err := os.ReadFile("integrations/plugins/README.md")
+	guide, err := os.ReadFile("SETUP.md")
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	guidePath := filepath.Join(temp, "INSTALL.md")
-	guide = []byte(strings.ReplaceAll(string(guide), "../../docs/cursor-cli.md", "cursor-cli.md"))
+	guidePath := filepath.Join(temp, "SETUP.md")
 	if err := os.WriteFile(guidePath, guide, 0600); err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	cursorGuide, err := os.ReadFile("docs/cursor-cli.md")
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	cursorGuidePath := filepath.Join(temp, "cursor-cli.md")
-	cursorGuide = []byte(strings.ReplaceAll(string(cursorGuide), "../integrations/plugins/README.md", "INSTALL.md"))
-	if err := os.WriteFile(cursorGuidePath, cursorGuide, 0600); err != nil {
 		cleanup()
 		return nil, nil, err
 	}
@@ -145,8 +133,7 @@ func clientPluginFiles(client, target, version, output string) ([]input, func(),
 		{"client.example.json", "integrations/plugins/client.example.json"},
 		{"cursor-mcp.example.json", "integrations/cursor/mcp.json.example"},
 		{"cursor-cli.example.json", "integrations/cursor/cli.json.example"},
-		{"INSTALL.md", guidePath},
-		{"cursor-cli.md", cursorGuidePath},
+		{"SETUP.md", guidePath},
 		{"LICENSE", "LICENSE"},
 	}
 	marketplacePaths := map[string]string{
@@ -369,20 +356,11 @@ func run() error {
 		{"licenses/BGE-NOTICE.txt", "docs/BGE-NOTICE.txt"},
 		{"AGENTS.md", "AGENTS.md"},
 		{"README.md", "README.md"},
-		{"docs/go-package.md", "docs/go-package.md"},
-		{"docs/cursor-cli.md", "docs/cursor-cli.md"},
-		{"docs/mac-mini-deployment.md", "docs/mac-mini-deployment.md"},
+		{"SETUP.md", "SETUP.md"},
 		{"docs/memory-acceptance.md", "docs/memory-acceptance.md"},
-		{"docs/evidence-history.md", "docs/evidence-history.md"},
-		{"docs/go-transition.md", "docs/go-transition.md"},
-		{"docs/research-state-evolution.md", "docs/research-state-evolution.md"},
 		{"docs/shared-memory.md", "docs/shared-memory.md"},
-		{"docs/memory-visualizer.md", "docs/memory-visualizer.md"},
 		{"docs/fonts/OFL-newsreader.txt", "docs/fonts/OFL-newsreader.txt"},
 		{"docs/fonts/OFL-geist-mono.txt", "docs/fonts/OFL-geist-mono.txt"},
-		{"docs/fonts/README.md", "docs/fonts/README.md"},
-		{"integrations/README.md", "integrations/README.md"},
-		{"integrations/plugins/README.md", "integrations/plugins/README.md"},
 		{"integrations/client.example.json", "integrations/client.example.json"},
 		{"packaging/macos/com.example.grasshopper.plist", "packaging/macos/com.example.grasshopper.plist"},
 		{"integrations/policy/AGENTS.md", "integrations/policy/AGENTS.md"},

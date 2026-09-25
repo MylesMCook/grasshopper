@@ -32,7 +32,7 @@ func marketplaceFiles(binaries map[string]string, version, output string) ([]inp
 	}
 	cleanup := func() { _ = os.RemoveAll(staged) }
 	files := []input{
-		{"README.md", "integrations/plugins/marketplace-README.md"},
+		{"README.md", "SETUP.md"},
 		{"LICENSE", "LICENSE"},
 	}
 	stage := func(name string, data []byte) error {
@@ -92,11 +92,6 @@ func marketplaceFiles(binaries map[string]string, version, output string) ([]inp
 			input{root + "policy/AGENTS.md", "integrations/policy/AGENTS.md"},
 			input{root + "LICENSE", "LICENSE"},
 		)
-		readme := fmt.Sprintf("# Grasshopper for %s\n\nThis connector uses your private server. It has no memory database or token.\n\nAsk your agent: **Use the connect-grasshopper skill.** Give it the server's HTTPS `/mcp` address and the path to a token file on this machine. Keep the token out of chat.\n\nYou can also run `bin/grasshopper%s setup --agents none --url ADDRESS --token-file PATH`. For Cursor Agent CLI, add `--cursor-cli`; on Windows, keep its default user-level MCP location. The command checks authentication before saving config. Review Codex hooks or enable Cursor MCP, then test a fresh session.\n", platform.slug, exe)
-		if err := stage(root+"README.md", []byte(readme)); err != nil {
-			cleanup()
-			return nil, nil, err
-		}
 		if err := stageTemplate(root+".codex-plugin/plugin.json", "integrations/plugins/codex/.codex-plugin/plugin.json", exe, map[string]any{
 			"name":  plugin,
 			"hooks": nil,

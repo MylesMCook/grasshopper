@@ -21,8 +21,13 @@ form.addEventListener('submit', event => {
     return;
   }
   const localHost = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
-  if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && localHost)) || url.username || url.password) {
-    error.textContent = 'Use an HTTPS address, or HTTP on this device only.';
+  if (url.username || url.password) {
+    error.textContent = 'Enter the server address without a username or password.';
+    error.hidden = false;
+    return;
+  }
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && localHost)) {
+    error.textContent = 'Use HTTPS, or local HTTP on this device.';
     error.hidden = false;
     return;
   }

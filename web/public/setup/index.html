@@ -12,41 +12,46 @@
 </head>
 <body>
   <div class="wrap">
-    <header class="top"><a class="brand" href="/">GRASSHOPPER</a><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button><nav aria-label="Page"><a href="/#how">How it works</a><a href="/setup/" aria-current="page">Set up</a><a href="/view/">Memory view</a></nav></header>
+    <header class="top"><a class="brand" href="/">GRASSHOPPER</a><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button><nav aria-label="Page"><a href="/">Home</a><a href="/setup/" aria-current="page">Set up</a><a href="/view/">Memory view</a></nav></header>
     <main class="view-main">
-      <h1>Start your own copy.</h1>
-      <p class="lead">Start a private server, then connect the agents you use. Your memories stay on that server.</p>
+      <h1>Set up Grasshopper.</h1>
+      <p class="lead">Start one private server. Connect Codex, Cursor, or Claude Code to it.</p>
       <section aria-labelledby="download-title">
-        <div class="heading"><h2 id="download-title">1. Download your server</h2></div>
-        <p class="intro">Choose the machine that will hold your memories. The archives are unsigned, so your operating system may ask you to confirm before opening them.</p>
+        <div class="heading"><h2 id="download-title">1. Download the server</h2></div>
+        <p class="intro">Choose the machine that will hold your memories.</p>
         <div class="grid downloads">
           <article><h3>Mac · Apple silicon</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.1/grasshopper-server-darwin-arm64-2.2.1.zip">Download Mac server</a></p></article>
           <article><h3>Windows · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.1/grasshopper-server-windows-amd64-2.2.1.zip">Download Windows server</a></p></article>
           <article><h3>Linux · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.1/grasshopper-server-linux-amd64-2.2.1.zip">Download Linux server</a></p></article>
         </div>
-        <p class="note">The <a href="https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.1">release page</a> includes SHA-256 checksums. The bundle includes the model and runtime; no compiler is needed.</p>
+        <p class="note">These archives are unsigned. Check their SHA-256 sums on the <a href="https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.1">release page</a> before opening them.</p>
       </section>
       <section aria-labelledby="run-title">
-        <div class="heading"><h2 id="run-title">2. Run it locally</h2></div>
-        <p class="intro">Extract the zip. In a terminal inside the extracted folder, run the command for your system:</p>
-        <div class="grid downloads">
+        <div class="heading"><h2 id="run-title">2. Start it</h2></div>
+        <p class="intro">Extract the zip and run this command from its folder:</p>
+        <div class="grid downloads agent-options">
           <article><h3>Mac or Linux</h3><pre><code>./bin/grasshopper-server --quickstart</code></pre></article>
           <article><h3>Windows PowerShell</h3><pre><code>.\bin\grasshopper-server.exe --quickstart</code></pre></article>
         </div>
-        <p class="note">Grasshopper prints a local memory-view address and the path to your access-token file. Open the address on that machine, then enter the token from the file. The token is never printed by the server. Stop the server with Ctrl-C; run the same command to reopen your memories. A partial setup fails rather than resetting existing files.</p>
+        <p class="note">Grasshopper creates an empty database and prints its local viewer address and token-file path. Open that address to see your memories. Keep the token private. For agents on other machines, first give this server a private HTTPS address; do not expose it publicly.</p>
       </section>
       <section aria-labelledby="connect-title">
-        <div class="heading"><h2 id="connect-title">3. Connect an agent</h2></div>
-        <p class="intro">For Codex or Cursor, <a href="https://github.com/MylesMCook/grasshopper/blob/main/integrations/plugins/marketplace-README.md">install the Grasshopper connector</a> for this machine. Ask its <strong>connect-grasshopper</strong> skill to use your server address and token-file path. Each connector reads and writes the same server; it keeps no memory database.</p>
-        <p class="note">For Claude Code, or if you prefer a downloaded client, use the <a href="https://github.com/MylesMCook/grasshopper/blob/main/integrations/plugins/README.md">client package guide</a>. Codex hook trust and Cursor MCP approval are native security steps. On another machine, use your private HTTPS server address and a token file on that machine.</p>
-        <p class="note">Updating? Follow the <a href="https://github.com/MylesMCook/grasshopper/blob/main/integrations/plugins/marketplace-README.md#update-or-remove">connector update steps</a>. Make a checked backup before replacing a server binary. <a href="/view/">Memory view</a> opens a server you choose. This public site never handles your token.</p>
+        <div class="heading"><h2 id="connect-title">3. Connect Codex or Cursor</h2></div>
+        <div class="grid downloads agent-options">
+          <article><h3>Codex</h3><pre><code>codex plugin marketplace add MylesMCook/grasshopper --ref marketplace
+codex plugin add grasshopper-macos@grasshopper-marketplace</code></pre><p>Use <code>windows</code> or <code>linux</code> in place of <code>macos</code> on those systems.</p></article>
+          <article><h3>Cursor</h3><pre><code>agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace</code></pre><p>Install your OS entry in <code>/plugins</code>, or use <strong>Customize → Plugins</strong> in the IDE.</p></article>
+        </div>
+        <p class="intro">Ask the agent: <strong>Use the connect-grasshopper skill.</strong> Give it this server's <code>/mcp</code> address and the path to a token file on that machine. Never paste the token into chat. Review Codex hooks or approve Cursor MCP when prompted.</p>
+        <p class="note">Using Claude Code? Follow the <a href="https://github.com/MylesMCook/grasshopper/blob/main/SETUP.md#2-connect-an-agent">Claude Code option</a> in the setup guide.</p>
       </section>
       <section aria-labelledby="try-title">
-        <div class="heading"><h2 id="try-title">4. Try one real memory</h2></div>
-        <p class="intro">A new server starts empty. Tell one agent a preference or project decision you actually want kept. Ask for its record ID and revision. In a fresh session with another agent, ask what it remembers. Use <a href="/view/">Memory view</a> to inspect it.</p>
+        <div class="heading"><h2 id="try-title">4. Check it</h2></div>
+        <p class="intro">Save one real preference with an agent. In a fresh session, ask another agent what arrived before tool use. Open <a href="/view/">Memory view</a> to inspect the record.</p>
+        <p class="note"><a href="https://github.com/MylesMCook/grasshopper/blob/main/SETUP.md#update-or-remove">Update or remove</a> · <a href="https://github.com/MylesMCook/grasshopper/blob/main/docs/shared-memory.md">Backup and recovery</a></p>
       </section>
     </main>
-    <footer><span>Grasshopper</span><a href="/#privacy">Privacy</a></footer>
+    <footer><span>Grasshopper</span><span>This site never reads your memories or token.</span></footer>
   </div>
 </body>
 </html>
