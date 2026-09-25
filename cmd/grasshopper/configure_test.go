@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -36,7 +37,7 @@ func TestConfigureUsesOnePolicyAndExistingToken(t *testing.T) {
 	}
 	for _, path := range []string{configPath, loaded.PolicyPath} {
 		info, err := os.Stat(path)
-		if err != nil || info.Mode().Perm() != 0600 {
+		if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
 			t.Fatalf("private file %s: %v", path, err)
 		}
 	}
@@ -54,6 +55,9 @@ func TestConfigureUsesOnePolicyAndExistingToken(t *testing.T) {
 }
 
 func TestConfigureRejectsUnsafeCredentials(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows ACLs are not represented by POSIX file modes")
+	}
 	root := t.TempDir()
 	policy := filepath.Join(root, "AGENTS.md")
 	if err := os.WriteFile(policy, []byte("Policy.\n"), 0600); err != nil {
@@ -69,5 +73,25 @@ func TestConfigureRejectsUnsafeCredentials(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "client", "client.json")); !os.IsNotExist(err) {
 		t.Fatal("invalid credentials created a client config")
+	}
+}
+
+func TestConfigureRejectsInvalidCredential(t *testing.T) {
+	root := t.TempDir()
+	policy := filepath.Join(root, "AGENTS.md")
+	if err := os.WriteFile(policy, []byte("Policy.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	token := filepath.Join(root, "token")
+	if err := os.WriteFile(token, []byte("too-short"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, "client", "client.json")
+	args := []string{"--url", "https://memory.example.com/mcp", "--token-file", token, "--device", "test", "--policy-file", policy, "--config", configPath}
+	if err := configure(args); err == nil {
+		t.Fatal("invalid credential accepted")
+	}
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatal("invalid credential created a client config")
 	}
 }
