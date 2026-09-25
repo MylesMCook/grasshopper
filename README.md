@@ -3,7 +3,8 @@
 **One server, many agents.** Your private server owns the memories. Install a
 small connector on each machine; connectors keep no memory database or token.
 
-This marketplace is being tested. The `marketplace` branch is not published yet.
+This is a pilot from the `marketplace-candidate` branch. The release branch is
+not published yet. [What passed and what did not](https://github.com/MylesMCook/grasshopper/blob/main/docs/memory-acceptance.md#marketplace-pilot-25-september).
 
 ## Install
 
@@ -15,32 +16,35 @@ This marketplace is being tested. The `marketplace` branch is not published yet.
    **Codex**
 
    ```sh
-   codex plugin marketplace add MylesMCook/grasshopper --ref marketplace
+   codex plugin marketplace add MylesMCook/grasshopper --ref marketplace-candidate
    codex plugin add grasshopper-macos@grasshopper-marketplace
    ```
 
    **Cursor Agent CLI**
 
    ```sh
-   agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace
+   agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace-candidate
    ```
 
-   In Cursor, use **Customize → Plugins** to install your OS entry. The CLI
-   does not yet have a plugin-install command.
+   In Cursor Agent CLI, run `agent`, then `/plugins` and install your OS entry.
+   In the IDE, use **Customize → Plugins**. The CLI has no noninteractive
+   plugin-install command.
 3. Ask the agent: **Use the connect-grasshopper skill.** Give it the server
    address and the *path* to a token file on this machine. Do not paste the
-   token into chat. For Cursor Agent CLI, the skill adds its MCP entry.
-4. Approve Codex's startup hooks in `/hooks` or Cursor's MCP prompt. Start a
-   fresh session and ask which known memory arrived before tools.
+   token into chat. For Cursor Agent CLI, the skill adds its MCP entry to your
+   user-level Cursor config. Keep that default on Windows.
+4. In Codex, review and trust Grasshopper's hooks with `/hooks`. In Cursor
+   Agent CLI, run `agent mcp enable grasshopper`. Start a fresh session and ask
+   which known memory arrived before tools. If none did, call `context` once.
 
 ## Update or remove
 
 For Codex, run `codex plugin marketplace upgrade grasshopper-marketplace`,
-then `codex plugin add grasshopper-macos@grasshopper-marketplace` (use your OS
-entry). For Cursor, run `agent plugin marketplace update grasshopper-marketplace`,
-then update the plugin in Customize. Run the connect skill again with
-`--update` so its policy and Cursor CLI MCP path point to the new plugin.
-Run `check` and test a fresh session.
+then reinstall your OS entry with `codex plugin add`. For Cursor, run
+`agent plugin marketplace update grasshopper-marketplace`, then update your
+entry in `/plugins` or Customize. Run the connect skill with `--update`,
+then `check` and test a fresh session. A changed-version marketplace update
+still needs a real-client rehearsal.
 
 Remove the plugin in its harness. Removing a connector does not delete server
 memories. Keep the shared config and token file if another agent uses them.

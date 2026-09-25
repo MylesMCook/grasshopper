@@ -16,9 +16,10 @@ It checks authentication before saving config. Use `--update` only to replace
 an existing Grasshopper config. If it fails, report the error; do not claim
 the connection worked.
 
-For Cursor Agent CLI, add `--cursor-cli`. It adds only the MCP entry because the
-CLI does not register the plugin's MCP server from `--plugin-dir` alone. The
-plugin supplies the hook. Use `--cursor-dir` for a project-local `.cursor`.
+For Cursor Agent CLI, add `--cursor-cli`. It puts the MCP entry in the user's
+`.cursor` directory by default; the plugin supplies the hook. Keep this
+default on Windows, where project-local MCP approval can fail in Agent CLI.
+Use `--cursor-dir` only when the user deliberately needs another location.
 
 Run `bin/grasshopper.exe check`, then look for a known memory in a fresh
 session before tool use. Review Codex hooks and approve Cursor MCP when

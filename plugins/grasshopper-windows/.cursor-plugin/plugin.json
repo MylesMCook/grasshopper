@@ -6,5 +6,5 @@
   "hooks": "./hooks/cursor.json",
   "mcpServers": "./mcp.json",
   "name": "grasshopper-windows",
-  "version": "2.2.0"
+  "version": "2.2.1"
 }
