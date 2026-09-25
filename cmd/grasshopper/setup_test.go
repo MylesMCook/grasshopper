@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -14,7 +15,7 @@ import (
 func setupFixture(t *testing.T) (string, string, string, string) {
 	t.Helper()
 	root := t.TempDir()
-	for _, path := range []string{"policy/AGENTS.md", "codex/.agents/plugins/marketplace.json", "claude/.claude-plugin/marketplace.json", "cursor/plugins/grasshopper/bin/grasshopper"} {
+	for _, path := range []string{"policy/AGENTS.md", "codex/.agents/plugins/marketplace.json", "claude/.claude-plugin/marketplace.json", "cursor/plugins/grasshopper/bin/" + testClientName()} {
 		full := filepath.Join(root, path)
 		if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
 			t.Fatal(err)
@@ -28,6 +29,13 @@ func setupFixture(t *testing.T) (string, string, string, string) {
 		t.Fatal(err)
 	}
 	return root, token, filepath.Join(root, "client", "client.json"), filepath.Join(root, "cursor-user")
+}
+
+func testClientName() string {
+	if runtime.GOOS == "windows" {
+		return "grasshopper.exe"
+	}
+	return "grasshopper"
 }
 
 func setupServer(t *testing.T, allowed bool) *httptest.Server {
@@ -201,7 +209,7 @@ func TestSetupUpdateReplacesOnlyGrasshopperCursorWiring(t *testing.T) {
 		t.Fatal(err)
 	}
 	newRoot := t.TempDir()
-	for _, path := range []string{"policy/AGENTS.md", "cursor/plugins/grasshopper/bin/grasshopper"} {
+	for _, path := range []string{"policy/AGENTS.md", "cursor/plugins/grasshopper/bin/" + testClientName()} {
 		full := filepath.Join(newRoot, path)
 		if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
 			t.Fatal(err)
@@ -221,10 +229,10 @@ func TestSetupUpdateReplacesOnlyGrasshopperCursorWiring(t *testing.T) {
 		t.Fatal(err)
 	}
 	serverEntry := mcp["mcpServers"].(map[string]any)["grasshopper"].(map[string]any)
-	if serverEntry["command"] != filepath.Join(newRoot, "cursor", "plugins", "grasshopper", "bin", "grasshopper") {
+	if serverEntry["command"] != filepath.Join(newRoot, "cursor", "plugins", "grasshopper", "bin", testClientName()) {
 		t.Fatalf("Cursor still uses old binary: %v", serverEntry)
 	}
-	if _, err := os.Stat(filepath.Join(oldRoot, "cursor", "plugins", "grasshopper", "bin", "grasshopper")); err != nil {
+	if _, err := os.Stat(filepath.Join(oldRoot, "cursor", "plugins", "grasshopper", "bin", testClientName())); err != nil {
 		t.Fatal("old package was removed")
 	}
 }
