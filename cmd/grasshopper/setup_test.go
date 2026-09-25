@@ -139,6 +139,22 @@ func TestMarketplaceConnectAddsCursorCLIToolsWithoutSecondHook(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(cursorDir, "hooks.json")); !os.IsNotExist(err) {
 		t.Fatal("CLI setup wrote a duplicate startup hook")
 	}
+	cli, err := readJSONObject(filepath.Join(cursorDir, "cli-config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	permissions, _ := jsonObject(cli["permissions"])
+	allow, _ := permissions["allow"].([]any)
+	for _, wanted := range []string{"Mcp(grasshopper:context)", "Mcp(grasshopper:get)", "Mcp(grasshopper:search)"} {
+		if !containsAny(allow, wanted) {
+			t.Fatalf("Cursor CLI read permission %q missing: %v", wanted, allow)
+		}
+	}
+	for _, forbidden := range []string{"Mcp(grasshopper:store)", "Mcp(grasshopper:archive)", "Mcp(grasshopper:*)"} {
+		if containsAny(allow, forbidden) {
+			t.Fatalf("Cursor CLI write permission granted: %s", forbidden)
+		}
+	}
 	if err := setupClientWithRoot(args, root, run); err != nil {
 		t.Fatal("repeat connect failed:", err)
 	}
@@ -167,6 +183,15 @@ func TestMarketplaceConnectAddsCursorCLIToolsWithoutSecondHook(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(cursorDir, "hooks.json")); !os.IsNotExist(err) {
 		t.Fatal("update wrote a duplicate startup hook")
 	}
+}
+
+func containsAny(values []any, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func TestMarketplaceCursorCLIDefaultsToUserConfig(t *testing.T) {
@@ -257,6 +282,9 @@ func TestSetupConnectsCursorWithoutAnotherMemoryStore(t *testing.T) {
 func TestSetupInstallsSelectedNativePlugins(t *testing.T) {
 	root, token, config, _ := setupFixture(t)
 	server := setupServer(t, true)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	var commands []string
 	run := func(name string, args ...string) ([]byte, error) {
 		command := name + " " + strings.Join(args, " ")
@@ -284,6 +312,17 @@ func TestSetupInstallsSelectedNativePlugins(t *testing.T) {
 	} {
 		if !containsString(commands, expected) {
 			t.Errorf("missing native command %q: %v", expected, commands)
+		}
+	}
+	settings, err := readJSONObject(filepath.Join(home, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	permissions, _ := jsonObject(settings["permissions"])
+	allow, _ := permissions["allow"].([]any)
+	for _, read := range claudeReadPermissions {
+		if !containsAny(allow, read) {
+			t.Fatalf("Claude read permission missing: %s", read)
 		}
 	}
 }

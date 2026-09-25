@@ -34,7 +34,6 @@ func TestRustFixtureReadParity(t *testing.T) {
 	for name, got := range map[string]any{
 		"global_current":         mustGet(t, r, ctx, global, 1, nil),
 		"global_prior":           mustGet(t, r, ctx, global, 1, intPtr(1)),
-		"wrong_scope":            mustGet(t, r, ctx, projectA, 1, nil),
 		"legacy":                 mustGet(t, r, ctx, Scope{Legacy: true}, 6, nil),
 		"context_a":              mustContext(t, r, ctx, Scope{Project: projectA.Project, Platform: mac.Platform}, 16000),
 		"context_b":              mustContext(t, r, ctx, Scope{Project: ptr("id:project-b"), Platform: mac.Platform}, 16000),
@@ -73,6 +72,35 @@ func TestRustFixtureReadParity(t *testing.T) {
 		if record.ID == 3 || record.ID == 4 || record.ID == 6 {
 			t.Fatalf("out-of-scope record %d entered candidate set", record.ID)
 		}
+	}
+}
+
+func TestFullReadUsesApplicableScopeWithoutCrossingProjectOrOS(t *testing.T) {
+	root := filepath.Join("..", "..", "tests", "fixtures", "go-compat")
+	r, err := OpenReadOnly(filepath.Join(root, "memory.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	project := "id:project-a"
+	device := "test-mac"
+	platform := "macos"
+	caller := Scope{Project: &project, Device: &device, Platform: &platform}
+	for _, id := range []int64{1, 2} {
+		record, err := r.Get(context.Background(), caller, id, nil)
+		if err != nil || record == nil || record.ID != id {
+			t.Fatalf("applicable record %d unavailable: %+v %v", id, record, err)
+		}
+	}
+	for _, id := range []int64{3, 4, 6} {
+		record, err := r.Get(context.Background(), caller, id, nil)
+		if err != nil || record != nil {
+			t.Fatalf("out-of-scope record %d disclosed: %+v %v", id, record, err)
+		}
+	}
+	prior, err := r.Get(context.Background(), caller, 1, intPtr(1))
+	if err != nil || prior == nil || prior.Revision != 1 {
+		t.Fatalf("applicable prior revision unavailable: %+v %v", prior, err)
 	}
 }
 

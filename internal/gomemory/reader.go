@@ -191,12 +191,43 @@ func scanRecord(row scanner) (Record, error) {
 }
 
 func (r *Reader) Get(ctx context.Context, scope Scope, id int64, revision *int64) (*Record, error) {
+	if scope.Legacy {
+		if _, err := scope.Key(); err != nil {
+			return nil, err
+		}
+		tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+		if err != nil {
+			return nil, err
+		}
+		defer tx.Rollback()
+		return getInTx(ctx, tx, scope, id, revision)
+	}
+	keys, err := scope.applicableKeys()
+	if err != nil {
+		return nil, err
+	}
+	keyJSON, err := json.Marshal(keys)
+	if err != nil {
+		return nil, err
+	}
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
-	return getInTx(ctx, tx, scope, id, revision)
+	var scopeJSON string
+	err = tx.QueryRowContext(ctx, "SELECT memory_scope FROM chunks WHERE id=? AND kind='memory' AND memory_scope IN (SELECT value FROM json_each(?))", id, string(keyJSON)).Scan(&scopeJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var exact Scope
+	if err := json.Unmarshal([]byte(scopeJSON), &exact); err != nil {
+		return nil, err
+	}
+	return getInTx(ctx, tx, exact, id, revision)
 }
 
 func (r *Reader) Context(ctx context.Context, scope Scope, budget int) (Page, error) {

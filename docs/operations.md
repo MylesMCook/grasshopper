@@ -23,8 +23,11 @@ Do not copy the secret into this repository.
    and SHM files so accepted writes can be reconciled. Restore to a separate
    path and check SQLite integrity plus record IDs and revisions.
 
-Never reset all Tailscale Serve routes to remove one route. Reboot persistence
-and full Mac-loss recovery remain untested.
+Never reset all Tailscale Serve routes to remove one route. On 2026-09-25,
+Beelink independently opened the Bitwarden recovery note, restored the latest
+R2 snapshot, checked SQLite integrity, and read a known memory through a
+separate loopback server. Temporary credentials and restored data were removed.
+Reboot persistence and an actual host failover remain untested.
 
 ## Public site
 

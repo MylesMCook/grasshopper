@@ -177,7 +177,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			page, err := backend.Store.Context(ctx, in.Scope, budget)
 			return nil, page, err
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "get", Title: "Get complete memory", Description: "Use this when a full scoped record or earlier revision is needed for inspection.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "id": map[string]any{"type": "integer"}, "revision": optional("integer")}, "scope", "id")},
+	mcp.AddTool(server, &mcp.Tool{Name: "get", Title: "Get complete memory", Description: "Read a full record or earlier revision visible in the current project, device, and platform context. Include the same scope used for context; legacy records need explicit legacy scope.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "id": map[string]any{"type": "integer"}, "revision": optional("integer")}, "scope", "id")},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in getInput) (*mcp.CallToolResult, gomemory.Record, error) {
 			record, err := backend.Store.Get(ctx, in.Scope, in.ID, in.Revision)
 			if err != nil {

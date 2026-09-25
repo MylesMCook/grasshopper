@@ -92,3 +92,71 @@ func TestCursorRemovalKeepsUnrelatedHookMention(t *testing.T) {
 		t.Fatal("removed an unrelated Cursor hook")
 	}
 }
+
+func TestCursorCLIPermissionsPreserveOtherRulesAndRemoveOwn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cli-config.json")
+	original := []byte(`{"version":1,"editor":{"vimMode":true},"permissions":{"allow":["Shell(ls)","Mcp(other:search)"],"deny":["Shell(rm)"]},"model":{"name":"test"}}`)
+	if err := os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := cursorCLIPermissions(path, true, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	config, err := readJSONObject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permissions := config["permissions"].(map[string]any)
+	allow := permissions["allow"].([]any)
+	if len(allow) != 5 || !containsAny(allow, "Shell(ls)") || !containsAny(allow, "Mcp(other:search)") || containsAny(allow, "Mcp(grasshopper:store)") {
+		t.Fatalf("unexpected read permissions: %v", allow)
+	}
+	if err := cursorCLIPermissions(path, false, false); err != nil {
+		t.Fatal(err)
+	}
+	config, err = readJSONObject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permissions = config["permissions"].(map[string]any)
+	if !sameJSON(permissions["allow"], []any{"Shell(ls)", "Mcp(other:search)"}) || !sameJSON(permissions["deny"], []any{"Shell(rm)"}) {
+		t.Fatalf("other permissions changed: %v", permissions)
+	}
+	if !sameJSON(config["model"], map[string]any{"name": "test"}) || !sameJSON(config["editor"], map[string]any{"vimMode": true}) {
+		t.Fatal("other Cursor CLI settings changed")
+	}
+}
+
+func TestCursorProjectCLIPermissionsContainOnlyPermissions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cli.json")
+	if err := cursorCLIPermissions(path, true, false); err != nil {
+		t.Fatal(err)
+	}
+	config, err := readJSONObject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config) != 1 || config["permissions"] == nil {
+		t.Fatalf("project CLI config gained global settings: %v", config)
+	}
+}
+
+func TestCursorCLIPermissionsRejectMalformedConfigWithoutChangingIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cli-config.json")
+	original := []byte(`{"version":1,"permissions":{"allow":["Shell(ls)",12]}}`)
+	if err := os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cursorCLIPermissions(path, true, false); err == nil {
+		t.Fatal("malformed allowlist accepted")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(original) {
+		t.Fatal("malformed CLI config was changed")
+	}
+}

@@ -68,10 +68,10 @@ func TestStateEvolutionCurrentVsHistory(t *testing.T) {
 	if !globalSeen {
 		t.Fatal("global preference was missing in another project's context")
 	}
-	// Full reads require the record's exact scope, even for a global record.
-	wrongScope, err := w.Get(ctx, Scope{Project: &project}, 1, intPtr(1))
-	if err != nil || wrongScope != nil {
-		t.Fatalf("historical evidence crossed scope: %+v %v", wrongScope, err)
+	// A full read accepts the same applicable scope as context and search.
+	full, err := w.Get(ctx, Scope{Project: &project}, 1, intPtr(1))
+	if err != nil || full == nil || full.Revision != 1 {
+		t.Fatalf("applicable historical evidence unavailable: %+v %v", full, err)
 	}
-	t.Log("global context: current across projects; historical get: exact scope; prior-only wording: absent from active lexical search")
+	t.Log("global context and historical get: applicable across projects; prior-only wording: absent from active lexical search")
 }

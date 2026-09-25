@@ -378,6 +378,17 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	if (selected["cursor"] || *cursorCLI) && !filepath.IsAbs(*cursorDir) {
 		return errors.New("Cursor directory must be absolute")
 	}
+	var claudeSettings string
+	if selected["claude"] {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		claudeSettings = filepath.Join(home, ".claude", "settings.json")
+		if err := allowClaudeReads(claudeSettings, true); err != nil {
+			return err
+		}
+	}
 	if *cursorCLI {
 		binary := filepath.Join(root, "bin", "grasshopper")
 		if os.PathSeparator == '\\' {
@@ -399,6 +410,11 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 			return errors.New("Cursor client binary is missing from the package")
 		}
 		if err := cursorWiringWithOptions(*cursorDir, configPath, binary, true, *update, true, false); err != nil {
+			return err
+		}
+	}
+	if selected["cursor"] || *cursorCLI {
+		if err := cursorCLIPermissions(filepath.Join(*cursorDir, "cli-config.json"), true, true); err != nil {
 			return err
 		}
 	}
@@ -428,10 +444,13 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 		}
 	}
 	paths := []string{configPath, filepath.Join(filepath.Dir(configPath), "AGENTS.md")}
+	if selected["claude"] {
+		paths = append(paths, claudeSettings)
+	}
 	if selected["cursor"] {
-		paths = append(paths, filepath.Join(*cursorDir, "mcp.json"), filepath.Join(*cursorDir, "hooks.json"))
+		paths = append(paths, filepath.Join(*cursorDir, "mcp.json"), filepath.Join(*cursorDir, "hooks.json"), filepath.Join(*cursorDir, "cli-config.json"))
 	} else if *cursorCLI {
-		paths = append(paths, filepath.Join(*cursorDir, "mcp.json"))
+		paths = append(paths, filepath.Join(*cursorDir, "mcp.json"), filepath.Join(*cursorDir, "cli-config.json"))
 	}
 	var saved []savedFile
 	for _, path := range paths {
@@ -492,6 +511,16 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 			binary += ".exe"
 		}
 		if err := cursorMCPOnly(*cursorDir, configPath, binary, *update, false); err != nil {
+			return err
+		}
+	}
+	if selected["cursor"] || *cursorCLI {
+		if err := cursorCLIPermissions(filepath.Join(*cursorDir, "cli-config.json"), true, false); err != nil {
+			return err
+		}
+	}
+	if selected["claude"] {
+		if err := allowClaudeReads(claudeSettings, false); err != nil {
 			return err
 		}
 	}

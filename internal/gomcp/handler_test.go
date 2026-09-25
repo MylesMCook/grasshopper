@@ -177,6 +177,12 @@ func TestMCPStoreSearchGetArchiveAndConflict(t *testing.T) {
 	if record.Content != input.Content {
 		t.Fatalf("full get: %+v", record)
 	}
+	device, platform := "synthetic-mac", "macos"
+	applicable := gomemory.Scope{Project: &project, Device: &device, Platform: &platform}
+	withDevice := decodeResult[gomemory.Record](t, call(t, session, "get", map[string]any{"scope": applicable, "id": stored.ID}))
+	if withDevice.ID != stored.ID || withDevice.Content != input.Content {
+		t.Fatalf("full get with applicable device scope: %+v", withDevice)
+	}
 	archived := decodeResult[gomemory.Receipt](t, call(t, session, "archive", gomemory.ArchiveInput{Scope: scope, ID: stored.ID, ExpectedRevision: 1, Archived: true, RequestID: "mcp-go-archive", Provenance: input.Provenance}))
 	if archived.Revision != 2 {
 		t.Fatalf("archive: %+v", archived)

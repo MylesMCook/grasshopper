@@ -13,7 +13,7 @@ import (
 	"github.com/MylesMCook/grasshopper/internal/goclient"
 )
 
-func cursorCommand(args []string) error {
+func cursorCommand(args []string) (resultErr error) {
 	if len(args) == 0 || (args[0] != "install" && args[0] != "remove") {
 		return errors.New("use cursor install or cursor remove")
 	}
@@ -60,7 +60,52 @@ func cursorCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	return cursorWiring(*cursorDir, configPath, binary, args[0] == "install", *update)
+	cliName := "cli.json"
+	if home, err := os.UserHomeDir(); err == nil && filepath.Clean(*cursorDir) == filepath.Join(home, ".cursor") {
+		cliName = "cli-config.json"
+	}
+	cliPath := filepath.Join(*cursorDir, cliName)
+	install := args[0] == "install"
+	if err := cursorWiringWithOptions(*cursorDir, configPath, binary, install, *update, true, false); err != nil {
+		return err
+	}
+	if err := cursorCLIPermissions(cliPath, install, true); err != nil {
+		return err
+	}
+	var saved []savedFile
+	for _, path := range []string{filepath.Join(*cursorDir, "mcp.json"), filepath.Join(*cursorDir, "hooks.json"), cliPath} {
+		entry, err := snapshotFile(path)
+		if err != nil {
+			return err
+		}
+		saved = append(saved, entry)
+	}
+	defer func() {
+		if resultErr == nil {
+			return
+		}
+		var failures []error
+		for _, entry := range saved {
+			if err := entry.restore(); err != nil {
+				failures = append(failures, err)
+			}
+		}
+		if len(failures) > 0 {
+			resultErr = errors.Join(resultErr, fmt.Errorf("Cursor rollback needs attention: %w", errors.Join(failures...)))
+		}
+	}()
+	if err := cursorWiringWithOptions(*cursorDir, configPath, binary, install, *update, false, false); err != nil {
+		return err
+	}
+	if err := cursorCLIPermissions(cliPath, install, false); err != nil {
+		return err
+	}
+	if install {
+		fmt.Fprintln(os.Stdout, "Cursor MCP, startup hook, and read permissions installed. Run `agent mcp enable grasshopper` once if prompted.")
+	} else {
+		fmt.Fprintln(os.Stdout, "Cursor Grasshopper MCP, startup hook, and read permissions removed. Shared memory remains on the server.")
+	}
+	return nil
 }
 
 func readJSONObject(path string) (map[string]any, error) {
@@ -123,6 +168,91 @@ func cursorWiring(dir, configPath, binary string, install, update bool) error {
 
 func grasshopperMCPEntry(binary, configPath string) map[string]any {
 	return map[string]any{"type": "stdio", "command": binary, "args": []string{"bridge", "--config", configPath}}
+}
+
+var cursorReadPermissions = []string{
+	"Mcp(grasshopper:context)",
+	"Mcp(grasshopper:get)",
+	"Mcp(grasshopper:search)",
+}
+
+// Cursor CLI requires explicit permission for headless reads. Writes stay gated.
+func cursorCLIPermissions(path string, install, dryRun bool) error {
+	info, statErr := os.Lstat(path)
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return statErr
+	}
+	if statErr == nil && !info.Mode().IsRegular() {
+		return errors.New("Cursor CLI config must be a regular file")
+	}
+	if !install && errors.Is(statErr, os.ErrNotExist) {
+		return nil
+	}
+	config, err := readJSONObject(path)
+	if err != nil {
+		return err
+	}
+	if version := config["version"]; version != nil && version != float64(1) {
+		return errors.New("unsupported Cursor CLI config version")
+	}
+	permissions, ok := jsonObject(config["permissions"])
+	if config["permissions"] != nil && !ok {
+		return errors.New("Cursor CLI permissions must be an object")
+	}
+	if !ok {
+		permissions = map[string]any{}
+	}
+	allow, ok := permissions["allow"].([]any)
+	if permissions["allow"] != nil && !ok {
+		return errors.New("Cursor CLI permissions.allow must be an array")
+	}
+	for _, entry := range allow {
+		if _, ok := entry.(string); !ok {
+			return errors.New("Cursor CLI permissions.allow must contain strings")
+		}
+	}
+	kept := make([]any, 0, len(allow)+len(cursorReadPermissions))
+	for _, entry := range allow {
+		value := entry.(string)
+		managed := false
+		for _, read := range cursorReadPermissions {
+			if value == read {
+				managed = true
+				break
+			}
+		}
+		if !managed {
+			kept = append(kept, value)
+		}
+	}
+	if install {
+		for _, read := range cursorReadPermissions {
+			kept = append(kept, read)
+		}
+	}
+	if sameJSON(allow, kept) && statErr == nil {
+		return nil
+	}
+	if dryRun {
+		return nil
+	}
+	permissions["allow"] = kept
+	if permissions["deny"] == nil {
+		permissions["deny"] = []any{}
+	}
+	config["permissions"] = permissions
+	if filepath.Base(path) == "cli-config.json" {
+		if config["version"] == nil {
+			config["version"] = 1
+		}
+		if config["editor"] == nil {
+			config["editor"] = map[string]any{"vimMode": false}
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	return writeJSONObject(path, config)
 }
 
 // Cursor Agent CLI does not currently register plugin MCP servers from
