@@ -43,11 +43,11 @@ func validVisualizerSession(value string, key []byte, now time.Time) bool {
 		return false
 	}
 	nonce, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil || len(nonce) != 16 {
+	if err != nil || len(nonce) != 16 || base64.RawURLEncoding.EncodeToString(nonce) != parts[2] {
 		return false
 	}
 	signature, err := base64.RawURLEncoding.DecodeString(parts[3])
-	if err != nil || len(signature) != sha256.Size {
+	if err != nil || len(signature) != sha256.Size || base64.RawURLEncoding.EncodeToString(signature) != parts[3] {
 		return false
 	}
 	payload := strings.Join(parts[:3], ".")

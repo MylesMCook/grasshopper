@@ -122,7 +122,13 @@ func TestVisualizerSessionExpiresAndRejectsTampering(t *testing.T) {
 	if validVisualizerSession(value, wrongKey[:], now) {
 		t.Fatal("session survived token rotation")
 	}
-	for _, tampered := range []string{"bad", strings.Replace(value, "v1.", "v2.", 1), value[:len(value)-1] + "x"} {
+	parts := strings.Split(value, ".")
+	first := byte('A')
+	if parts[3][0] == first {
+		first = 'B'
+	}
+	changedSignature := strings.Join(parts[:3], ".") + "." + string(first) + parts[3][1:]
+	for _, tampered := range []string{"bad", strings.Replace(value, "v1.", "v2.", 1), changedSignature} {
 		if validVisualizerSession(tampered, key[:], now) {
 			t.Fatalf("tampered session accepted: %q", tampered)
 		}
