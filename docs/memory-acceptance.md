@@ -4,6 +4,8 @@ This is observed behavior, not a claim that every app, machine, and recovery pat
 
 ## Backend and packages
 
+- [2.2.4 CI](https://github.com/MylesMCook/grasshopper/actions/runs/36182003653) passed tests, vet, and native builds on Mac, Linux, and Windows. The pinned Mac ONNX model reproduced a failure on a 902-token memory before the fix; after capping its input at 512 tokens, all real-model tests passed. Full memory content is still stored separately from its embedding.
+- Seven 2.2.4 archives passed 280 internal SHA-256 checks; all eight published release assets matched local digests. A fresh extracted Mac server started on loopback, returned 401 without a token and 200 with one, and made a SQLite snapshot that passed integrity check. This is synthetic package verification, not a live-service upgrade.
 - `go test ./...`, `go vet ./...`, and the selected race tests pass on Mac mini. [Final 2.2.1 CI](https://github.com/MylesMCook/grasshopper/actions/runs/36172005751) passed tests, vet, and native builds on macOS, Windows, and Linux.
 - Extracted 2.2.1 client and server archives passed every internal SHA-256 entry on Mac mini, Beelink Ubuntu, and Work HP Windows. Each native server started from an empty task-local state, rejected anonymous `/healthz`, answered an authenticated client check, and made a verified local SQLite snapshot. Scratch listeners were stopped. This does not test persistent startup or live-data migration.
 - Backend regression tests cover scoped context and search, project identity across clone paths, device/OS separation, confirmed preferences, corrections with revision conflicts, idempotent retries, full historical reads, archive/restore, immediate semantic recall, and unauthenticated rejection. These tests do not establish first-turn agent behavior.
@@ -24,6 +26,7 @@ The tested Windows Cursor CLI listed project-level MCP tools but did not expose 
 
 ## Shared service and recovery
 
+- The 2.2.4 GitHub release is downloadable without the website. The public setup page points to those assets; home, setup, and memory view returned 200, while public MCP and private visualizer routes returned 404. The marketplace branch is fd57a20. This did not update the private Mac mini service, which remains on 2.2.1.
 - On the private Mac mini service, fresh Codex, Cursor, and Claude Code CLI sessions received confirmed global record 8 before tools. Codex created a synthetic project record; Cursor corrected it; Codex read both revisions and archived it. A same-Git-project handoff was read from different clone paths on Mac mini and Beelink. Synthetic records were archived afterward.
 - The Mac mini's encrypted off-host backup was restored to a separate path. SQLite integrity, source bytes, a synthetic record, and its prior revision matched. The backup job ran once under launchd. This is a restore rehearsal, not proof of recovery after loss of the Mac.
 - The private viewer's signed browser session survived a refresh, and the user confirmed Codex Annotate could select text on the live private and public pages. The public site kept MCP and private-view routes closed.
