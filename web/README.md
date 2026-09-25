@@ -21,10 +21,8 @@ previous version with `wrangler deployments list --name grasshopper-site`, then
 run `wrangler rollback VERSION_ID -c web/wrangler.jsonc`. This changes only the
 public site; it does not touch a private memory server.
 
-The source setup page links to the 2.1.0 server archives and client guide. Do
-not deploy it until those assets are published and the repository is public;
-otherwise the download buttons lead to private pages. The current public site
-still labels installation as a private pilot.
+The live setup page links to the public 2.1.0 server and client archives, plus the client guide.
+After a release change, check each download link before deploying updated copy.
 
 The public pages allow two exact style hashes used by Codex Annotate in the
 tested app build. Keep `unsafe-inline` disabled. If annotation breaks after a

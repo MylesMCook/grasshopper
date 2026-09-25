@@ -15,6 +15,16 @@ Cursor's CLI approval was disabled and its task-local MCP/hook entries removed a
 
 [Public site](https://usegrasshopper.com/) · [Detailed test history](evidence-history.md) · [Setup and removal](../integrations/README.md)
 
+## Published client on Mac mini, 25 September
+
+The [2.1.0 release](https://github.com/MylesMCook/grasshopper/releases/tag/v2.1.0) is public. Its seven attached digests matched the staged archives, and its tag points to `47fb666`. The public `/setup/` page links to all six server and client downloads; anonymous HEAD requests returned `200`. A fresh browser checked the live setup page, theme switch, navigation to `/view/`, and zero console errors. After the client links were added, another live Chromium check found all three client links, no horizontal overflow at 390px, and no console errors. Public `/mcp` and `/visualizer/` returned `404`.
+
+The Mac client was extracted to a stable Grasshopper application folder. `configure` references the existing private server token file; it did not copy the token into client configuration or policy. `check` authenticated against the running loopback service. Codex CLI 0.156.1, Cursor Agent CLI 2026.09.23-86fc751, and Claude Code CLI 2.1.280 each started a fresh session and reported confirmed global record 8, revision 1 **before tool use**. The Codex and Cursor traces contained no tool call; Claude's JSON result was one turn. This is live-backend CLI evidence, not Desktop or IDE proof.
+
+In isolated user profiles, Codex and Claude Code each installed an earlier task-local package, removed its plugin and marketplace, then installed and removed the final package. Both ended with no Grasshopper registration. Cursor installed earlier task-local wiring, updated its paths to the final binary and shared config, then removed it; unrelated MCP and hook entries survived. The real Mac installs remain active. Codex hook review and Cursor MCP approval are still harness security steps; this rehearsal did not bypass them.
+
+For a reversible cross-harness write check, Codex created unconfirmed project-only synthetic record 9 at revision 1. Cursor corrected it with expected revision 1, received revision 2, and read both revisions. A fresh Codex session independently read the corrected content, prior content, and Cursor provenance. Codex received an archive acknowledgement at revision 3; an authenticated project-context read then omitted record 9 while retaining confirmed global record 8. No confirmed user preference was changed.
+
 ## Prepared site, browser session, and marketplace
 
 The public site carries setup and explanation pages. The private server serves only the memory view, with a link to the public site and a signed, HttpOnly browser cookie that survives a reload. A task-local synthetic server and Chromium checked connect, reload, disconnect, no bearer value in browser storage, both theme directions, the icon switch, and no overflow at 390px. Go tests cover cookie expiry, tampering, token rotation, origin checks, MCP/health denial, the public-site link, and removal of the local `/about/` routes. Grasshopper's own repo marketplace package passed portable and OpenAI manifest validation. The signed browser session is deployed on the private Mac mini; the latest local-page removal is not yet deployed. A Git marketplace fresh install remains open.
