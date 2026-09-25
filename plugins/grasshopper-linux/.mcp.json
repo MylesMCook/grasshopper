@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "grasshopper": {
+      "command": "./bin/grasshopper",
+      "args": ["bridge"],
+      "cwd": ".",
+      "env_vars": ["GRASSHOPPER_CLIENT_CONFIG"]
+    }
+  }
+}

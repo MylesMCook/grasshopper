@@ -1,0 +1,44 @@
+{
+  "interface": {
+    "displayName": "Grasshopper"
+  },
+  "name": "grasshopper-marketplace",
+  "plugins": [
+    {
+      "category": "Productivity",
+      "name": "grasshopper-macos",
+      "policy": {
+        "authentication": "ON_INSTALL",
+        "installation": "AVAILABLE"
+      },
+      "source": {
+        "path": "./plugins/grasshopper-macos",
+        "source": "local"
+      }
+    },
+    {
+      "category": "Productivity",
+      "name": "grasshopper-windows",
+      "policy": {
+        "authentication": "ON_INSTALL",
+        "installation": "AVAILABLE"
+      },
+      "source": {
+        "path": "./plugins/grasshopper-windows",
+        "source": "local"
+      }
+    },
+    {
+      "category": "Productivity",
+      "name": "grasshopper-linux",
+      "policy": {
+        "authentication": "ON_INSTALL",
+        "installation": "AVAILABLE"
+      },
+      "source": {
+        "path": "./plugins/grasshopper-linux",
+        "source": "local"
+      }
+    }
+  ]
+}

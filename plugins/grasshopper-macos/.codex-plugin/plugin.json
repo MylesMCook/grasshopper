@@ -1,0 +1,21 @@
+{
+  "author": {
+    "name": "Myles Cook"
+  },
+  "description": "Shared, self-hosted agent memory",
+  "interface": {
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "category": "Productivity",
+    "defaultPrompt": "Use the connect-grasshopper skill to connect to my private server.",
+    "developerName": "Grasshopper",
+    "displayName": "Grasshopper for macos",
+    "longDescription": "Connect this agent to your private Grasshopper server. The plugin keeps no memory database or token.",
+    "shortDescription": "Shared memory from your private server."
+  },
+  "mcpServers": "./.mcp.json",
+  "name": "grasshopper-macos",
+  "version": "2.2.0"
+}

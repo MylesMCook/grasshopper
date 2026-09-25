@@ -1,0 +1,23 @@
+{
+  "name": "grasshopper-marketplace",
+  "owner": {
+    "name": "Myles Cook"
+  },
+  "plugins": [
+    {
+      "description": "Connect to your private Grasshopper memory server",
+      "name": "grasshopper-macos",
+      "source": "./plugins/grasshopper-macos"
+    },
+    {
+      "description": "Connect to your private Grasshopper memory server",
+      "name": "grasshopper-windows",
+      "source": "./plugins/grasshopper-windows"
+    },
+    {
+      "description": "Connect to your private Grasshopper memory server",
+      "name": "grasshopper-linux",
+      "source": "./plugins/grasshopper-linux"
+    }
+  ]
+}

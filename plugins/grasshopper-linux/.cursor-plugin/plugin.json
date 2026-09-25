@@ -1,0 +1,10 @@
+{
+  "author": {
+    "name": "Myles Cook"
+  },
+  "description": "Shared, self-hosted agent memory",
+  "hooks": "./hooks/cursor.json",
+  "mcpServers": "./mcp.json",
+  "name": "grasshopper-linux",
+  "version": "2.2.0"
+}

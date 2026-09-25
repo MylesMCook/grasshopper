@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "\"${PLUGIN_ROOT}/bin/grasshopper\" hook --harness codex", "commandWindows": "powershell.exe -NoProfile -NonInteractive -EncodedCommand JgAgACgASgBvAGkAbgAtAFAAYQB0AGgAIAAkAGUAbgB2ADoAUABMAFUARwBJAE4AXwBSAE8ATwBUACAAJwBiAGkAbgBcAGcAcgBhAHMAcwBoAG8AcABwAGUAcgAuAGUAeABlACcAKQAgAGgAbwBvAGsAIAAtAC0AaABhAHIAbgBlAHMAcwAgAGMAbwBkAGUAeAA7ACAAZQB4AGkAdAAgACQATABBAFMAVABFAFgASQBUAEMATwBEAEUA", "timeout": 8}]}],
+    "SubagentStart": [{"hooks": [{"type": "command", "command": "\"${PLUGIN_ROOT}/bin/grasshopper\" hook --harness codex", "commandWindows": "powershell.exe -NoProfile -NonInteractive -EncodedCommand JgAgACgASgBvAGkAbgAtAFAAYQB0AGgAIAAkAGUAbgB2ADoAUABMAFUARwBJAE4AXwBSAE8ATwBUACAAJwBiAGkAbgBcAGcAcgBhAHMAcwBoAG8AcABwAGUAcgAuAGUAeABlACcAKQAgAGgAbwBvAGsAIAAtAC0AaABhAHIAbgBlAHMAcwAgAGMAbwBkAGUAeAA7ACAAZQB4AGkAdAAgACQATABBAFMAVABFAFgASQBUAEMATwBEAEUA", "timeout": 8}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "true", "commandWindows": "powershell.exe -NoProfile -NonInteractive -EncodedCommand JgAgACgASgBvAGkAbgAtAFAAYQB0AGgAIAAkAGUAbgB2ADoAUABMAFUARwBJAE4AXwBSAE8ATwBUACAAJwBiAGkAbgBcAGcAcgBhAHMAcwBoAG8AcABwAGUAcgAuAGUAeABlACcAKQAgAGgAbwBvAGsAIAAtAC0AaABhAHIAbgBlAHMAcwAgAGMAbwBkAGUAeAA7ACAAZQB4AGkAdAAgACQATABBAFMAVABFAFgASQBUAEMATwBEAEUA", "timeout": 8}]}]
+  }
+}
