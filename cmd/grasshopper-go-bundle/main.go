@@ -117,23 +117,13 @@ func clientPluginFiles(client, target, version, output string) ([]input, func(),
 		return nil, nil, err
 	}
 	cleanup := func() { _ = os.RemoveAll(temp) }
-	guide, err := os.ReadFile("SETUP.md")
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	guidePath := filepath.Join(temp, "SETUP.md")
-	if err := os.WriteFile(guidePath, guide, 0600); err != nil {
-		cleanup()
-		return nil, nil, err
-	}
 	files := []input{
 		{"bin/grasshopper" + exe, client},
 		{"policy/AGENTS.md", "integrations/policy/AGENTS.md"},
 		{"client.example.json", "integrations/plugins/client.example.json"},
 		{"cursor-mcp.example.json", "integrations/cursor/mcp.json.example"},
 		{"cursor-cli.example.json", "integrations/cursor/cli.json.example"},
-		{"SETUP.md", guidePath},
+		{"README.md", "README.md"},
 		{"LICENSE", "LICENSE"},
 	}
 	marketplacePaths := map[string]string{
@@ -303,7 +293,7 @@ func run() error {
 	flag.StringVar(&windowsClient, "client-windows", "", "Windows amd64 client for marketplace")
 	flag.StringVar(&linuxClient, "client-linux", "", "Linux amd64 client for marketplace")
 	flag.StringVar(&target, "target", "", "client plugin target: darwin-arm64, windows-amd64, or linux-amd64")
-	flag.StringVar(&version, "plugin-version", "2.2.2", "client plugin version")
+	flag.StringVar(&version, "plugin-version", "2.2.3", "client plugin version")
 	flag.StringVar(&server, "server", "", "native server binary")
 	flag.StringVar(&backup, "backup", "", "backup executable")
 	flag.StringVar(&migrate, "migrate", "", "migration executable")
@@ -356,7 +346,6 @@ func run() error {
 		{"licenses/BGE-NOTICE.txt", "docs/BGE-NOTICE.txt"},
 		{"AGENTS.md", "AGENTS.md"},
 		{"README.md", "README.md"},
-		{"SETUP.md", "SETUP.md"},
 		{"docs/memory-acceptance.md", "docs/memory-acceptance.md"},
 		{"docs/shared-memory.md", "docs/shared-memory.md"},
 		{"docs/fonts/OFL-newsreader.txt", "docs/fonts/OFL-newsreader.txt"},

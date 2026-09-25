@@ -86,14 +86,17 @@ func TestClientPluginsPackageThreeHarnessesOnePolicy(t *testing.T) {
 	if entries["bin/grasshopper"] == nil || entries["policy/AGENTS.md"] == nil || entries["cursor-mcp.example.json"] == nil || entries["cursor-cli.example.json"] == nil || entries["SHA256SUMS"] == nil {
 		t.Fatal("canonical policy, Cursor setup, or checksums missing")
 	}
-	installReader, err := entries["SETUP.md"].Open()
+	if entries["README.md"] == nil || entries["SETUP.md"] != nil || entries["INSTALL.md"] != nil {
+		t.Fatal("client archive must carry one README for setup")
+	}
+	installReader, err := entries["README.md"].Open()
 	if err != nil {
 		t.Fatal(err)
 	}
 	installGuide, err := io.ReadAll(installReader)
 	installReader.Close()
-	if err != nil || !strings.Contains(string(installGuide), "Cursor Agent CLI") || entries["INSTALL.md"] != nil || entries["cursor-cli.md"] != nil {
-		t.Fatalf("expected one client setup guide: %v", err)
+	if err != nil || !strings.Contains(string(installGuide), "codex plugin marketplace add") || !strings.Contains(string(installGuide), "agent plugin marketplace add") || !strings.Contains(string(installGuide), "--agents claude") || entries["cursor-cli.md"] != nil {
+		t.Fatalf("README must cover all three agent installs: %v", err)
 	}
 	for _, harness := range []string{"codex", "cursor", "claude"} {
 		root := harness + "/plugins/grasshopper/"
@@ -221,8 +224,17 @@ func TestMarketplacePackagesOneStatelessClientPerPlatform(t *testing.T) {
 			t.Fatal("Codex hooks must use native hooks/hooks.json discovery")
 		}
 	}
-	if entries["README.md"] == nil {
-		t.Fatal("marketplace setup guide missing")
+	if entries["README.md"] == nil || entries["SETUP.md"] != nil {
+		t.Fatal("marketplace must carry one README")
+	}
+	readme, err := entries["README.md"].Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	copy, err := io.ReadAll(readme)
+	readme.Close()
+	if err != nil || !strings.Contains(string(copy), "codex plugin marketplace add") || !strings.Contains(string(copy), "agent plugin marketplace add") || !strings.Contains(string(copy), "--agents claude") {
+		t.Fatal("marketplace README must cover all three agent installs", err)
 	}
 	for _, path := range []string{".agents/plugins/marketplace.json", ".cursor-plugin/marketplace.json"} {
 		entry := entries[path]

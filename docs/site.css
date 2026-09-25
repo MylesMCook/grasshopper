@@ -3,6 +3,7 @@
     :root { color-scheme: light dark; --ink: #282828; --paper: #fff; --surface: #f7f7f5; --muted: #595955; --rule: #90908c; --soft: #e1e1de; --link: #125ab8; font-family: GeistMono, ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); background: var(--paper); }
     * { box-sizing: border-box; }
     body { margin: 0; line-height: 1.5; }
+    code { font-family: inherit; font-size: inherit; }
     .wrap { width: min(100% - 40px, 1040px); margin: auto; }
     a { color: var(--link); text-underline-offset: 3px; }
     a:focus-visible { outline: 3px solid var(--link); outline-offset: 3px; }
@@ -32,10 +33,17 @@
     .intro { max-width: 72ch; margin-top: 22px; }
     .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 34px; }
     .agent-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .agent-options .wide { grid-column: 1 / -1; }
     .grid article { padding-top: 17px; border-top: 1px solid var(--soft); }
     .grid p, .note { margin-top: 10px; color: var(--muted); }
-    .downloads pre { margin: 12px 0 0; padding: 12px; overflow-wrap: anywhere; white-space: pre-wrap; background: var(--surface); font: inherit; }
+    pre { margin: 12px 0 0; padding: 12px; overflow-wrap: anywhere; white-space: pre-wrap; background: var(--surface); font: inherit; }
     .note { max-width: 72ch; }
+    details { max-width: 72ch; padding: 14px 0; border-top: 1px solid var(--soft); }
+    details:last-of-type { border-bottom: 1px solid var(--soft); }
+    details:first-of-type { margin-top: 24px; }
+    summary { cursor: pointer; font-weight: 600; }
+    summary:focus-visible { outline: 3px solid var(--link); outline-offset: 3px; }
+    details p { margin-top: 12px; }
     .server-form { max-width: 720px; margin-top: 28px; }
     .server-form label { display: block; margin-bottom: 8px; font-weight: 600; }
     .server-form-row { display: flex; gap: 8px; }

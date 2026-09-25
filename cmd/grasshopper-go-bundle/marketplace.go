@@ -32,7 +32,7 @@ func marketplaceFiles(binaries map[string]string, version, output string) ([]inp
 	}
 	cleanup := func() { _ = os.RemoveAll(staged) }
 	files := []input{
-		{"README.md", "SETUP.md"},
+		{"README.md", "README.md"},
 		{"LICENSE", "LICENSE"},
 	}
 	stage := func(name string, data []byte) error {

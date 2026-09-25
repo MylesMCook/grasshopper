@@ -20,11 +20,11 @@
         <div class="heading"><h2 id="download-title">1. Download the server</h2></div>
         <p class="intro">Choose the machine that will hold your memories.</p>
         <div class="grid downloads">
-          <article><h3>Mac · Apple silicon</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.2/grasshopper-server-darwin-arm64-2.2.2.zip">Download Mac server</a></p></article>
-          <article><h3>Windows · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.2/grasshopper-server-windows-amd64-2.2.2.zip">Download Windows server</a></p></article>
-          <article><h3>Linux · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.2/grasshopper-server-linux-amd64-2.2.2.zip">Download Linux server</a></p></article>
+          <article><h3>Mac · Apple silicon</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.3/grasshopper-server-darwin-arm64-2.2.3.zip">Download Mac server</a></p></article>
+          <article><h3>Windows · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.3/grasshopper-server-windows-amd64-2.2.3.zip">Download Windows server</a></p></article>
+          <article><h3>Linux · x64</h3><p><a href="https://github.com/MylesMCook/grasshopper/releases/download/v2.2.3/grasshopper-server-linux-amd64-2.2.3.zip">Download Linux server</a></p></article>
         </div>
-        <p class="note">These archives are unsigned. Check their SHA-256 sums on the <a href="https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.2">release page</a> before opening them.</p>
+        <p class="note">These archives are unsigned. Check their SHA-256 sums on the <a href="https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.3">release page</a> before opening them.</p>
       </section>
       <section aria-labelledby="run-title">
         <div class="heading"><h2 id="run-title">2. Start it</h2></div>
@@ -33,22 +33,34 @@
           <article><h3>Mac or Linux</h3><pre><code>./bin/grasshopper-server --quickstart</code></pre></article>
           <article><h3>Windows PowerShell</h3><pre><code>.\bin\grasshopper-server.exe --quickstart</code></pre></article>
         </div>
-        <p class="note">Grasshopper creates an empty database and prints its local viewer address and token-file path. Open that address to see your memories. Keep the token private. For agents on other machines, first give this server a private HTTPS address; do not expose it publicly.</p>
+        <p class="note">Grasshopper creates an empty database and prints its local viewer address and token-file path. Open that address to see your memories. Keep the token private: it grants access to every memory. For agents on other machines, first give this server a private HTTPS address; do not expose it publicly.</p>
       </section>
       <section aria-labelledby="connect-title">
-        <div class="heading"><h2 id="connect-title">3. Connect Codex or Cursor</h2></div>
+        <div class="heading"><h2 id="connect-title">3. Connect an agent</h2></div>
         <div class="grid downloads agent-options">
           <article><h3>Codex</h3><pre><code>codex plugin marketplace add MylesMCook/grasshopper --ref marketplace
-codex plugin add grasshopper-macos@grasshopper-marketplace</code></pre><p>Use <code>windows</code> or <code>linux</code> in place of <code>macos</code> on those systems.</p></article>
-          <article><h3>Cursor</h3><pre><code>agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace</code></pre><p>Install your OS entry in <code>/plugins</code>, or use <strong>Customize → Plugins</strong> in the IDE.</p></article>
+codex plugin add grasshopper-macos@grasshopper-marketplace</code></pre><p>On Windows or Linux, choose the matching plugin entry instead of the Mac entry.</p></article>
+          <article><h3>Cursor</h3><pre><code>agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace</code></pre><p>Install your OS entry in Agent CLI's Plugins menu or <strong>Customize → Plugins</strong> in the IDE. On Windows Agent CLI, keep the default user-level MCP location.</p></article>
+          <article class="wide"><h3>Claude Code</h3><p>Download the <a href="https://github.com/MylesMCook/grasshopper/releases/latest">client archive</a> for this machine, check its SHA256SUMS file, and extract it. On the server machine, run:</p><pre><code>./bin/grasshopper setup --agents claude</code></pre><p>On Windows PowerShell:</p><pre><code>.\bin\grasshopper.exe setup --agents claude</code></pre><p>From another machine, provide its private address and local token-file path:</p><pre><code>./bin/grasshopper setup --agents claude --url https://your-private-server/mcp --token-file /absolute/path/to/token-file</code></pre></article>
         </div>
-        <p class="intro">Ask the agent: <strong>Use the connect-grasshopper skill.</strong> Give it this server's <code>/mcp</code> address and the path to a token file on that machine. Never paste the token into chat. Review Codex hooks or approve Cursor MCP when prompted.</p>
-        <p class="note">Using Claude Code? Follow the <a href="https://github.com/MylesMCook/grasshopper/blob/main/SETUP.md#2-connect-an-agent">Claude Code option</a> in the setup guide.</p>
+        <p class="intro">For Codex or Cursor, ask the agent: <strong>Use the connect-grasshopper skill.</strong> Give it this server's private MCP address and the path to a token file on that machine. Never paste the token into chat. Review Codex hooks or approve Cursor MCP when prompted.</p>
       </section>
       <section aria-labelledby="try-title">
         <div class="heading"><h2 id="try-title">4. Check it</h2></div>
         <p class="intro">Save one real preference with an agent. In a fresh session, ask another agent what arrived before tool use. Open <a href="/view/">Memory view</a> to inspect the record.</p>
-        <p class="note"><a href="https://github.com/MylesMCook/grasshopper/blob/main/SETUP.md#update-or-remove">Update or remove</a> · <a href="https://github.com/MylesMCook/grasshopper/blob/main/docs/shared-memory.md">Backup and recovery</a></p>
+        <p class="note"><a href="#update-remove">Update or remove a connector</a> · <a href="https://github.com/MylesMCook/grasshopper/blob/main/docs/shared-memory.md">Backup and recovery</a></p>
+      </section>
+      <section id="update-remove" aria-labelledby="update-title">
+        <div class="heading"><h2 id="update-title">Update or remove a connector</h2></div>
+        <p class="intro">Connector changes do not delete your server memories. Keep the old package until a fresh session reads a known memory.</p>
+        <details><summary>Codex</summary><p>Update the marketplace, then reinstall your OS entry:</p><pre><code>codex plugin marketplace upgrade grasshopper-marketplace
+codex plugin add grasshopper-macos@grasshopper-marketplace</code></pre><p>For Windows or Linux, use its matching entry. To remove the Mac entry and marketplace:</p><pre><code>codex plugin remove grasshopper-macos@grasshopper-marketplace
+codex plugin marketplace remove grasshopper-marketplace</code></pre></details>
+        <details><summary>Cursor</summary><p>Agent CLI can keep an old Git snapshot. Remove and re-add the marketplace, then reinstall your OS entry in the Plugins menu:</p><pre><code>agent plugin marketplace remove grasshopper-marketplace
+agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace</code></pre><p>To remove Grasshopper, uninstall it in the Plugins list. If you enabled its MCP entry, disable it:</p><pre><code>agent mcp disable grasshopper</code></pre></details>
+        <details><summary>Claude Code</summary><p>Extract the new client beside the old one and rerun setup with your original server options:</p><pre><code>./bin/grasshopper setup --agents claude --update</code></pre><p>To remove the plugin and marketplace:</p><pre><code>claude plugin uninstall grasshopper@grasshopper-local
+claude plugin marketplace remove grasshopper-local</code></pre></details>
+        <p class="note">After an update, reconnect with the connect skill in update mode or run the new package's setup update. Check authentication, then test a fresh session. <a href="https://github.com/MylesMCook/grasshopper/blob/main/docs/shared-memory.md">Server updates and backups</a> are separate.</p>
       </section>
     </main>
     <footer><span>Grasshopper</span><span>This site never reads your memories or token.</span></footer>
