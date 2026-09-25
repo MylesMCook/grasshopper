@@ -507,5 +507,8 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	if selected["cursor"] {
 		fmt.Fprintln(os.Stdout, "Cursor: enable Grasshopper in Tools & MCPs if prompted.")
 	}
+	if *cursorCLI {
+		fmt.Fprintln(os.Stdout, "Cursor Agent CLI: run agent mcp enable grasshopper, then check a fresh session.")
+	}
 	return nil
 }

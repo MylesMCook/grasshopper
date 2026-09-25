@@ -169,6 +169,22 @@ func TestMarketplaceConnectAddsCursorCLIToolsWithoutSecondHook(t *testing.T) {
 	}
 }
 
+func TestMarketplaceCursorCLIDefaultsToUserConfig(t *testing.T) {
+	root, token, config, _ := setupFixture(t)
+	server := setupServer(t, true)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	run := func(string, ...string) ([]byte, error) { t.Fatal("native plugin command ran"); return nil, nil }
+	args := []string{"--agents", "none", "--cursor-cli", "--url", server.URL + "/mcp", "--token-file", token, "--device", "test", "--config", config}
+	if err := setupClientWithRoot(args, root, run); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".cursor", "mcp.json")); err != nil {
+		t.Fatal("Cursor CLI MCP was not saved in the user config:", err)
+	}
+}
+
 func TestSetupRejectsUnknownAgentBeforeChanges(t *testing.T) {
 	root, token, config, cursorDir := setupFixture(t)
 	run := func(string, ...string) ([]byte, error) { t.Fatal("native command ran"); return nil, nil }

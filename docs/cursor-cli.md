@@ -1,53 +1,24 @@
-# Cursor Agent CLI: MCP tool access
+# Cursor Agent CLI
 
-**Verified path:** the client package's `grasshopper cursor install` command
-adds one MCP entry and a startup hook to Cursor's user configuration. The
-[client package guide](../integrations/plugins/README.md) has the exact steps.
-The client still connects to the same authenticated backend; Cursor gets no
-writable memory database.
+Connect Cursor to the same private server used by Codex and Claude Code. The
+client stores a token-file path, not a token or memory database.
+The [client guide](../integrations/plugins/README.md) has the setup command.
 
-In a fresh Agent workspace, run `agent mcp enable grasshopper` once, then
-`agent mcp list` and
-`agent mcp list-tools grasshopper`. A connected server lists `context`,
-`store`, `search`, `get`, and `archive`. In a fresh Agent CLI turn, call
-`context` once if startup context is absent. Approve writes deliberately;
-the installer does not pre-approve them.
-For a headless read test on Cursor Agent CLI `2026.09.23-86fc751`, use
-`agent --print --auto-review` against synthetic data only. In fresh Mac and Beelink workspaces, default
-`--print` rejected `context` despite an enabled server and the project read
-allowlist; `--auto-review` completed the scoped read on both. `--mode ask`
-also rejected MCP in an earlier pilot. Keep `store` and `archive` out of the
-read allowlist. Do not use `--force` or `--approve-mcps` as a workaround.
-Pass the stable `id:` or `git:` project scope, never the folder name.
+With a marketplace plugin installed, run its **connect-grasshopper** skill.
+It calls `grasshopper setup --agents none --cursor-cli` after checking the
+server. This adds Grasshopper to your user-level `~/.cursor/mcp.json`; the
+plugin supplies the startup hook. Then run `agent mcp enable grasshopper` and
+check a fresh Agent session. If startup context is absent, call `context` once.
+Approve writes deliberately. A successful `agent mcp list-tools grasshopper`
+alone does not prove the model can call it.
 
-## What the CLI test established
+On Windows, keep the default user-level MCP location. A [Cursor CLI bug](https://forum.cursor.com/t/cursor-cli-can-see-my-mcp-servers-but-agent-sessions-still-cant-use-them/171696/11)
+can make project-level `.cursor/mcp.json` show five ready tools while Agent
+sessions report none. Cursor recommends a user-level MCP entry as a workaround;
+Grasshopper's default setup already writes there. Do not use
+`--approve-mcps` to approve every server just to make Grasshopper work.
 
-On macOS arm64 with Cursor Agent CLI `2026.09.23-86fc751`, a fresh Composer 2.5
-turn used the project MCP config to call `grasshopper-context` once. It read
-synthetic global record 1, key `shared-pilot-marker`, revision 2, with marker
-`pebble atlas` from the shared loopback test backend. No memory was written.
-`agent mcp list-tools grasshopper` independently listed all five tools.
-
-The same CLI did **not** register Grasshopper MCP tools when the package was
-loaded only with `agent --plugin-dir`, despite a live backend and valid client
-config. The pilot was a Git-root workspace. Fresh turns returned no Grasshopper
-namespace from `GetDynamicTools`.
-The current Cursor Plugin manifest, default `mcp.json` discovery, the
-documented `command` plus `cwd` form, and a root Agent Plugins manifest gave
-the same result. This limits the tested `--plugin-dir` path; it does not prove
-that a marketplace-installed plugin or Cursor IDE behaves the same way.
-
-In a later live Mac mini test, fresh Mac and Beelink Composer 2.5 turns each
-read synthetic project record 7, revision 1, with the same unseen marker via
-the private service and `--auto-review`. Codex CLI on both machines fetched
-that record through one MCP `context` call. The record was archived after the
-test. Beelink's forced CLI sandbox could not start because of local AppArmor;
-the CLI's documented default allowlist mode ran without changing host policy.
-
-Cursor's [plugin reference](https://cursor.com/docs/reference/plugins) documents
-plugin MCP components and `${CURSOR_PLUGIN_ROOT}` expansion. Its
-[CLI MCP guide](https://cursor.com/docs/cli/mcp) documents project `mcp.json`
-discovery and `agent mcp list-tools`. The installed CLI's marketplace command
-accepted a Git URL, but offered no local plugin install command. A native
-marketplace install remains an untested release gate; the project MCP path above
-is the tested CLI setup.
+For a headless read check, `agent --print --auto-review` worked in the tested
+Mac, Linux, and Windows CLI versions. Keep `store` and `archive` out of any
+automatic read allowlist. See [observed results and limits](memory-acceptance.md#marketplace-pilot-25-september)
+before treating a CLI run as proof of Cursor IDE behavior.
