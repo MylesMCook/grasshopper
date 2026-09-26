@@ -98,7 +98,7 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	}
 	status := "Grasshopper context unavailable. Continue work with memory unavailable; do not claim an unacknowledged write was saved."
 	if remote, err := NewRemote(config); err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		budget := 12000
 		if harness == "claude" {
 			budget = 3000 // Claude previews hook strings above 10,000 characters.

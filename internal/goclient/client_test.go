@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -210,6 +211,38 @@ func TestGoBridgeOutageIsBoundedAndDoesNotAcknowledgeWrite(t *testing.T) {
 	text := result["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
 	if !strings.Contains(text, "context unavailable") || !strings.Contains(text, "project_resolved=true") && strings.Contains(text, "context loaded") {
 		t.Fatalf("offline hook claimed context: %s", text)
+	}
+}
+
+func TestHookSlowBackendDoesNotHoldUpStartup(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		<-release
+	}))
+	defer server.Close()
+	defer close(release)
+	root := t.TempDir()
+	policy := filepath.Join(root, "AGENTS.md")
+	if err := os.WriteFile(policy, []byte("Canonical memory policy marker."), 0600); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "client.json")
+	data, _ := json.Marshal(Config{URL: server.URL + "/mcp", TokenEnv: "GRASSHOPPER_TEST_TOKEN", PolicyPath: policy, Device: "synthetic-mac"})
+	if err := os.WriteFile(config, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GRASSHOPPER_TEST_TOKEN", testToken)
+	start := time.Now()
+	result, err := Hook(config, "codex", map[string]any{"cwd": root, "hook_event_name": "SessionStart"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > 4500*time.Millisecond {
+		t.Fatalf("slow backend held startup for %s", elapsed)
+	}
+	text := result["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
+	if !strings.Contains(text, "context unavailable") || strings.Contains(text, "context loaded") {
+		t.Fatalf("slow backend was reported as loaded: %s", text)
 	}
 }
 
