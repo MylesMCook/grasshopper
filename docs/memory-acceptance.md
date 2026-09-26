@@ -15,7 +15,7 @@ Evidence for [Grasshopper 2.3.1](https://github.com/MylesMCook/grasshopper/relea
   | `get` | 0.6 / 2.1 (25) | 8.0 / 20.0 (30) |
   | semantic `search` | 94 / 691 (12) | 205 / 282 (30) |
 
-  Counts are in parentheses. Fresh hook processes took 25–27 ms median on Mac and 74–77 ms on Beelink (15 calls per harness). In an isolated synthetic service, model load took 255 ms once, embedding took about 4.8 ms median, `store` took 5.9 ms, and `archive` took 1.1 ms. Live search is slower and more variable than isolated inference; its cause has not been isolated. Agent response time is excluded from these direct measurements.
+  Counts are in parentheses. Fresh hook processes took 25–27 ms median on Mac and 74–77 ms on Beelink (15 calls per harness). In an isolated synthetic service, model load took 255 ms once, embedding took about 4.8 ms median, `store` took 5.9 ms, and `archive` took 1.1 ms. These direct series used 2.3.0 clients; 2.3.1 changed package permissions, not the call path. Live search is slower and more variable than isolated inference; its cause has not been isolated. Agent response time is excluded from these direct measurements.
 - With a task-local config pointing at a closed loopback port, Mac `check` failed in 20 ms and its startup hook returned an explicit unavailable fallback in 23 ms. Beelink took 11 ms and 5 ms. These test a refused connection, not a slow or blackholed network; no write was attempted.
 - The public [setup page](https://usegrasshopper.com/setup/) now links to 2.3.1 server archives for Mac, Windows, and Linux. All three download links returned 200. Home and memory-view pages returned 200; public `/mcp` returned 404. Cloudflare deployment: `11b2f748-e484-427d-bc11-22e39e86e50c`.
 
