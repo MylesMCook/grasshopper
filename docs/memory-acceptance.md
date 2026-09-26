@@ -20,6 +20,8 @@ Evidence for [Grasshopper 2.3.0](https://github.com/MylesMCook/grasshopper/relea
 
 Earlier [2.2.5 evidence](https://github.com/MylesMCook/grasshopper/blob/v2.2.5/docs/memory-acceptance.md) includes Claude Code CLI, Beelink Linux recovery, scoped readback, and CLI outage probes. Those checks were not all repeated for 2.3.0. CLI checks do not prove Codex Desktop or Cursor IDE startup behavior.
 
+On Work HP, the 2.3.0 client checked an unreachable loopback server using a task-local config. It failed in 28 ms and reported that no memory changed; the test config was removed.
+
 ## Live service and site
 
 - Mac mini launchd runs 2.3.0 on loopback 8106, behind the unchanged Tailnet-only HTTPS route. Anonymous `/healthz` returned 401; authenticated local and Tailnet health returned 200; the private viewer returned 200. SQLite integrity was `ok`, with 10 records and 25 revisions after upgrade. The consistent pre-upgrade snapshot restored into a separate test server with the same counts.
