@@ -1,6 +1,13 @@
 # Observed behavior
 
-Evidence for [Grasshopper 2.3.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.0). These observations do not establish behavior in untested clients.
+Evidence for [Grasshopper 2.3.1](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.1), with the 2.3.0 checks retained below. These observations do not establish behavior in untested clients.
+
+## 2.3.1 package and cross-machine check (September 26)
+
+- [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36223607139) passed on Mac, Linux, and Windows. All seven archives passed embedded SHA-256 checks. The Linux archive extracted under `/opt` as root with readable plugin manifests; its client authenticated using a Beelink-only device credential. The running Mac server stayed on compatible 2.3.0.
+- Fresh Mac Codex CLI 0.156.1, Cursor Agent CLI 2026.09.23-86fc751, and Claude Code CLI 2.1.280 turns saw confirmed global record 8 before tools, including after their 2.3.1 client updates. Beelink Codex CLI 0.156.1 and Cursor Agent CLI 2026.09.23-86fc751 did the same from a clone of this Git remote on 2.3.1. The two machines read one server; no client memory database was created.
+- An actual Codex `search` tool call took 92 ms on Mac and 191 ms from Beelink. The full agent turns took 14.1 and 15.2 seconds. Fresh no-tool turns took Mac Codex 6.3 and 69.8 seconds, Mac Cursor 8.3–8.6 seconds, Mac Claude 5.3–7.0 seconds, Beelink Codex 6.2–7.1 seconds, and Beelink Cursor 20.2–38.2 seconds. These are individual observed turns, not latency guarantees. Model and harness time varied much more than MCP time.
+- Direct Beelink-to-Mac MCP measurements, median / p95: `context` 6.5 / 11.9 ms, `get` 8.0 / 20.0 ms, `search` 205 / 282 ms (30 calls each). Fresh hook processes took 74–77 ms median across Codex, Cursor, and Claude adapters (15 calls each). Model response time is excluded from these direct measurements.
 
 ## Backend and release
 
