@@ -1,6 +1,14 @@
 # Observed behavior
 
-Evidence for [Grasshopper 2.3.1](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.1), with the 2.3.0 checks retained below. These observations do not establish behavior in untested clients.
+Evidence for [Grasshopper 2.3.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.2), with earlier checks retained below. These observations do not establish behavior in untested clients.
+
+## 2.3.2 client update (September 26)
+
+- [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36246295264) passed on Mac, Linux, and Windows. Seven release archives passed their embedded SHA-256 checks. The published checksum file matched the locally verified one. The marketplace branch is `25bd3cb`.
+- Mac mini: Codex marketplace plugin and Claude plugin report 2.3.2; Cursor user hooks and MCP point to the 2.3.2 client. Beelink: Codex and Claude plugins report 2.3.2; Cursor user hooks and MCP point to the 2.3.2 client. Work HP: Codex plugin reports 2.3.2 and Cursor user wiring points to the 2.3.2 client; Claude was not installed. All three packaged clients passed authenticated `check` without a write.
+- Direct installed `SessionStart` hooks for Codex, Cursor, and Claude loaded policy and live context in 22–26 ms on Mac and 93–99 ms on Beelink. Work HP Codex and Cursor hooks did so in 0.59–0.62 seconds. The packaged Mac client returned the unavailable fallback in 2.03 seconds against a synthetic stalled server. These are hook timings, not fresh model-turn timings. A read-only Work HP Codex CLI probe was stopped after 90 seconds without an answer; fresh GUI sessions and Work HP Cursor CLI first-turn injection were not rechecked.
+- Work HP's first `codex plugin add` reported Windows “Access is denied” while backing up an old cache entry. The installed plugin list and new cache then reported 2.3.2, and that binary authenticated and loaded context. The old 2.3.0 cache was left intact. This install warning still merits investigation on a fresh Windows update.
+- The public setup page serves 2.3.2 links (Cloudflare deployment `898d00cf-095a-4625-9b30-438766fc0504`). Home, setup, and memory view returned 200; public `/mcp` and `/visualizer/` returned 404. The private Mac server remains on compatible 2.3.0 with its database and route unchanged.
 
 ## 2.3.1 package and cross-machine check (September 26)
 
@@ -19,7 +27,7 @@ Evidence for [Grasshopper 2.3.1](https://github.com/MylesMCook/grasshopper/relea
 - With a task-local config pointing at a closed loopback port, Mac `check` failed in 20 ms and its startup hook returned an explicit unavailable fallback in 23 ms. Beelink took 11 ms and 5 ms. These test a refused connection, not a slow or blackholed network; no write was attempted.
 - Mac no-tool turns: Codex high/low took 5.0–6.3 seconds (four turns), Sol/Luna at low took 6.1–6.9 seconds (four), and plugin-on/off took 5.3–7.7 seconds (four, no consistent difference). Cursor took 7.3–7.8 seconds (two); Claude took 4.8–6.2 seconds (two). Cursor's first CLI event arrived at 4.9 seconds with partial streaming. These small read-only samples do not rank model speed or coding quality.
 - In four read-only Codex code lookups, low reasoning took 14.4–17.3 seconds and high took 28.2–33.7 seconds. All four found `ProjectIdentity` in `internal/goclient/scope.go`. Shell commands completed almost instantly; the agent spent most of the turn before the first command or reasoning between commands. This supports low effort for bounded lookups, not a global setting change for harder coding work.
-- The hook emits 5.3 KB for Codex/Cursor and 8.8 KB for Claude, including Claude's project AGENTS.md adapter. A stalled synthetic backend held the old hook for 5.0 seconds; the new two-second limit returned the unavailable fallback in 2.02 seconds. A task-local build still loaded live context in 23–207 ms across all three harness modes. Ordinary MCP requests keep their five-second timeout. Installed clients have not been updated with this limit.
+- The hook emits 5.3 KB for Codex/Cursor and 8.8 KB for Claude, including Claude's project AGENTS.md adapter. A stalled synthetic backend held the old hook for 5.0 seconds; the new two-second limit returned the unavailable fallback in 2.02 seconds. A task-local build still loaded live context in 23–207 ms across all three harness modes. Ordinary MCP requests keep their five-second timeout. The limit reached installed clients in 2.3.2.
 - The public [setup page](https://usegrasshopper.com/setup/) now links to 2.3.1 server archives for Mac, Windows, and Linux. All three download links returned 200. Home and memory-view pages returned 200; public `/mcp` returned 404. Cloudflare deployment: `11b2f748-e484-427d-bc11-22e39e86e50c`.
 
 ## Backend and release
