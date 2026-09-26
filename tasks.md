@@ -1,6 +1,8 @@
 # Grasshopper release state
 
-Owner: Codex · Mac mini · `main` (2.3.2 client update released).
+Owner: Codex · Mac mini · `main` (2.3.3 release candidate).
+
+- 2.3.3 fixes silent startup failures, incomplete viewer browsing, project-ID validation for new writes, handoff selection, transient viewer recovery, Claude permission removal, setup readability, and the obsolete main-branch plugin. Tests and restored-copy authentication passed; release and live rollout are in progress. See [observed behavior](docs/memory-acceptance.md).
 
 - [2.3.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.2) limits a stalled startup memory request to two seconds. [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36246295264) passed on Mac, Linux, and Windows; all seven archives passed embedded hashes. The [marketplace](https://github.com/MylesMCook/grasshopper/tree/marketplace) is `25bd3cb`.
 - Mac mini and Beelink Codex, Cursor, and Claude clients are updated to 2.3.2. Work HP Codex and Cursor are updated by CLI; Claude was not installed there. All three machines authenticated with the new package, and direct startup hooks loaded context. Fresh model turns were previously observed on 2.3.1, not repeated for 2.3.2. Work HP Cursor CLI first-turn injection remains unresolved; see [observed behavior](docs/memory-acceptance.md).

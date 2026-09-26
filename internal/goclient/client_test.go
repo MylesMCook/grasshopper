@@ -20,6 +20,23 @@ import (
 
 const testToken = "synthetic-client-token-0123456789-abcdef"
 
+func TestHookUnavailableIsVisibleInEachHarness(t *testing.T) {
+	for _, harness := range []string{"codex", "cursor", "claude"} {
+		output := HookUnavailable(harness, map[string]any{"hook_event_name": "SessionStart"})
+		encoded, err := json.Marshal(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		message := string(encoded)
+		if !strings.Contains(message, "startup unavailable") || !strings.Contains(message, "no memory write was acknowledged") {
+			t.Fatalf("%s did not disclose startup failure: %s", harness, message)
+		}
+		if harness == "cursor" && output["additional_context"] == nil || harness != "cursor" && output["hookSpecificOutput"] == nil {
+			t.Fatalf("%s returned the wrong hook shape: %s", harness, message)
+		}
+	}
+}
+
 func TestInstalledClientUsesOneConfigAndPolicy(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "client.json")

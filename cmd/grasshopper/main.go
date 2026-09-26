@@ -42,6 +42,8 @@ func run() error {
 		return checkConnection(os.Args[2:])
 	case "cursor":
 		return cursorCommand(os.Args[2:])
+	case "claude":
+		return claudeCommand(os.Args[2:])
 	case "bridge":
 		flags := flag.NewFlagSet("bridge", flag.ContinueOnError)
 		config := flags.String("config", "", "client configuration path")
@@ -83,11 +85,11 @@ func run() error {
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Grasshopper hook unavailable; no persistence acknowledged")
-			return nil
+			return json.NewEncoder(os.Stdout).Encode(goclient.HookUnavailable(*harness, input))
 		}
 		return json.NewEncoder(os.Stdout).Encode(output)
 	default:
-		return errors.New("use connect, setup, configure, check, cursor, bridge, hook, or config-path")
+		return errors.New("use connect, setup, configure, check, cursor, claude, bridge, hook, or config-path")
 	}
 }
 

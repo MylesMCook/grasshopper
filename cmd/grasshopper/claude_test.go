@@ -36,6 +36,17 @@ func TestClaudeReadPermissionsPreserveSettingsAndRejectWrites(t *testing.T) {
 			t.Fatalf("write rule granted: %s", write)
 		}
 	}
+	if err := removeClaudeReads(path, false); err != nil {
+		t.Fatal(err)
+	}
+	settings, err = readJSONObject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permissions = settings["permissions"].(map[string]any)
+	if !sameJSON(permissions["allow"], []any{"Read"}) || !sameJSON(permissions["deny"], []any{"Bash(rm *)"}) || settings["outputStyle"] != "plain" {
+		t.Fatalf("Claude removal changed unrelated settings: %v", settings)
+	}
 }
 
 func TestClaudeReadPermissionsRejectMalformedSettings(t *testing.T) {

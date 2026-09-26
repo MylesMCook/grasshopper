@@ -239,17 +239,17 @@ func TestVisualizerAnyDeviceBrowsesActiveScopedRecords(t *testing.T) {
 		return false
 	}
 	global, devices, projects := load(`{}`)
-	if !contains(global, "Mac-only synthetic fact") || !contains(global, "Windows-only synthetic fact") || contains(global, "Project A synthetic fact") || contains(global, "Unconfirmed synthetic observation") || contains(global, "Archived synthetic fact") {
+	if !contains(global, "Mac-only synthetic fact") || !contains(global, "Windows-only synthetic fact") || contains(global, "Project A synthetic fact") || !contains(global, "Unconfirmed synthetic observation") || contains(global, "Archived synthetic fact") {
 		t.Fatalf("Any device view mixed scope or omitted active device facts: %+v", global)
 	}
 	agentContext, err := store.Context(ctx, gomemory.Scope{}, 32768)
 	if err != nil || contains(agentContext, "Mac-only synthetic fact") || contains(agentContext, "Windows-only synthetic fact") {
 		t.Fatalf("agent context widened with visualizer browsing: page=%+v err=%v", agentContext, err)
 	}
-	if !slices.Contains(devices, mac) || !slices.Contains(devices, windows) || slices.Contains(devices, projectDevice) || slices.Contains(devices, retired) || slices.Contains(devices, observed) {
+	if !slices.Contains(devices, mac) || !slices.Contains(devices, windows) || slices.Contains(devices, projectDevice) || slices.Contains(devices, retired) || !slices.Contains(devices, observed) {
 		t.Fatalf("device choices mixed inactive or other-project facts: %v", devices)
 	}
-	if !slices.Contains(projects, projectA) || !slices.Contains(projects, projectB) || slices.Contains(projects, retiredProject) || slices.Contains(projects, observedProject) {
+	if !slices.Contains(projects, projectA) || !slices.Contains(projects, projectB) || slices.Contains(projects, retiredProject) || !slices.Contains(projects, observedProject) {
 		t.Fatalf("project choices included inactive or missed active records: %v", projects)
 	}
 	project, projectDevices, _ := load(`{"project":"id:project-a"}`)

@@ -13,9 +13,9 @@ if [ "$version" != "$expected" ]; then
 	exit 2
 fi
 output=$2
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 mkdir -p "$output"
-output=$(CDPATH= cd -- "$output" && pwd)
+output=$(CDPATH='' cd -- "$output" && pwd)
 
 cd "$root"
 for target in darwin-arm64 windows-amd64 linux-amd64; do

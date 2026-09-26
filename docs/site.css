@@ -34,9 +34,9 @@
     .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 34px; }
     .agent-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .agent-options .wide { grid-column: 1 / -1; }
-    .grid article { padding-top: 17px; border-top: 1px solid var(--soft); }
+    .grid article { min-width: 0; padding-top: 17px; border-top: 1px solid var(--soft); }
     .grid p, .note { margin-top: 10px; color: var(--muted); }
-    pre { margin: 12px 0 0; padding: 12px; overflow-wrap: anywhere; white-space: pre-wrap; background: var(--surface); font: inherit; }
+    pre { max-width: 100%; margin: 12px 0 0; padding: 12px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: normal; background: var(--surface); font: inherit; }
     .note { max-width: 72ch; }
     details { max-width: 72ch; padding: 14px 0; border-top: 1px solid var(--soft); }
     details:last-of-type { border-bottom: 1px solid var(--soft); }

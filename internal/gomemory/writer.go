@@ -13,13 +13,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
 
-// WriteInput follows the Rust MemoryWrite wire shape and field order so
-// request fingerprints are compatible across the two runtimes.
+// WriteInput is the shared memory write contract.
 type WriteInput struct {
 	Scope            Scope      `json:"scope"`
 	Content          string     `json:"content"`
@@ -141,6 +141,9 @@ func openWritableFile(path string) (*Reader, error) {
 	}
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("database is not a regular file")
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
+		return nil, errors.New("database must not be readable or writable by other users")
 	}
 	uri := fileURI(abs, "mode=rw&_txlock=immediate")
 	db, err := sql.Open("sqlite", uri)
@@ -291,6 +294,11 @@ func (w *Writer) Write(ctx context.Context, input WriteInput, vector []float32, 
 	scopeKey, err := input.Scope.Key()
 	if err != nil {
 		return receipt, err
+	}
+	if input.ID == nil && input.ExpectedRevision == nil {
+		if err := input.Scope.durableProject(); err != nil {
+			return receipt, err
+		}
 	}
 	if input.Scope.Legacy {
 		return receipt, errors.New("new writes cannot target legacy scope")

@@ -210,6 +210,7 @@ async function refreshDevices() {
     connectedDevices.replaceChildren(...connected.map(device => deviceRow(device.device, [['Disconnect', () => revokeDevice(device)]])));
     if (!pending.length) pendingDevices.replaceChildren(deviceRow('No connection requests waiting.'));
     if (!connected.length) connectedDevices.replaceChildren(deviceRow('No other devices connected.'));
+    if (deviceStatus.textContent === 'Device controls unavailable. Memory view still works.') deviceStatus.textContent = '';
   } catch {
     deviceStatus.textContent = 'Device controls unavailable. Memory view still works.';
   }
@@ -224,10 +225,12 @@ function scopeInput() {
   if (project) scope.project = project;
   if (device) scope.device = device;
   if (platform) scope.platform = platform;
-  const view = [project ? 'one project' : 'global', device ? 'one device' : 'all devices'];
+  const view = [project ? 'global + one project' : 'global', device ? 'one device' : 'all devices'];
   if (platform) view.push(platform);
   const description = `Scope · ${view.join(' · ')}`;
   if (scopeSummary.textContent !== description) scopeSummary.textContent = description;
+  if (projectSelect.value === manualChoice && !project) return null;
+  if (deviceSelect.value === manualChoice && !device) return null;
   return scope;
 }
 
@@ -247,6 +250,7 @@ function draw(page) {
     if (omissions.textContent !== message) omissions.textContent = message;
   }
   const signature = JSON.stringify(items.map(record => [record.id, record.revision, record.title, record.content, record.scope, record.provenance, record.confirmed, record.purpose]));
+  summary.textContent = `${items.length} ${items.length === 1 ? 'memory' : 'memories'}`;
   const selection = window.getSelection();
   const selectingRecord = selection && !selection.isCollapsed && (records.contains(selection.anchorNode) || records.contains(selection.focusNode));
   if (hasLoaded && (signature === lastSignature || selectingRecord)) return;
@@ -283,7 +287,7 @@ function draw(page) {
     const dimensions = [scope.project && `Project ${scope.project}`, scope.device && `Device ${scope.device}`, scope.platform && `Platform ${scope.platform}`].filter(Boolean);
     meta.append(
       label(dimensions.length ? dimensions.join(' · ') : 'Global'),
-      label(record.confirmed ? 'Confirmed' : 'Handoff'),
+      label(record.confirmed ? 'Confirmed' : record.purpose === 'handoff' ? 'Handoff' : 'Agent observation'),
       label(`Source: ${record.provenance?.source || 'Unknown'}`),
       label(`Agent: ${record.provenance?.harness || 'Unknown'}`),
       label(`Source device: ${record.provenance?.device || 'Unknown'}`)
@@ -302,7 +306,6 @@ function draw(page) {
   revisions = next;
   lastSignature = signature;
   hasLoaded = true;
-  summary.textContent = `${items.length} ${items.length === 1 ? 'memory' : 'memories'}`;
 }
 
 async function refresh() {
@@ -311,10 +314,15 @@ async function refresh() {
   inFlight = controller;
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
+    const scope = scopeInput();
+    if (!scope) {
+      setStatus('Enter the selected project or device ID', 'error');
+      return;
+    }
     const response = await fetch('/visualizer/api/context', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(scopeInput()),
+      body: JSON.stringify(scope),
       cache: 'no-store',
       credentials: 'same-origin',
       signal: controller.signal
@@ -330,9 +338,9 @@ async function refresh() {
   } catch (error) {
     if (inFlight !== controller) return;
     const message = error.name === 'AbortError' ? 'Request timed out' : error instanceof TypeError ? 'Service unavailable' : error.message;
-    stop(message === 'Connection expired');
+    if (message === 'Connection expired') stop(true);
     setStatus(message, 'error');
-    summary.textContent = message === 'Connection expired' ? 'Connect again to see your memories.' : hasLoaded ? 'Showing the last results. Reconnect to refresh.' : 'No memories loaded. Reconnect to retry.';
+    summary.textContent = message === 'Connection expired' ? 'Connect again to see your memories.' : hasLoaded ? 'Showing the last results. Use Refresh to try again.' : 'No memories loaded. Use Refresh to try again.';
   } finally {
     clearTimeout(timeout);
     if (inFlight === controller) inFlight = null;

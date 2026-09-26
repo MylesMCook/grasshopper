@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -123,6 +124,119 @@ func TestGoWriterDoesNotMixProjectDedup(t *testing.T) {
 	for _, record := range aPage.Records {
 		if record.ID == b.ID {
 			t.Fatal("project B leaked into project A")
+		}
+	}
+}
+
+func TestWritableDatabaseRejectsBroadUnixPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows uses file ACLs")
+	}
+	source := filepath.Join("..", "..", "tests", "fixtures", "go-compat", "memory.db")
+	data, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "memory.db")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openWritableFile(path); err == nil || !strings.Contains(err.Error(), "other users") {
+		t.Fatalf("writable shared database accepted broad permissions: %v", err)
+	}
+}
+
+func TestProjectWritesNeedDurableIdentityButOlderRecordsRemainReadable(t *testing.T) {
+	w := fixtureWriter(t)
+	ctx := context.Background()
+	local := "folder-on-one-machine"
+	input := WriteInput{Scope: Scope{Project: &local}, Content: "Project choice", Purpose: "decision", Confirmed: true, Provenance: Provenance{"codex", "test", "test"}, RequestID: "reject-path"}
+	if _, err := w.Write(ctx, input, nil, ""); err == nil || !strings.Contains(err.Error(), "durable") {
+		t.Fatalf("accepted a machine-local project identifier: %v", err)
+	}
+	for _, project := range []string{"id:shared-project", "git:github.com/owner/repo"} {
+		input.Scope.Project = &project
+		input.RequestID = project
+		if _, err := w.Write(ctx, input, nil, ""); err != nil {
+			t.Fatalf("rejected durable project %q: %v", project, err)
+		}
+	}
+	// The reader continues to support records made before this validation.
+	legacyKey, err := (Scope{Project: &local}).Key()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := w.db.ExecContext(ctx, `INSERT INTO chunks(kind,memory_scope,content,title,descriptors,memory_type,purpose,confirmed,provenance,revision,archived,created_at,updated_at)
+	 VALUES('memory',?,?,?,?,?,'decision',1,?,1,0,'2026-01-01','2026-01-01')`, legacyKey, "Older choice", "Older", "", "knowledge", `{"harness":"codex","device":"test","source":"older release"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := w.Context(ctx, Scope{Project: &local}, 16000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, record := range page.Records {
+		found = found || record.ID == id
+	}
+	if !found {
+		t.Fatalf("older project record inaccessible: %+v %v", page, err)
+	}
+}
+
+func TestViewerBrowsesObservationsAndAllHandoffs(t *testing.T) {
+	w := fixtureWriter(t)
+	ctx := context.Background()
+	project := "id:handoff-project"
+	scope := Scope{Project: &project}
+	base := WriteInput{Scope: scope, Purpose: "handoff", Content: "Project handoff", Confirmed: false, Provenance: Provenance{"codex", "test", "test"}, RequestID: "project-handoff"}
+	projectHandoff, err := w.Write(ctx, base, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.Scope = Scope{}
+	base.Content = "Newer global handoff"
+	base.RequestID = "global-handoff"
+	globalHandoff, err := w.Write(ctx, base, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.Scope = scope
+	base.Purpose = "observation"
+	base.Content = "Unconfirmed observation"
+	base.RequestID = "observation"
+	observation, err := w.Write(ctx, base, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextPage, err := w.Context(ctx, scope, 16000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seenProject, seenGlobal, seenObservation := false, false, false
+	for _, record := range contextPage.Records {
+		seenProject = seenProject || record.ID == projectHandoff.ID
+		seenGlobal = seenGlobal || record.ID == globalHandoff.ID
+		seenObservation = seenObservation || record.ID == observation.ID
+	}
+	if !seenProject || seenGlobal || seenObservation || contextPage.Omitted == 0 {
+		t.Fatalf("agent context should prefer project handoff and disclose omissions: %+v", contextPage)
+	}
+	browse, _, _, err := w.BrowseContext(ctx, scope, 16000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{projectHandoff.ID, globalHandoff.ID, observation.ID} {
+		found := false
+		for _, record := range browse.Records {
+			found = found || record.ID == id
+		}
+		if !found {
+			t.Fatalf("active record %d missing from viewer: %+v", id, browse)
 		}
 	}
 }

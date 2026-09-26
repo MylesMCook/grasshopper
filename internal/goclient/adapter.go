@@ -139,6 +139,19 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": text}}, nil
 }
 
+// HookUnavailable keeps a failed startup visible without exposing local paths.
+func HookUnavailable(harness string, input map[string]any) map[string]any {
+	event := stringValue(input["hook_event_name"])
+	if event == "" {
+		event = "SessionStart"
+	}
+	message := "Grasshopper startup unavailable. Read applicable AGENTS.md guidance and call grasshopper/context once before substantive work if connected. Continue if it is unavailable; no memory write was acknowledged."
+	if harness == "cursor" {
+		return map[string]any{"additional_context": message}
+	}
+	return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": message}}
+}
+
 func promptContextPath(input map[string]any) string {
 	dataDir, sessionID := os.Getenv("PLUGIN_DATA"), stringValue(input["session_id"])
 	if dataDir == "" || sessionID == "" {

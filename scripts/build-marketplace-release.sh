@@ -6,9 +6,9 @@ if [ "$#" -ne 1 ]; then
 	exit 2
 fi
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 mkdir -p "$1"
-output=$(CDPATH= cd -- "$1" && pwd)
+output=$(CDPATH='' cd -- "$1" && pwd)
 version=$(cat "$root/VERSION")
 archive="$output/grasshopper-marketplace-$version.zip"
 if [ -e "$archive" ]; then

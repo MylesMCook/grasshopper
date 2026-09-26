@@ -20,7 +20,7 @@ Windows PowerShell:
 .\bin\grasshopper-server.exe --quickstart
 ```
 
-This creates an empty database and a master token without overwriting existing state. Keep the server running. Open its memory view and connect once with that token. For other machines, give the server a **private HTTPS** address. Keep the master token on the server and out of chat and Git.
+This creates an empty database and a master token without overwriting existing state. Keep the server running. Open its memory view and connect once with that token. For other machines, give the server a **private HTTPS** address, such as [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve). Keep public access off and the master token on the server, out of chat and Git.
 
 ## Connect an agent
 
@@ -83,10 +83,20 @@ agent plugin marketplace remove grasshopper-marketplace
 agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace
 ```
 
-Claude Code: extract the new client beside the old one and update it. Remove Grasshopper in Claude Code's plugin manager when done.
+Before removing Cursor, run this from its client archive to clear Grasshopper's MCP hook and read allowlist. Then uninstall the plugin. Other Cursor settings remain.
+
+```sh
+./bin/grasshopper cursor remove
+```
+
+Claude Code: extract the new client beside the old one and update it. Before uninstalling, clear its Grasshopper read allowlist, then remove the plugin in Claude Code's manager.
 
 ```sh
 ./bin/grasshopper setup --agents claude --update
+```
+
+```sh
+./bin/grasshopper claude remove
 ```
 
 The update reuses this machine's saved server address and device token. In the memory view, you can disconnect a device without changing other agents. A device token grants access to the whole store; project scope is not access control.

@@ -51,6 +51,22 @@ func (s Scope) Key() (string, error) {
 	return string(data), err
 }
 
+// New project records need an identity that survives clone paths and machines.
+// Key still accepts older identifiers so existing records remain inspectable.
+func (s Scope) durableProject() error {
+	if s.Project == nil {
+		return nil
+	}
+	project := *s.Project
+	if strings.HasPrefix(project, "id:") && len(project) > len("id:") {
+		return nil
+	}
+	if strings.HasPrefix(project, "git:") && len(project) > len("git:") && strings.Contains(project[len("git:"):], "/") {
+		return nil
+	}
+	return errors.New("project must use id:<durable-id> or git:<host/repository>")
+}
+
 func (s Scope) applicableKeys() ([]string, error) {
 	if _, err := s.Key(); err != nil {
 		return nil, err
@@ -286,7 +302,7 @@ func (r *Reader) BrowseContext(ctx context.Context, scope Scope, budget int) (Pa
 			}
 		}
 	}
-	page, err := r.contextKeys(ctx, keys, budget)
+	page, err := r.browseKeys(ctx, keys, budget)
 	return page, devices, knownProjects, err
 }
 
@@ -294,7 +310,7 @@ func (r *Reader) browseProjects(ctx context.Context) ([]string, error) {
 	const document = "CASE WHEN json_valid(memory_scope) THEN memory_scope ELSE '{}' END"
 	const project = "json_extract(" + document + ", '$.project')"
 	query := "SELECT DISTINCT " + project + " FROM chunks WHERE kind='memory' AND archived=0" +
-		" AND (confirmed=1 OR purpose='handoff') AND " + project + " IS NOT NULL ORDER BY 1"
+		" AND " + project + " IS NOT NULL ORDER BY 1"
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -319,7 +335,7 @@ func (r *Reader) browseDevices(ctx context.Context, scope Scope) ([]string, erro
 	const project = "json_extract(" + document + ", '$.project')"
 	const platform = "json_extract(" + document + ", '$.platform')"
 	query := "SELECT DISTINCT " + device + " FROM chunks WHERE kind='memory' AND archived=0" +
-		" AND (confirmed=1 OR purpose='handoff') AND " + device + " IS NOT NULL" +
+		" AND " + device + " IS NOT NULL" +
 		" AND (" + project + " IS NULL OR " + project + "=?)" +
 		" AND (? IS NULL OR " + platform + " IS NULL OR " + platform + "=?) ORDER BY 1"
 	rows, err := r.db.QueryContext(ctx, query, scope.Project, scope.Platform, scope.Platform)
@@ -339,43 +355,75 @@ func (r *Reader) browseDevices(ctx context.Context, scope Scope) ([]string, erro
 }
 
 func (r *Reader) contextKeys(ctx context.Context, keys []string, budget int) (Page, error) {
-	if budget < 1024 {
-		budget = 1024
-	} else if budget > 65536 {
-		budget = 65536
+	records, err := r.scopedActive(ctx, keys, false)
+	if err != nil {
+		return Page{}, err
 	}
+	chosen := -1
+	for i, record := range records {
+		if record.Purpose != "handoff" {
+			continue
+		}
+		if chosen < 0 || (records[chosen].Scope.Project == nil && record.Scope.Project != nil) {
+			chosen = i
+		}
+	}
+	selected := make([]Record, 0, len(records))
+	skipped := make([]Record, 0)
+	for i, record := range records {
+		if record.Purpose == "handoff" && i != chosen {
+			skipped = append(skipped, record)
+			continue
+		}
+		selected = append(selected, record)
+	}
+	page, err := boundRecords(selected, budget, 0)
+	if err != nil {
+		return Page{}, err
+	}
+	for _, record := range skipped {
+		page.Omitted++
+		if len(page.OmittedIDs) < 100 {
+			page.OmittedIDs = append(page.OmittedIDs, record.ID)
+			page.OmittedRecords = append(page.OmittedRecords, Reference{record.ID, record.Revision, record.Scope})
+		}
+	}
+	return page, nil
+}
+
+func (r *Reader) browseKeys(ctx context.Context, keys []string, budget int) (Page, error) {
+	records, err := r.scopedActive(ctx, keys, true)
+	if err != nil {
+		return Page{}, err
+	}
+	return boundRecords(records, budget, 0)
+}
+
+func (r *Reader) scopedActive(ctx context.Context, keys []string, browse bool) ([]Record, error) {
 	keyJSON, err := json.Marshal(keys)
 	if err != nil {
-		return Page{}, err
+		return nil, err
+	}
+	filter := " AND (confirmed=1 OR purpose='handoff')"
+	if browse {
+		filter = ""
 	}
 	rows, err := r.db.QueryContext(ctx, "SELECT "+recordColumns+` FROM chunks WHERE kind='memory' AND archived=0
- AND memory_scope IN (SELECT value FROM json_each(?)) AND (confirmed=1 OR purpose='handoff')
+ AND memory_scope IN (SELECT value FROM json_each(?))`+filter+`
  ORDER BY CASE purpose WHEN 'preference' THEN 0 WHEN 'decision' THEN 1 WHEN 'lesson' THEN 2 WHEN 'handoff' THEN 3 ELSE 4 END, updated_at DESC,id DESC`, string(keyJSON))
 	if err != nil {
-		return Page{}, err
+		return nil, err
 	}
 	defer rows.Close()
-	page := Page{Records: []Record{}, OmittedIDs: []int64{}, OmittedRecords: []Reference{}}
-	handoffSeen := false
 	records := []Record{}
 	for rows.Next() {
 		record, err := scanRecord(rows)
 		if err != nil {
-			return Page{}, err
-		}
-		if record.Purpose == "handoff" {
-			if handoffSeen {
-				continue
-			}
-			handoffSeen = true
+			return nil, err
 		}
 		records = append(records, record)
 	}
-	if err := rows.Err(); err != nil {
-		return Page{}, err
-	}
-	page, err = boundRecords(records, budget, 0)
-	return page, err
+	return records, rows.Err()
 }
 
 func boundRecords(records []Record, budget, limit int) (Page, error) {

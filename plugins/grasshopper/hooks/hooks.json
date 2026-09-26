@@ -1,7 +1,0 @@
-{
-  "hooks": {
-    "SessionStart": [{"hooks": [{"type": "command", "command": "grasshopper hook --harness codex", "commandWindows": "grasshopper.exe hook --harness codex", "timeout": 8}]}],
-    "SubagentStart": [{"hooks": [{"type": "command", "command": "grasshopper hook --harness codex", "commandWindows": "grasshopper.exe hook --harness codex", "timeout": 8}]}],
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "true", "commandWindows": "grasshopper.exe hook --harness codex", "timeout": 8}]}]
-  }
-}

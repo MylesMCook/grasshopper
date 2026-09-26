@@ -1,6 +1,13 @@
 # Observed behavior
 
-Evidence for [Grasshopper 2.3.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.2), with earlier checks retained below. These observations do not establish behavior in untested clients.
+Observed checks for Grasshopper releases. Synthetic checks and real-client observations are separate below.
+
+## 2.3.3 release candidate (September 26)
+
+- Local Go tests, targeted race tests, vet, module verification, ShellCheck, JS syntax, and real pinned ONNX inference passed on Mac. Backend tests cover viewer browsing of observations and multiple handoffs, scoped new writes, prior nonstandard project IDs, and private database permissions.
+- An isolated browser displayed an unconfirmed observation, kept its 30-day session across reload, retained results during an offline refresh, and returned to a live count after recovery. At 320 px, the setup page stayed within the viewport and kept commands in separate code blocks. The static site passed Wrangler dry-run.
+- A consistent copy of the live Mac database passed SQLite integrity checks. A separate restore kept all 10 record IDs and the highest revision, and the candidate server returned authenticated context from that restore. The live service was not changed for these tests.
+- Missing client config produced a visible startup fallback in a CLI probe. This release candidate has not yet had fresh Codex, Cursor, or Claude model-turn tests on each OS; earlier observations below are version-specific.
 
 ## 2.3.2 client update (September 26)
 
