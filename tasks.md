@@ -1,14 +1,10 @@
 # Grasshopper release state
 
-Owner: Codex · Mac mini · `main` (release code `e26a1f6`).
+Owner: Codex · Mac mini · `codex/230-closeout` (documentation closeout).
 
-- [2.2.5](https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.5) is public. [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36189022975) passed Mac, Linux, and Windows. Seven archives passed 280 internal checksums; published hashes match. The [marketplace](https://github.com/MylesMCook/grasshopper/tree/marketplace) is `6e39b72`.
-- The [public site](https://usegrasshopper.com/) serves 2.2.5 setup links (deployment `f4d68529-3afb-4d4d-a47a-cfa53593fe37`). Home, setup, and memory view returned 200; public MCP and private visualizer routes returned 404.
-- The private Mac mini server and Codex, Cursor, and Claude clients run 2.2.5 on the existing database and Tailnet route. Local and Tailnet health, scoped current/prior reads, semantic search, and the visualizer passed. Fresh CLI sessions in all three harnesses received record 10 revision 6 before tools. The release handoff was acknowledged as revision 7; the prior revision remains readable.
-- Beelink independently retrieved the recovery note, restored R2, and read record 10 revision 6 from a separate loopback server. Its published 2.2.5 Linux package also passed a fresh synthetic store/get/semantic smoke. Temporary secrets, test data, and listeners were removed. A postrelease R2 backup and repository check passed; its local snapshot contains revision 7.
+- [2.3.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.0) is public. [Main CI](https://github.com/MylesMCook/grasshopper/actions/runs/36198401107) passed Mac, Linux, and Windows. Published packages passed their checksums.
+- The [marketplace](https://github.com/MylesMCook/grasshopper/tree/marketplace) is `f0529f7`. The [site](https://usegrasshopper.com/) serves the 2.3.0 setup page (deployment `9dfcfac8-65d3-4dac-ad63-50fff3ec2243`).
+- The private Mac mini service runs 2.3.0 on its existing database and Tailnet route. A restored pre-upgrade snapshot, current integrity and health, live viewer pairing/revocation, and a fresh encrypted R2 backup passed.
+- Fresh Mac Codex, Cursor, and Claude Code CLI turns received a confirmed global preference before tools on their 2.3.0 clients. Work HP Codex's 2.3.0 marketplace entry paired over Tailnet; its fresh CLI turn also received that preference before tools. Work HP Cursor Agent CLI has an enabled MCP entry and read the same record on demand, but its first-turn hook context was absent in the clean-room test.
 
-Still to verify: current Codex Desktop and Cursor IDE behavior, Windows 2.2.5 runtime, compaction/subagent refresh, reboot persistence, and actual host failover. Work HP was not changed in this release. See [observed behavior](docs/memory-acceptance.md); do not infer app behavior from CLI passes.
-
-## Next: device pairing
-
-Owner: Codex · Mac mini · `codex/device-pairing` (unreleased 2.3.0 candidate). Marketplace connection needs one private server address and viewer approval, never a copied master token. Synthetic Mac browser and CLI pairing, authenticated read, revocation, interrupted-setup retry, and a 2.2.5-to-2.3.0 shadow-database upgrade and binary rollback passed; see [evidence](docs/memory-acceptance.md). The Mac server, Mac/Linux/Windows clients, and marketplace archives have verified internal checksums. Next: native Codex and Cursor fresh-install checks, Windows native server CI, then approved live backup, release, rollout, and site update. The 2.2.5 service and marketplace remain unchanged.
+Still open: reliable Work HP Cursor first-turn injection, current Codex Desktop and Cursor IDE checks, reboot persistence, compaction/subagent refresh, and actual host failover. See [observed behavior](docs/memory-acceptance.md). Do not infer app behavior from CLI checks.
