@@ -2,12 +2,17 @@
 
 Observed checks for Grasshopper releases. Synthetic checks and real-client observations are separate below.
 
-## 2.3.3 release candidate (September 26)
+## 2.3.3 release (September 26)
 
-- Local Go tests, targeted race tests, vet, module verification, ShellCheck, JS syntax, and real pinned ONNX inference passed on Mac. Backend tests cover viewer browsing of observations and multiple handoffs, scoped new writes, prior nonstandard project IDs, and private database permissions.
-- An isolated browser displayed an unconfirmed observation, kept its 30-day session across reload, retained results during an offline refresh, and returned to a live count after recovery. At 320 px, the setup page stayed within the viewport and kept commands in separate code blocks. The static site passed Wrangler dry-run.
-- A consistent copy of the live Mac database passed SQLite integrity checks. A separate restore kept all 10 record IDs and the highest revision, and the candidate server returned authenticated context from that restore. The live service was not changed for these tests.
-- Missing client config produced a visible startup fallback in a CLI probe. This release candidate has not yet had fresh Codex, Cursor, or Claude model-turn tests on each OS; earlier observations below are version-specific.
+- [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36252586838) passed on Mac, Linux, and Windows. Seven archives passed their embedded hashes; all eight [GitHub release](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.3) assets matched local SHA-256 checks. The `marketplace` branch is `f56e507`.
+- Local tests, targeted race tests, vet, module verification, ShellCheck, JS syntax, and real pinned ONNX inference passed on Mac. Backend tests cover browsing observations and multiple handoffs, scoped new writes, old nonstandard project IDs, and private database permissions. Missing client config produced a visible startup fallback.
+- An isolated browser displayed an unconfirmed observation, kept its 30-day session across reload, retained results during an offline refresh, and restored the live count on recovery. At 320 px, setup stayed within the viewport with separate command blocks. The deployed [site](https://usegrasshopper.com/) serves 2.3.3 setup; home, setup, and view returned 200, while public `/mcp` and `/visualizer/` returned 404. Deployment ID: `abbcf965-c9c8-4e7c-b7aa-d27498b73687`.
+- A consistent live Mac database copy passed SQLite integrity. A separate restore preserved all 10 record IDs and the highest revision; the 2.3.3 server returned authenticated context from that restore. The private Mac service then moved to 2.3.3 with its database and Tailnet route unchanged. Its local and Tailnet viewers returned 200; anonymous `/healthz` returned 401. The live database still had 10 records and the same highest revision. A new encrypted off-host backup was uploaded and its repository checked; a full machine-loss restore of this release was not performed.
+- Mac mini, macOS: Codex CLI 0.156.1, Cursor Agent CLI 2026.09.23-86fc751, and Claude Code CLI 2.1.280 have 2.3.3 clients. Fresh read-only turns received confirmed key `setup-and-software-determinism` at revision 1 from startup context before tools. Wall times were 7.37, 13.77, and 7.35 seconds. Direct installed hooks took 139, 24, and 116 ms. These are individual observations, not latency guarantees.
+- Beelink, Ubuntu: Codex CLI 0.155.0-alpha.16.3, Cursor Agent CLI 2026.09.23-86fc751, and Claude Code CLI 2.1.283 have 2.3.3 clients. Fresh read-only turns received the same confirmed key before tools. Initial wall times were 7.23, 21.02, and 6.89 seconds; direct hooks took 95, 93, and 115 ms. After moving the client to its durable path, fresh turns passed again in 10.99, 22.96, and 20.52 seconds. Cursor's first attempt stopped at the expected trust prompt for the new pilot folder; `--trust` let the read-only check run. No memory write was made.
+- Work HP, Windows: Codex CLI 0.155.1 and Cursor Agent CLI 2026.09.23-86fc751 have 2.3.3 clients. Codex's fresh read-only turn received the confirmed key at revision 1 from startup context. `codex plugin add` printed “Access is denied” while backing up its old cache, yet its installed list and new executable report 2.3.3 and authenticate. Cursor's direct hook loaded the key, but its fresh CLI turn received no startup context. A task-local project hook with a harmless marker was not invoked either; its receipt file was absent. Cursor MCP initially needed native approval; after `agent mcp enable grasshopper`, an explicit `context` tool call read the shared key. The test hook was removed. [Cursor documents user and project hooks](https://cursor.com/docs/hooks), and [a similar Windows CLI failure has been reported](https://forum.cursor.com/t/hooks-not-firing-cannot-have-guardrails/168407). This does not establish a native first-turn fix. Claude Code was not installed there.
+- Installed clients point to durable per-user locations: Mac `~/Library/Application Support/Grasshopper/client/2.3.3`, Beelink `~/.local/share/grasshopper/client/2.3.3`, and Work HP `%LOCALAPPDATA%\grasshopper\client\2.3.3`. Cursor MCP reported ready on all three after the path changes were approved. Token files stayed in their existing private locations; no client database was created.
+- With a task-local config aimed at a closed loopback port, the 2.3.3 startup hook returned an unavailable fallback in 35 ms on Mac, 6 ms on Beelink, and 214 ms on Work HP. It did not make or acknowledge a write. A previously tested stalled synthetic backend returned within the two-second hook limit; a blackholed network was not retested on all three hosts.
 
 ## 2.3.2 client update (September 26)
 
@@ -43,7 +48,7 @@ Observed checks for Grasshopper releases. Synthetic checks and real-client obser
 - Tests cover scoped context and reads, corrections and prior revisions, concurrent revision conflicts, idempotency, archival, authentication, owner-only pairing, denial and expiry, revocation, restart, and bounded failure. A 2.2.5 synthetic database upgraded additively to 2.3.0; the 2.2.5 binary reopened it after rollback.
 - On a synthetic Mac database, a real browser approved a client after its matching code appeared. The client authenticated; Disconnect revoked it immediately. On the live private service, a disposable client connected through Tailnet and was revoked. No master token was copied to the client.
 
-## Actual clients
+## 2.3.0 clients (historical)
 
 | Machine | Harness | Observed |
 |---|---|---|
@@ -57,10 +62,10 @@ Earlier [2.2.5 evidence](https://github.com/MylesMCook/grasshopper/blob/v2.2.5/d
 
 On Work HP, the 2.3.0 client checked an unreachable loopback server using a task-local config. It failed in 28 ms and reported that no memory changed; the test config was removed.
 
-## Live service and site
+## 2.3.0 live service and site (historical)
 
 - Mac mini launchd runs 2.3.0 on loopback 8106, behind the unchanged Tailnet-only HTTPS route. Anonymous `/healthz` returned 401; authenticated local and Tailnet health returned 200; the private viewer returned 200. SQLite integrity was `ok`, with 10 records and 25 revisions after upgrade. The consistent pre-upgrade snapshot restored into a separate test server with the same counts.
 - The post-upgrade backup job exited successfully. Its local snapshot passed SQLite integrity and includes device-token metadata; the job uploads to and checks the encrypted off-host R2 repository. Independent Beelink recovery was last observed on 2.2.5, not repeated after this update.
 - [The public site](https://usegrasshopper.com/) returned 200 for home, setup, and memory view. Setup shows 2.3.0. Public `/mcp` and `/visualizer/` returned 404. The published Mac client download returned 200.
 
-Still unverified: reliable Work HP Cursor first-turn injection, current Codex Desktop and Cursor IDE sessions, reboot persistence, compaction/subagent refresh, and actual host failover. [Cursor documents `sessionStart` as fire-and-forget](https://cursor.com/docs/hooks); a connected MCP tool alone does not guarantee first-turn context. No legacy production database was migrated.
+Current gaps: Work HP Cursor CLI did not invoke its test project hook or receive startup context in 2.3.3; Codex Desktop and Cursor IDE were not retested for this release. Reboot persistence, compaction/subagent refresh, and full host failover remain unverified. [Cursor documents `sessionStart` as fire-and-forget](https://cursor.com/docs/hooks); a connected MCP tool alone does not guarantee first-turn context. No legacy production database was migrated.
