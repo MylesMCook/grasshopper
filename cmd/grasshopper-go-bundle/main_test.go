@@ -82,6 +82,9 @@ func TestClientPluginsPackageThreeHarnessesOnePolicy(t *testing.T) {
 		if strings.Contains(entry.Name, "token") || strings.HasSuffix(entry.Name, ".db") || strings.Contains(entry.Name, "model.onnx") {
 			t.Fatalf("private or server data included: %s", entry.Name)
 		}
+		if strings.Contains(entry.Name, "/plugins/") && !strings.Contains(entry.Name, "/bin/") && entry.Mode().Perm()&0444 != 0444 {
+			t.Fatalf("plugin file is not readable after system-wide install: %s (%o)", entry.Name, entry.Mode().Perm())
+		}
 	}
 	if entries["bin/grasshopper"] == nil || entries["policy/AGENTS.md"] == nil || entries["cursor-mcp.example.json"] == nil || entries["cursor-cli.example.json"] == nil || entries["SHA256SUMS"] == nil {
 		t.Fatal("canonical policy, Cursor setup, or checksums missing")
@@ -186,6 +189,9 @@ func TestMarketplacePackagesOneStatelessClientPerPlatform(t *testing.T) {
 		entries[entry.Name] = entry
 		if strings.Contains(entry.Name, "token") || strings.HasSuffix(entry.Name, ".db") {
 			t.Fatalf("private state in marketplace: %s", entry.Name)
+		}
+		if strings.HasPrefix(entry.Name, "plugins/") && !strings.Contains(entry.Name, "/bin/") && entry.Mode().Perm()&0444 != 0444 {
+			t.Fatalf("plugin file is not readable after system-wide install: %s (%o)", entry.Name, entry.Mode().Perm())
 		}
 	}
 	for _, slug := range []string{"macos", "windows", "linux"} {
