@@ -110,7 +110,15 @@ func TestReembedCopyCleansFailedDestination(t *testing.T) {
 func TestGoServiceReopensOnlyFullyReembeddedDatabase(t *testing.T) {
 	ctx := context.Background()
 	source := filepath.Join("..", "..", "tests", "fixtures", "go-compat", "memory.db")
-	if _, err := OpenWritableExisting(source, "new-model", 2); err == nil || !strings.Contains(err.Error(), "need shadow re-embedding") {
+	data, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldModelCopy := filepath.Join(t.TempDir(), "old-model.db")
+	if err := os.WriteFile(oldModelCopy, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenWritableExisting(oldModelCopy, "new-model", 2); err == nil || !strings.Contains(err.Error(), "need shadow re-embedding") {
 		t.Fatalf("old-model source was accepted: %v", err)
 	}
 	destination := filepath.Join(t.TempDir(), "service.db")
