@@ -1,6 +1,6 @@
 # Grasshopper release state
 
-Owner: Codex · Mac mini · `codex/230-closeout` (documentation closeout).
+Owner: Codex · Mac mini · `main` (2.3.0 released).
 
 - [2.3.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.0) is public. [Main CI](https://github.com/MylesMCook/grasshopper/actions/runs/36198401107) passed Mac, Linux, and Windows. Published packages passed their checksums.
 - The [marketplace](https://github.com/MylesMCook/grasshopper/tree/marketplace) is `f0529f7`. The [site](https://usegrasshopper.com/) serves the 2.3.0 setup page (deployment `9dfcfac8-65d3-4dac-ad63-50fff3ec2243`).
