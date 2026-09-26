@@ -52,7 +52,7 @@ A site rollback does not change the private database or server.
 
 ## Device pairing upgrade
 
-The next server adds a `client_tokens` table to the existing SQLite database.
+Version 2.3.0 adds a `client_tokens` table to the existing SQLite database.
 It stores token hashes and revocation status, not raw device tokens. Rehearse
 the additive upgrade on a restored copy and verify a current backup before a
 live restart. The 2.2.5 binary ignores the extra table on rollback; new device

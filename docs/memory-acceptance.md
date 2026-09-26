@@ -1,35 +1,29 @@
 # Observed behavior
 
-This records tests actually run for [2.2.5](https://github.com/MylesMCook/grasshopper/releases/tag/v2.2.5). Git history retains older pilots.
+Evidence for [Grasshopper 2.3.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.0). These observations do not establish behavior in untested clients.
 
-## Backend and packages
+## Backend and release
 
-- [CI 36189022975](https://github.com/MylesMCook/grasshopper/actions/runs/36189022975) passed tests, vet, and native builds on macOS, Linux, and Windows, plus race checks on Mac and Linux. All seven release archives passed 280 internal checksums; GitHub asset hashes and the published `SHA256SUMS` matched local files.
-- A fresh extracted Mac server loaded the pinned ONNX model, returned 401 without a token and 200 with one, served current record 10 revision 6 plus revision 5 under full project/device/OS scope, and reported semantic search ready. The new scoped `get` regression failed before the fix. Tests also reject other-project, other-platform, and legacy reads.
-- Beelink Ubuntu downloaded the published 2.2.5 Linux server, verified its archive and 57 internal hashes, created a fresh synthetic database, rejected anonymous health, accepted authenticated health, saved and fully read a scoped decision, and reported semantic search ready. Its task-local listener and synthetic database were removed.
-- Installer tests cover exact Cursor and Claude read permissions, preservation of other settings, idempotence, malformed config, and rollback. No write permission is preapproved. Backend tests cover scoped recall, corrections, concurrency conflicts, idempotency, history, archive/restore, and authentication.
+- [Main CI](https://github.com/MylesMCook/grasshopper/actions/runs/36198401107) passed tests, vet, and native Mac/Linux/Windows builds. Seven published archives passed 280 internal file hashes; all eight GitHub assets matched local SHA256 digests. Real pinned BGE model recall tests passed on Mac.
+- Tests cover scoped context and reads, corrections and prior revisions, concurrent revision conflicts, idempotency, archival, authentication, owner-only pairing, denial and expiry, revocation, restart, and bounded failure. A 2.2.5 synthetic database upgraded additively to 2.3.0; the 2.2.5 binary reopened it after rollback.
+- On a synthetic Mac database, a real browser approved a client after its matching code appeared. The client authenticated; Disconnect revoked it immediately. On the live private service, a disposable client connected through Tailnet and was revoked. No master token was copied to the client.
 
 ## Actual clients
 
-| Machine | Harness | Observed result |
+| Machine | Harness | Observed |
 |---|---|---|
-| Mac mini, macOS | Codex CLI 0.156.1 | 2.2.5 plugin; fresh turn received record 10 revision 6 before tools; full scoped `get` read current and prior revision 5. |
-| Mac mini, macOS | Cursor Agent CLI 2026.09.23 | 2.2.5 client; same first-turn and full-read result. A 2.2.4 headless `get` had been denied; setup now adds only the three [documented read permissions](https://prod.cursor.com/docs/cli/reference/permissions). |
-| Mac mini, macOS | Claude Code CLI 2.1.280 | 2.2.5 plugin; same first-turn and full-read result. A denied headless `get` was fixed with three [supported MCP read rules](https://code.claude.com/docs/en/permissions). An unrelated claude.ai Grasshopper connector still reports 502; the local plugin works. |
+| Mac mini, macOS | Codex CLI 0.156.1 | Installed 2.3.0 local plugin; a fresh read-only turn received the confirmed global preference before tools. |
+| Mac mini, macOS | Cursor Agent CLI 2026.09.23-86fc751 | Updated 2.3.0 wiring; a fresh Ask turn received the same preference before tools. |
+| Mac mini, macOS | Claude Code CLI 2.1.280 | Updated 2.3.0 plugin; a fresh print turn received the same confirmed preference before tools. An unrelated claude.ai connector still returned 502. |
+| Work HP, Windows | Codex CLI 0.155.1 | 2.3.0 marketplace entry paired to the private server with a device token; authenticated `check` passed. A clean-room fresh turn received the confirmed Mac-saved preference before tools. SSH stayed open after the model turn; unrelated MCP OAuth errors appeared. |
+| Work HP, Windows | Cursor Agent CLI 2026.09.23-86fc751 | 2.3.0 user MCP wiring and startup hook installed. A clean-room fresh turn saw MCP tools but no startup memory. A separate turn called `grasshopper/context` once and read the confirmed Mac-saved preference. Direct execution of the hook returned that context, so the missing first-turn injection remains a Windows CLI integration gap. |
 
-All three direct 2.2.5 hook outage probes reported an unavailable backend within 0.1 seconds without claiming a save. Earlier real CLI outage and Windows/Beelink harness tests are in Git history; they were not repeated for this release. CLI behavior does not prove Codex Desktop or Cursor IDE behavior.
+Earlier [2.2.5 evidence](https://github.com/MylesMCook/grasshopper/blob/v2.2.5/docs/memory-acceptance.md) includes Claude Code CLI, Beelink Linux recovery, scoped readback, and CLI outage probes. Those checks were not all repeated for 2.3.0. CLI checks do not prove Codex Desktop or Cursor IDE startup behavior.
 
-## Live service, recovery, and site
+## Live service and site
 
-- Mac mini launchd runs 2.2.5 against the original SQLite database and private Tailnet route. Local health returned 401 anonymously and 200 with the token; Tailnet health and visualizer returned 200. Full scoped `get` read current and prior revisions, and semantic search was ready. A live handoff correction acknowledged record 10 revision 7, with revision 6 still inspectable.
-- Beelink Ubuntu restored the latest encrypted R2 snapshot using a Bitwarden note retrieved there, checked SQLite integrity (10 records, 24 revisions), and served record 10 revision 6 from a separate 2.2.4 loopback server. The test listener, restored database, vault session, and temporary credentials were removed. The Mac then uploaded a new postrelease backup; its local snapshot passed integrity and contains revision 7 with 25 historical revisions. This is independent-host recovery evidence, not an actual failover.
-- The [public site](https://usegrasshopper.com/) returned 200 for home, setup, and memory view. All three 2.2.5 server download links returned 200. Public `/mcp` and `/visualizer/` returned 404. The private viewer remained available.
+- Mac mini launchd runs 2.3.0 on loopback 8106, behind the unchanged Tailnet-only HTTPS route. Anonymous `/healthz` returned 401; authenticated local and Tailnet health returned 200; the private viewer returned 200. SQLite integrity was `ok`, with 10 records and 25 revisions after upgrade. The consistent pre-upgrade snapshot restored into a separate test server with the same counts.
+- The post-upgrade backup job exited successfully. Its local snapshot passed SQLite integrity and includes device-token metadata; the job uploads to and checks the encrypted off-host R2 repository. Independent Beelink recovery was last observed on 2.2.5, not repeated after this update.
+- [The public site](https://usegrasshopper.com/) returned 200 for home, setup, and memory view. Setup shows 2.3.0. Public `/mcp` and `/visualizer/` returned 404. The published Mac client download returned 200.
 
-Not yet observed: current Codex Desktop and Cursor IDE sessions, Windows 2.2.5 runtime, compaction/subagent refresh, reboot persistence, and actual host failover. Work HP was not touched for 2.2.5; no legacy database was migrated.
-
-## Unreleased device-pairing pilot
-
-- On a synthetic Mac database and real local browser, a fresh client displayed a code. The connected memory view showed the same code and approved it. The client saved a private device token, authenticated `check`, and the view's Disconnect control immediately made `check` fail. No master token was copied to the client. The browser session, device token, and test listener were removed.
-- Go tests cover unapproved, denied, expired, and capped requests; owner-only approval; paired MCP context, correction, and prior-revision readback; device-token rejection for owner sessions; auth after restart; revocation; token metadata in a SQLite backup; interrupted-setup retry; and bounded connection failure. `go test ./...`, `go vet ./...`, and focused race checks passed. The real BGE recall tests ran with the pinned model.
-- A 2.2.5 Mac server created a synthetic database without `client_tokens`. The candidate 2.3.0 server started against it, added the table, passed SQLite integrity, rejected anonymous health, and accepted the unchanged owner token. The 2.2.5 binary then restarted against that upgraded database and accepted the owner token. The test listener stopped and its synthetic token was removed. This checks binary rollback, not restoration of an actual memory record.
-- The 2.3.0 marketplace, Mac server, and Mac, Windows, and Linux client archives built locally. Their 166 included file checksums passed; the extracted Mac marketplace client reported version 2.3.0. The public site built and all local page links and anchors resolved. A Windows server cannot be cross-built on this Mac because the ONNX binding requires a native build; CI and native client checks remain gates. No 2.2.5 live service or client was changed by this pilot.
+Still unverified: reliable Work HP Cursor first-turn injection, current Codex Desktop and Cursor IDE sessions, reboot persistence, compaction/subagent refresh, and actual host failover. [Cursor documents `sessionStart` as fire-and-forget](https://cursor.com/docs/hooks); a connected MCP tool alone does not guarantee first-turn context. No legacy production database was migrated.
