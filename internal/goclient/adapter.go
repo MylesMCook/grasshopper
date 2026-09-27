@@ -15,6 +15,9 @@ import (
 	"time"
 )
 
+// Bridge forwards newline-delimited MCP messages to the remote service.
+// Remote failures after a request ID is parsed receive a local error response;
+// a failed write is never reported as acknowledged.
 func Bridge(ctx context.Context, configPath string, stdin io.Reader, stdout io.Writer) error {
 	config, err := LoadConfig(configPath)
 	if err != nil {
@@ -48,6 +51,9 @@ func Bridge(ctx context.Context, configPath string, stdin io.Reader, stdout io.W
 	return scanner.Err()
 }
 
+// Hook builds harness output from canonical policy and a scoped context
+// attempt. Unresolved project identity limits the request to global, device,
+// and platform records; backend failures yield an unavailable status.
 func Hook(configPath, harness string, input map[string]any) (map[string]any, error) {
 	if harness != "codex" && harness != "cursor" && harness != "claude" {
 		return nil, errors.New("unsupported harness")
@@ -128,8 +134,8 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 		text = policy + "\nGrasshopper context exceeded Claude's startup hook budget. Call grasshopper/context once before substantive work; no records were delivered by this hook."
 	}
 	if harness == "claude" || event == "SubagentStart" {
-		// Claude's native AGENTS.md mod may be unavailable; subagents can omit
-		// project instructions. Keep complete hook context below Claude's cap.
+		// Include applicable AGENTS.md guidance for Claude and subagents;
+		// these hooks cannot assume it was inherited. Respect Claude's cap.
 		guidance, err := applicableGuidance(cwd, config.PolicyPath)
 		if err != nil {
 			return nil, err
@@ -289,6 +295,8 @@ func stringValue(value any) string {
 	return text
 }
 
+// ParseHookInput decodes a bounded hook event, treating empty input as an
+// empty event.
 func ParseHookInput(reader io.Reader) (map[string]any, error) {
 	data, err := io.ReadAll(io.LimitReader(reader, 131073))
 	if err != nil || len(data) > 131072 {

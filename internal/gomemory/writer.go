@@ -19,7 +19,9 @@ import (
 	"unicode/utf8"
 )
 
-// WriteInput is the shared memory write contract.
+// WriteInput describes a new memory, correction, or historical restore.
+// ID or Key may select an existing record; corrections require
+// ExpectedRevision. A restore requires ID and RestoreRevision with empty Content.
 type WriteInput struct {
 	Scope            Scope      `json:"scope"`
 	Content          string     `json:"content"`
@@ -36,6 +38,7 @@ type WriteInput struct {
 	RestoreRevision  *int64     `json:"restore_revision"`
 }
 
+// ArchiveInput requests an archive-state change at an expected revision.
 type ArchiveInput struct {
 	Scope            Scope      `json:"scope"`
 	ID               int64      `json:"id"`
@@ -45,19 +48,24 @@ type ArchiveInput struct {
 	Provenance       Provenance `json:"provenance"`
 }
 
+// Receipt identifies the saved revision. Deduplicated means an active record
+// matched the write's scope, type, purpose, confirmation, content, metadata,
+// and key.
+// Request-ID replay returns the original receipt.
 type Receipt struct {
 	ID           int64 `json:"id"`
 	Revision     int64 `json:"revision"`
 	Deduplicated bool  `json:"deduplicated"`
 }
 
-// Writer is deliberately available only for a new, explicit database copy.
-// It never opens its source for writing and performs no schema migration.
+// Writer exposes writes to an explicitly opened SQLite file.
+// OpenWritableExisting opens a service database; OpenWritableCopy makes an
+// isolated copy without changing its source.
 type Writer struct{ *Reader }
 
-// OpenWritableExisting is for a previously verified Go shadow database after
-// cutover. It never creates or migrates a database, and refuses memory rows
-// whose vectors do not match the running model.
+// OpenWritableExisting opens an existing database without creating or
+// migrating it. It rejects memory rows with missing embeddings or vectors
+// whose model label or byte length differs from the running model.
 func OpenWritableExisting(path, model string, dimensions int) (*Writer, error) {
 	if model == "" || dimensions < 1 || dimensions > 4096 {
 		return nil, errors.New("valid model and dimensions required")
@@ -84,6 +92,8 @@ func OpenWritableExisting(path, model string, dimensions int) (*Writer, error) {
 	return &Writer{reader}, nil
 }
 
+// OpenWritableCopy makes a consistent SQLite snapshot with VACUUM INTO.
+// The source is unchanged and an existing destination is never replaced.
 func OpenWritableCopy(ctx context.Context, source, destination string) (*Writer, error) {
 	if _, err := os.Stat(destination); err == nil {
 		return nil, errors.New("backup destination already exists")
@@ -91,7 +101,7 @@ func OpenWritableCopy(ctx context.Context, source, destination string) (*Writer,
 		return nil, err
 	}
 	// VACUUM INTO requires a nonexistent output. Build beside the destination,
-	// then hard-link it into place without overwriting an existing backup.
+	// then hard-link it into place without overwriting an existing destination.
 	temporary, err := os.CreateTemp(filepath.Dir(destination), "."+filepath.Base(destination)+".tmp-*")
 	if err != nil {
 		return nil, err
@@ -290,6 +300,10 @@ func commitOrRollback(tx *sql.Tx, err *error) {
 	*err = tx.Commit()
 }
 
+// Write saves a new record, correction, or historical restore in one
+// transaction. Corrections require the expected revision; request IDs replay
+// the same receipt or reject a different payload. A nil vector leaves a new
+// record available to lexical search only.
 func (w *Writer) Write(ctx context.Context, input WriteInput, vector []float32, model string) (receipt Receipt, err error) {
 	scopeKey, err := input.Scope.Key()
 	if err != nil {
@@ -509,6 +523,8 @@ func (w *Writer) Write(ctx context.Context, input WriteInput, vector []float32, 
 	return acknowledge(ctx, tx, input.RequestID, fingerprint, Receipt{*id, revision, false})
 }
 
+// Store vectors as little-endian float32 values; Search checks the byte
+// length against the query dimensions before decoding.
 func vectorBlob(vector []float32) []byte {
 	blob := make([]byte, len(vector)*4)
 	for i, value := range vector {
@@ -530,6 +546,9 @@ func firstRunes(value string, count int) string {
 	return value
 }
 
+// Archive changes visibility at the expected revision and records both
+// versions in history. The Archived flag selects archive or restore; request
+// IDs give retries the same receipt.
 func (w *Writer) Archive(ctx context.Context, input ArchiveInput) (receipt Receipt, err error) {
 	if _, err = input.Scope.Key(); err != nil {
 		return receipt, err

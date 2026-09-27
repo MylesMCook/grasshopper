@@ -20,7 +20,7 @@ func compactScope(scope Scope) map[string]any {
 }
 
 // compactContext changes hook presentation only. MCP records remain unchanged.
-// Keep content and unknown fields intact; omit only redundant active-row metadata.
+// Preserve record content and unknown record fields; omit redundant active-row metadata.
 func compactContext(raw json.RawMessage) (json.RawMessage, error) {
 	var page struct {
 		Records        []map[string]json.RawMessage `json:"records"`

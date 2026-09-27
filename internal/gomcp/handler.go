@@ -19,11 +19,14 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// Embedder creates vectors for stored documents and search queries.
 type Embedder interface {
 	EmbedDocument(string) ([]float32, error)
 	EmbedQuery(string) ([]float32, error)
 }
 
+// Backend supplies storage, optional inference, and HTTP configuration.
+// Store is required; Model is required when Embedder is set.
 type Backend struct {
 	Store                 *gomemory.Writer
 	Version               string
@@ -96,6 +99,8 @@ func writeSchema() map[string]any {
 	}, "scope", "content", "purpose", "confirmed", "provenance", "request_id")
 }
 
+// NewHandler validates the backend and master token, ensures the client-token
+// table, and returns the authenticated MCP and optional visualizer handler.
 func NewHandler(backend Backend, token string) (http.Handler, error) {
 	if backend.Store == nil {
 		return nil, errors.New("memory backend required")
@@ -134,6 +139,8 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	if inferenceTimeout <= 0 || inferenceTimeout > 10*time.Second {
 		inferenceTimeout = 5 * time.Second
 	}
+	// A request timeout does not stop an in-flight embedding. Keep the slot
+	// occupied until the call returns so timed-out calls cannot overlap.
 	inferenceGate := make(chan struct{}, 1)
 	runInference := func(ctx context.Context, fn func() ([]float32, error)) ([]float32, error) {
 		inferenceCtx, cancel := context.WithTimeout(ctx, inferenceTimeout)
@@ -263,9 +270,9 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: 131072, PropagateRequestCancellation: true})
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The SDK permits only loopback Host headers on a loopback listener.
-		// Tailscale Serve preserves the HTTPS Host, so admit one configured
-		// proxy Host and retain the SDK's default check for every other Host.
+		// The MCP SDK only accepts loopback Hosts here. For the configured HTTPS
+		// proxy Host, check Origin above and pass a loopback Host to the SDK;
+		// leave all other Hosts to its default check.
 		scheme := "http"
 		if backend.AllowedProxyHost != "" && r.Host == backend.AllowedProxyHost {
 			scheme = "https"
@@ -303,6 +310,8 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 				pairings.poll(w, r, visualizerOrigin(r, backend.AllowedProxyHost))
 				return
 			case "/visualizer/api/pairings", "/visualizer/api/devices":
+				// The master bearer or owner browser session manages these
+				// routes. Paired device bearers may use MCP, but not this API.
 				admin := masterBearerValid(r)
 				if cookie, err := r.Cookie(visualizerCookieName); err == nil && validVisualizerSession(cookie.Value, tokenHash[:], time.Now()) {
 					admin = true
@@ -330,6 +339,8 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			visualizerSession(w, r, tokenHash[:], masterBearerValid(r), backend.AllowedProxyHost)
 			return
 		}
+		// Context also accepts an owner browser session after an exact Origin
+		// check. MCP continues to require a bearer token.
 		authorized := bearerValid(r)
 		if !authorized && backend.Visualizer && r.URL.Path == "/visualizer/api/context" {
 			if cookie, err := r.Cookie(visualizerCookieName); err == nil && validVisualizerSession(cookie.Value, tokenHash[:], time.Now()) {

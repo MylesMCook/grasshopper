@@ -136,6 +136,8 @@ func shellQuoted(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
+// isGrasshopperHook recognizes only our installed command form so removal
+// leaves unrelated hooks alone.
 func isGrasshopperHook(value any) bool {
 	entry, ok := jsonObject(value)
 	if !ok {
@@ -256,8 +258,8 @@ func cursorCLIPermissions(path string, install, dryRun bool) error {
 	return writeJSONObject(path, config)
 }
 
-// Cursor Agent CLI does not currently register plugin MCP servers from
-// --plugin-dir. Add only its MCP entry; the marketplace plugin owns the hook.
+// The marketplace plugin owns the startup hook. Write only the CLI MCP entry
+// here to avoid a duplicate hook.
 func cursorMCPOnly(dir, configPath, binary string, update, dryRun bool) error {
 	path := filepath.Join(dir, "mcp.json")
 	mcp, err := readJSONObject(path)

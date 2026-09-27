@@ -106,6 +106,8 @@ func restoreAgent(state agentInstall, run commandRunner, newMarketplace, newPlug
 	return errors.Join(failures...)
 }
 
+// changeAgent returns an undo action after registration. On failure it
+// attempts to restore the previous plugin state before returning.
 func changeAgent(state agentInstall, root string, update bool, run commandRunner) (func() error, error) {
 	wanted := filepath.Join(root, state.name)
 	if state.installed && !update {
@@ -477,6 +479,8 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 		saved = append(saved, entry)
 	}
 	var rollbacks []func() error
+	// Undo native plugin changes before restoring saved files. Report any
+	// rollback failure alongside the setup error.
 	defer func() {
 		if resultErr == nil {
 			return

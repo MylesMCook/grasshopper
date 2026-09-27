@@ -65,6 +65,15 @@ The old Linux service names in historical documentation do not prove a running
 deployment. Inspect the target host, supervisor, database, ports, credentials,
 and existing private routes before proposing a cutover.
 
+## Code comments
+
+Follow Go's doc-comment conventions for packages and exported symbols, and
+describe their actual contracts. Explain non-obvious project concepts,
+invariants, security boundaries, transactions, concurrency, failure, and
+recovery beside the relevant code. Review affected comments when behavior
+changes. Avoid line-by-line narration, comment quotas, stale or speculative
+claims, vague TODOs, secrets, and private infrastructure details.
+
 ## Linear tracking
 
 Repository: https://github.com/MylesMCook/grasshopper

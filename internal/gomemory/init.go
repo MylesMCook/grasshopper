@@ -6,7 +6,8 @@ import (
 	"path/filepath"
 )
 
-// CreateEmpty creates a memory-only database and never replaces an existing file.
+// CreateEmpty creates a new SQLite file for memory records and never
+// replaces an existing file.
 func CreateEmpty(path string) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {

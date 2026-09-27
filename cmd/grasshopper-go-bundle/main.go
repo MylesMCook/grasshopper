@@ -1,5 +1,5 @@
-// The bundle tool assembles a portable server and client archive. It
-// deliberately excludes credentials, databases, and machine configuration.
+// Grasshopper-go-bundle assembles a portable server and client archive.
+// It excludes credentials, databases, and machine configuration.
 package main
 
 import (
@@ -25,6 +25,8 @@ import (
 
 type input struct{ name, path string }
 
+// goNotices includes licenses for transitive Go modules and rejects modules
+// without a LICENSE or COPYING file.
 func goNotices(packages ...string) ([]input, error) {
 	if len(packages) == 0 {
 		packages = []string{"./cmd/grasshopper", "./cmd/grasshopper-go-server", "./cmd/grasshopper-go-backup", "./cmd/grasshopper-go-migrate"}

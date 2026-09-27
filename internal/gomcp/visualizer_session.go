@@ -22,6 +22,8 @@ func visualizerOrigin(r *http.Request, allowedProxyHost string) string {
 	return scheme + "://" + r.Host
 }
 
+// Sessions are self-contained HMAC tokens keyed by the master token hash.
+// Changing the master token invalidates every existing browser session.
 func newVisualizerSession(key []byte, expires time.Time) (string, error) {
 	nonce := make([]byte, 16)
 	if _, err := rand.Read(nonce); err != nil {

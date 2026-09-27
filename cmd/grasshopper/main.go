@@ -1,4 +1,4 @@
-// grasshopper is the stateless client for Codex, Cursor, and Claude Code.
+// Grasshopper is the stateless client for Codex, Cursor, and Claude Code.
 // It never stores memory locally.
 package main
 

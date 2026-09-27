@@ -18,8 +18,8 @@ type ClientToken struct {
 	RevokedAt *string `json:"revoked_at"`
 }
 
-// EnsureClientTokenSchema is an additive, transactional upgrade. Older server
-// binaries ignore this table, so the memory data remains rollback-compatible.
+// EnsureClientTokenSchema adds the token table in a transaction without
+// changing memory tables.
 func (w *Writer) EnsureClientTokenSchema(ctx context.Context) error {
 	tx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -40,6 +40,8 @@ func (w *Writer) EnsureClientTokenSchema(ctx context.Context) error {
 	return tx.Commit()
 }
 
+// AddClientToken stores a new device token's SHA-256 digest and returns
+// metadata only. The caller retains the raw token.
 func (w *Writer) AddClientToken(ctx context.Context, device string, hash [sha256.Size]byte) (ClientToken, error) {
 	if strings.TrimSpace(device) == "" || len(device) > 64 || strings.IndexFunc(device, unicode.IsControl) >= 0 {
 		return ClientToken{}, errors.New("invalid device name")
@@ -53,6 +55,8 @@ func (w *Writer) AddClientToken(ctx context.Context, device string, hash [sha256
 	return ClientToken{ID: id, Device: device, CreatedAt: created}, err
 }
 
+// ClientTokenValid hashes a raw token and reports whether an unrevoked
+// matching token exists.
 func (r *Reader) ClientTokenValid(ctx context.Context, token string) (bool, error) {
 	hash := sha256.Sum256([]byte(token))
 	var exists bool
@@ -60,6 +64,7 @@ func (r *Reader) ClientTokenValid(ctx context.Context, token string) (bool, erro
 	return exists, err
 }
 
+// ListClientTokens returns token metadata without hashes or raw tokens.
 func (r *Reader) ListClientTokens(ctx context.Context) ([]ClientToken, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT id,device,created_at,revoked_at FROM client_tokens ORDER BY revoked_at IS NOT NULL, id DESC`)
 	if err != nil {
@@ -81,6 +86,8 @@ func (r *Reader) ListClientTokens(ctx context.Context) ([]ClientToken, error) {
 	return result, rows.Err()
 }
 
+// RevokeClientToken marks an active token as revoked. It reports false for
+// an unknown or already revoked ID.
 func (w *Writer) RevokeClientToken(ctx context.Context, id int64) (bool, error) {
 	if id <= 0 {
 		return false, errors.New("invalid client token ID")

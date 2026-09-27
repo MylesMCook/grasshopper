@@ -1,4 +1,4 @@
-// The Grasshopper server serves an existing database or creates a new one on request.
+// Grasshopper-go-server serves an existing database or creates one on request.
 package main
 
 import (
@@ -77,6 +77,8 @@ func quickstartFiles(executable string) (library, model, tokenizer string, err e
 	return library, model, tokenizer, nil
 }
 
+// quickstartState reuses a complete database/token pair or creates both in
+// an empty private directory. A partial pair requires manual recovery.
 func quickstartState(dir string) (database, tokenFile string, err error) {
 	info, err := os.Lstat(dir)
 	if errors.Is(err, os.ErrNotExist) {

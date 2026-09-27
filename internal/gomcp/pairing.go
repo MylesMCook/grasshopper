@@ -197,6 +197,8 @@ func (p *pairingManager) adminPairings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "code does not match", http.StatusBadRequest)
 			return
 		}
+		// Hold the lock through token persistence and the state change so
+		// competing decisions cannot approve the same request twice.
 		if input.Decision == "approve" {
 			if _, err := p.store.AddClientToken(r.Context(), request.Device, request.Hash); err != nil {
 				p.mu.Unlock()

@@ -1,5 +1,5 @@
-// Package gomemory is the SQLite compatibility slice of the Go transition.
-// Existing Grasshopper databases open read-only; writes require a new copy.
+// Package gomemory stores scoped memories, revision history, search indexes,
+// and client-token metadata in SQLite.
 package gomemory
 
 import (
@@ -19,6 +19,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// Scope identifies project, device, and platform dimensions for a memory.
+// A nil dimension is unscoped; Legacy selects isolated pre-scope records.
 type Scope struct {
 	Project  *string `json:"project"`
 	Device   *string `json:"device"`
@@ -26,6 +28,7 @@ type Scope struct {
 	Legacy   bool    `json:"legacy"`
 }
 
+// Key validates a scope and returns its stable database key.
 func (s Scope) Key() (string, error) {
 	if s.Legacy {
 		if s.Project != nil || s.Device != nil || s.Platform != nil {
@@ -99,12 +102,14 @@ func (s Scope) applicableKeys() ([]string, error) {
 	return keys, nil
 }
 
+// Provenance records the harness, device, and source supplied with a write.
 type Provenance struct {
 	Harness string `json:"harness"`
 	Device  string `json:"device"`
 	Source  string `json:"source"`
 }
 
+// Record is a memory at its current or requested historical revision.
 type Record struct {
 	ID         int64      `json:"id"`
 	Revision   int64      `json:"revision"`
@@ -122,12 +127,15 @@ type Record struct {
 	UpdatedAt  string     `json:"updated_at"`
 }
 
+// Reference identifies an omitted record without repeating its content.
 type Reference struct {
 	ID       int64 `json:"id"`
 	Revision int64 `json:"revision"`
 	Scope    Scope `json:"scope"`
 }
 
+// Page contains bounded records and omission metadata. Omitted counts all
+// exclusions; OmittedIDs and OmittedRecords each list at most 100.
 type Page struct {
 	Records        []Record    `json:"records"`
 	Omitted        int         `json:"omitted"`
@@ -135,8 +143,10 @@ type Page struct {
 	OmittedRecords []Reference `json:"omitted_records"`
 }
 
+// Reader provides scoped read operations over a SQLite database.
 type Reader struct{ db *sql.DB }
 
+// OpenReadOnly opens an existing regular database file without migration.
 func OpenReadOnly(path string) (*Reader, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -150,7 +160,7 @@ func OpenReadOnly(path string) (*Reader, error) {
 		return nil, errors.New("database is not a regular file")
 	}
 	// Escape path punctuation before adding SQLite URI options. SQLite mode=ro
-	// prevents accidental migrations and writes to this copied database.
+	// prevents accidental migrations and writes to the opened database.
 	db, err := sql.Open("sqlite", fileURI(abs, "mode=ro"))
 	if err != nil {
 		return nil, err
@@ -172,6 +182,7 @@ func fileURI(abs, query string) string {
 	return uri.String()
 }
 
+// Close releases the reader's database connection.
 func (r *Reader) Close() error { return r.db.Close() }
 
 const recordColumns = `id, revision, memory_scope, content, title, descriptors,
@@ -206,6 +217,9 @@ func scanRecord(row scanner) (Record, error) {
 	return record, nil
 }
 
+// Get returns the current or requested revision when its scope applies to
+// the caller. Missing and out-of-scope records return nil; legacy records
+// require an explicit Legacy scope.
 func (r *Reader) Get(ctx context.Context, scope Scope, id int64, revision *int64) (*Record, error) {
 	if scope.Legacy {
 		if _, err := scope.Key(); err != nil {
@@ -246,6 +260,9 @@ func (r *Reader) Get(ctx context.Context, scope Scope, id int64, revision *int64
 	return getInTx(ctx, tx, exact, id, revision)
 }
 
+// Context returns applicable confirmed records and at most one handoff,
+// preferring a project handoff. Records excluded by budget appear in
+// omission metadata.
 func (r *Reader) Context(ctx context.Context, scope Scope, budget int) (Page, error) {
 	keys, err := scope.applicableKeys()
 	if err != nil {

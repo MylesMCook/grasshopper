@@ -185,6 +185,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		return err
 	}
 	secret := base64.RawURLEncoding.EncodeToString(secretBytes)
+	// Pair with the token hash; keep the credential local until approval.
 	hash := sha256.Sum256([]byte(secret))
 	ctx, cancel := context.WithTimeout(parent, 5*time.Minute)
 	defer cancel()
@@ -247,6 +248,8 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		_ = os.Remove(*tokenPath)
 		return err
 	}
+	// Keep an approved credential if setup fails so a later attempt can
+	// finish locally without another pairing approval.
 	if err := setupClientWithRoot(setupArgs, root, run); err != nil {
 		return fmt.Errorf("device approved but setup needs attention; credential retained at %s: %w", *tokenPath, err)
 	}

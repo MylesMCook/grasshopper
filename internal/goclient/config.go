@@ -16,6 +16,8 @@ import (
 	"unicode"
 )
 
+// Config names one remote service, a credential source, local policy, and device.
+// Exactly one of TokenEnv and TokenFile is required when connecting.
 type Config struct {
 	URL        string `json:"url"`
 	TokenEnv   string `json:"token_env,omitempty"`
@@ -40,6 +42,8 @@ func ConfigPath(explicit string) (string, error) {
 	return filepath.Join(directory, "grasshopper", "client.json"), nil
 }
 
+// LoadConfig parses a bounded, strict JSON file. NewRemote separately
+// validates the address and credential before making requests.
 func LoadConfig(path string) (Config, error) {
 	var config Config
 	file, err := os.Open(path)
