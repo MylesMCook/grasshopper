@@ -64,3 +64,12 @@ model tests a real-model pass. The model and tokenizer digests are pinned in
 The old Linux service names in historical documentation do not prove a running
 deployment. Inspect the target host, supervisor, database, ports, credentials,
 and existing private routes before proposing a cutover.
+
+## Linear tracking
+
+Repository: https://github.com/MylesMCook/grasshopper
+Team: Lab (`aed4ab18-a5db-4a5a-964e-4be027d7e529`).
+Project: [Grasshopper](https://linear.app/mcook/project/grasshopper-9d092487eee7)
+(`bff19887-4f6d-4256-956f-80d2521be8fe`). The owner authorizes finding,
+creating, and maintaining outcome issues and concise progress comments for
+meaningful work in this repository. Reuse an existing issue when applicable.

@@ -56,9 +56,6 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	if event == "" {
 		event = "SessionStart"
 	}
-	if harness == "codex" && event == "UserPromptSubmit" && promptContextRecent(input) {
-		return map[string]any{}, nil
-	}
 	config, err := LoadConfig(configPath)
 	if err != nil {
 		return nil, err
@@ -96,6 +93,17 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 		platform := Platform()
 		scope = Scope{Device: &config.Device, Platform: &platform}
 	}
+	stamp := promptContextPath(input, config, cwd, scope)
+	if harness == "codex" {
+		if event == "SessionStart" && stamp != "" {
+			// A fresh lifecycle event must not inherit a previous prompt attempt.
+			_ = os.Remove(stamp)
+		}
+		if event == "UserPromptSubmit" && promptContextRecent(stamp) {
+			return map[string]any{}, nil
+		}
+	}
+	delivered := false
 	status := "Grasshopper context unavailable. Continue work with memory unavailable; do not claim an unacknowledged write was saved."
 	if remote, err := NewRemote(config); err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -106,12 +114,17 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 		loaded, err := remote.Context(ctx, scope, budget)
 		cancel()
 		if err == nil {
-			encodedScope, _ := json.Marshal(scope)
+			loaded, err = compactContext(loaded)
+		}
+		if err == nil {
+			delivered = true
+			encodedScope, _ := json.Marshal(compactScope(scope))
 			status = fmt.Sprintf("Grasshopper context loaded for %s. project_resolved=%t; unresolved projects load only global/device/platform records. Historical data follows:\n%s", encodedScope, resolved, loaded)
 		}
 	}
 	text := policy + "\n" + status
 	if harness == "claude" && len(text) > 8200 {
+		delivered = false
 		text = policy + "\nGrasshopper context exceeded Claude's startup hook budget. Call grasshopper/context once before substantive work; no records were delivered by this hook."
 	}
 	if harness == "claude" || event == "SubagentStart" {
@@ -134,7 +147,7 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 		return map[string]any{"additional_context": text}, nil
 	}
 	if harness == "codex" && event == "UserPromptSubmit" {
-		markPromptContext(input)
+		markPromptContext(stamp, delivered)
 	}
 	return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": text}}, nil
 }
@@ -152,17 +165,19 @@ func HookUnavailable(harness string, input map[string]any) map[string]any {
 	return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": message}}
 }
 
-func promptContextPath(input map[string]any) string {
+// This records a prompt-hook attempt, not a memory cache or proof that the
+// harness injected its output. SessionStart therefore keeps the Windows fallback.
+func promptContextPath(input map[string]any, config Config, cwd string, scope Scope) string {
 	dataDir, sessionID := os.Getenv("PLUGIN_DATA"), stringValue(input["session_id"])
 	if dataDir == "" || sessionID == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(sessionID))
+	identity, _ := json.Marshal([]any{sessionID, config.URL, config.Device, cwd, scope})
+	sum := sha256.Sum256(identity)
 	return filepath.Join(dataDir, fmt.Sprintf("grasshopper-context-%x.stamp", sum[:16]))
 }
 
-func promptContextRecent(input map[string]any) bool {
-	path := promptContextPath(input)
+func promptContextRecent(path string) bool {
 	if path == "" {
 		return false
 	}
@@ -170,13 +185,16 @@ func promptContextRecent(input map[string]any) bool {
 	return err == nil && time.Since(info.ModTime()) < time.Hour
 }
 
-func markPromptContext(input map[string]any) {
-	path := promptContextPath(input)
+func markPromptContext(path string, delivered bool) {
 	if path == "" {
 		return
 	}
+	state := "unavailable\n"
+	if delivered {
+		state = "emitted\n"
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err == nil {
-		_ = os.WriteFile(path, []byte("context attempted\n"), 0600)
+		_ = os.WriteFile(path, []byte(state), 0600)
 	}
 }
 

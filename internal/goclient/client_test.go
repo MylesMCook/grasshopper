@@ -433,3 +433,95 @@ func TestPrivateTokenFile(t *testing.T) {
 		}
 	}
 }
+
+func TestPromptFallbackTracksWorkspaceAndResume(t *testing.T) {
+	_, config, root := testClientServer(t)
+	t.Setenv("PLUGIN_DATA", t.TempDir())
+	input := map[string]any{"cwd": root, "hook_event_name": "UserPromptSubmit", "session_id": "same-session"}
+	if _, err := Hook(config, "codex", input); err != nil {
+		t.Fatal(err)
+	}
+	input["cwd"] = t.TempDir()
+	if got, err := Hook(config, "codex", input); err != nil || len(got) == 0 {
+		t.Fatalf("different workspace lost context: %v %v", got, err)
+	}
+	input["hook_event_name"] = "SessionStart"
+	input["source"] = "resume"
+	if _, err := Hook(config, "codex", input); err != nil {
+		t.Fatal(err)
+	}
+	input["hook_event_name"] = "UserPromptSubmit"
+	if got, err := Hook(config, "codex", input); err != nil || len(got) == 0 {
+		t.Fatalf("resume suppressed fallback: %v %v", got, err)
+	}
+	input["hook_event_name"] = "SubagentStart"
+	if got, err := Hook(config, "codex", input); err != nil || len(got) == 0 {
+		t.Fatalf("subagent lost context: %v %v", got, err)
+	}
+	_, otherConfig, _ := testClientServer(t)
+	input["hook_event_name"] = "UserPromptSubmit"
+	if got, err := Hook(otherConfig, "codex", input); err != nil || len(got) == 0 {
+		t.Fatalf("different server lost context: %v %v", got, err)
+	}
+}
+
+func TestCompactHookPreservesMemoryMeaning(t *testing.T) {
+	_, config, root := testClientServer(t)
+	got, err := Hook(config, "cursor", map[string]any{"cwd": root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := got["additional_context"].(string)
+	for _, empty := range []string{`"project":null`, `"archived":false`, `"tags":""`, `"omitted_ids":[]`} {
+		if strings.Contains(text, empty) {
+			t.Errorf("hook still includes redundant %s", empty)
+		}
+	}
+	for _, required := range []string{`"revision":`, `"confirmed":true`, `"updated_at":`, `"provenance":`, "Only use this preference for the synthetic compatibility test."} {
+		if !strings.Contains(text, required) {
+			t.Errorf("hook lost %s", required)
+		}
+	}
+}
+
+func TestCompactContextKeepsFullRecordsAndOmissions(t *testing.T) {
+	original := map[string]any{"records": []any{map[string]any{
+		"id": 99, "revision": 7, "scope": map[string]any{"project": "git:example.com/Owner/Repo", "device": nil, "platform": "windows", "legacy": false},
+		"confirmed": false, "purpose": "handoff", "title": "Continue", "content": strings.Repeat("é", 220) + " Qualification: verify current Git state.",
+		"tags": "review", "archived": false, "created_at": "earlier", "updated_at": "current", "provenance": map[string]any{"harness": "cursor", "device": "test", "source": "commit abc"}, "future_field": "preserved",
+	}}, "omitted": 1, "omitted_ids": []int{100}, "omitted_records": []any{map[string]any{"id": 100, "revision": 2, "scope": map[string]any{"project": "id:other"}}}}
+	raw, _ := json.Marshal(original)
+	compact, err := compactContext(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after map[string]any
+	_ = json.Unmarshal(raw, &before)
+	_ = json.Unmarshal(compact, &after)
+	b := before["records"].([]any)[0].(map[string]any)
+	a := after["records"].([]any)[0].(map[string]any)
+	for _, key := range []string{"id", "revision", "confirmed", "purpose", "title", "content", "tags", "updated_at", "provenance", "future_field"} {
+		x, _ := json.Marshal(a[key])
+		y, _ := json.Marshal(b[key])
+		if !bytes.Equal(x, y) {
+			t.Errorf("changed %s", key)
+		}
+	}
+	if after["omitted"] != float64(1) || len(after["omitted_records"].([]any)) != 1 {
+		t.Fatal("lost omissions")
+	}
+	if len(compact) >= len(raw) {
+		t.Fatal("presentation is not smaller")
+	}
+}
+
+func TestPromptFallbackWithoutSessionDoesNotSuppressContext(t *testing.T) {
+	_, config, root := testClientServer(t)
+	t.Setenv("PLUGIN_DATA", t.TempDir())
+	for i := 0; i < 2; i++ {
+		got, err := Hook(config, "codex", map[string]any{"cwd": root, "hook_event_name": "UserPromptSubmit"})
+		if err != nil || len(got) == 0 {
+			t.Fatalf("missing identity suppressed context: %v %v", got, err)
+		}
+	}
+}

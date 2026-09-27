@@ -2,6 +2,11 @@
 
 Owner: Codex · Mac mini · `main`.
 
+Active: [LAB-212](https://linear.app/mcook/issue/LAB-212) implements compact startup context, scoped fallback bookkeeping, and
+concise handoff/save policy; compare 2.3.3 with the candidate on Mac and Beelink,
+then release and deploy. Initial regression tests reproduced workspace-context
+suppression and redundant hook payload. Work HP is outside this change.
+
 - [2.3.3](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.3) is published. [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36252586838) passed on Mac, Linux, and Windows; all seven archives and the published checksums were verified. The `marketplace` branch carries 2.3.3.
 - The [public site](https://usegrasshopper.com/) serves the 2.3.3 setup. The private Mac mini service runs 2.3.3 on its existing database and Tailnet route. A consistent pre-upgrade copy was restored and read through the candidate server; a post-upgrade encrypted off-host backup completed.
 - Mac mini and Beelink Codex, Cursor, and Claude clients run 2.3.3. Fresh CLI turns on both machines received the same confirmed preference before tools. Work HP Codex also passed a fresh turn. Work HP Cursor authenticates and reads through MCP, but its CLI did not invoke a test project hook or receive startup context. See [observed behavior](docs/memory-acceptance.md).
