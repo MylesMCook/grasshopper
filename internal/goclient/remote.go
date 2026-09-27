@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -18,6 +19,7 @@ const unavailable = "Grasshopper unavailable; persistence not acknowledged. Do n
 // ErrAuthenticationRejected reports a 401 or 403 from the backend.
 // Callers can use errors.Is to distinguish rejection from transport failure.
 var ErrAuthenticationRejected = errors.New("backend authentication rejected")
+var ErrNetworkRestricted = errors.New("client sandbox blocked network access")
 
 // Remote holds a negotiated MCP protocol and session ID for one backend.
 // Its requests must be sequential because they update that state.
@@ -95,6 +97,9 @@ func (r *Remote) Request(ctx context.Context, body []byte) ([]byte, bool, error)
 	}
 	response, err := r.client.Do(request)
 	if err != nil {
+		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			return nil, false, ErrNetworkRestricted
+		}
 		return nil, false, errors.New("backend unavailable")
 	}
 	defer response.Body.Close()

@@ -21,10 +21,16 @@ If status is `missing_address`, ask once for the private server link. A base,
 memory-view, or `/mcp` link works. Then run `connect --json --url ADDRESS`.
 Relay the `approval_url`, device, and code as soon as `approval_pending` appears.
 The owner opens that link in their already-connected memory view and approves
-the matching code. Wait at most five minutes for the final `connected` status.
+the matching code. After they approve, run `connect --json` again with the same
+plugin. This checks the pending request once and finishes setup. If it is still
+pending, show the same link and wait for the owner; do not start another request
+or poll in a loop. Approval expires after five minutes.
 Do not describe a pending or unacknowledged connection as complete.
 
-For `unreachable_server`, stop and keep the existing connection. For
+For `network_permission_required`, use the harness's normal approval to let
+this command reach the private server, then retry once. Do not disable its
+sandbox or broaden network access silently. For `unreachable_server`, stop and
+keep the existing connection. For
 `authentication_rejected`, offer `connect --reconnect` only after the owner asks
 to replace access. For `conflicting_configuration`, show the next step; a server
 switch requires the owner's explicit choice and `--switch-server --url ADDRESS`.
