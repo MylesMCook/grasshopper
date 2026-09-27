@@ -52,7 +52,13 @@ func checkConnection(args []string) error {
 	}
 	state, detail := connectionStatus(path)
 	if *jsonOutput {
-		return json.NewEncoder(os.Stdout).Encode(map[string]string{"status": state, "next_step": detail})
+		result := map[string]string{"status": state, "next_step": detail}
+		if state == "approval_pending" {
+			if pending, err := loadPendingConnection(path); err == nil {
+				result["approval_url"], result["device"], result["code"] = pending.ApprovalURL, pending.Device, pending.Code
+			}
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
 	}
 	if state != "connected" {
 		return errors.New(detail)
@@ -62,6 +68,15 @@ func checkConnection(args []string) error {
 }
 
 func connectionStatus(path string) (string, string) {
+	if pending, err := loadPendingConnection(path); err == nil {
+		currentHash, hashErr := connectionConfigHash(path)
+		if hashErr != nil || currentHash != pending.ConfigHash {
+			return "conflicting_configuration", "Grasshopper configuration changed during approval. Inspect it before continuing."
+		}
+		return "approval_pending", "Approve the matching code in the private memory view, then run connect --json again."
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "conflicting_configuration", "Inspect the private pending connection before continuing."
+	}
 	config, err := goclient.LoadConfig(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return "missing_address", "Connect Grasshopper with your private server link."

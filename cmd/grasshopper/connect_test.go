@@ -121,6 +121,170 @@ func TestPairUnavailableLeavesNoCredentialOrConfig(t *testing.T) {
 	}
 }
 
+func TestJSONPairReturnsImmediatelyAndResumesWithoutDuplicateRequest(t *testing.T) {
+	root, _, config, _ := setupFixture(t)
+	tokenPath := filepath.Join(t.TempDir(), "device-token")
+	var starts atomic.Int32
+	var approved atomic.Bool
+	var approvedHash string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/pair/start":
+			starts.Add(1)
+			var body struct {
+				TokenHash string `json:"token_hash"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			approvedHash = body.TokenHash
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"request_id":"` + strings.Repeat("a", 64) + `","code":"ABCD1234","expires_in":300}`))
+		case "/pair/poll":
+			if !approved.Load() {
+				w.WriteHeader(http.StatusAccepted)
+				_, _ = w.Write([]byte(`{"status":"pending"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"status":"approved"}`))
+		case "/mcp":
+			bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			hash := sha256.Sum256([]byte(bearer))
+			if bearer == "" || hex.EncodeToString(hash[:]) != approvedHash {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			var rpc struct {
+				Method string `json:"method"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&rpc)
+			if rpc.Method == "notifications/initialized" {
+				w.WriteHeader(http.StatusAccepted)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if rpc.Method == "initialize" {
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26"}}`))
+			} else {
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":2,"result":{"structuredContent":{"records":[]}}}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	run := func(string, ...string) ([]byte, error) { t.Fatal("native agent settings changed"); return nil, nil }
+	firstArgs := []string{"--json", "--url", server.URL + "/visualizer/", "--token-file", tokenPath, "--config", config}
+	start := time.Now()
+	first := captureConnectJSON(t, func() error { return connectWithRoot(t.Context(), firstArgs, root, run) })
+	if first["status"] != "approval_pending" || first["code"] != "ABCD1234" || time.Since(start) > time.Second {
+		t.Fatalf("first call did not promptly return approval: %v", first)
+	}
+	if state, _ := connectionStatus(config); state != "approval_pending" {
+		t.Fatalf("check did not report pending approval: %s", state)
+	}
+	info, err := os.Stat(pendingPath(config))
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("pending secret not private: %v", err)
+	}
+	for _, path := range []string{config, tokenPath} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("pending request wrote %s: %v", path, err)
+		}
+	}
+	second := captureConnectJSON(t, func() error { return connectWithRoot(t.Context(), []string{"--json", "--config", config}, root, run) })
+	if second["status"] != "approval_pending" || second["approval_url"] != first["approval_url"] || starts.Load() != 1 {
+		t.Fatalf("repeat request changed pending approval: %v, starts=%d", second, starts.Load())
+	}
+	approved.Store(true)
+	third := captureConnectJSON(t, func() error { return connectWithRoot(t.Context(), []string{"--json", "--config", config}, root, run) })
+	if third["status"] != "connected" || starts.Load() != 1 {
+		t.Fatalf("approved request not connected once: %v", third)
+	}
+	if _, err := os.Stat(pendingPath(config)); !os.IsNotExist(err) {
+		t.Fatalf("pending secret not removed: %v", err)
+	}
+	if state, _ := connectionStatus(config); state != "connected" {
+		t.Fatalf("saved connection: %s", state)
+	}
+}
+
+func TestJSONPendingOfflineAndDenialDoNotCreateCredential(t *testing.T) {
+	root, _, config, _ := setupFixture(t)
+	tokenPath := filepath.Join(t.TempDir(), "device-token")
+	var denied atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/pair/start":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"request_id":"` + strings.Repeat("b", 64) + `","code":"1234ABCD","expires_in":300}`))
+		case "/pair/poll":
+			if denied.Load() {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"status":"pending"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	run := func(string, ...string) ([]byte, error) { t.Fatal("agent settings changed"); return nil, nil }
+	first := captureConnectJSON(t, func() error {
+		return connectWithRoot(t.Context(), []string{"--json", "--url", server.URL, "--token-file", tokenPath, "--config", config}, root, run)
+	})
+	if first["status"] != "approval_pending" {
+		t.Fatalf("start: %v", first)
+	}
+	denied.Store(true)
+	err := connectWithRoot(t.Context(), []string{"--json", "--config", config}, root, run)
+	if state, _ := connectErrorStatus(err); state != "approval_denied" {
+		t.Fatalf("denial: %v", err)
+	}
+	for _, path := range []string{config, tokenPath, pendingPath(config)} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("denied request retained %s: %v", path, err)
+		}
+	}
+	denied.Store(false)
+	_ = captureConnectJSON(t, func() error {
+		return connectWithRoot(t.Context(), []string{"--json", "--url", server.URL, "--token-file", tokenPath, "--config", config}, root, run)
+	})
+	server.Close()
+	err = connectWithRoot(t.Context(), []string{"--json", "--config", config}, root, run)
+	if state, _ := connectErrorStatus(err); state != "unreachable_server" {
+		t.Fatalf("offline: %v", err)
+	}
+	if _, err := os.Stat(pendingPath(config)); err != nil {
+		t.Fatalf("offline lost pending request: %v", err)
+	}
+	for _, path := range []string{config, tokenPath} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("offline wrote %s: %v", path, err)
+		}
+	}
+}
+
+func captureConnectJSON(t *testing.T, call func() error) map[string]string {
+	t.Helper()
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := os.Stdout
+	os.Stdout = write
+	callErr := call()
+	os.Stdout = previous
+	_ = write.Close()
+	defer read.Close()
+	if callErr != nil {
+		t.Fatal(callErr)
+	}
+	var result map[string]string
+	if err := json.NewDecoder(read).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
 func TestOldServerRequiresUpgradeWithoutSavingCredential(t *testing.T) {
 	root, _, config, _ := setupFixture(t)
 	tokenPath := filepath.Join(t.TempDir(), "device-token")
