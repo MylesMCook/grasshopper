@@ -2,6 +2,34 @@
 
 Observed checks for Grasshopper releases. Synthetic checks and real-client observations are separate below.
 
+## 2.3.4 release (September 26)
+
+[Release](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.4) · [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36283043272) · [LAB-212](https://linear.app/mcook/issue/LAB-212)
+
+- All three OS builds passed. Unit tests, vet, scoped race checks, and real pinned BGE inference passed. New regressions cover workspace/server changes, lifecycle reset, missing session IDs, subagents, full text, provenance, and disclosed omissions. All eight published asset digests match the verified local archives. Marketplace commit: `dab0aa3`.
+- The private Mac service and Mac/Beelink clients run 2.3.4. A consistent database snapshot restored under the new binary with all IDs/revisions intact. The existing browser session survived restart; anonymous health returned 401. A new encrypted off-host snapshot uploaded successfully and its repository check passed. The public setup serves 2.3.4; home/setup/view returned 200, public MCP/visualizer returned 404, and annotation CSP hashes remain present. Cloudflare deployment: `097336bb-d6ce-4e37-a736-e10a2d02029c`.
+- Fresh native Codex, Cursor, and Claude CLI turns on both machines received confirmed preference 8, revision 1, before tools. Versions: Mac Codex 0.156.1, Cursor 2026.09.26-dd393fe, Claude 2.1.280; Linux Codex 0.157.1, Cursor 2026.09.23-86fc751, Claude 2.1.283. Individual wall times were Mac 8.31/9.99/7.10 seconds and Linux 8.17/22.12/6.70 seconds, respectively. An unrelated Mac Claude cloud connector still reports 502; native plugin startup worked.
+- Through the installed bridges and shared private server, Mac created a scoped synthetic record, Beelink read and corrected it, and Mac read revision 2 immediately. Process-inclusive times: 109/57/250/7 ms. The record was then archived. No credential or writable memory database was copied.
+- Closed-port startup hooks returned an unavailable fallback for all three harnesses: 20–21 ms on Mac and 5 ms on Linux. The stalled-server timeout is covered by regression tests; these direct hook probes are not fresh agent outage turns.
+- Beelink's Codex shell sandbox now works after loading Ubuntu's official Bubblewrap AppArmor profile. The global user-namespace restriction remains enabled. Read-only execution allowed reads and denied writes and network. No full-access bypass or legacy fallback is enabled; reboot was not tested.
+
+### Matched CLI observations
+
+Five alternating baseline/candidate pairs per task, harness, and machine: 80 completed runs. Every correction reached the expected revision/content; continuation answers verified the phrase and compared the commit, with tracked files unchanged. Codex used gpt-6-sol/high; Cursor used composer-2.5. Whole-turn median seconds:
+
+| Machine / harness | Continue 2.3.3 → 2.3.4 | Correct 2.3.3 → 2.3.4 |
+|---|---:|---:|
+| Mac Codex | 32.19 → 27.72 | 18.12 → 21.11 |
+| Linux Codex | 27.22 → 18.76 | 18.33 → 20.00 |
+| Mac Cursor | 16.34 → 17.03 | 18.03 → 19.34 |
+| Linux Cursor | 28.51 → 29.38 | 29.71 → 35.11 |
+
+Payloads fell about 10%, from roughly 5.0 KB to 4.5 KB, without clipping records. Direct hook medians were 18–34 ms on Mac and 7–12 ms on Linux. Correction MCP-call medians, including rejected calls, were 4–12 ms on Mac and 15–30 ms on Linux. First-tool medians ranged from 8–14 seconds for Codex and 10–23 seconds for Cursor; that includes attempted calls, not necessarily useful work. Extra Codex reads fell from 11 to 6 across the correction samples. Cursor sometimes supplied incorrect scope arguments and reconciled after rejection; those retries remain in the timings.
+
+These small samples do not establish a general speedup. Codex comparisons supplied actual hook output through invocation-scoped instructions to isolate payload changes; the separate native checks above establish startup delivery. Cursor comparisons used project hooks/MCP. Cursor inspected Git refs when its headless shell lacked approval. Local synthetic backends exclude Tailnet latency, some runs overlapped, and whole-turn times include process overhead. Early misrouted Cursor trials were excluded; their three synthetic project records were archived. Raw evidence remains in the task-local `2026-09-26-grasshopper-momentum` directories on Mac and Beelink.
+
+Work HP and GUI testing were excluded. Native compaction/subagent refresh, reboot persistence, and a full machine-loss restore were not repeated.
+
 ## 2.3.3 release (September 26)
 
 - [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36252586838) passed on Mac, Linux, and Windows. Seven archives passed their embedded hashes; all eight [GitHub release](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.3) assets matched local SHA-256 checks. The `marketplace` branch is `f56e507`.

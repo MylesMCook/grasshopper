@@ -1,14 +1,14 @@
 # Grasshopper release state
 
-Owner: Codex · Mac mini · `main`.
+Owner: Codex · Mac mini · main.
 
-Active: [LAB-212](https://linear.app/mcook/issue/LAB-212) implements compact startup context, scoped fallback bookkeeping, and
-concise handoff/save policy; compare 2.3.3 with the candidate on Mac and Beelink,
-then release and deploy. Initial regression tests reproduced workspace-context
-suppression and redundant hook payload. Work HP is outside this change.
+[LAB-212](https://linear.app/mcook/issue/LAB-212): 2.3.4 startup/policy changes are implemented and released. Compact context preserves full records; fallback state follows workspace/server/session changes. Main implementation: 105fac3; marketplace: dab0aa3.
 
-- [2.3.3](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.3) is published. [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36252586838) passed on Mac, Linux, and Windows; all seven archives and the published checksums were verified. The `marketplace` branch carries 2.3.3.
-- The [public site](https://usegrasshopper.com/) serves the 2.3.3 setup. The private Mac mini service runs 2.3.3 on its existing database and Tailnet route. A consistent pre-upgrade copy was restored and read through the candidate server; a post-upgrade encrypted off-host backup completed.
-- Mac mini and Beelink Codex, Cursor, and Claude clients run 2.3.3. Fresh CLI turns on both machines received the same confirmed preference before tools. Work HP Codex also passed a fresh turn. Work HP Cursor authenticates and reads through MCP, but its CLI did not invoke a test project hook or receive startup context. See [observed behavior](docs/memory-acceptance.md).
+- [Release 2.3.4](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.4): three-OS CI, tests, race checks, real model tests, and eight published asset digests passed.
+- Mac private service, public setup, and Mac/Beelink Codex/Cursor/Claude clients updated. Restore and browser-session continuity passed. Fresh native CLI turns received the same preference before tools; a cross-machine correction/readback passed.
+- 80 matched synthetic trials reached the expected final result. Payloads shrank about 10%; whole-agent speedups were mixed. See [evidence and limits](docs/memory-acceptance.md).
+- Beelink sandbox repaired with Ubuntu's official Bubblewrap profile. Read-only writes/network remain denied; host restrictions remain enabled.
 
-Open: Windows Cursor CLI first-turn hook support, Codex Desktop and Cursor IDE checks for this version, reboot persistence, compaction/subagent refresh, and a full machine-loss recovery drill. Codex's Windows updater prints a cache-backup error even when the installed plugin reports the new version; inspect actual state after that warning. Do not infer GUI behavior from CLI checks. Next: let the owner critique normal use while tracking Cursor's upstream hook behavior.
+Post-update encrypted off-host backup and repository check passed. Temporary synthetic servers are stopped. Final evidence and the current handoff close LAB-212.
+
+Outside this change: Work HP, GUI checks, native compaction/subagent refresh, reboot persistence, and a full machine-loss recovery drill. Windows Cursor CLI startup remains an upstream compatibility gap; do not infer desktop behavior from CLI tests.
