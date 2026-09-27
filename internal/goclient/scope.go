@@ -11,6 +11,8 @@ import (
 	"unicode"
 )
 
+// Scope carries optional project, device, and platform dimensions.
+// In reads, a nil field matches only unscoped records in that dimension.
 type Scope struct {
 	Project  *string `json:"project"`
 	Device   *string `json:"device"`
@@ -18,6 +20,8 @@ type Scope struct {
 	Legacy   bool    `json:"legacy"`
 }
 
+// ProjectIdentity derives a credential-free Git scope from a remote.
+// It normalizes the host and default port but preserves repository path case.
 func ProjectIdentity(remote string) (string, error) {
 	remote = strings.TrimSpace(remote)
 	if remote == "" || strings.IndexFunc(remote, unicode.IsSpace) >= 0 {
@@ -75,6 +79,8 @@ func gitValue(cwd string, args ...string) string {
 	return strings.TrimSpace(string(output))
 }
 
+// ResolveScope prefers a local grasshopper.project-id, then the origin remote.
+// It returns an error when neither provides a durable project identity.
 func ResolveScope(cwd, device string) (Scope, error) {
 	if !filepath.IsAbs(cwd) {
 		return Scope{}, errors.New("workspace path must be absolute")
@@ -103,6 +109,7 @@ func ResolveScope(cwd, device string) (Scope, error) {
 	return Scope{Project: &project, Device: &device, Platform: &platform}, nil
 }
 
+// Platform returns the memory scope's OS name, mapping Go's darwin to macos.
 func Platform() string {
 	platform := runtime.GOOS
 	if platform == "darwin" {

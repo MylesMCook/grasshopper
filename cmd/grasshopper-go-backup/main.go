@@ -1,4 +1,4 @@
-// grasshopper-go-backup creates a consistent, no-overwrite SQLite snapshot.
+// Grasshopper-go-backup creates a consistent, no-overwrite SQLite snapshot.
 package main
 
 import (

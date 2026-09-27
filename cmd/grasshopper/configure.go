@@ -106,6 +106,8 @@ func connectionStatus(path string) (string, string) {
 	return "connected", "Open a fresh agent session after approving any native hook or MCP prompt."
 }
 
+// privateFile writes beside the target and renames after closing, so a
+// failed write cannot leave a partial configuration at the target path.
 func privateFile(path string, data []byte) error {
 	file, err := os.CreateTemp(filepath.Dir(path), ".grasshopper-*")
 	if err != nil {

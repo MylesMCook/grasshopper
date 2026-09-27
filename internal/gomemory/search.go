@@ -12,8 +12,9 @@ import (
 	"unicode"
 )
 
-// Search reads the existing FTS5 and vector columns. Scope is constrained by
-// SQLite before either candidate list is ranked. This does not embed queries.
+// Search merges scoped FTS5 and cosine-ranked vector hits. The caller supplies
+// the query vector and model; a nil vector gives lexical-only results. Scope
+// is constrained in SQLite before either candidate list is ranked.
 func (r *Reader) Search(ctx context.Context, scope Scope, query string, vector []float32, model string, limit, budget int) (Page, error) {
 	if strings.TrimSpace(query) == "" || len(query) > 4096 {
 		return Page{}, errors.New("query must be 1-4096 bytes")
@@ -95,6 +96,7 @@ func (r *Reader) Search(ctx context.Context, scope Scope, query string, vector [
 				rows.Close()
 				return Page{}, err
 			}
+			// A matching model label alone does not prove vector dimensions.
 			if len(blob) != len(vector)*4 {
 				continue
 			}

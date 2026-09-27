@@ -16,9 +16,13 @@ import (
 
 const unavailable = "Grasshopper unavailable; persistence not acknowledged. Do not automatically retry writes."
 
+// ErrAuthenticationRejected reports a 401 or 403 from the backend.
+// Callers can use errors.Is to distinguish rejection from transport failure.
 var ErrAuthenticationRejected = errors.New("backend authentication rejected")
 var ErrNetworkRestricted = errors.New("client sandbox blocked network access")
 
+// Remote holds a negotiated MCP protocol and session ID for one backend.
+// Its requests must be sequential because they update that state.
 type Remote struct {
 	endpoint string
 	token    string
@@ -27,6 +31,7 @@ type Remote struct {
 	session  string
 }
 
+// NewRemote validates a backend address and credential without contacting it.
 func NewRemote(config Config) (*Remote, error) {
 	endpoint, err := config.endpoint()
 	if err != nil {
@@ -59,6 +64,9 @@ func rpcID(body []byte) (json.RawMessage, string, string, string, error) {
 	return request.ID, request.Method, request.Params.Name, request.Params.Meta.Version, nil
 }
 
+// Request sends one JSON-RPC message. Its boolean reports a response body:
+// HTTP 202 notifications return false, and callers must inspect MCP errors
+// in a returned body.
 func (r *Remote) Request(ctx context.Context, body []byte) ([]byte, bool, error) {
 	if len(body) > 131072 {
 		return nil, false, errors.New("MCP input exceeds limit")
@@ -174,6 +182,8 @@ func matchingSSE(stream io.Reader, id json.RawMessage) ([]byte, error) {
 	return nil, errors.New("backend did not acknowledge request")
 }
 
+// Context performs MCP initialization and calls the context tool. It returns
+// structured content only after checking transport and MCP errors.
 func (r *Remote) Context(ctx context.Context, scope Scope, budget int) (json.RawMessage, error) {
 	initialize, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{"protocolVersion": "2025-03-26", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "grasshopper-hook", "version": "1.0"}}})
 	answer, acknowledged, err := r.Request(ctx, initialize)

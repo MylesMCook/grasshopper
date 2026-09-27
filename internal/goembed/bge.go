@@ -16,18 +16,25 @@ import (
 	ort "github.com/yalue/onnxruntime_go"
 )
 
+// ModelName identifies the pinned embedding model stored with each vector.
 const ModelName = "BAAI/bge-small-en-v1.5@5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
+
+// Dimensions is the length of a BGE document or query vector.
 const Dimensions = 384
 const maxTokens = 512
+
+// QueryPrefix is prepended for BGE query embeddings, not document embeddings.
 const QueryPrefix = "Represent this sentence for searching relevant passages: "
 const modelSHA256 = "828e1496d7fabb79cfa4dcd84fa38625c0d3d21da474a00f08db0f559940cf35"
 const tokenizerSHA256 = "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66"
 
-// ONNX Runtime's environment and library path are process-global. Use one
-// embedder per process until the full service lifecycle is implemented.
+// ONNX Runtime's environment and library path are process-global. Only one
+// BGE instance may own them at a time.
 var environmentMu sync.Mutex
 var environmentInUse bool
 
+// BGE holds one ONNX session. Embed and Close calls are safe across
+// goroutines but serialize on the instance mutex.
 type BGE struct {
 	mu          sync.Mutex
 	tokenizer   *tokenizer.Tokenizer
@@ -37,6 +44,8 @@ type BGE struct {
 	closed      bool
 }
 
+// NewBGE verifies the pinned model and tokenizer digests before loading ONNX.
+// Only one BGE may be open per process; callers must Close it when finished.
 func NewBGE(libraryPath, modelPath, tokenizerPath string) (_ *BGE, err error) {
 	if err := verifyDigest(modelPath, modelSHA256); err != nil {
 		return nil, fmt.Errorf("BGE model: %w", err)
@@ -117,6 +126,8 @@ func verifyDigest(path, expected string) error {
 	return nil
 }
 
+// Close releases the ONNX session and process-wide environment. It waits
+// for any in-flight embedding on this BGE and is safe to call again.
 func (b *BGE) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -132,8 +143,10 @@ func (b *BGE) Close() error {
 	return errors.Join(sessionErr, environmentErr)
 }
 
+// EmbedDocument returns a normalized vector for stored memory text.
 func (b *BGE) EmbedDocument(text string) ([]float32, error) { return b.embed(text) }
 
+// EmbedQuery returns a normalized vector after adding the model's query prefix.
 func (b *BGE) EmbedQuery(query string) ([]float32, error) { return b.embed(QueryPrefix + query) }
 
 func (b *BGE) embed(text string) ([]float32, error) {
@@ -201,7 +214,8 @@ func (b *BGE) embed(text string) ([]float32, error) {
 	if len(data) < Dimensions {
 		return nil, errors.New("short BGE output")
 	}
-	// BGE's model pooling configuration selects the raw CLS hidden state.
+	// The pinned model uses CLS pooling; copy the first token vector before
+	// destroying the output tensor.
 	vector := append([]float32(nil), data[:Dimensions]...)
 	norm := float64(0)
 	for _, value := range vector {
@@ -217,6 +231,8 @@ func (b *BGE) embed(text string) ([]float32, error) {
 	return vector, nil
 }
 
+// Dot returns the dot product of two BGE-sized vectors and rejects other
+// dimensions.
 func Dot(a, b []float32) (float32, error) {
 	if len(a) != Dimensions || len(b) != Dimensions {
 		return 0, errors.New("BGE vector dimension mismatch")

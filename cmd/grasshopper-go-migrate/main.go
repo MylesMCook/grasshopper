@@ -1,4 +1,4 @@
-// grasshopper-go-migrate makes a new re-embedded shadow database. It never
+// Grasshopper-go-migrate makes a new re-embedded shadow database. It never
 // changes the source. Stop the source writer before running it for a cutover.
 package main
 

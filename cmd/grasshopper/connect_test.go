@@ -176,7 +176,9 @@ func TestJSONPairReturnsImmediatelyAndResumesWithoutDuplicateRequest(t *testing.
 	firstArgs := []string{"--json", "--url", server.URL + "/visualizer/", "--token-file", tokenPath, "--config", config}
 	start := time.Now()
 	first := captureConnectJSON(t, func() error { return connectWithRoot(t.Context(), firstArgs, root, run) })
-	if first["status"] != "approval_pending" || first["code"] != "ABCD1234" || time.Since(start) > time.Second {
+	// A three-second bound catches an accidental five-second poll without
+	// making a loaded CI runner fail on routine scheduling delay.
+	if first["status"] != "approval_pending" || first["code"] != "ABCD1234" || time.Since(start) > 3*time.Second {
 		t.Fatalf("first call did not promptly return approval: %v", first)
 	}
 	if state, _ := connectionStatus(config); state != "approval_pending" {

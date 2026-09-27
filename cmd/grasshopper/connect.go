@@ -228,6 +228,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 			return err
 		}
 		secret = base64.RawURLEncoding.EncodeToString(secretBytes)
+		// Pair with the token hash; keep the credential local until approval.
 		hash := sha256.Sum256([]byte(secret))
 		var started struct {
 			RequestID string `json:"request_id"`
@@ -310,6 +311,8 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		_ = os.Remove(*tokenPath)
 		return err
 	}
+	// Keep an approved credential if setup fails so a later attempt can
+	// finish locally without another pairing approval.
 	if err := setupClientWithRoot(setupArgs, root, run); err != nil {
 		return fmt.Errorf("device approved but setup needs attention; credential retained at %s: %w", *tokenPath, err)
 	}
@@ -325,6 +328,7 @@ func pendingStatus(pending pendingConnection) map[string]string {
 
 type connectStatusError struct{ status, next string }
 
+// Error returns the next action for this connection state.
 func (e connectStatusError) Error() string     { return e.next }
 func connectProblem(status, next string) error { return connectStatusError{status, next} }
 func connectErrorStatus(err error) (string, string) {

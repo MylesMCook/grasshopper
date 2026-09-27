@@ -292,6 +292,7 @@ function draw(page) {
   summary.textContent = `${items.length} ${items.length === 1 ? 'memory' : 'memories'}`;
   const selection = window.getSelection();
   const selectingRecord = selection && !selection.isCollapsed && (records.contains(selection.anchorNode) || records.contains(selection.focusNode));
+  // Defer replacement while someone is selecting text; the next poll can draw it.
   if (hasLoaded && (signature === lastSignature || selectingRecord)) return;
 
   const next = new Map();
@@ -304,6 +305,7 @@ function draw(page) {
     if (hasLoaded && revisions.get(key) !== record.revision) article.classList.add('changed');
     const top = document.createElement('div');
     top.className = 'record-top';
+    // Memory fields stay text nodes, so stored content is never interpreted as HTML.
     const kind = document.createElement('p');
     kind.className = 'record-kind';
     kind.textContent = record.purpose || 'Memory';
@@ -368,6 +370,7 @@ async function refresh() {
     });
     if (!response.ok) throw new Error(response.status === 401 ? 'Connection expired' : response.status === 400 ? 'Scope not recognized' : 'Service unavailable');
     const page = await response.json();
+    // A disconnected or replaced request must not redraw an older session.
     if (!active || inFlight !== controller) return;
     updateProjectOptions(page.projects);
     updateDeviceOptions(page.devices);
