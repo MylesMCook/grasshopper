@@ -20,8 +20,8 @@ import (
 )
 
 // WriteInput describes a new memory, correction, or historical restore.
-// ID or Key may select an existing record; corrections require
-// ExpectedRevision. A restore requires ID and RestoreRevision with empty Content.
+// ID or Key may select an existing record; corrections and restores require
+// ExpectedRevision. A restore sets RestoreRevision and leaves Content empty.
 type WriteInput struct {
 	Scope            Scope      `json:"scope"`
 	Content          string     `json:"content"`
@@ -49,9 +49,8 @@ type ArchiveInput struct {
 }
 
 // Receipt identifies the saved revision. Deduplicated means an active record
-// matched the write's scope, type, purpose, confirmation, content, metadata,
-// and key.
-// Request-ID replay returns the original receipt.
+// matched scope, type, purpose, confirmation, content, title, tags, and key;
+// provenance does not participate. Request-ID replay returns its original receipt.
 type Receipt struct {
 	ID           int64 `json:"id"`
 	Revision     int64 `json:"revision"`

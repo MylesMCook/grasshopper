@@ -57,6 +57,8 @@ func readPairingJSON(w http.ResponseWriter, r *http.Request, value any) error {
 	return nil
 }
 
+// Keep outcomes visible to pollers for a second lifetime. Expired pending
+// requests stop consuming admission capacity as soon as they expire.
 func (p *pairingManager) expire(now time.Time) {
 	for id, request := range p.requests {
 		if !now.Before(request.Expires.Add(pairingLifetime)) {

@@ -71,8 +71,9 @@ Follow Go's doc-comment conventions for packages and exported symbols, and
 describe their actual contracts. Explain non-obvious project concepts,
 invariants, security boundaries, transactions, concurrency, failure, and
 recovery beside the relevant code. Review affected comments when behavior
-changes. Avoid line-by-line narration, comment quotas, stale or speculative
-claims, vague TODOs, secrets, and private infrastructure details.
+changes and remove stale or speculative claims. Do not add line-by-line
+narration, comment quotas, vague TODOs, secrets, or private infrastructure
+details.
 
 ## Linear tracking
 

@@ -258,6 +258,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 
 type connectStatusError struct{ status, next string }
 
+// Error returns the next action for this connection state.
 func (e connectStatusError) Error() string     { return e.next }
 func connectProblem(status, next string) error { return connectStatusError{status, next} }
 func connectErrorStatus(err error) (string, string) {

@@ -12,6 +12,6 @@ Next: finish three-OS release packages and checksums, rehearse private-service r
 
 Owner: Codex · Mac mini · `/Users/mylescook/.codex/worktrees/grasshopper-code-comments/grasshopper` · `codex/code-comment-transparency`. Outcome: [LAB-214](https://linear.app/mcook/issue/LAB-214/make-grasshopper-code-comments-accurate-and-useful).
 
-Implemented on this branch: a root code-comment rule and a production comment audit across commands, storage, MCP, client, embeddings, viewer, and integration scripts. The canonical memory policy is unchanged. Before rebasing, full Go tests, vet, storage/server/client race tests, JavaScript syntax, gofmt, and comment-free Go AST comparison passed. Real BGE model tests were not run.
+Implemented on this branch: a root code-comment rule and a production comment audit across commands, storage, MCP, client, embeddings, viewer, and integration scripts. The canonical memory policy is unchanged. Rebased on the connection code commit `66eba94`, then checked its new declarations and comments. Full Go tests, vet, storage/server/client race tests, JavaScript syntax, gofmt, and a comment-free Go AST comparison passed after the rebase. Real BGE model tests were not run.
 
-Next: audit the connection commit's new declarations and changed comments, rerun checks, then update [PR #7](https://github.com/MylesMCook/grasshopper/pull/7). Do not merge the PR in this task.
+Ready for review: [PR #7](https://github.com/MylesMCook/grasshopper/pull/7) has passed CI on macOS, Ubuntu, and Windows. Next: human review. Keep LAB-214 in review until the PR is accepted; do not merge it in this task.

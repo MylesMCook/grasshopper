@@ -124,8 +124,9 @@ func (c Config) endpoint() (*url.URL, error) {
 	return endpoint, nil
 }
 
-// NormalizeServerAddress accepts the three links an owner is likely to copy.
-// It never carries URL credentials, parameters, or fragments into client config.
+// NormalizeServerAddress accepts server, memory-view, or /mcp links and
+// returns the canonical /mcp URL and server origin. It rejects URL
+// credentials, parameters, and fragments.
 func NormalizeServerAddress(address string) (string, string, error) {
 	endpoint, err := (Config{URL: address}).endpoint()
 	if err != nil {

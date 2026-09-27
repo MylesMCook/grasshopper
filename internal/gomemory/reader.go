@@ -134,8 +134,9 @@ type Reference struct {
 	Scope    Scope `json:"scope"`
 }
 
-// Page contains bounded records and omission metadata. Omitted counts all
-// exclusions; OmittedIDs and OmittedRecords each list at most 100.
+// Page contains bounded records and omission metadata. Omitted counts
+// eligible records left out by budget, limit, or handoff selection;
+// OmittedIDs and OmittedRecords each list at most 100.
 type Page struct {
 	Records        []Record    `json:"records"`
 	Omitted        int         `json:"omitted"`
