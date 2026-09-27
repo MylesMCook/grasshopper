@@ -23,7 +23,7 @@ agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git
 
 Install your OS entry in Agent CLI's Plugins menu or the IDE's **Customize → Plugins**.
 
-Ask the installed agent: **Connect Grasshopper.** If this machine already has a connection, it reuses it. Otherwise, give it your private server link once (the server, memory-view, or MCP link). Open the approval link it returns **in your already-connected memory view**, match the device and code, and approve. No token goes through the agent. Review Codex hooks or enable Cursor MCP when prompted. On Windows Cursor Agent CLI, keep the default user-level MCP location.
+Ask the installed agent: **Connect Grasshopper.** If this machine already has a connection, it reuses it. Otherwise, give it your private server link once (the server, memory-view, or MCP link). Open the approval link it returns **in your already-connected memory view**, match the device and code, and approve. No token goes through the agent. Codex may ask you to trust its hook and allow network access to your private server; Cursor may ask you to enable Grasshopper MCP. On Windows Cursor Agent CLI, keep the default user-level MCP location.
 
 Setup allows Grasshopper's three read tools in Cursor Agent CLI and Claude Code. Saving or archiving a memory still uses each agent's normal approval.
 
