@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestCursorWiringPreservesOtherServersAndHooks(t *testing.T) {
@@ -21,8 +22,19 @@ func TestCursorWiringPreservesOtherServersAndHooks(t *testing.T) {
 	if err := cursorWiring(dir, config, binary, true, false); err != nil {
 		t.Fatal(err)
 	}
+	oldTime := time.Unix(946684800, 0)
+	for _, path := range []string{mcpPath, hooksPath} {
+		if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := cursorWiring(dir, config, binary, true, false); err != nil {
 		t.Fatalf("idempotent install: %v", err)
+	}
+	for _, path := range []string{mcpPath, hooksPath} {
+		if info, err := os.Stat(path); err != nil || !info.ModTime().Equal(oldTime) {
+			t.Fatalf("repeat Cursor install rewrote %s: %v", path, err)
+		}
 	}
 	mcp, err := readJSONObject(mcpPath)
 	if err != nil {
@@ -55,6 +67,26 @@ func TestCursorWiringPreservesOtherServersAndHooks(t *testing.T) {
 	}
 	if _, err := json.Marshal(hooks); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCursorCLIMCPRepeatDoesNotRewrite(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "client.json")
+	binary := filepath.Join(dir, "grasshopper")
+	if err := cursorMCPOnly(dir, config, binary, false, false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "mcp.json")
+	oldTime := time.Unix(946684800, 0)
+	if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := cursorMCPOnly(dir, config, binary, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || !info.ModTime().Equal(oldTime) {
+		t.Fatalf("repeat MCP setup rewrote file: %v", err)
 	}
 }
 

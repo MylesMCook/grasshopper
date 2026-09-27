@@ -59,8 +59,10 @@ func readPairingJSON(w http.ResponseWriter, r *http.Request, value any) error {
 
 func (p *pairingManager) expire(now time.Time) {
 	for id, request := range p.requests {
-		if !now.Before(request.Expires) {
+		if !now.Before(request.Expires.Add(pairingLifetime)) {
 			delete(p.requests, id)
+		} else if !now.Before(request.Expires) && request.Status == "pending" {
+			request.Status = "expired"
 		}
 	}
 }
@@ -135,14 +137,14 @@ func (p *pairingManager) poll(w http.ResponseWriter, r *http.Request, origin str
 		return
 	}
 	p.mu.Lock()
+	p.expire(time.Now())
 	request := p.requests[input.RequestID]
 	if request == nil {
 		p.mu.Unlock()
 		http.Error(w, "connection request not found", http.StatusNotFound)
 		return
 	}
-	if !time.Now().Before(request.Expires) {
-		delete(p.requests, input.RequestID)
+	if request.Status == "expired" {
 		p.mu.Unlock()
 		http.Error(w, "connection request expired", http.StatusGone)
 		return
@@ -168,9 +170,7 @@ func (p *pairingManager) adminPairings(w http.ResponseWriter, r *http.Request) {
 		p.expire(time.Now())
 		items := []map[string]string{}
 		for _, request := range p.requests {
-			if request.Status == "pending" {
-				items = append(items, map[string]string{"request_id": request.ID, "code": request.Code, "device": request.Device})
-			}
+			items = append(items, map[string]string{"request_id": request.ID, "code": request.Code, "device": request.Device, "status": request.Status})
 		}
 		p.mu.Unlock()
 		sort.Slice(items, func(i, j int) bool { return items[i]["code"] < items[j]["code"] })

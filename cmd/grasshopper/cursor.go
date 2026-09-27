@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -280,6 +281,9 @@ func cursorMCPOnly(dir, configPath, binary string, update, dryRun bool) error {
 		if !sameJSON(existing, expected) && !update {
 			return errors.New("Cursor Grasshopper MCP differs; inspect it before using --update")
 		}
+		if sameJSON(existing, expected) {
+			return nil
+		}
 	}
 	if dryRun {
 		return nil
@@ -302,6 +306,8 @@ func cursorWiringWithOptions(dir, configPath, binary string, install, update, dr
 	if err != nil {
 		return err
 	}
+	beforeMCP, _ := json.Marshal(mcp)
+	beforeHooks, _ := json.Marshal(hooks)
 	servers, ok := jsonObject(mcp["mcpServers"])
 	if mcp["mcpServers"] != nil && !ok {
 		return errors.New("Cursor mcpServers must be an object")
@@ -375,6 +381,11 @@ func cursorWiringWithOptions(dir, configPath, binary string, install, update, dr
 		}
 	}
 	if dryRun {
+		return nil
+	}
+	afterMCP, _ := json.Marshal(mcp)
+	afterHooks, _ := json.Marshal(hooks)
+	if bytes.Equal(beforeMCP, afterMCP) && bytes.Equal(beforeHooks, afterHooks) {
 		return nil
 	}
 	if err := os.MkdirAll(dir, 0700); err != nil {

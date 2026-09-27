@@ -104,6 +104,9 @@ func TestViewerApprovedDevicePairingAndRevocation(t *testing.T) {
 	if status, data := request(http.MethodPost, "/pair/poll", "", map[string]any{"request_id": started.RequestID}, false); status != http.StatusOK || !bytes.Contains(data, []byte("approved")) {
 		t.Fatalf("approval not acknowledged: %d %s", status, data)
 	}
+	if status, data := request(http.MethodGet, "/visualizer/api/pairings", "", nil, true); status != http.StatusOK || !bytes.Contains(data, []byte(`"status":"approved"`)) {
+		t.Fatalf("approved state absent from viewer: %d %s", status, data)
+	}
 	if status, _ := request(http.MethodGet, "/healthz", token, nil, false); status != http.StatusOK {
 		t.Fatalf("approved device denied: %d", status)
 	}
@@ -195,6 +198,9 @@ func TestViewerApprovedDevicePairingAndRevocation(t *testing.T) {
 	if status, _ := request(http.MethodPost, "/pair/poll", "", map[string]any{"request_id": started.RequestID}, false); status != http.StatusForbidden {
 		t.Fatalf("denied request accepted: %d", status)
 	}
+	if status, data := request(http.MethodGet, "/visualizer/api/pairings", "", nil, true); status != http.StatusOK || !bytes.Contains(data, []byte(`"status":"denied"`)) {
+		t.Fatalf("denied state absent from viewer: %d %s", status, data)
+	}
 	if status, _ := request(http.MethodGet, "/healthz", deniedToken, nil, false); status != http.StatusUnauthorized {
 		t.Fatalf("denied token authenticated: %d", status)
 	}
@@ -236,6 +242,11 @@ func TestPairingExpiresAndPendingRequestsAreBounded(t *testing.T) {
 	manager.poll(writer, req, "http://example.test")
 	if writer.Code != http.StatusGone {
 		t.Fatalf("expired request stayed active: %d", writer.Code)
+	}
+	viewer := httptest.NewRecorder()
+	manager.adminPairings(viewer, httptest.NewRequest(http.MethodGet, "/visualizer/api/pairings", nil))
+	if viewer.Code != http.StatusOK || !bytes.Contains(viewer.Body.Bytes(), []byte(`"status":"expired"`)) {
+		t.Fatalf("expired state absent from viewer: %d %s", viewer.Code, viewer.Body.String())
 	}
 	if status, _ := start(); status != http.StatusCreated {
 		t.Fatalf("expired slot not freed: %d", status)

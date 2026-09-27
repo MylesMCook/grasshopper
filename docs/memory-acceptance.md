@@ -2,6 +2,12 @@
 
 Observed checks for Grasshopper releases. Synthetic checks and real-client observations are separate below.
 
+## 2.3.5 connection flow (release in progress)
+
+- Go tests, vet, and scoped race checks pass on macOS. The real pinned BGE model tests pass; actual recall was top-1 for 7/8 and top-3 for 8/8 test queries.
+- A synthetic private server and actual browser tested unauthenticated approval links, matching device and code, keyboard approval, narrow layout, both themes, and same-tab approval-link changes. Opening a link did not grant access. An extracted 2.3.5 client paired through the browser, authenticated, and repeated `connect` without creating another token or rewriting its configuration. Unit tests cover offline, rejected, conflicting, expired, denied, and replacement states.
+- Native release builds, installed Codex/Cursor turns, cross-machine checks, private service update, and public deployment remain to be verified. The browser check used synthetic data and does not establish those outcomes.
+
 ## 2.3.4 release (September 26)
 
 [Release](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.4) · [CI](https://github.com/MylesMCook/grasshopper/actions/runs/36283043272) · [LAB-212](https://linear.app/mcook/issue/LAB-212)

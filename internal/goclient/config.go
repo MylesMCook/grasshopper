@@ -105,7 +105,7 @@ func (c Config) credential() (string, error) {
 
 func (c Config) endpoint() (*url.URL, error) {
 	endpoint, err := url.Parse(c.URL)
-	if err != nil || endpoint == nil || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
+	if err != nil || endpoint == nil || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.ForceQuery || endpoint.Fragment != "" {
 		return nil, errors.New("invalid backend URL")
 	}
 	if endpoint.Scheme != "https" {
@@ -120,14 +120,16 @@ func (c Config) endpoint() (*url.URL, error) {
 	return endpoint, nil
 }
 
-// PairingBase validates the normal MCP address and returns its server origin.
-func PairingBase(address string) (string, error) {
+// NormalizeServerAddress accepts the three links an owner is likely to copy.
+// It never carries URL credentials, parameters, or fragments into client config.
+func NormalizeServerAddress(address string) (string, string, error) {
 	endpoint, err := (Config{URL: address}).endpoint()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	if endpoint.Path != "/mcp" || endpoint.RawPath != "" {
-		return "", errors.New("server address must end in /mcp")
+	if endpoint.RawPath != "" || (endpoint.Path != "" && endpoint.Path != "/" && endpoint.Path != "/mcp" && endpoint.Path != "/visualizer" && endpoint.Path != "/visualizer/") {
+		return "", "", errors.New("use the server link, memory-view link, or /mcp link")
 	}
-	return endpoint.Scheme + "://" + endpoint.Host, nil
+	base := endpoint.Scheme + "://" + endpoint.Host
+	return base + "/mcp", base, nil
 }

@@ -15,6 +15,8 @@ import (
 
 const unavailable = "Grasshopper unavailable; persistence not acknowledged. Do not automatically retry writes."
 
+var ErrAuthenticationRejected = errors.New("backend authentication rejected")
+
 type Remote struct {
 	endpoint string
 	token    string
@@ -90,6 +92,9 @@ func (r *Remote) Request(ctx context.Context, body []byte) ([]byte, bool, error)
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusAccepted {
 		return nil, false, nil
+	}
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		return nil, false, ErrAuthenticationRejected
 	}
 	if response.StatusCode != http.StatusOK {
 		return nil, false, fmt.Errorf("backend rejected request (%d)", response.StatusCode)
@@ -167,7 +172,10 @@ func matchingSSE(stream io.Reader, id json.RawMessage) ([]byte, error) {
 func (r *Remote) Context(ctx context.Context, scope Scope, budget int) (json.RawMessage, error) {
 	initialize, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{"protocolVersion": "2025-03-26", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "grasshopper-hook", "version": "1.0"}}})
 	answer, acknowledged, err := r.Request(ctx, initialize)
-	if err != nil || !acknowledged {
+	if err != nil {
+		return nil, fmt.Errorf("initialization not acknowledged: %w", err)
+	}
+	if !acknowledged {
 		return nil, errors.New("initialization not acknowledged")
 	}
 	var initReply struct {
@@ -182,7 +190,10 @@ func (r *Remote) Context(ctx context.Context, scope Scope, budget int) (json.Raw
 	}
 	call, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]any{"name": "context", "arguments": map[string]any{"scope": scope, "budget": budget}}})
 	answer, acknowledged, err = r.Request(ctx, call)
-	if err != nil || !acknowledged {
+	if err != nil {
+		return nil, fmt.Errorf("context not acknowledged: %w", err)
+	}
+	if !acknowledged {
 		return nil, errors.New("context not acknowledged")
 	}
 	var reply struct {

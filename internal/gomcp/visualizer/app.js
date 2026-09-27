@@ -16,12 +16,17 @@ const manualDeviceLabel = document.getElementById('manual-device-label');
 const manualDeviceInput = document.getElementById('manual-device');
 const manualChoice = '\u0000manual';
 const devicePanel = document.getElementById('device-panel');
+const connectAgent = document.getElementById('connect-agent');
+const approvalNotice = document.getElementById('approval-notice');
 const deviceStatus = document.getElementById('device-status');
 const pendingDevices = document.getElementById('pending-devices');
 const connectedDevices = document.getElementById('connected-devices');
-const serverAddress = document.getElementById('server-address');
-const copyServerAddress = document.getElementById('copy-server-address');
-serverAddress.textContent = `${location.origin}/mcp`;
+const connectionPrompt = document.getElementById('connection-prompt');
+const copyConnectionPrompt = document.getElementById('copy-connection-prompt');
+connectionPrompt.textContent = `Connect Grasshopper to ${location.origin}/visualizer/`;
+function requestFromHash() { return /^#connect=([0-9a-f]{64})$/.exec(location.hash)?.[1] || ''; }
+let approvalID = requestFromHash();
+let approvalFocused = false;
 
 let active = false;
 let loggingIn = false;
@@ -95,7 +100,9 @@ function setConnected(value) {
   tokenField.hidden = value;
   connectButton.textContent = value ? 'Refresh' : 'Connect';
   disconnectButton.disabled = !value;
+  connectAgent.hidden = !value;
   devicePanel.hidden = !value;
+  if (value && approvalID) devicePanel.open = true;
   if (value && devicePanel.open) refreshDevices();
 }
 
@@ -123,12 +130,27 @@ function stop(clearRecords = false) {
   }
 }
 
-copyServerAddress.addEventListener('click', async () => {
+connectAgent.addEventListener('click', () => {
+  devicePanel.open = true;
+  devicePanel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  refreshDevices();
+});
+
+copyConnectionPrompt.addEventListener('click', async () => {
   try {
-    await navigator.clipboard.writeText(serverAddress.textContent);
-    deviceStatus.textContent = 'Server address copied.';
+    await navigator.clipboard.writeText(connectionPrompt.textContent);
+    deviceStatus.textContent = 'Connection prompt copied.';
   } catch {
-    deviceStatus.textContent = 'Select and copy the address above.';
+    deviceStatus.textContent = 'Select and copy the prompt above.';
+  }
+});
+
+window.addEventListener('hashchange', () => {
+  approvalID = requestFromHash();
+  approvalFocused = false;
+  if (approvalID && active) {
+    devicePanel.open = true;
+    refreshDevices();
   }
 });
 
@@ -202,12 +224,29 @@ async function refreshDevices() {
       deviceRequest('/visualizer/api/pairings'), deviceRequest('/visualizer/api/devices')
     ]);
     if (!active || !devicePanel.open) return;
-    pendingDevices.replaceChildren(...pending.map(request => deviceRow(
-      `${request.device} · code ${request.code}`,
-      [['Approve', () => decidePairing(request, 'approve')], ['Deny', () => decidePairing(request, 'deny')]]
-    )));
+    pendingDevices.replaceChildren(...pending.map(request => {
+      const row = deviceRow(`${request.device} · code ${request.code} · ${request.status}`,
+        request.status === 'pending' ? [['Approve', () => decidePairing(request, 'approve')], ['Deny', () => decidePairing(request, 'deny')]] : []);
+      if (request.request_id === approvalID) {
+        row.classList.add('focused-request');
+        row.tabIndex = -1;
+        deviceStatus.textContent = request.status === 'pending' ? `Check ${request.device} and code ${request.code} before approving.` : `${request.device} · ${request.status}.`;
+      }
+      return row;
+    }));
+    if (approvalID && !approvalFocused) {
+      const focused = pendingDevices.querySelector('.focused-request');
+      if (focused) {
+        approvalFocused = true;
+        focused.focus();
+        focused.scrollIntoView({ block: 'center' });
+      }
+    }
     const connected = devices.filter(device => !device.revoked_at);
     connectedDevices.replaceChildren(...connected.map(device => deviceRow(device.device, [['Disconnect', () => revokeDevice(device)]])));
+    if (approvalID && !pending.some(request => request.request_id === approvalID)) {
+      deviceStatus.textContent = 'This request is no longer available. Ask the agent to connect again.';
+    }
     if (!pending.length) pendingDevices.replaceChildren(deviceRow('No connection requests waiting.'));
     if (!connected.length) connectedDevices.replaceChildren(deviceRow('No other devices connected.'));
     if (deviceStatus.textContent === 'Device controls unavailable. Memory view still works.') deviceStatus.textContent = '';
@@ -410,10 +449,17 @@ disconnectButton.addEventListener('click', async () => {
     if (!response.ok) throw new Error('Service unavailable');
     const session = await response.json();
     if (session.connected && !loggingIn && !active) {
+      approvalNotice.hidden = true;
       setConnected(true);
       setStatus('Connecting');
       summary.textContent = 'Loading memories…';
       refresh();
+    } else if (approvalID && !session.connected) {
+      tokenField.hidden = true;
+      connectButton.hidden = true;
+      approvalNotice.hidden = false;
+      approvalNotice.textContent = 'Open this link in your already-connected memory view to approve the agent. Do not give the agent your access token.';
+      setStatus('Approval needs your connected browser');
     }
   } catch {
     if (!loggingIn && !active) setStatus('Service unavailable', 'error');

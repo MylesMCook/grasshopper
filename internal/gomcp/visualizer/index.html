@@ -20,12 +20,13 @@
 
     <section class="connection" aria-labelledby="connect-title">
       <h2 id="connect-title" class="visually-hidden">Connection</h2>
+      <p id="approval-notice" class="approval-notice" role="status" hidden></p>
       <form id="connection-form" autocomplete="off">
         <div id="token-field" class="token-field">
           <label>Access token <input id="token" type="password" autocomplete="off" required spellcheck="false"></label>
           <p>This browser stays connected for 30 days. Disconnect to forget it.</p>
         </div>
-        <div class="actions"><button id="connect" type="submit">Connect</button><button id="disconnect" type="button" class="quiet" disabled>Disconnect</button></div>
+        <div class="actions"><button id="connect" type="submit">Connect</button><button id="disconnect" type="button" class="quiet" disabled>Disconnect</button><button id="connect-agent" type="button" class="quiet" hidden>Connect an agent</button></div>
         <details class="scope-details"><summary>Scope · global · any device</summary>
           <div class="fields">
             <label>Project <select id="project"><option value="">Global memories</option></select></label>
@@ -47,10 +48,10 @@
     </section>
 
     <details id="device-panel" class="device-panel" hidden>
-      <summary>Connect another device</summary>
+      <summary>Connect an agent</summary>
       <div class="device-panel-content">
-        <p>Give your agent this server address. Then approve the matching code here.</p>
-        <div class="address-row"><code id="server-address"></code><button id="copy-server-address" type="button" class="quiet">Copy address</button></div>
+        <p>Ask the agent to connect, then approve its matching device and code here. Your token stays private.</p>
+        <div class="address-row"><code id="connection-prompt"></code><button id="copy-connection-prompt" type="button" class="quiet">Copy prompt</button></div>
         <p id="device-status" class="device-status" role="status" aria-live="polite"></p>
         <div id="pending-devices" class="device-list"></div>
         <h3>Connected devices</h3>

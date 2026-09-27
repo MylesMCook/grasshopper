@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MylesMCook/grasshopper/internal/goclient"
 )
@@ -28,8 +29,19 @@ func TestConfigureUsesOnePolicyAndExistingToken(t *testing.T) {
 	if err := configure(args); err != nil {
 		t.Fatal(err)
 	}
+	oldTime := time.Unix(946684800, 0)
+	for _, path := range []string{configPath, filepath.Join(root, "client", "AGENTS.md")} {
+		if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := configure(args); err != nil {
 		t.Fatalf("idempotent configure: %v", err)
+	}
+	for _, path := range []string{configPath, filepath.Join(root, "client", "AGENTS.md")} {
+		if info, err := os.Stat(path); err != nil || !info.ModTime().Equal(oldTime) {
+			t.Fatalf("repeat configuration rewrote %s: %v", path, err)
+		}
 	}
 	loaded, err := goclient.LoadConfig(configPath)
 	if err != nil || loaded.TokenFile != token || loaded.Device != "test-mac" || loaded.PolicyPath != filepath.Join(root, "client", "AGENTS.md") {

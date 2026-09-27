@@ -271,6 +271,7 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	cursorDir := flags.String("cursor-dir", "", "Cursor user .cursor directory")
 	cursorCLI := flags.Bool("cursor-cli", false, "configure Cursor Agent CLI MCP only; the marketplace plugin supplies its hook")
 	update := flags.Bool("update", false, "replace this machine's existing Grasshopper client wiring")
+	quiet := flags.Bool("quiet", false, "suppress human-readable setup summary")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -538,6 +539,9 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 		if err := allowClaudeReads(claudeSettings, false); err != nil {
 			return err
 		}
+	}
+	if *quiet {
+		return nil
 	}
 	if *agents == "none" {
 		fmt.Fprintln(os.Stdout, "Grasshopper connected. Token stays in its existing file.")

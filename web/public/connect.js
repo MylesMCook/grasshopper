@@ -21,13 +21,18 @@ form.addEventListener('submit', event => {
     return;
   }
   const localHost = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
-  if (url.username || url.password) {
-    error.textContent = 'Enter the server address without a username or password.';
+  if (url.username || url.password || url.search || url.hash) {
+    error.textContent = 'Use a server link without credentials, query text, or a fragment.';
     error.hidden = false;
     return;
   }
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && localHost)) {
     error.textContent = 'Use HTTPS, or local HTTP on this device.';
+    error.hidden = false;
+    return;
+  }
+  if (!['/', '/mcp', '/visualizer', '/visualizer/'].includes(url.pathname)) {
+    error.textContent = 'Use the server, memory-view, or MCP link.';
     error.hidden = false;
     return;
   }

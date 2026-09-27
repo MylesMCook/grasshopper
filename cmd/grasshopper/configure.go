@@ -39,6 +39,7 @@ func bundledPolicy() (string, error) {
 func checkConnection(args []string) error {
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	configArg := flags.String("config", "", "client configuration path")
+	jsonOutput := flags.Bool("json", false, "report connection status as JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -49,25 +50,42 @@ func checkConnection(args []string) error {
 	if err != nil {
 		return err
 	}
+	state, detail := connectionStatus(path)
+	if *jsonOutput {
+		return json.NewEncoder(os.Stdout).Encode(map[string]string{"status": state, "next_step": detail})
+	}
+	if state != "connected" {
+		return errors.New(detail)
+	}
+	fmt.Fprintln(os.Stdout, "Authenticated Grasshopper context received. No memory was changed.")
+	return nil
+}
+
+func connectionStatus(path string) (string, string) {
 	config, err := goclient.LoadConfig(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "missing_address", "Connect Grasshopper with your private server link."
+	}
 	if err != nil {
-		return err
+		return "conflicting_configuration", "Inspect the existing Grasshopper client configuration before changing it."
 	}
 	if info, err := os.Stat(config.PolicyPath); err != nil || !info.Mode().IsRegular() {
-		return errors.New("shared AGENTS.md unavailable")
+		return "conflicting_configuration", "The shared AGENTS.md is missing; reinstall the plugin without replacing your credential."
 	}
 	remote, err := goclient.NewRemote(config)
 	if err != nil {
-		return err
+		return "conflicting_configuration", "The saved Grasshopper credential or address needs inspection."
 	}
 	platform := goclient.Platform()
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 	if _, err := remote.Context(ctx, goclient.Scope{Device: &config.Device, Platform: &platform}, 512); err != nil {
-		return errors.New("backend unavailable or authentication rejected; no memory was changed")
+		if errors.Is(err, goclient.ErrAuthenticationRejected) {
+			return "authentication_rejected", "This device's access was rejected. Run connect --reconnect to request approval for a replacement."
+		}
+		return "unreachable_server", "The private server is unavailable. Keep this connection and try again when it is online."
 	}
-	fmt.Fprintln(os.Stdout, "Authenticated Grasshopper context received. No memory was changed.")
-	return nil
+	return "connected", "Open a fresh agent session after approving any native hook or MCP prompt."
 }
 
 func privateFile(path string, data []byte) error {
@@ -142,6 +160,7 @@ func configureWithReport(args []string, report bool) error {
 		return err
 	}
 	installedPolicy := filepath.Join(dir, "AGENTS.md")
+	unchanged := true
 	for _, path := range []string{installedPolicy, configPath} {
 		if existing, err := os.ReadFile(path); err == nil {
 			wanted := policy
@@ -151,9 +170,17 @@ func configureWithReport(args []string, report bool) error {
 			if !bytes.Equal(existing, wanted) && !*update {
 				return fmt.Errorf("%s already differs; inspect it before using --update", path)
 			}
+			if !bytes.Equal(existing, wanted) {
+				unchanged = false
+			}
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
+		} else {
+			unchanged = false
 		}
+	}
+	if unchanged {
+		return nil
 	}
 	previousPolicy, err := snapshotFile(installedPolicy)
 	if err != nil {
