@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -182,7 +183,7 @@ func TestJSONPairReturnsImmediatelyAndResumesWithoutDuplicateRequest(t *testing.
 		t.Fatalf("check did not report pending approval: %s", state)
 	}
 	info, err := os.Stat(pendingPath(config))
-	if err != nil || info.Mode().Perm() != 0600 {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
 		t.Fatalf("pending secret not private: %v", err)
 	}
 	for _, path := range []string{config, tokenPath} {
