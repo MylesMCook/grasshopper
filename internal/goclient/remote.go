@@ -10,12 +10,14 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"syscall"
 	"time"
 )
 
 const unavailable = "Grasshopper unavailable; persistence not acknowledged. Do not automatically retry writes."
 
 var ErrAuthenticationRejected = errors.New("backend authentication rejected")
+var ErrNetworkRestricted = errors.New("client sandbox blocked network access")
 
 type Remote struct {
 	endpoint string
@@ -87,6 +89,9 @@ func (r *Remote) Request(ctx context.Context, body []byte) ([]byte, bool, error)
 	}
 	response, err := r.client.Do(request)
 	if err != nil {
+		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			return nil, false, ErrNetworkRestricted
+		}
 		return nil, false, errors.New("backend unavailable")
 	}
 	defer response.Body.Close()

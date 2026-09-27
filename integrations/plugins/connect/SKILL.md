@@ -24,7 +24,10 @@ The owner opens that link in their already-connected memory view and approves
 the matching code. Wait at most five minutes for the final `connected` status.
 Do not describe a pending or unacknowledged connection as complete.
 
-For `unreachable_server`, stop and keep the existing connection. For
+For `network_permission_required`, use the harness's normal approval to let
+this command reach the private server, then retry once. Do not disable its
+sandbox or broaden network access silently. For `unreachable_server`, stop and
+keep the existing connection. For
 `authentication_rejected`, offer `connect --reconnect` only after the owner asks
 to replace access. For `conflicting_configuration`, show the next step; a server
 switch requires the owner's explicit choice and `--switch-server --url ADDRESS`.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -33,6 +35,20 @@ func TestHookUnavailableIsVisibleInEachHarness(t *testing.T) {
 		}
 		if harness == "cursor" && output["additional_context"] == nil || harness != "cursor" && output["hookSpecificOutput"] == nil {
 			t.Fatalf("%s returned the wrong hook shape: %s", harness, message)
+		}
+	}
+}
+
+type blockedTransport struct{ err error }
+
+func (b blockedTransport) RoundTrip(*http.Request) (*http.Response, error) { return nil, b.err }
+
+func TestRemoteDistinguishesSandboxNetworkDenial(t *testing.T) {
+	for _, denied := range []error{syscall.EPERM, syscall.EACCES} {
+		remote := &Remote{endpoint: "http://127.0.0.1:18119/mcp", client: &http.Client{Transport: blockedTransport{denied}}}
+		_, _, err := remote.Request(t.Context(), []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`))
+		if !errors.Is(err, ErrNetworkRestricted) {
+			t.Fatalf("%v became %v", denied, err)
 		}
 	}
 }

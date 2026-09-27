@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/MylesMCook/grasshopper/internal/goclient"
@@ -112,7 +113,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		}
 		if existing.URL == *address {
 			state, next := connectionStatus(configPath)
-			if state == "unreachable_server" || state == "conflicting_configuration" {
+			if state == "unreachable_server" || state == "network_permission_required" || state == "conflicting_configuration" {
 				return connectProblem(state, next)
 			}
 			if state == "authentication_rejected" && !*reconnect {
@@ -195,6 +196,9 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		ExpiresIn int    `json:"expires_in"`
 	}
 	status, err := pairingRequest(ctx, client, base+"/pair/start", map[string]string{"device": *device, "token_hash": hex.EncodeToString(hash[:])}, &started)
+	if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+		return connectProblem("network_permission_required", "Allow Grasshopper to reach this private server through your agent's normal network permission, then retry once. No credential was saved.")
+	}
 	if status == http.StatusNotFound || status == http.StatusUnauthorized {
 		return errors.New("this server needs a Grasshopper version with viewer pairing; no credential was saved")
 	}
@@ -215,6 +219,9 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 			Status string `json:"status"`
 		}
 		status, err := pairingRequest(ctx, client, base+"/pair/poll", map[string]string{"request_id": started.RequestID}, &result)
+		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			return connectProblem("network_permission_required", "Allow Grasshopper to reach this private server through your agent's normal network permission, then retry once. No credential was saved.")
+		}
 		if err != nil {
 			return connectProblem("unreachable_server", "The pairing service became unavailable. No credential was saved; retry when it is online.")
 		}

@@ -83,6 +83,9 @@ func connectionStatus(path string) (string, string) {
 		if errors.Is(err, goclient.ErrAuthenticationRejected) {
 			return "authentication_rejected", "This device's access was rejected. Run connect --reconnect to request approval for a replacement."
 		}
+		if errors.Is(err, goclient.ErrNetworkRestricted) {
+			return "network_permission_required", "Allow Grasshopper to reach this private server through your agent's normal network permission, then retry once."
+		}
 		return "unreachable_server", "The private server is unavailable. Keep this connection and try again when it is online."
 	}
 	return "connected", "Open a fresh agent session after approving any native hook or MCP prompt."
