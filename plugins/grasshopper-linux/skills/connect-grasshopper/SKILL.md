@@ -6,29 +6,32 @@ description: Connect this installed Grasshopper plugin to a private server with 
 Connect this plugin when the user asks. Standing memory rules live in
 `policy/AGENTS.md`.
 
-Ask only for the private server's `/mcp` address if it was not supplied. The
-owner can copy it from **Connect another device** in their connected memory
-view. Do not search this machine's files, processes, or environment for
-credentials, guess localhost, ask for a token, or copy the server's master
-token.
+Run the bundled client first. It checks only Grasshopper's known client
+configuration. Do not scan unrelated files, processes, or environment for
+credentials. Never ask for or copy the server's master token.
 
-From the plugin root (two directories above this file), run:
+From the plugin root (two directories above this file), run the command below.
+In Cursor Agent CLI, add `--cursor-cli` to it.
 
 ```sh
-bin/grasshopper connect --url ADDRESS
+bin/grasshopper connect --json
 ```
 
-Run it so you can relay its first output while it waits; do not hide the code
-inside a long-running tool call. Tell the user to open the same server's
-already connected memory viewer and approve the matching device and code.
-Then wait for the command's result, for at most five minutes. A successful
-connection creates a device credential locally. The server's master token
-stays on the server. If an existing Grasshopper
-config conflicts, inspect it before using `--update`. If the server does not
-support pairing, report the required server update instead of falling back to
-token transfer.
+If status is `missing_address`, ask once for the private server link. A base,
+memory-view, or `/mcp` link works. Then run `connect --json --url ADDRESS`.
+Relay the `approval_url`, device, and code as soon as `approval_pending` appears.
+The owner opens that link in their already-connected memory view and approves
+the matching code. Wait at most five minutes for the final `connected` status.
+Do not describe a pending or unacknowledged connection as complete.
 
-For Cursor Agent CLI, add `--cursor-cli`. It puts the MCP entry in the user's
+For `unreachable_server`, stop and keep the existing connection. For
+`authentication_rejected`, offer `connect --reconnect` only after the owner asks
+to replace access. For `conflicting_configuration`, show the next step; a server
+switch requires the owner's explicit choice and `--switch-server --url ADDRESS`.
+Denial and expiry require a new owner-initiated attempt. An old server without
+viewer pairing needs an update; never fall back to token transfer.
+
+For Cursor Agent CLI, `--cursor-cli` puts the MCP entry in the user's
 `.cursor` directory by default; the plugin supplies the hook. Keep this
 default on Windows, where project-local MCP approval can fail in Agent CLI.
 Use `--cursor-dir` only when the user deliberately needs another location.
@@ -36,8 +39,9 @@ Use `--cursor-dir` only when the user deliberately needs another location.
 Run:
 
 ```sh
-bin/grasshopper check
+bin/grasshopper check --json
 ```
 
-Then look for a known memory in a fresh session before tool use. Review
-Codex hooks and approve Cursor MCP when prompted. Config alone does not prove first-turn context.
+The CLI status is the connection check. Review Codex hooks and approve Cursor
+MCP when prompted, then start a fresh session. Native permissions remain the
+user's decision; do not bypass them.

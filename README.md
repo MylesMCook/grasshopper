@@ -2,29 +2,9 @@
 
 Keep a few useful memories across Codex, Cursor, and Claude Code. One private server holds them; each agent connects to it.
 
-## Start your server
-
-Download a [server archive from GitHub Releases](https://github.com/MylesMCook/grasshopper/releases/latest): `darwin-arm64` for an Apple silicon Mac, `windows-amd64` for Windows x64, or `linux-amd64` for Linux x64. The website is optional.
-
-Compare your download's SHA-256 hash with its line in the release's `SHA256SUMS` asset, then extract it. From that folder, run:
-
-Mac or Linux:
-
-```sh
-./bin/grasshopper-server --quickstart
-```
-
-Windows PowerShell:
-
-```powershell
-.\bin\grasshopper-server.exe --quickstart
-```
-
-This creates an empty database and a master token without overwriting existing state. Keep the server running. Open its memory view and connect once with that token. For other machines, give the server a **private HTTPS** address, such as [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve). Keep public access off and the master token on the server, out of chat and Git.
-
 ## Connect an agent
 
-Install the connector on each machine. All connectors use the same server.
+Install a connector on each machine. They all use the same server and the same memories.
 
 ### Codex
 
@@ -43,7 +23,7 @@ agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git
 
 Install your OS entry in Agent CLI's Plugins menu or the IDE's **Customize → Plugins**.
 
-In your server's connected memory view, open **Connect another device** and copy the address. For Codex or Cursor, ask the agent: **Use the connect-grasshopper skill with this address: [paste address].** It shows a code. Approve the matching device and code in the same view. No server token is copied. Approve Codex hooks or Cursor MCP when prompted. On Windows Cursor Agent CLI, keep the default user-level MCP location.
+Ask the installed agent: **Connect Grasshopper.** If this machine already has a connection, it reuses it. Otherwise, give it your private server link once (the server, memory-view, or MCP link). Open the approval link it returns **in your already-connected memory view**, match the device and code, and approve. No token goes through the agent. Review Codex hooks or enable Cursor MCP when prompted. On Windows Cursor Agent CLI, keep the default user-level MCP location.
 
 Setup allows Grasshopper's three read tools in Cursor Agent CLI and Claude Code. Saving or archiving a memory still uses each agent's normal approval.
 
@@ -52,18 +32,36 @@ Setup allows Grasshopper's three read tools in Cursor Agent CLI and Claude Code.
 Download the [client archive for your machine](https://github.com/MylesMCook/grasshopper/releases/latest), check it against the release's `SHA256SUMS`, and extract it. Run:
 
 ```sh
-./bin/grasshopper connect --agents claude --url https://your-private-server/mcp
+./bin/grasshopper connect --agents claude --url https://your-private-server
 ```
 
 On Windows PowerShell:
 
 ```powershell
-.\bin\grasshopper.exe connect --agents claude --url https://your-private-server/mcp
+.\bin\grasshopper.exe connect --agents claude --url https://your-private-server
 ```
 
 Approve the matching code in the server's memory view.
 
-Start a fresh session. Ask the agent what it received before tool use, then save one real preference or decision. A new server has no memories yet.
+Start a fresh session after native approvals. A new server has no memories until you ask an agent to save a preference or decision.
+
+## Need a server?
+
+Download a [server archive from GitHub Releases](https://github.com/MylesMCook/grasshopper/releases/latest): `darwin-arm64` for Apple silicon, `windows-amd64` for Windows x64, or `linux-amd64` for Linux x64. Verify its SHA-256 hash against `SHA256SUMS`, extract it, then run:
+
+Mac or Linux:
+
+```sh
+./bin/grasshopper-server --quickstart
+```
+
+Windows PowerShell:
+
+```powershell
+.\bin\grasshopper-server.exe --quickstart
+```
+
+This creates an empty database and master token without overwriting existing state. Open its memory view and sign in with that token. For other machines, give the server a **private HTTPS** address, such as [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve). Keep public access off and the master token on the server.
 
 ## Update or remove a connector
 
