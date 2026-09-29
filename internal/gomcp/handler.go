@@ -307,7 +307,12 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	}))
 	var ownerReads map[string]http.HandlerFunc
 	if backend.Visualizer {
-		mux.HandleFunc("/visualizer/api/context", visualizerContext(backend.Store, version, backend.Model))
+		// A model is reported only when something uses it to embed queries.
+		searchModel := ""
+		if backend.Embedder != nil {
+			searchModel = backend.Model
+		}
+		mux.HandleFunc("/visualizer/api/context", visualizerContext(backend.Store, version, searchModel))
 		ownerReads = map[string]http.HandlerFunc{
 			"/visualizer/api/search":  visualizerSearch(backend, embedQuery),
 			"/visualizer/api/record":  visualizerRecord(backend.Store),
