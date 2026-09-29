@@ -46,6 +46,13 @@ remains stored and returned by `get`; only embedding input is truncated.
 Native tests also store and read back a maximum-size 32768-byte memory through
 the authenticated MCP service under the existing inference deadline.
 
+Inference uses at most four CPU threads and sleeping idle workers. Pools using
+every CPU core with ONNX's default spinning intermittently timed out even on a
+short Windows write while other native test processes were running. A Mac
+four-process probe reduced worst observed maximum-size embedding latency from
+1158 ms to 240 ms with the bounded, non-spinning pool. This is a contention
+check, not a general latency guarantee.
+
 ## Upgrade and rollback
 
 Equal vector dimensions do not make the model spaces compatible. The server

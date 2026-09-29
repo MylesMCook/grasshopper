@@ -93,7 +93,12 @@ func NewGranite(libraryPath, modelPath, tokenizerPath string) (_ *Granite, err e
 		return nil, err
 	}
 	defer opts.Destroy()
-	if err = opts.SetIntraOpNumThreads(runtime.NumCPU()); err != nil {
+	// Keep inference from monopolizing a shared host or competing test process.
+	// Sleeping idle workers avoids contention from ONNX's default spin loop.
+	if err = opts.SetIntraOpNumThreads(min(4, runtime.NumCPU())); err != nil {
+		return nil, err
+	}
+	if err = opts.AddSessionConfigEntry("session.intra_op.allow_spinning", "0"); err != nil {
 		return nil, err
 	}
 	if err = opts.SetInterOpNumThreads(1); err != nil {
