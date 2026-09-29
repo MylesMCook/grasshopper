@@ -56,6 +56,8 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 	if flags.NArg() != 0 {
 		return errors.New("unexpected connect arguments")
 	}
+	provided := map[string]bool{}
+	flags.Visit(func(item *flag.Flag) { provided[item.Name] = true })
 	var jsonPhase map[string]string
 	defer func() {
 		if !*jsonOutput {
@@ -101,7 +103,31 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 			}
 		}
 		*address, *tokenPath, *device = pending.Address, pending.TokenPath, pending.Device
-		*agents, *cursorCLI, *cursorDir, *update = pending.Agents, pending.CursorCLI, pending.CursorDir, pending.Update
+		// Installation choices can be corrected without replacing the pending
+		// credential or requesting another owner approval.
+		if !provided["agents"] {
+			*agents = pending.Agents
+		}
+		if !provided["cursor-cli"] {
+			*cursorCLI = pending.CursorCLI
+		}
+		if !provided["cursor-dir"] {
+			*cursorDir = pending.CursorDir
+		}
+		*update = pending.Update
+	}
+	if _, err := selectAgents(*agents, *cursorCLI, *cursorDir); err != nil {
+		return err
+	}
+	if pending != nil && (pending.Agents != *agents || pending.CursorCLI != *cursorCLI || pending.CursorDir != *cursorDir) {
+		pending.Agents, pending.CursorCLI, pending.CursorDir = *agents, *cursorCLI, *cursorDir
+		data, err := json.Marshal(pending)
+		if err != nil {
+			return err
+		}
+		if err := privateFile(pendingPath(configPath), data); err != nil {
+			return err
+		}
 	}
 	if *address == "" && configErr == nil {
 		*address = existing.URL

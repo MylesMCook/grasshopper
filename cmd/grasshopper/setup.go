@@ -17,6 +17,28 @@ import (
 
 type commandRunner func(string, ...string) ([]byte, error)
 
+// selectAgents validates local installation choices before connection approval
+// or configuration changes. Both connect and setup use the same rules.
+func selectAgents(agents string, cursorCLI bool, cursorDir string) (map[string]bool, error) {
+	if cursorCLI && agents != "none" {
+		return nil, errors.New("--cursor-cli requires --agents none")
+	}
+	selected := map[string]bool{}
+	for _, name := range strings.Split(agents, ",") {
+		if name == "none" && agents == "none" {
+			break
+		}
+		if name != "codex" && name != "cursor" && name != "claude" {
+			return nil, fmt.Errorf("unknown agent %q; choose codex,cursor,claude, or none", name)
+		}
+		selected[name] = true
+	}
+	if (selected["cursor"] || cursorCLI) && cursorDir != "" && !filepath.IsAbs(cursorDir) {
+		return nil, errors.New("Cursor directory must be absolute")
+	}
+	return selected, nil
+}
+
 func runAgentCommand(name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
@@ -283,8 +305,9 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	if flags.NArg() != 0 {
 		return errors.New("unexpected setup arguments")
 	}
-	if *cursorCLI && *agents != "none" {
-		return errors.New("--cursor-cli requires --agents none")
+	selected, err := selectAgents(*agents, *cursorCLI, *cursorDir)
+	if err != nil {
+		return err
 	}
 	configPath, err := goclient.ConfigPath(*configArg)
 	if err != nil {
@@ -318,16 +341,6 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 			return err
 		}
 		*device = name
-	}
-	selected := map[string]bool{}
-	for _, name := range strings.Split(*agents, ",") {
-		if name == "none" && *agents == "none" {
-			break
-		}
-		if name != "codex" && name != "cursor" && name != "claude" {
-			return fmt.Errorf("unknown agent %q; choose codex,cursor,claude, or none", name)
-		}
-		selected[name] = true
 	}
 	if !filepath.IsAbs(configPath) || !filepath.IsAbs(*tokenFile) {
 		return errors.New("config and token paths must be absolute")

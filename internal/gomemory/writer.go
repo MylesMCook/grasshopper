@@ -99,8 +99,8 @@ func OpenWritableCopy(ctx context.Context, source, destination string) (*Writer,
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	// VACUUM INTO requires a nonexistent output. Build beside the destination,
-	// then hard-link it into place without overwriting an existing destination.
+	// VACUUM INTO accepts an empty file. Keep CreateTemp's private mode while
+	// SQLite populates it, then publish without overwriting the destination.
 	temporary, err := os.CreateTemp(filepath.Dir(destination), "."+filepath.Base(destination)+".tmp-*")
 	if err != nil {
 		return nil, err
@@ -108,9 +108,6 @@ func OpenWritableCopy(ctx context.Context, source, destination string) (*Writer,
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)
 	if err := temporary.Close(); err != nil {
-		return nil, err
-	}
-	if err := os.Remove(temporaryPath); err != nil {
 		return nil, err
 	}
 	sourceReader, err := OpenReadOnly(source)

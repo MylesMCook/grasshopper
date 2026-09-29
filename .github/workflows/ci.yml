@@ -20,6 +20,7 @@ jobs:
           cache: true
       - run: go test ./...
       - run: go vet ./...
+      - run: node --test internal/gomcp/visualizer/app.test.cjs
       - run: go build ./cmd/grasshopper ./cmd/grasshopper-go-server ./cmd/grasshopper-go-backup ./cmd/grasshopper-go-migrate ./cmd/grasshopper-go-bundle
       - name: Race checks
         if: runner.os != 'Windows'

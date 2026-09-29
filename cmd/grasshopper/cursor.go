@@ -148,13 +148,26 @@ func isGrasshopperHook(value any) bool {
 		if !strings.HasPrefix(command, quote) {
 			continue
 		}
-		end := strings.Index(command[1:], quote)
-		if end < 0 {
-			continue
-		}
-		binary := command[1 : end+1]
-		if grasshopperExecutable(binary) && strings.HasPrefix(command[end+2:], " hook --config ") && strings.HasSuffix(command, " --harness cursor") {
-			return true
+		for end := 1; end < len(command); end++ {
+			// shellQuoted emits a single apostrophe as '"'"' on Unix.
+			if quote == "'" && strings.HasPrefix(command[end:], "'\"'\"'") {
+				end += 4
+				continue
+			}
+			if quote == `"` && strings.HasPrefix(command[end:], `\"`) {
+				end++
+				continue
+			}
+			if command[end] != quote[0] {
+				continue
+			}
+			binary := command[1:end]
+			if quote == "'" {
+				binary = strings.ReplaceAll(binary, "'\"'\"'", "'")
+			} else {
+				binary = strings.ReplaceAll(binary, `\"`, `"`)
+			}
+			return grasshopperExecutable(binary) && strings.HasPrefix(command[end+1:], " hook --config ") && strings.HasSuffix(command, " --harness cursor")
 		}
 	}
 	return false

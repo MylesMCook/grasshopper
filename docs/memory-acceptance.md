@@ -2,6 +2,17 @@
 
 Observed checks for Grasshopper releases. Synthetic checks and real-client observations are separate below.
 
+## Local audit repairs (September 29)
+
+[LAB-216](https://linear.app/mcook/issue/LAB-216/fix-the-four-verified-grasshopper-thermos-audit-defects) · branch `codex/thermos-audit-fixes` · baseline `6b0514b`. Codex Desktop on Mac mini, macOS 27.0 (26A428), Go 1.27.1, Node 26.9.0, and Playwright CLI 0.1.20. This is local repair evidence; the released 2.3.6 binaries and services were not changed.
+
+- Four reproduced defects were fixed: snapshots retain private permissions while SQLite copies data; Cursor wiring recognizes quoted executable paths containing apostrophes during install/update/remove; invalid connection options fail before pairing and explicit corrections reuse pending approval; device refreshes cancel superseded requests and retain one polling timer.
+- The new Go regressions and four controlled Node tests failed before implementation and passed afterward. The snapshot test observes populated temporary files under umask 022; the connection checks use synthetic HTTP servers and temporary credentials/configuration. Node evaluates the actual viewer script with controlled responses to enforce stale-response rejection, closure/reopening, disconnect, and failure/recovery behavior.
+- `go test ./...`, `go vet ./...`, and `go test -race ./internal/gomemory ./internal/gomcp ./internal/goclient` passed. All five command packages built. `node --test internal/gomcp/visualizer/app.test.cjs` passed 4/4; JavaScript syntax and `git diff --check` passed. A reviewer repeated the snapshot privacy test ten times successfully.
+- An isolated headless browser loaded the actual viewer assets from a task-local loopback fixture. Native panel closure aborted an in-progress device request; reopening displayed the synthetic device; revocation removed it; after browser disconnect, device/pairing request counts stayed unchanged beyond the five-second polling interval. The browser reported no console errors or warnings. This verifies browser behavior against synthetic endpoints, not live service or installed-harness behavior.
+- Two fresh independent Thermos child reviewers inspected the same repair scope, one for correctness/security and one for maintainability. Neither returned a candidate finding. Scope identity stayed `28759dc064d8c72b17d42fa53e8290208dd6b5f80aac85146158423432607da7` before and after review; task/acceptance bookkeeping was excluded. Detailed local audit and browser fixture artifacts are in `/Users/mylescook/Documents/Codex/2026-09-29-grasshopper-audit/`.
+- Real BGE ONNX tests were skipped because `GRASSHOPPER_BGE_TEST_ROOT` was unset. Linux/Windows runtime checks, remote CI, live pairing, publishing, and deployment were not performed for these fixes.
+
 ## 2.3.6 agent connection (September 27)
 
 - [Release](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.6) · [three-OS CI](https://github.com/MylesMCook/grasshopper/actions/runs/36301112373) · main `e61177a` · marketplace `55b69a0`. Tests, vet, and scoped race checks passed. Seven archives passed 280 embedded SHA-256 checks; all eight GitHub asset digests matched. The new regression covers immediate JSON approval, repeat calls, denial, and offline recovery on Windows, Mac, and Linux CI.

@@ -18,7 +18,7 @@ func TestCursorWiringPreservesOtherServersAndHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := filepath.Join(dir, "client.json")
-	binary := filepath.Join(dir, "bin", "grasshopper")
+	binary := filepath.Join(dir, "Owner's Tools", "bin", "grasshopper")
 	if err := cursorWiring(dir, config, binary, true, false); err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +51,16 @@ func TestCursorWiringPreservesOtherServersAndHooks(t *testing.T) {
 	events := hooks["hooks"].(map[string]any)
 	if len(events["sessionStart"].([]any)) != 2 || events["stop"] == nil {
 		t.Fatalf("hooks merge: %+v", events)
+	}
+	binary = filepath.Join(dir, "Owner's New Tools", "bin", "grasshopper")
+	if err := cursorWiring(dir, config, binary, true, true); err != nil {
+		t.Fatalf("quoted-path update: %v", err)
+	}
+	hooks, _ = readJSONObject(hooksPath)
+	events = hooks["hooks"].(map[string]any)
+	list := events["sessionStart"].([]any)
+	if len(list) != 2 || list[1].(map[string]any)["command"] != shellQuoted(binary)+" hook --config "+shellQuoted(config)+" --harness cursor" {
+		t.Fatalf("quoted-path update left obsolete hooks: %+v", list)
 	}
 	if err := cursorWiring(dir, config, binary, false, false); err != nil {
 		t.Fatal(err)

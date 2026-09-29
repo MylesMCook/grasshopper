@@ -38,6 +38,7 @@ let knownProjects = [];
 let knownDevices = [];
 let lastSignature = '';
 let deviceTimer = null;
+let deviceInFlight = null;
 
 function option(value, text) {
   const item = document.createElement('option');
@@ -102,8 +103,8 @@ function setConnected(value) {
   disconnectButton.disabled = !value;
   connectAgent.hidden = !value;
   devicePanel.hidden = !value;
-  if (value && approvalID) devicePanel.open = true;
-  if (value && devicePanel.open) refreshDevices();
+  if (value && approvalID) openDevicePanel();
+  else if (value && devicePanel.open) refreshDevices();
 }
 
 function stop(clearRecords = false) {
@@ -112,8 +113,7 @@ function stop(clearRecords = false) {
   timer = null;
   if (inFlight) inFlight.abort();
   inFlight = null;
-  clearTimeout(deviceTimer);
-  deviceTimer = null;
+  stopDeviceRefresh();
   devicePanel.hidden = true;
   if (clearRecords) {
     records.replaceChildren();
@@ -131,10 +131,14 @@ function stop(clearRecords = false) {
 }
 
 connectAgent.addEventListener('click', () => {
-  devicePanel.open = true;
+  openDevicePanel();
   devicePanel.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  refreshDevices();
 });
+
+function openDevicePanel() {
+  if (devicePanel.open) refreshDevices();
+  else devicePanel.open = true; // The toggle event starts its first refresh.
+}
 
 copyConnectionPrompt.addEventListener('click', async () => {
   try {
@@ -149,16 +153,18 @@ window.addEventListener('hashchange', () => {
   approvalID = requestFromHash();
   approvalFocused = false;
   if (approvalID && active) {
-    devicePanel.open = true;
-    refreshDevices();
+    openDevicePanel();
   }
 });
 
-devicePanel.addEventListener('toggle', () => {
+devicePanel.addEventListener('toggle', refreshDevices);
+
+function stopDeviceRefresh() {
   clearTimeout(deviceTimer);
   deviceTimer = null;
-  if (devicePanel.open && active) refreshDevices();
-});
+  if (deviceInFlight) deviceInFlight.abort();
+  deviceInFlight = null;
+}
 
 function deviceRow(text, buttons = []) {
   const row = document.createElement('div');
@@ -179,8 +185,7 @@ function deviceRow(text, buttons = []) {
   return row;
 }
 
-async function deviceRequest(path, method = 'GET', body) {
-  const controller = new AbortController();
+async function deviceRequest(path, method = 'GET', body, controller = new AbortController()) {
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
     const response = await fetch(path, {
@@ -189,7 +194,7 @@ async function deviceRequest(path, method = 'GET', body) {
       credentials: 'same-origin', cache: 'no-store', signal: controller.signal
     });
     if (!response.ok) throw new Error('Device controls unavailable');
-    return response.status === 204 ? null : response.json();
+    return response.status === 204 ? null : await response.json();
   } finally {
     clearTimeout(timeout);
   }
@@ -217,13 +222,16 @@ async function revokeDevice(device) {
 }
 
 async function refreshDevices() {
+  stopDeviceRefresh();
   if (!active || !devicePanel.open) return;
-  clearTimeout(deviceTimer);
+  const controller = new AbortController();
+  deviceInFlight = controller;
   try {
     const [pending, devices] = await Promise.all([
-      deviceRequest('/visualizer/api/pairings'), deviceRequest('/visualizer/api/devices')
+      deviceRequest('/visualizer/api/pairings', 'GET', undefined, controller),
+      deviceRequest('/visualizer/api/devices', 'GET', undefined, controller)
     ]);
-    if (!active || !devicePanel.open) return;
+    if (!active || !devicePanel.open || deviceInFlight !== controller) return;
     pendingDevices.replaceChildren(...pending.map(request => {
       const row = deviceRow(`${request.device} · code ${request.code} · ${request.status}`,
         request.status === 'pending' ? [['Approve', () => decidePairing(request, 'approve')], ['Deny', () => decidePairing(request, 'deny')]] : []);
@@ -251,9 +259,16 @@ async function refreshDevices() {
     if (!connected.length) connectedDevices.replaceChildren(deviceRow('No other devices connected.'));
     if (deviceStatus.textContent === 'Device controls unavailable. Memory view still works.') deviceStatus.textContent = '';
   } catch {
-    deviceStatus.textContent = 'Device controls unavailable. Memory view still works.';
+    if (deviceInFlight === controller) deviceStatus.textContent = 'Device controls unavailable. Memory view still works.';
+  } finally {
+    // A failed fetch also cancels its sibling. Superseded completions may not
+    // render or schedule another polling loop.
+    controller.abort();
+    if (deviceInFlight === controller) {
+      deviceInFlight = null;
+      if (active && devicePanel.open) deviceTimer = setTimeout(refreshDevices, 5000);
+    }
   }
-  if (active && devicePanel.open) deviceTimer = setTimeout(refreshDevices, 5000);
 }
 
 function scopeInput() {

@@ -122,6 +122,81 @@ func TestPairUnavailableLeavesNoCredentialOrConfig(t *testing.T) {
 	}
 }
 
+func TestConnectRejectsInvalidOptionsBeforePairing(t *testing.T) {
+	for _, options := range [][]string{{"--agents", "invalid"}, {"--agents", "cursor", "--cursor-cli"}, {"--agents", "cursor", "--cursor-dir", "relative"}} {
+		t.Run(strings.Join(options, " "), func(t *testing.T) {
+			root, _, config, _ := setupFixture(t)
+			token := filepath.Join(t.TempDir(), "device-token")
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(http.StatusCreated)
+				_ = json.NewEncoder(w).Encode(map[string]any{"request_id": strings.Repeat("a", 64), "code": "12345678", "expires_in": 300})
+			}))
+			defer server.Close()
+			run := func(string, ...string) ([]byte, error) { t.Fatal("agent settings changed"); return nil, nil }
+			args := append([]string{"--json", "--url", server.URL, "--config", config, "--token-file", token}, options...)
+			if err := connectWithRoot(t.Context(), args, root, run); err == nil {
+				t.Error("invalid setup options accepted")
+			}
+			if calls.Load() != 0 {
+				t.Errorf("invalid options contacted server %d times", calls.Load())
+			}
+			for _, path := range []string{config, token, pendingPath(config)} {
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Errorf("invalid options persisted %s: %v", path, err)
+				}
+			}
+		})
+	}
+}
+
+func TestConnectCorrectsSavedPendingOptionsWithoutNewApproval(t *testing.T) {
+	root, _, config, _ := setupFixture(t)
+	token := filepath.Join(t.TempDir(), "device-token")
+	var starts, polls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/pair/start":
+			starts.Add(1)
+			w.WriteHeader(http.StatusBadRequest)
+		case "/pair/poll":
+			polls.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "approved"})
+		case "/mcp":
+			var rpc struct{ Method string }
+			_ = json.NewDecoder(r.Body).Decode(&rpc)
+			w.Header().Set("Content-Type", "application/json")
+			switch rpc.Method {
+			case "initialize":
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26"}}`))
+			case "notifications/initialized":
+				w.WriteHeader(http.StatusAccepted)
+			default:
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":2,"result":{"structuredContent":{"records":[]}}}`))
+			}
+		}
+	}))
+	defer server.Close()
+	pending := pendingConnection{Address: server.URL + "/mcp", TokenPath: token, Device: "synthetic", Agents: "invalid", Secret: strings.Repeat("t", 40), RequestID: strings.Repeat("a", 64), Code: "12345678", ApprovalURL: server.URL + "/visualizer/", ExpiresAt: time.Now().Add(time.Minute)}
+	if err := savePendingConnection(config, pending); err != nil {
+		t.Fatal(err)
+	}
+	run := func(string, ...string) ([]byte, error) { t.Fatal("agent settings changed"); return nil, nil }
+	result := captureConnectJSON(t, func() error {
+		return connectWithRoot(t.Context(), []string{"--json", "--config", config, "--agents", "none"}, root, run)
+	})
+	if result["status"] != "connected" || starts.Load() != 0 || polls.Load() != 1 {
+		t.Fatalf("correction did not reuse approval: %v, starts=%d polls=%d", result, starts.Load(), polls.Load())
+	}
+	if _, err := os.Stat(pendingPath(config)); !os.IsNotExist(err) {
+		t.Fatalf("finished approval retained pending state: %v", err)
+	}
+	if data, err := os.ReadFile(token); err != nil || string(data) != pending.Secret {
+		t.Fatalf("approved credential replaced: %v", err)
+	}
+}
+
 func TestJSONPairReturnsImmediatelyAndResumesWithoutDuplicateRequest(t *testing.T) {
 	root, _, config, _ := setupFixture(t)
 	tokenPath := filepath.Join(t.TempDir(), "device-token")
