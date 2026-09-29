@@ -1,12 +1,14 @@
 # Grasshopper release state
 
-Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `codex/thermos-audit-fixes`.
+Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
 
-## Audit release closeout
+## Released audit fixes
 
-[LAB-216](https://linear.app/mcook/issue/LAB-216/fix-the-four-verified-grasshopper-thermos-audit-defects): fixed snapshot privacy during copying, Cursor hook quoting, connection-option validation/recovery, and stale device polling in `1a52de3`. Regression checks failed before the fixes and passed afterward. Full Go tests, vet, scoped race checks, five binary builds, and four Node regressions passed. Two fresh Thermos reviewers found no remaining defects. A real browser verified cancellation, synthetic device revocation, and stopped polling after disconnect. [Evidence](docs/memory-acceptance.md#local-audit-repairs-september-29). The owner requested git-it-out: land main, pass three-OS CI, publish 2.3.7 and marketplace packages, verify a restored backup, update the private Mac service/public site and local connector, then record delivery evidence.
+[LAB-216](https://linear.app/mcook/issue/LAB-216/fix-the-four-verified-grasshopper-thermos-audit-defects): [2.3.7](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.7) ships all four fixes from `1a52de3`; release commit `2e53204`, marketplace `0fe6ebf`. Three-OS CI, 280 package hashes, eight published asset digests, real pinned BGE tests, restored-backup reads, live local/Tailnet reads, and fresh no-tool Mac Codex/Cursor startup checks passed. The Mac service, public site, and Mac connectors are updated. Existing data and credentials remain; rollback binaries/plist/snapshot and a checked encrypted off-host backup are retained. [Evidence](docs/memory-acceptance.md#237-audit-fixes-september-29). No implementation or delivery work remains in this scope.
 
-## Released behavior
+Other machines were not updated by this closeout. Mac Claude's 2.3.7 plugin installation was verified; a fresh authenticated Claude turn, desktop apps, and reboot persistence were not tested.
+
+## Earlier released behavior
 
 Released [2.3.6](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.6): one device connection is reused by installed agents. New connections return the owner-approval link immediately and finish on the next call. The private Mac service, public setup page, and Mac/Beelink connectors run 2.3.6. Existing credentials and the one SQLite database remain. Release commit `e61177a`; marketplace `55b69a0`. Three-OS CI, seven package checks, synthetic approval, backup restore, live service, fresh CLI context, cross-machine correction/readback, and bounded outage checks passed. [Evidence](docs/memory-acceptance.md#236-agent-connection-september-27).
 

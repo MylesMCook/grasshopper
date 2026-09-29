@@ -2,6 +2,18 @@
 
 Observed checks for Grasshopper releases. Synthetic checks and real-client observations are separate below.
 
+## 2.3.7 audit fixes (September 29)
+
+[Release](https://github.com/MylesMCook/grasshopper/releases/tag/v2.3.7) · [three-OS CI](https://github.com/MylesMCook/grasshopper/actions/runs/36557540608) · release commit `2e53204` · marketplace `0fe6ebf` · [LAB-216](https://linear.app/mcook/issue/LAB-216/fix-the-four-verified-grasshopper-thermos-audit-defects).
+
+- The four verified audit defects below are fixed. Tests, vet, four viewer regressions, and builds passed on macOS, Linux, and Windows CI; scoped race checks passed on Mac/Linux. All seven archives passed 280 embedded SHA-256 checks, and all eight GitHub asset digests matched local files. Marketplace executables retained their executable modes.
+- On Mac mini, macOS 27.0 (26A428), Go 1.27.1 ran the real pinned BGE ONNX tests using existing model/runtime files: inference, recall (top-1 7/8; top-3 8/8), reembedding/reopen, and immediate-write recall passed. This closes the model-test gap from the earlier local audit; real ONNX inference was not run on Linux or Windows.
+- The new backup tool made a consistent snapshot before cutover. A separate restored database ran under the packaged 2.3.7 server on a task-local loopback listener: SQLite integrity was `ok`, with 19 records, 49 revisions, and three client-token rows. Authenticated current record 8 and historical record 16 revision 1 matched the live baseline. Anonymous health returned 401. The restore process was stopped after verification; it never wrote the authoritative database.
+- The existing encrypted R2 backup procedure uploaded a fresh snapshot and passed its repository check. Original binaries/plist and the consistent snapshot remain under the service's backups folder. The first one-second startup probe triggered a binary rollback; a retry waited for readiness, reached the listener in 1.46 seconds, and passed all checks. The private Mac service now reports 2.3.7 on its existing loopback listener and Tailnet route. Local and Tailnet authenticated reads, historical reads, anonymous denial, and the new viewer script passed. The database kept its counts; master/device credentials and the launchd plist remained unchanged.
+- The public site passed Wrangler's dry run and deployed as `3a85db97-b6cf-4287-9ca2-45e4d0876222`. Curl checks returned 200 for home/setup/view and 404 for public MCP/private viewer paths. The existing public assets and routing configuration were retained; latest-release links point to 2.3.7.
+- The installed Mac Codex 2.3.7 cache matched all ten published plugin files. Cursor MCP and exactly one startup hook point to the new adjacent client package. Claude's local plugin reports 2.3.7. Client setup retained device credentials and the canonical policy; it normalized the shared policy path. Fresh read-only Codex 0.156.1 and Cursor Agent 2026.09.26-dd393fe turns returned confirmed record 8 revision 1 from startup context, with zero tool events. Logs and verification helpers are private task-local artifacts in `/Users/mylescook/Documents/Codex/2026-09-29-grasshopper-2.3.7-release/`.
+- Other machines were not updated. A fresh authenticated Mac Claude turn, desktop-app checks, reboot persistence, and full machine-loss recovery were not performed.
+
 ## Local audit repairs (September 29)
 
 [LAB-216](https://linear.app/mcook/issue/LAB-216/fix-the-four-verified-grasshopper-thermos-audit-defects) · branch `codex/thermos-audit-fixes` · baseline `6b0514b`. Codex Desktop on Mac mini, macOS 27.0 (26A428), Go 1.27.1, Node 26.9.0, and Playwright CLI 0.1.20. This is local repair evidence; the released 2.3.6 binaries and services were not changed.
