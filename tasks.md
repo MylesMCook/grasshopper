@@ -2,6 +2,10 @@
 
 Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
 
+## In review: memory view review and correction
+
+[LAB-222](https://linear.app/mcook/issue/LAB-222/let-the-owner-review-correct-and-understand-memories-in-the-memory): Claude Code · Mac mini · worktree `../grasshopper-worktrees/ux`. Five stacked PRs (#9 to #13) implement the owner-approved [scenarios](docs/memory-view-review.md): all-projects landing and complete previews, review/correct/confirm/archive/restore (the first browser write path), approval and status, startup preview, README order. Implemented and tested locally (Go tests/vet/race, 29 Node tests, real-browser checks on a synthetic server); three-OS CI runs on each PR. Not merged, released, deployed or run against the live database or native agents. Next action: owner review and merge in order, then a release with restored-copy rehearsal before any live cutover.
+
 ## Released connection reliability
 
 [LAB-221](https://linear.app/mcook/issue/LAB-221/make-device-connection-identity-and-recovery-deterministic): 2.6.0 is released/deployed, code `f16d921`, marketplace `68dc3ed`. Owner-approved [scenarios](docs/connection-flow.md) implement truthful host identity, read-only approval checks, one Windows profile default and explicit verified legacy migration. Local tests/vet/race, actual native Work HP synthetic cases, three-OS real-model CI, seven package/289 embedded hashes, eight published digests and restored-copy/rollback rehearsals pass. Host cutover preserves database counts, credentials, plist, model and routing. Mac Codex/Cursor/Claude and Work HP installed Codex/Cursor 2.6.0 bridge/startup-adapter probes pass. Laptop shared/default config now reports HPLT2MQ5360JD8 using the same approved credential; legacy files remain. Codex plugin upgrade emitted its existing cache-backup warning, but installed/enabled metadata and live 2.6.0 executable checks pass. No forced interruption or ACL change occurred. Public guidance is deployed. [Evidence](docs/memory-acceptance.md#260-connection-identity-and-recovery-september-29).

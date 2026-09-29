@@ -182,7 +182,7 @@ function stop(clearRecords = false) {
     notLoaded.hidden = true;
     viewCounts.review = viewCounts.archived = 0;
     showViewTabs();
-    summary.textContent = 'Connect to see what is saved.';
+    summary.textContent = 'Sign in to see what is saved.';
     updateProjectOptions([], false);
     updateDeviceOptions([], false);
     showManualProject();
@@ -504,7 +504,7 @@ async function loadRecord(revision = null) {
       body: JSON.stringify({ scope: selected.scope, id: selected.id, revision }),
       cache: 'no-store', credentials: 'same-origin', signal: controller.signal
     });
-    if (!response.ok) throw new Error(response.status === 401 ? 'Connection expired' : response.status === 404 ? 'Memory or revision not found' : 'Could not load memory');
+    if (!response.ok) throw new Error(response.status === 401 ? 'Session expired' : response.status === 404 ? 'Memory or revision not found' : 'Could not load memory');
     const record = await response.json();
     if (detailState !== selected || detailInFlight !== controller || !active) return;
     selected.revision = record.revision;
@@ -518,7 +518,7 @@ async function loadRecord(revision = null) {
     showActions();
   } catch (error) {
     if (detailState !== selected || detailInFlight !== controller) return;
-    if (error.message === 'Connection expired') { stop(true); setStatus('Connection expired', 'error'); return; }
+    if (error.message === 'Session expired') { stop(true); setStatus('Session expired', 'error'); return; }
     detailStatus.textContent = error.name === 'AbortError' ? 'Request timed out. Close and open this memory to retry.' : error.message;
   } finally {
     clearTimeout(timeout);
@@ -641,7 +641,7 @@ async function changeMemory(path, fields, done) {
       await done(data);
       return true;
     }
-    if (status === 401) { stop(true); setStatus('Connection expired', 'error'); return false; }
+    if (status === 401) { stop(true); setStatus('Session expired', 'error'); return false; }
     if (status === 409) { pendingWrite = null; showConflict(data?.current, data?.error); return false; }
     detailStatus.textContent = status === 400 ? 'This change is not valid. Check the text and try again.' : 'Could not save. Your text is still here; try again.';
     return false;
@@ -948,7 +948,7 @@ async function refresh() {
       credentials: 'same-origin',
       signal: controller.signal
     });
-    if (!response.ok) throw new Error(response.status === 401 ? 'Connection expired' : response.status === 400 ? 'Scope not recognized' : 'Service unavailable');
+    if (!response.ok) throw new Error(response.status === 401 ? 'Session expired' : response.status === 400 ? 'Scope not recognized' : 'Service unavailable');
     const page = await response.json();
     // A disconnected or replaced request must not redraw an older session.
     if (!active || inFlight !== controller) return;
@@ -972,9 +972,9 @@ async function refresh() {
   } catch (error) {
     if (inFlight !== controller) return;
     const message = error.name === 'AbortError' ? 'Request timed out' : error instanceof TypeError ? 'Service unavailable' : error.message;
-    if (message === 'Connection expired') stop(true);
+    if (message === 'Session expired') stop(true);
     setStatus(message, 'error');
-    summary.textContent = message === 'Connection expired' ? 'Connect again to see your memories.' : hasLoaded ? 'Showing the last results. Use Refresh to try again.' : 'No memories loaded. Use Refresh to try again.';
+    summary.textContent = message === 'Session expired' ? 'Sign in again to see your memories.' : hasLoaded ? 'Showing the last results. Use Refresh to try again.' : 'No memories loaded. Use Refresh to try again.';
   } finally {
     clearTimeout(timeout);
     if (inFlight === controller) inFlight = null;
@@ -1009,10 +1009,10 @@ form.addEventListener('submit', async event => {
   tokenInput.value = '';
   loggingIn = true;
   connectButton.disabled = true;
-  setStatus('Connecting');
+  setStatus('Signing in');
   try {
     const response = await sessionRequest('POST', bearer);
-    if (!response.ok) throw new Error(response.status === 401 ? 'Access token rejected' : 'Could not connect');
+    if (!response.ok) throw new Error(response.status === 401 ? 'Access token rejected' : 'Could not sign in');
     stop(true);
     approvalNotice.hidden = true;
     setConnected(true);
@@ -1030,12 +1030,12 @@ disconnectButton.addEventListener('click', async () => {
   disconnectButton.disabled = true;
   try {
     const response = await sessionRequest('DELETE');
-    if (!response.ok) throw new Error('Could not disconnect');
+    if (!response.ok) throw new Error('Could not sign out');
     stop(true);
-    setStatus('Not connected');
+    setStatus('Signed out');
   } catch (error) {
     disconnectButton.disabled = false;
-    setStatus('Could not disconnect. Try again when the service is available.', 'error');
+    setStatus('Could not sign out. Try again when the service is available.', 'error');
   }
 });
 
@@ -1047,7 +1047,7 @@ disconnectButton.addEventListener('click', async () => {
     if (session.connected && !loggingIn && !active) {
       approvalNotice.hidden = true;
       setConnected(true);
-      setStatus('Connecting');
+      setStatus('Signing in');
       summary.textContent = 'Loading memories…';
       refresh();
     } else if (approvalID && !session.connected) {

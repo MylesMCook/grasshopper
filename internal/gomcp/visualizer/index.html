@@ -12,7 +12,7 @@
 </head>
 <body>
   <main>
-    <header class="masthead"><span class="brand">GRASSHOPPER</span><div class="masthead-actions"><a href="https://usegrasshopper.com/">How it works</a><button id="disconnect" type="button" class="quiet" disabled hidden>Disconnect browser</button><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button></div></header>
+    <header class="masthead"><span class="brand">GRASSHOPPER</span><div class="masthead-actions"><a href="https://usegrasshopper.com/">How it works</a><button id="disconnect" type="button" class="quiet" disabled hidden>Sign out</button><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button></div></header>
     <section class="intro" aria-labelledby="page-title">
       <h1 id="page-title">Your memories.</h1>
       <p>Preferences, decisions, and handoffs shared with your agents.</p>
@@ -24,9 +24,9 @@
       <form id="connection-form" autocomplete="off">
         <div id="token-field" class="token-field">
           <label>Owner access token <input id="token" type="password" autocomplete="off" required spellcheck="false"></label>
-          <p>Use the owner token from the access token file the server printed at startup, not a device token. This browser stays connected for 30 days. Disconnect to forget it.</p>
+          <p>Use the owner token from the access token file the server printed at startup, not a device token. This browser stays signed in for 30 days. Sign out to forget it.</p>
         </div>
-        <div class="actions"><button id="connect" type="submit">Connect browser</button></div>
+        <div class="actions"><button id="connect" type="submit">Sign in</button></div>
       </form>
     </section>
 
@@ -56,7 +56,7 @@
         <label>Agent <select id="startup-agent"><option value="12000">Codex or Cursor · 12,000 bytes</option><option value="3000">Claude Code · 3,000 bytes</option></select></label>
         <p class="scope-note">This is what the server would send an agent at startup for the project, device and platform chosen above. Agents always send all three, so choose them for an exact match. It does not prove a running session received these memories; a fresh agent session is the real check. Claude Code also skips every record if its whole startup message would be too long.</p>
       </div>
-      <div class="results-heading"><div><p id="scope-summary" class="scope-summary" hidden></p><p id="summary" class="summary">Connect to see what is saved.</p></div><div class="results-actions"><span id="status" class="status" role="status" aria-live="polite">Not connected</span><button id="refresh" type="submit" form="connection-form" class="quiet" hidden>Refresh</button></div></div>
+      <div class="results-heading"><div><p id="scope-summary" class="scope-summary" hidden></p><p id="summary" class="summary">Sign in to see what is saved.</p></div><div class="results-actions"><span id="status" class="status" role="status" aria-live="polite">Signed out</span><button id="refresh" type="submit" form="connection-form" class="quiet" hidden>Refresh</button></div></div>
       <div id="omissions" class="omissions" hidden></div>
       <div id="records" class="records" aria-live="off"></div>
       <div id="not-loaded" class="not-loaded" hidden></div>
