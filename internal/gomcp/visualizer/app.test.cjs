@@ -4,7 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-function view() {
+function view(hash = '', connected = true) {
   const elements = new Map();
   const element = () => ({
     value: '', textContent: '', open: false, children: [], listeners: {},
@@ -27,7 +27,7 @@ function view() {
   const sandbox = {
     document: { getElementById: get, querySelector: get, createElement: element, createDocumentFragment: element },
     window: { addEventListener() {}, confirm: () => true, getSelection: () => null },
-    location: { origin: 'http://127.0.0.1', hash: '' },
+    location: { origin: 'http://127.0.0.1', hash },
     AbortController,
     setTimeout(fn, delay) { timers.set(++timerID, fn); timerDelays.set(timerID, delay); return timerID; },
     clearTimeout(id) { timers.delete(id); timerDelays.delete(id); },
@@ -41,8 +41,10 @@ function view() {
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8'), sandbox);
   const ui = vm.runInContext('({ refreshDevices, stop, setConnected, revokeDevice, refresh, draw, openMemory, loadRecord, closeMemory, restartMemoryView, chooseView })', sandbox);
-  ui.setConnected(true);
-  get('device-panel').open = true;
+  if (connected) {
+    ui.setConnected(true);
+    get('device-panel').open = true;
+  }
   return { ui, get, requests, timers, timerDelays, document: sandbox.document };
 }
 
@@ -52,7 +54,7 @@ function replyPair(v, start, devices = []) {
 }
 
 function deviceLabels(v) {
-  return v.get('connected-devices').children.map(row => row.children[0].textContent);
+  return v.get('connected-devices').children.map(row => row.children[0].children[0].textContent);
 }
 
 test('newer device refresh wins and owns the only polling timer', async () => {
@@ -405,4 +407,97 @@ test('choosing a list view asks the server for it and hides search', async () =>
   v.ui.chooseView('');
   assert.equal(v.get('search-form').hidden, false);
   assert.deepEqual(JSON.parse(v.requests.at(-1).options.body), { all_projects: true });
+});
+
+const request64 = 'a'.repeat(64);
+
+test('a pending request shows a prominent code, time left, and a primary Approve', async () => {
+  const v = view();
+  const refreshed = v.ui.refreshDevices();
+  v.requests[0].reply([{ request_id: request64, code: 'c0de42', device: 'work-hp', status: 'pending', expires_in: 272 }]);
+  v.requests[1].reply([]);
+  await refreshed;
+  const row = v.get('pending-devices').children[0];
+  const [approve, deny] = row.children[1].children;
+  assert.equal(row.children[0].children[0].textContent, 'work-hp wants to connect');
+  const detail = row.children[0].children[1];
+  assert.equal(detail.children[0], 'Code ');
+  assert.equal(detail.children[1].textContent, 'c0de42');
+  assert.equal(detail.children[2].textContent, ' · Expires in 5 min');
+  assert.equal(approve.className, '');
+  assert.equal(deny.className, 'quiet');
+  approve.listeners.click();
+  assert.deepEqual(JSON.parse(v.requests[2].options.body), { request_id: request64, code: 'c0de42', decision: 'approve' });
+});
+
+test('a poll updates the countdown in place and keeps unchanged rows for keyboard users', async () => {
+  const v = view();
+  const first = v.ui.refreshDevices();
+  v.requests[0].reply([{ request_id: request64, code: 'c0de42', device: 'work-hp', status: 'pending', expires_in: 100 }]);
+  v.requests[1].reply([{ id: 1, device: 'mac-mini', created_at: '2026-09-29T10:00:00Z' }]);
+  await first;
+  const pendingRow = v.get('pending-devices').children[0];
+  const connectedRow = v.get('connected-devices').children[0];
+  const second = v.ui.refreshDevices();
+  v.requests[2].reply([{ request_id: request64, code: 'c0de42', device: 'work-hp', status: 'pending', expires_in: 40 }]);
+  v.requests[3].reply([{ id: 1, device: 'mac-mini', created_at: '2026-09-29T10:00:00Z' }]);
+  await second;
+  assert.equal(v.get('pending-devices').children[0], pendingRow);
+  assert.equal(v.get('connected-devices').children[0], connectedRow);
+  assert.equal(pendingRow.children[0].children[1].children[2].textContent, ' · Expires in 40 s');
+  assert.match(connectedRow.children[0].children[1].children[0], /Connected/);
+});
+
+test('disconnecting asks in the page, survives a poll, and can be cancelled', async () => {
+  const v = view();
+  let asked = false;
+  const first = v.ui.refreshDevices();
+  v.requests[0].reply([]);
+  v.requests[1].reply([{ id: 4, device: 'old-laptop', created_at: '2026-09-01T10:00:00Z' }]);
+  await first;
+  v.get('connected-devices').children[0].children[1].children[0].listeners.click();
+  const ask = v.requests.length;
+  v.requests[ask - 2].reply([]);
+  v.requests[ask - 1].reply([{ id: 4, device: 'old-laptop', created_at: '2026-09-01T10:00:00Z' }]);
+  await new Promise(setImmediate);
+  let row = v.get('connected-devices').children[0];
+  assert.equal(row.children[0].children[0].textContent, 'Disconnect old-laptop?');
+  assert.deepEqual(row.children[1].children.map(button => button.textContent), ['Disconnect now', 'Keep']);
+  assert.equal(asked, false);
+  const next = v.ui.refreshDevices();
+  v.requests.at(-2).reply([]);
+  v.requests.at(-1).reply([{ id: 4, device: 'old-laptop', created_at: '2026-09-01T10:00:00Z' }]);
+  await next;
+  assert.equal(v.get('connected-devices').children[0], row);
+  row.children[1].children[0].listeners.click();
+  const removal = v.requests.at(-1);
+  assert.equal(removal.options.method, 'DELETE');
+  assert.deepEqual(JSON.parse(removal.options.body), { id: 4 });
+});
+
+test('opening an approval link while signed out offers sign-in and returns to the request', async () => {
+  const v = view('#connect=' + request64, false);
+  await tick();
+  assert.notEqual(v.get('token-field').hidden, true);
+  assert.notEqual(v.get('connect').hidden, true);
+  assert.equal(v.get('approval-notice').hidden, false);
+  assert.match(v.get('approval-notice').textContent, /Sign in as the owner/);
+  v.get('token').value = 'synthetic-owner-token-0123456789-abcdef';
+  v.get('connection-form').listeners.submit({ preventDefault() {} });
+  await tick();
+  await tick();
+  assert.equal(v.get('approval-notice').hidden, true);
+  assert.equal(v.get('device-panel').open, true);
+});
+
+test('the server line reports version, search model and counts', () => {
+  const v = view();
+  v.ui.stop(true);
+  v.ui.setConnected(true);
+  v.ui.refresh();
+  v.requests.at(-1).reply({ records: [], omitted: 0, devices: [], projects: [], server: { version: '2.7.0', model: 'granite-test', memories: 24, archived: 3 } });
+  return tick().then(() => {
+    assert.equal(v.get('server-status').textContent, 'Server 2.7.0 · meaning search granite-test · 24 memories, 3 archived');
+    assert.equal(v.get('server-status').hidden, false);
+  });
 });

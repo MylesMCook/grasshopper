@@ -307,7 +307,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	}))
 	var ownerReads map[string]http.HandlerFunc
 	if backend.Visualizer {
-		mux.HandleFunc("/visualizer/api/context", visualizerContext(backend.Store))
+		mux.HandleFunc("/visualizer/api/context", visualizerContext(backend.Store, version, backend.Model))
 		ownerReads = map[string]http.HandlerFunc{
 			"/visualizer/api/search":  visualizerSearch(backend, embedQuery),
 			"/visualizer/api/record":  visualizerRecord(backend.Store),

@@ -30,7 +30,7 @@
       </form>
     </section>
 
-    <section class="memory" aria-labelledby="memory-title">
+    <section id="memory-section" class="memory" aria-labelledby="memory-title">
       <h2 id="memory-title" class="visually-hidden">Saved memories</h2>
       <div id="browse-controls" class="browse-controls" hidden>
       <form id="search-form" class="search-form" hidden>
@@ -67,6 +67,7 @@
         <div id="connected-devices" class="device-list"></div>
       </div>
     </details>
+    <p id="server-status" class="server-status" role="status" hidden></p>
   </main>
   <dialog id="memory-dialog" aria-labelledby="memory-detail-title">
     <div class="detail-heading"><h2 id="memory-detail-title">Memory</h2><button id="close-memory" type="button" class="quiet">Close</button></div>

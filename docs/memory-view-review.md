@@ -10,7 +10,7 @@ confirmation unchanged. The first-memory exercise is static guidance.
 | --- | --- | --- |
 | 1. Landing scope and list polish | Landing shows everything | Implemented |
 | 2. Review and correction | Review queue, correct, conflict, archive and restore, write authorization | Implemented |
-| 3. Approval, devices and status | Approve a device safely, server status | Planned |
+| 3. Approval, devices and status | Approve a device safely, server status | Implemented |
 | 4. Startup preview | Preview what an agent receives | Planned |
 | 5. Documentation | README and setup trimmed to the user path | Planned |
 
@@ -108,3 +108,20 @@ Feature: Owner reviews and corrects memories in the memory view
   Counts for it and for Archived appear on the tabs.
 - Tests: `internal/gomcp/visualizer_correct_test.go`,
   `visualizer/app.test.cjs`. Agent context and the five MCP tools are unchanged.
+
+## Slice 3 evidence and decisions
+
+- A pending request shows the device, a large code, the time left and a filled
+  **Approve** beside a quiet **Deny**. The server reports `expires_in` seconds
+  so the browser needs no synchronized clock. The countdown updates in place.
+- Opening an approval link while signed out now offers owner sign-in and lands
+  on the same request. The panel moves above the memory list for a request.
+- Device polling no longer rebuilds unchanged rows, so keyboard focus on
+  Approve or Disconnect is not lost every five seconds. Disconnect asks in the
+  page (and survives a poll) instead of a browser dialog.
+- Connected devices show when they connected. Nicknames need a schema change
+  and are not included.
+- The status line reports server version, the embedding model (or "wording
+  search only") and total active and archived memories. Backup status is not
+  shown, by decision: the server does not know about the off-host job.
+- Tests: `visualizer_status_test.go`, `visualizer/app.test.cjs`.

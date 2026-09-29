@@ -53,6 +53,7 @@ const saveEdit = document.getElementById('save-edit');
 const conflictPanel = document.getElementById('conflict');
 const conflictNote = document.getElementById('conflict-note');
 const conflictText = document.getElementById('conflict-text');
+const serverStatus = document.getElementById('server-status');
 connectionPrompt.textContent = `Connect Grasshopper to ${location.origin}/visualizer/`;
 function requestFromHash() { return /^#connect=([0-9a-f]{64})$/.exec(location.hash)?.[1] || ''; }
 let approvalID = requestFromHash();
@@ -158,8 +159,10 @@ function stop(clearRecords = false) {
   if (inFlight) inFlight.abort();
   inFlight = null;
   stopDeviceRefresh();
+  resetDeviceRows();
   closeMemory();
   devicePanel.hidden = true;
+  serverStatus.hidden = true;
   if (clearRecords) {
     records.replaceChildren();
     omissions.hidden = true;
@@ -182,7 +185,10 @@ function stop(clearRecords = false) {
   }
 }
 
+// A connection request is time-limited, so its panel moves above the memory
+// list instead of waiting at the bottom of a long page.
 function openDevicePanel() {
+  if (approvalID) document.getElementById('memory-section')?.before?.(devicePanel);
   if (devicePanel.open) refreshDevices();
   else devicePanel.open = true; // The toggle event starts its first refresh.
 }
@@ -204,7 +210,12 @@ window.addEventListener('hashchange', () => {
   }
 });
 
-devicePanel.addEventListener('toggle', refreshDevices);
+devicePanel.addEventListener('toggle', () => { if (!devicePanel.open) resetDeviceRows(); refreshDevices(); });
+
+function resetDeviceRows() {
+  deviceSignature = '';
+  confirmingDevice = null;
+}
 
 function stopDeviceRefresh() {
   clearTimeout(deviceTimer);
@@ -213,23 +224,75 @@ function stopDeviceRefresh() {
   deviceInFlight = null;
 }
 
-function deviceRow(text, buttons = []) {
+// Buttons are [caption, action, primary]. Only a primary button is filled;
+// approving a connection is the one decision that should stand out.
+function deviceRow(text, buttons = [], detail = null) {
   const row = document.createElement('div');
   row.className = 'device-entry';
-  const label = document.createElement('p');
-  label.textContent = text;
+  const label = document.createElement('div');
+  label.className = 'device-label';
+  const name = document.createElement('p');
+  name.textContent = text;
+  label.append(name);
+  if (detail) label.append(detail);
+  row.append(label, deviceActions(buttons));
+  return row;
+}
+
+function deviceActions(buttons) {
   const actions = document.createElement('div');
   actions.className = 'device-actions';
-  for (const [caption, action] of buttons) {
+  for (const [caption, action, primary] of buttons) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'quiet';
+    button.className = primary ? '' : 'quiet';
     button.textContent = caption;
     button.addEventListener('click', action);
     actions.append(button);
   }
-  row.append(label, actions);
-  return row;
+  return actions;
+}
+
+function detailLine(...parts) {
+  const line = document.createElement('p');
+  line.className = 'device-detail';
+  line.append(...parts);
+  return line;
+}
+
+function timeLeft(seconds) {
+  if (typeof seconds !== 'number') return '';
+  if (seconds <= 0) return 'Expiring now';
+  return seconds >= 90 ? `Expires in ${Math.ceil(seconds / 60)} min` : `Expires in ${seconds} s`;
+}
+
+// Devices are polled, so a row must not be rebuilt (and lose keyboard focus)
+// unless something visible changed. Only the countdown updates in place.
+let deviceSignature = '';
+let confirmingDevice = null;
+let expiryNodes = new Map();
+
+function pendingRow(request) {
+  const isPending = request.status === 'pending';
+  const code = document.createElement('code');
+  code.className = 'pairing-code';
+  code.textContent = request.code;
+  const expiry = document.createElement('span');
+  expiry.textContent = isPending ? ` · ${timeLeft(request.expires_in)}` : ` · ${request.status}`;
+  expiryNodes.set(request.request_id, expiry);
+  return deviceRow(isPending ? `${request.device} wants to connect` : request.device,
+    isPending ? [['Approve', () => decidePairing(request, 'approve'), true], ['Deny', () => decidePairing(request, 'deny')]] : [],
+    detailLine('Code ', code, expiry));
+}
+
+function connectedRow(device) {
+  const created = new Date(device.created_at);
+  const detail = Number.isNaN(created.getTime()) ? null : detailLine(`Connected ${created.toLocaleDateString()}`);
+  if (confirmingDevice === device.id) {
+    const row = deviceRow(`Disconnect ${device.device}?`, [['Disconnect now', () => revokeDevice(device), true], ['Keep', () => { confirmingDevice = null; deviceSignature = ''; refreshDevices(); }]], detailLine('Its agent loses access immediately.'));
+    return row;
+  }
+  return deviceRow(device.device, [['Disconnect', () => { confirmingDevice = device.id; deviceSignature = ''; refreshDevices(); }]], detail);
 }
 
 async function deviceRequest(path, method = 'GET', body, controller = new AbortController()) {
@@ -258,7 +321,7 @@ async function decidePairing(request, decision) {
 }
 
 async function revokeDevice(device) {
-  if (!window.confirm(`Disconnect ${device.device}? Its agent will lose access immediately.`)) return;
+  confirmingDevice = null;
   try {
     await deviceRequest('/visualizer/api/devices', 'DELETE', { id: device.id });
     deviceStatus.textContent = `${device.device} disconnected.`;
@@ -279,16 +342,30 @@ async function refreshDevices() {
       deviceRequest('/visualizer/api/devices', 'GET', undefined, controller)
     ]);
     if (!active || !devicePanel.open || deviceInFlight !== controller) return;
-    pendingDevices.replaceChildren(...pending.map(request => {
-      const row = deviceRow(`${request.device} · code ${request.code} · ${request.status}`,
-        request.status === 'pending' ? [['Approve', () => decidePairing(request, 'approve')], ['Deny', () => decidePairing(request, 'deny')]] : []);
+    const connected = devices.filter(device => !device.revoked_at);
+    const signature = JSON.stringify([pending.map(request => [request.request_id, request.code, request.device, request.status]), connected.map(device => [device.id, device.device, device.created_at]), confirmingDevice, approvalID]);
+    if (signature !== deviceSignature) {
+      deviceSignature = signature;
+      expiryNodes = new Map();
+      pendingDevices.replaceChildren(...pending.map(request => {
+        const row = pendingRow(request);
+        if (request.request_id === approvalID) {
+          row.classList.add('focused-request');
+          row.tabIndex = -1;
+        }
+        return row;
+      }));
+      connectedDevices.replaceChildren(...connected.map(connectedRow));
+      if (!pending.length) pendingDevices.replaceChildren(deviceRow('No connection requests waiting.'));
+      if (!connected.length) connectedDevices.replaceChildren(deviceRow('No other devices connected.'));
+    }
+    for (const request of pending) {
+      const node = expiryNodes.get(request.request_id);
+      if (node && request.status === 'pending') node.textContent = ` · ${timeLeft(request.expires_in)}`;
       if (request.request_id === approvalID) {
-        row.classList.add('focused-request');
-        row.tabIndex = -1;
         deviceStatus.textContent = request.status === 'pending' ? `Check ${request.device} and code ${request.code} before approving.` : `${request.device} · ${request.status}.`;
       }
-      return row;
-    }));
+    }
     if (approvalID && !approvalFocused) {
       const focused = pendingDevices.querySelector('.focused-request');
       if (focused) {
@@ -297,13 +374,9 @@ async function refreshDevices() {
         focused.scrollIntoView({ block: 'center' });
       }
     }
-    const connected = devices.filter(device => !device.revoked_at);
-    connectedDevices.replaceChildren(...connected.map(device => deviceRow(device.device, [['Disconnect', () => revokeDevice(device)]])));
     if (approvalID && !pending.some(request => request.request_id === approvalID)) {
       deviceStatus.textContent = 'This request is no longer available. Ask the agent to connect again.';
     }
-    if (!pending.length) pendingDevices.replaceChildren(deviceRow('No connection requests waiting.'));
-    if (!connected.length) connectedDevices.replaceChildren(deviceRow('No other devices connected.'));
     if (deviceStatus.textContent === 'Device controls unavailable. Memory view still works.') deviceStatus.textContent = '';
   } catch {
     if (deviceInFlight === controller) deviceStatus.textContent = 'Device controls unavailable. Memory view still works.';
@@ -642,6 +715,14 @@ function chooseView(name) {
   restartMemoryView();
 }
 
+function updateServerStatus(info) {
+  if (!info) return;
+  const search = info.model ? `meaning search ${info.model}` : 'wording search only';
+  const text = `Server ${info.version} · ${search} · ${info.memories} ${info.memories === 1 ? 'memory' : 'memories'}${info.archived ? `, ${info.archived} archived` : ''}`;
+  if (serverStatus.textContent !== text) serverStatus.textContent = text;
+  serverStatus.hidden = !active;
+}
+
 function updateViewCounts(page) {
   if (page.review_count === undefined) return;
   viewCounts.review = page.review_count;
@@ -814,6 +895,7 @@ async function refresh() {
     updateProjectOptions(page.projects);
     updateDeviceOptions(page.devices);
     updateViewCounts(page);
+    updateServerStatus(page.server);
     draw(page);
     setStatus(searchQuery ? page.semantic_ready ? 'Search results' : 'Wording matches only · meaning search unavailable' : 'Live', 'live');
     // Browsing follows live writes. Search runs on submission or explicit refresh,
@@ -864,6 +946,7 @@ form.addEventListener('submit', async event => {
     const response = await sessionRequest('POST', bearer);
     if (!response.ok) throw new Error(response.status === 401 ? 'Access token rejected' : 'Could not connect');
     stop(true);
+    approvalNotice.hidden = true;
     setConnected(true);
     summary.textContent = 'Loading memories…';
     refresh();
@@ -900,11 +983,9 @@ disconnectButton.addEventListener('click', async () => {
       summary.textContent = 'Loading memories…';
       refresh();
     } else if (approvalID && !session.connected) {
-      tokenField.hidden = true;
-      connectButton.hidden = true;
       approvalNotice.hidden = false;
-      approvalNotice.textContent = 'Open this link in your already-connected memory view to approve the agent. Do not give the agent your access token.';
-      setStatus('Approval needs your connected browser');
+      approvalNotice.textContent = 'An agent is asking to connect. Sign in as the owner to review the device and code, then approve or deny. Never give the agent your access token.';
+      setStatus('Sign in to review the connection request');
     }
   } catch {
     if (!loggingIn && !active) setStatus('Service unavailable', 'error');

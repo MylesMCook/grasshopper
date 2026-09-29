@@ -176,7 +176,15 @@ func visualizerDevices(ctx context.Context, store *gomemory.Writer, devices []st
 	return slices.Compact(devices), nil
 }
 
-func visualizerContext(store *gomemory.Writer) http.HandlerFunc {
+// serverInfo is what the owner's view reports about the running service.
+type serverInfo struct {
+	Version  string `json:"version"`
+	Model    string `json:"model"`
+	Active   int    `json:"memories"`
+	Archived int    `json:"archived"`
+}
+
+func visualizerContext(store *gomemory.Writer, version, model string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -211,6 +219,10 @@ func visualizerContext(store *gomemory.Writer) http.HandlerFunc {
 		if err == nil {
 			review, archived, err = store.BrowseCounts(r.Context(), scope)
 		}
+		info := serverInfo{Version: version, Model: model}
+		if err == nil {
+			info.Active, info.Archived, err = store.Totals(r.Context())
+		}
 		if err != nil {
 			http.Error(w, "context unavailable", http.StatusServiceUnavailable)
 			return
@@ -223,7 +235,8 @@ func visualizerContext(store *gomemory.Writer) http.HandlerFunc {
 			OmittedTitles map[int64]string `json:"omitted_titles"`
 			Review        int              `json:"review_count"`
 			Archived      int              `json:"archived_count"`
-		}{page, devices, projects, titles, review, archived})
+			Server        serverInfo       `json:"server"`
+		}{page, devices, projects, titles, review, archived, info})
 	}
 }
 
