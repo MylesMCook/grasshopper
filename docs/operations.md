@@ -16,7 +16,7 @@ Do not copy the secret into this repository.
    binary and plist. The generic snapshot command is in the [README](../README.md#back-up-and-update-the-server).
 2. Stop only the Grasshopper job. For the 2.4.0 model upgrade, re-embed a new
    shadow copy with the packaged migration binary and retain the BGE database.
-   Replace the binary, model path, and verified database; validate the plist and
+   Replace the binary, model and tokenizer paths, and verified database; validate the plist and
    start one writer against the same credentials and route. Check anonymous
    `/healthz` is rejected, authenticated health works, and a known memory and
    earlier revision are readable.

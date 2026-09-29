@@ -1,5 +1,5 @@
 // Restore pinned public model/runtime assets into an ignored, task-local folder.
-import {createHash} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import {createReadStream, createWriteStream} from 'node:fs';
 import {appendFile, mkdir, rename, rm} from 'node:fs/promises';
 import {resolve, join} from 'node:path';
@@ -19,7 +19,7 @@ async function restore(url, path, expected) {
   try { if (await digest(path) === expected) return; } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  const temporary = path + '.download';
+  const temporary = `${path}.${randomUUID()}.download`;
   try {
     const response = await fetch(url, {signal: AbortSignal.timeout(180000)});
     if (!response.ok) throw new Error(`Download failed: ${response.status} ${url}`);
