@@ -369,18 +369,15 @@ func TestMCPStalledInferenceHasBoundedFailure(t *testing.T) {
 	}
 }
 
-func TestMCPRealBGEImmediateRecall(t *testing.T) {
-	root := os.Getenv("GRASSHOPPER_BGE_TEST_ROOT")
+func TestMCPRealGraniteImmediateRecall(t *testing.T) {
+	root := os.Getenv("GRASSHOPPER_EMBED_TEST_ROOT")
 	if root == "" {
-		t.Skip("set GRASSHOPPER_BGE_TEST_ROOT for real ONNX MCP test")
+		t.Skip("set GRASSHOPPER_EMBED_TEST_ROOT for real ONNX MCP test")
 	}
-	library := filepath.Join(root, "go-probe", "onnxruntime-osx-arm64-1.30.0", "lib", "libonnxruntime.dylib")
-	if configured := os.Getenv("GRASSHOPPER_ONNX_RUNTIME_LIBRARY"); configured != "" {
-		library = configured
-	}
-	model := filepath.Join(root, "models", "bge-small-en-v1.5", "onnx", "model.onnx")
-	tokenizer := filepath.Join(root, "models", "bge-small-en-v1.5", "tokenizer.json")
-	embedder, err := goembed.NewBGE(library, model, tokenizer)
+	library := os.Getenv("GRASSHOPPER_ONNX_RUNTIME_LIBRARY")
+	model := filepath.Join(root, "model.onnx")
+	tokenizer := filepath.Join(root, "tokenizer.json")
+	embedder, err := goembed.NewGranite(library, model, tokenizer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +387,7 @@ func TestMCPRealBGEImmediateRecall(t *testing.T) {
 		}
 	}()
 	source := filepath.Join("..", "..", "tests", "fixtures", "go-compat", "memory.db")
-	w, err := gomemory.OpenWritableCopy(context.Background(), source, filepath.Join(t.TempDir(), "mcp-bge-copy.db"))
+	w, err := gomemory.OpenWritableCopy(context.Background(), source, filepath.Join(t.TempDir(), "mcp-granite-copy.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +402,7 @@ func TestMCPRealBGEImmediateRecall(t *testing.T) {
 	project := "id:project-c"
 	scope := gomemory.Scope{Project: &project}
 	content := "Use pnpm for JavaScript packages in project C. " + strings.Repeat("This synthetic decision is scoped to project C. ", 5) + "Only for this compatibility probe."
-	stored := decodeResult[storeOutput](t, call(t, session, "store", gomemory.WriteInput{Scope: scope, Content: content, Purpose: "decision", Confirmed: true, Provenance: gomemory.Provenance{Harness: "codex", Device: "synthetic-mac", Source: "real BGE MCP probe"}, RequestID: "mcp-real-bge"}))
+	stored := decodeResult[storeOutput](t, call(t, session, "store", gomemory.WriteInput{Scope: scope, Content: content, Purpose: "decision", Confirmed: true, Provenance: gomemory.Provenance{Harness: "codex", Device: "synthetic-mac", Source: "real Granite MCP probe"}, RequestID: "mcp-real-granite"}))
 	if !stored.SemanticReady || stored.ID < 7 {
 		t.Fatalf("model-backed store: %+v", stored)
 	}
@@ -421,10 +418,21 @@ func TestMCPRealBGEImmediateRecall(t *testing.T) {
 	}
 	searched := decodeResult[searchOutput](t, call(t, session, "search", map[string]any{"scope": map[string]any{"project": project}, "query": query}))
 	if !searched.SemanticReady || len(searched.Results.Records) == 0 || searched.Results.Records[0].ID != stored.ID {
-		t.Fatalf("new BGE record not recalled via MCP: %+v", searched)
+		t.Fatalf("new Granite record not recalled via MCP: %+v", searched)
 	}
 	full := decodeResult[gomemory.Record](t, call(t, session, "get", map[string]any{"scope": map[string]any{"project": project}, "id": stored.ID}))
 	if full.Content != content || !strings.Contains(full.Content, "Only for this compatibility probe.") {
 		t.Fatalf("full qualification missing: %+v", full)
+	}
+	// A maximum-size write must finish under the unchanged inference deadline
+	// and keep its full text even though its embedding is bounded.
+	longContent := strings.Repeat("a ", 16384)
+	longStored := decodeResult[storeOutput](t, call(t, session, "store", gomemory.WriteInput{Scope: scope, Content: longContent, Purpose: "observation", Provenance: gomemory.Provenance{Harness: "native-test", Device: "synthetic", Source: "maximum-size write"}, RequestID: "mcp-granite-long"}))
+	if !longStored.SemanticReady {
+		t.Fatalf("maximum-size write not searchable: %+v", longStored)
+	}
+	longFull := decodeResult[gomemory.Record](t, call(t, session, "get", map[string]any{"scope": scope, "id": longStored.ID}))
+	if longFull.Content != longContent {
+		t.Fatal("maximum-size write lost text")
 	}
 }

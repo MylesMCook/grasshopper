@@ -1,6 +1,10 @@
 # Grasshopper release state
 
-Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
+Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `codex/granite-recall-release`.
+
+## Active model upgrade
+
+[LAB-217](https://linear.app/mcook/issue/LAB-217/improve-memory-recall-with-a-verified-model-upgrade-and-reversible): Granite small English R2 is implemented for 2.4.0 with graph/weights/tokenizer pins and a 1024-token CPU bound; API and hybrid rules remain. User authorized choosing the best verified option and completing release/deployment. Baseline `7b6b926`; production remains BGE 2.3.7. Mac tests, vet, race checks, real ONNX/MCP maximum-size writes, and an extracted native archive passed. Frozen synthetic hybrid recall is 122/160 top-1 and 143/160 top-3; long handoffs improve from BGE's 2/8 and 3/8 to 7/8 and 8/8. A private shadow preserved 20 records, 51 revisions/receipts, and three token rows; 16 labeled queries improve from 12 to 13 top-1, with 16/16 top-3 and no boundary leaks. Evidence: `docs/embedding-model.md` and private task-local `2026-09-29-grasshopper-model-comparison/results/private-shadow.json`. Next: Thermos review, native three-OS CI, then verified package release and reversible live cutover.
 
 ## Released audit fixes
 

@@ -302,13 +302,13 @@ func run() error {
 	flag.StringVar(&windowsClient, "client-windows", "", "Windows amd64 client for marketplace")
 	flag.StringVar(&linuxClient, "client-linux", "", "Linux amd64 client for marketplace")
 	flag.StringVar(&target, "target", "", "client plugin target: darwin-arm64, windows-amd64, or linux-amd64")
-	flag.StringVar(&version, "plugin-version", "2.3.7", "client plugin version")
+	flag.StringVar(&version, "plugin-version", "2.4.0", "client plugin version")
 	flag.StringVar(&server, "server", "", "native server binary")
 	flag.StringVar(&backup, "backup", "", "backup executable")
 	flag.StringVar(&migrate, "migrate", "", "migration executable")
 	flag.StringVar(&library, "onnx-library", "", "ONNX Runtime shared library")
-	flag.StringVar(&model, "model", "", "pinned BGE model.onnx")
-	flag.StringVar(&tokenizer, "tokenizer", "", "pinned BGE tokenizer.json")
+	flag.StringVar(&model, "model", "", "pinned Granite model.onnx")
+	flag.StringVar(&tokenizer, "tokenizer", "", "pinned Granite tokenizer.json")
 	flag.StringVar(&runtimeLicense, "onnx-license", "", "ONNX Runtime LICENSE")
 	flag.StringVar(&runtimeNotices, "onnx-notices", "", "ONNX Runtime ThirdPartyNotices.txt")
 	flag.Parse()
@@ -347,13 +347,16 @@ func run() error {
 		{"bin/grasshopper-backup" + exe, backup},
 		{"bin/grasshopper-migrate" + exe, migrate},
 		{lib, library},
-		{"models/bge-small-en-v1.5/model.onnx", model},
-		{"models/bge-small-en-v1.5/tokenizer.json", tokenizer},
+		{"models/granite-embedding-small-english-r2/model.onnx", model},
+		{"models/granite-embedding-small-english-r2/model.onnx_data", filepath.Join(filepath.Dir(model), "model.onnx_data")},
+		{"models/granite-embedding-small-english-r2/tokenizer.json", tokenizer},
 		{"licenses/Grasshopper-LICENSE", "LICENSE"},
 		{"licenses/ONNX-Runtime-LICENSE", runtimeLicense},
 		{"licenses/ONNX-Runtime-ThirdPartyNotices.txt", runtimeNotices},
-		{"licenses/BGE-NOTICE.txt", "docs/BGE-NOTICE.txt"},
+		{"licenses/Granite-NOTICE.txt", "docs/Granite-NOTICE.txt"},
+		{"licenses/Granite-LICENSE", "docs/Granite-LICENSE"},
 		{"README.md", "README.md"},
+		{"docs/embedding-model.md", "docs/embedding-model.md"},
 		{"docs/fonts/OFL-newsreader.txt", "docs/fonts/OFL-newsreader.txt"},
 		{"docs/fonts/OFL-geist-mono.txt", "docs/fonts/OFL-geist-mono.txt"},
 		{"integrations/client.example.json", "integrations/client.example.json"},

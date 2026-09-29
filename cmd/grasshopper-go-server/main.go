@@ -66,9 +66,9 @@ func quickstartFiles(executable string) (library, model, tokenizer string, err e
 		return "", "", "", errors.New("quickstart is unavailable on this operating system")
 	}
 	library = filepath.Join(root, "runtime", libraryName)
-	model = filepath.Join(root, "models", "bge-small-en-v1.5", "model.onnx")
-	tokenizer = filepath.Join(root, "models", "bge-small-en-v1.5", "tokenizer.json")
-	for _, path := range []string{library, model, tokenizer} {
+	model = filepath.Join(root, "models", "granite-embedding-small-english-r2", "model.onnx")
+	tokenizer = filepath.Join(root, "models", "granite-embedding-small-english-r2", "tokenizer.json")
+	for _, path := range []string{library, model, filepath.Join(filepath.Dir(model), "model.onnx_data"), tokenizer} {
 		info, statErr := os.Stat(path)
 		if statErr != nil || !info.Mode().IsRegular() {
 			return "", "", "", fmt.Errorf("bundle file missing: %s", path)
@@ -154,8 +154,8 @@ func run() error {
 	flag.BoolVar(&visualizer, "visualizer", false, "serve optional read-only live memory view at /visualizer/")
 	flag.StringVar(&visualizerStyleHashes, "visualizer-style-hashes", "", "comma-separated SHA-256 hashes for optional browser annotation styles")
 	flag.StringVar(&library, "onnx-library", "", "local ONNX Runtime shared library")
-	flag.StringVar(&model, "model", "", "pinned BGE ONNX model")
-	flag.StringVar(&tokenizer, "tokenizer", "", "pinned BGE tokenizer.json")
+	flag.StringVar(&model, "model", "", "pinned Granite ONNX model")
+	flag.StringVar(&tokenizer, "tokenizer", "", "pinned Granite tokenizer.json")
 	flag.StringVar(&tokenFile, "token-file", "", "private bearer token file")
 	flag.StringVar(&listen, "listen", "127.0.0.1:8106", "loopback listen address")
 	flag.StringVar(&allowedProxyHost, "allowed-proxy-host", "", "exact HTTPS proxy Host, including port")
@@ -204,7 +204,7 @@ func run() error {
 			return err
 		}
 	}
-	embedder, err := goembed.NewBGE(library, model, tokenizer)
+	embedder, err := goembed.NewGranite(library, model, tokenizer)
 	if err != nil {
 		return err
 	}

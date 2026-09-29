@@ -14,8 +14,10 @@ Do not copy the secret into this repository.
 1. Inspect the launchd job, local listener, Tailscale Serve route, and recent
    logs. Verify a restored backup, not just a backup file. Save the current
    binary and plist. The generic snapshot command is in the [README](../README.md#back-up-and-update-the-server).
-2. Stop only the Grasshopper job. Replace its binary, validate the plist, and
-   start one writer against the same database and route. Check anonymous
+2. Stop only the Grasshopper job. For the 2.4.0 model upgrade, re-embed a new
+   shadow copy with the packaged migration binary and retain the BGE database.
+   Replace the binary, model and tokenizer paths, and verified database; validate the plist and
+   start one writer against the same credentials and route. Check anonymous
    `/healthz` is rejected, authenticated health works, and a known memory and
    earlier revision are readable.
 3. If the new binary fails, stop it and restore the saved binary and plist.

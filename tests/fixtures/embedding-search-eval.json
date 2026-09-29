@@ -1,0 +1,2891 @@
+{
+  "description": "Two separate frozen synthetic corpora from the model comparison. No real personal memories. See docs/embedding-model.md.",
+  "corpora": [
+    {
+      "description": "Hand-authored synthetic memory retrieval diagnostic; frozen before model scoring. Not production data or a general model leaderboard.",
+      "documents": [
+        {
+          "id": 1,
+          "text": "Repository uses Bun to install JavaScript dependencies; npm is not supported for this project.",
+          "title": "",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "id": 2,
+          "text": "Encrypted database backups run every Tuesday at 02:00 and are retained for thirty days.",
+          "title": "",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "id": 3,
+          "text": "The memory service listens only on loopback; remote access must pass through the private VPN.",
+          "title": "",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "id": 4,
+          "text": "The mobile app forces dark mode, but desktop appearance follows the operating system theme.",
+          "title": "",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "id": 5,
+          "text": "Search combines FTS5 keyword results with cosine similarity over normalized embeddings.",
+          "title": "",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "id": 6,
+          "text": "If model inference fails, the service returns keyword search results after a short timeout.",
+          "title": "",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "id": 7,
+          "text": "A successful restore drill is required before deleting any older backup snapshots.",
+          "title": "",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "id": 8,
+          "text": "Use semantic HTML controls so keyboard users can reach every action.",
+          "title": "",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "id": 9,
+          "title": "Package restoration",
+          "text": "Restore JavaScript packages with pnpm using the checked-in lockfile. Adding a new dependency requires owner approval.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 10,
+          "title": "Canonical instructions",
+          "text": "Keep one canonical AGENTS.md shared by all coding assistants. Do not create separate Claude or Cursor instruction files.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 11,
+          "title": "Synthetic database tests",
+          "text": "Run experiments against fabricated records or an isolated database copy. Never test deletes against the authoritative memory database.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 12,
+          "title": "Reboot permission",
+          "text": "Rebooting or shutting down the shared machine requires explicit approval from its owner, even when an update recommends it.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 13,
+          "title": "Local process restart",
+          "text": "The assistant may stop and restart a temporary development server it started for the current task. Shared background services need owner approval.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 14,
+          "title": "Backup retention",
+          "text": "Keep daily encrypted snapshots for fourteen days. Keep monthly encrypted snapshots for one year.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 15,
+          "title": "Backup schedule",
+          "text": "The synthetic memory backup job starts at 03:15 UTC every day. The nightly report email is sent at 04:00 UTC.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 16,
+          "title": "Restore verification",
+          "text": "Backup success means a consistent snapshot was restored and queried successfully. Merely seeing a backup file does not prove recoverability.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 17,
+          "title": "Restore rehearsal",
+          "text": "A restore drill must run before any older snapshots are pruned. Rehearse using an isolated destination so the live store remains available.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 18,
+          "title": "SQLite consistency",
+          "text": "Use SQLite VACUUM INTO for a consistent snapshot while WAL is active. Copying only memory.db can omit recent committed transactions.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 19,
+          "title": "Temporary snapshot permissions",
+          "text": "Create a private temporary snapshot with mode 0600 and keep that mode throughout copying. Changing permissions after completion leaves an exposure window.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 20,
+          "title": "No-overwrite publication",
+          "text": "Publishing a backup must fail when the destination exists. It must never replace an earlier recovery file with the same name.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 21,
+          "title": "Private listener",
+          "text": "The memory API binds to 127.0.0.1. Another device reaches it through the approved private VPN route.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 22,
+          "title": "Public setup",
+          "text": "The public website provides installation instructions and a setup form. Memory tools and device approval pages stay on the private authenticated endpoint.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 23,
+          "title": "Stateless clients",
+          "text": "Agent clients forward requests to one authenticated memory server. They do not maintain writable local memory databases.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 24,
+          "title": "Five tools",
+          "text": "The remote memory API supports context, store, search, get, and archive. It cannot crawl or index files on the server.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 25,
+          "title": "Unresolved project identity",
+          "text": "Without a durable project ID or a sanitized Git remote, project identity is unresolved. Do not silently treat project-specific information as global.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 26,
+          "title": "Credential-free project ID",
+          "text": "A project key is id:<durable-id> or git:<host/repository>. Strip URL credentials and query parameters; filesystem paths are not stable project identities.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 27,
+          "title": "Device scope",
+          "text": "A keyboard mapping for fixture-mac belongs to the device scope. A preference intended for every machine belongs to explicit global scope.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 28,
+          "title": "OS scope",
+          "text": "Operating-system memory uses macos, windows, or linux. Darwin and win32 are not valid platform labels.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 29,
+          "title": "Expected revision conflict",
+          "text": "A correction must include the current expected revision. On revision_conflict, read the latest record, reconcile, and submit a new correction.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 30,
+          "title": "Uncertain write replay",
+          "text": "If a save times out, retry only with the same request ID and exactly the same payload. A changed payload requires a new logical request.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 31,
+          "title": "Save acknowledgement",
+          "text": "An acknowledged memory ID and revision prove the save. Do not fetch the record again routinely just to verify an acknowledged write.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 32,
+          "title": "History preservation",
+          "text": "Correcting a memory creates a new revision. Earlier contents remain inspectable; restoring an older version also creates a new revision.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 33,
+          "title": "Confirmed preferences",
+          "text": "Only explicit user statements or accepted decisions can be confirmed. An observation from a tool cannot replace a confirmed preference with unconfirmed content.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 34,
+          "title": "Reversible archive",
+          "text": "Archiving hides a record from ordinary context and search but preserves revision history. An authorized unarchive restores visibility.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 35,
+          "title": "Immediate searchability",
+          "text": "A newly stored memory is searchable immediately. There is no overnight batch job or delayed vector indexing stage.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 36,
+          "title": "Keyword fallback",
+          "text": "When embedding inference fails, return lexical FTS results and report semantic recall as unavailable. Do not claim that the vector path succeeded.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 37,
+          "title": "Context ordering",
+          "text": "Startup context prioritizes confirmed preferences, then accepted decisions, handoffs, and other knowledge. Newness alone does not displace a stable preference.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 38,
+          "title": "Omission bookkeeping",
+          "text": "When context exceeds its byte budget, return omission counts plus omitted record IDs and revisions. Never present a partial excerpt as a full record.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 39,
+          "title": "Missing token",
+          "text": "Requests without a valid bearer token are rejected before tool dispatch. A missing token gets HTTP 401.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 40,
+          "title": "Device revocation",
+          "text": "Revoking a device credential prevents later memory requests from that client. Other approved devices retain their independent credentials.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 41,
+          "title": "One editor",
+          "text": "Only one assistant may edit a checkout at a time. A second assistant can review read-only or work in a separate authorized worktree.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 42,
+          "title": "Narrow Git staging",
+          "text": "Stage only the files changed for the current outcome. Preserve unrelated uncommitted work and avoid blanket git add when a checkout is dirty.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 43,
+          "title": "Delivery evidence",
+          "text": "Local commits, pushed commits, installed releases, and deployed behavior are distinct states. Verify each delivery step actually reached its destination.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 44,
+          "title": "Unit test evidence",
+          "text": "A passing unit suite proves its covered local contracts. It does not prove authenticated desktop integration or behavior on another operating system.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 45,
+          "title": "Native controls",
+          "text": "Use semantic HTML buttons and inputs with labels. Keyboard users must be able to reach and operate every action.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 46,
+          "title": "Appearance preference",
+          "text": "The synthetic phone app uses dark appearance. The desktop app follows the operating system appearance.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 47,
+          "title": "Error diagnosis",
+          "text": "The fixture exporter fails with E_LOCKED when another writer holds its output directory lock. Wait for the owning exporter; do not delete its lock while it is running.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 48,
+          "title": "Environment switch",
+          "text": "Set FIXTURE_MODEL_ROOT to the model directory for real inference tests. An unset value skips those tests and is not a real-model pass.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 49,
+          "title": "Snapshot symbol",
+          "text": "PublishSnapshotNoReplace publishes a private snapshot without replacing an existing destination. CopySnapshotOverwrite is a retired unsafe helper name.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 50,
+          "title": "Vector compatibility",
+          "text": "Vectors are filtered by exact embedding_model identity and compatible dimensions. Equal dimensions do not make vectors from different models interchangeable.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 51,
+          "title": "Model migration",
+          "text": "Change models through a verified snapshot and shadow re-embedding. Preserve IDs, scopes, revisions, old binaries, and a tested rollback before a cutover.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 52,
+          "title": "No database mining",
+          "text": "Save explicit preferences and verified handoffs selectively. Do not mine private chat transcripts to populate the memory service.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 53,
+          "title": "Fresh-session acceptance",
+          "text": "To verify startup context, start a fresh authenticated agent session and inspect the returned memory. Reusing a running session may preserve old context.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 54,
+          "title": "Wrong pending options",
+          "text": "Validate incompatible connection options before requesting device approval. A corrected retry should recover from pending setup without another approval cycle.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 55,
+          "title": "Polling ownership",
+          "text": "A device-approval viewer allows one refresh in flight and owns one follow-up timer. Older responses cannot overwrite newer approval state.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 56,
+          "title": "Quoted executable paths",
+          "text": "An agent hook command must recognize executable paths containing spaces and apostrophes. Reinstalling the hook should not leave duplicate entries.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 57,
+          "title": "Quarterly handoff 1",
+          "text": "Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. The decisive lesson was that a stalled gateway recovered only after clearing an abandoned Unix socket left by a crashed preview process.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 58,
+          "title": "Quarterly handoff 2",
+          "text": "Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. The decisive lesson was that a drifting appliance clock made valid credentials appear expired; synchronizing time restored authentication.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 59,
+          "title": "Quarterly handoff 3",
+          "text": "Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. The decisive lesson was that a missing certificate chain broke encrypted connections; including the intermediate certificate fixed the handshake.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 60,
+          "title": "Quarterly handoff 4",
+          "text": "Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. Quarterly synthetic handoff. The team checked build outputs, recorded task ownership, reviewed interface behavior, and kept the deployment unchanged. The staging exercise used invented records and preserved the rollback files. The decisive lesson was that a full disk blocked new transactions; moving the synthetic export to spare storage restored writes.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 61,
+          "title": "Package restoration foreign",
+          "text": "Restore JavaScript packages with pnpm using the checked-in lockfile. Adding a new dependency requires owner approval.",
+          "scope": {
+            "project": "id:foreign-fixture"
+          }
+        },
+        {
+          "id": 62,
+          "title": "Canonical instructions foreign",
+          "text": "Keep one canonical AGENTS.md shared by all coding assistants. Do not create separate Claude or Cursor instruction files.",
+          "scope": {
+            "project": "id:foreign-fixture"
+          }
+        },
+        {
+          "id": 63,
+          "title": "Synthetic database tests foreign",
+          "text": "Run experiments against fabricated records or an isolated database copy. Never test deletes against the authoritative memory database.",
+          "scope": {
+            "project": "id:foreign-fixture"
+          }
+        },
+        {
+          "id": 64,
+          "title": "Reboot permission foreign",
+          "text": "Rebooting or shutting down the shared machine requires explicit approval from its owner, even when an update recommends it.",
+          "scope": {
+            "project": "id:foreign-fixture"
+          }
+        },
+        {
+          "id": 65,
+          "title": "Local process restart foreign",
+          "text": "The assistant may stop and restart a temporary development server it started for the current task. Shared background services need owner approval.",
+          "scope": {
+            "project": "id:foreign-fixture"
+          }
+        },
+        {
+          "id": 66,
+          "title": "Backup retention foreign",
+          "text": "Keep daily encrypted snapshots for fourteen days. Keep monthly encrypted snapshots for one year.",
+          "scope": {
+            "project": "id:foreign-fixture"
+          }
+        },
+        {
+          "id": 67,
+          "title": "Backup schedule foreign",
+          "text": "The synthetic memory backup job starts at 03:15 UTC every day. The nightly report email is sent at 04:00 UTC.",
+          "scope": {
+            "project": "id:foreign-fixture"
+          }
+        },
+        {
+          "id": 68,
+          "title": "Restore verification foreign",
+          "text": "Backup success means a consistent snapshot was restored and queried successfully. Merely seeing a backup file does not prove recoverability.",
+          "scope": {
+            "project": "id:foreign-fixture"
+          }
+        },
+        {
+          "id": 69,
+          "title": "Restore rehearsal archived",
+          "text": "A restore drill must run before any older snapshots are pruned. Rehearse using an isolated destination so the live store remains available.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          },
+          "archived": true
+        },
+        {
+          "id": 70,
+          "title": "SQLite consistency archived",
+          "text": "Use SQLite VACUUM INTO for a consistent snapshot while WAL is active. Copying only memory.db can omit recent committed transactions.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          },
+          "archived": true
+        },
+        {
+          "id": 71,
+          "title": "Temporary snapshot permissions archived",
+          "text": "Create a private temporary snapshot with mode 0600 and keep that mode throughout copying. Changing permissions after completion leaves an exposure window.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          },
+          "archived": true
+        },
+        {
+          "id": 72,
+          "title": "No-overwrite publication archived",
+          "text": "Publishing a backup must fail when the destination exists. It must never replace an earlier recovery file with the same name.",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          },
+          "archived": true
+        }
+      ],
+      "queries": [
+        {
+          "expected": 1,
+          "text": "Which tool should install front-end packages?",
+          "id": "original-0",
+          "category": "legacy",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "expected": 2,
+          "text": "When are archive copies made?",
+          "id": "original-1",
+          "category": "legacy",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "expected": 3,
+          "text": "How can another computer connect to the recall API?",
+          "id": "original-2",
+          "category": "legacy",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "expected": 4,
+          "text": "Does the laptop force a dark appearance?",
+          "id": "original-3",
+          "category": "legacy",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "expected": 5,
+          "text": "What combines lexical and vector matching?",
+          "id": "original-4",
+          "category": "legacy",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "expected": 6,
+          "text": "If the neural model crashes, can I still find records?",
+          "id": "original-5",
+          "category": "legacy",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "expected": 7,
+          "text": "What must happen before pruning earlier backups?",
+          "id": "original-6",
+          "category": "legacy",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "expected": 8,
+          "text": "Can someone operate the interface without a mouse?",
+          "id": "original-7",
+          "category": "legacy",
+          "scope": {
+            "project": "id:legacy-eval"
+          }
+        },
+        {
+          "id": "case-0-a",
+          "text": "How do I reinstall the web project libraries?",
+          "expected": 9,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-0-b",
+          "text": "Can the assistant add another package without asking?",
+          "expected": 9,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-1-a",
+          "text": "Where do our agent rules belong?",
+          "expected": 10,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-1-b",
+          "text": "Should each coding tool keep a separate policy document?",
+          "expected": 10,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-2-a",
+          "text": "Where should I try a destructive database test?",
+          "expected": 11,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-2-b",
+          "text": "Can a test remove real memories?",
+          "expected": 11,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-3-a",
+          "text": "May the agent restart the whole computer after updating?",
+          "expected": 12,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-3-b",
+          "text": "Who must authorize turning off the server machine?",
+          "expected": 12,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-4-a",
+          "text": "Can I restart my own preview process?",
+          "expected": 13,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-4-b",
+          "text": "Does restarting a task-local server need another approval?",
+          "expected": 13,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-5-a",
+          "text": "How long are the day-by-day recovery files retained?",
+          "expected": 14,
+          "category": "operations",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-5-b",
+          "text": "When can a year-old monthly recovery copy expire?",
+          "expected": 14,
+          "category": "operations",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-6-a",
+          "text": "What time does the automated database copy start?",
+          "expected": 15,
+          "category": "operations",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-6-b",
+          "text": "Does the report email run at the same time as the backup?",
+          "expected": 15,
+          "category": "operations",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-7-a",
+          "text": "What evidence proves we can recover our database?",
+          "expected": 16,
+          "category": "recovery",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-7-b",
+          "text": "Is the existence of a snapshot enough to call recovery verified?",
+          "expected": 16,
+          "category": "recovery",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-8-a",
+          "text": "What must precede cleanup of old recovery copies?",
+          "expected": 17,
+          "category": "recovery",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-8-b",
+          "text": "Where should a recovery rehearsal write its database?",
+          "expected": 17,
+          "category": "recovery",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-9-a",
+          "text": "How do we copy a database that has a write-ahead log?",
+          "expected": 18,
+          "category": "recovery",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-9-b",
+          "text": "Why is dragging just the main SQLite file unsafe?",
+          "expected": 18,
+          "category": "recovery",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-10-a",
+          "text": "When must a database export become private?",
+          "expected": 19,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-10-b",
+          "text": "Does chmod after the copy protect the data during the copy?",
+          "expected": 19,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-11-a",
+          "text": "What happens if a snapshot filename is already taken?",
+          "expected": 20,
+          "category": "recovery",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-11-b",
+          "text": "May a new backup overwrite an existing one?",
+          "expected": 20,
+          "category": "recovery",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-12-a",
+          "text": "How does another computer reach the memory endpoint?",
+          "expected": 21,
+          "category": "operations",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-12-b",
+          "text": "Should the memory service listen on every network interface?",
+          "expected": 21,
+          "category": "operations",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-13-a",
+          "text": "Which part of the product can be reached without the VPN?",
+          "expected": 22,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-13-b",
+          "text": "Does the public setup website expose stored memories?",
+          "expected": 22,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-14-a",
+          "text": "Where does an agent store a new persistent preference?",
+          "expected": 23,
+          "category": "architecture",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-14-b",
+          "text": "Does every machine have its own memory store?",
+          "expected": 23,
+          "category": "architecture",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-15-a",
+          "text": "Can the memory endpoint scan the host filesystem?",
+          "expected": 24,
+          "category": "architecture",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-15-b",
+          "text": "Which memory operations are exposed remotely?",
+          "expected": 24,
+          "category": "architecture",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-16-a",
+          "text": "What happens in a checkout with no remote or project ID?",
+          "expected": 25,
+          "category": "scope",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-16-b",
+          "text": "Can an unidentified repository use global project memory?",
+          "expected": 25,
+          "category": "scope",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-17-a",
+          "text": "How is a repository identified across different machines?",
+          "expected": 26,
+          "category": "scope",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-17-b",
+          "text": "Can a checkout path be used as a project memory key?",
+          "expected": 26,
+          "category": "scope",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-18-a",
+          "text": "Where should a machine-specific keyboard setting be saved?",
+          "expected": 27,
+          "category": "scope",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-18-b",
+          "text": "Does a device-only preference apply to every computer?",
+          "expected": 27,
+          "category": "scope",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-19-a",
+          "text": "What platform value represents an Apple desktop?",
+          "expected": 28,
+          "category": "scope",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-19-b",
+          "text": "Is Darwin accepted as a memory platform?",
+          "expected": 28,
+          "category": "scope",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-20-a",
+          "text": "How should an outdated memory correction recover?",
+          "expected": 29,
+          "category": "failure",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-20-b",
+          "text": "What do I do after a compare-and-swap conflict?",
+          "expected": 29,
+          "category": "failure",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-21-a",
+          "text": "How do we safely retry a save with no response?",
+          "expected": 30,
+          "category": "failure",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-21-b",
+          "text": "Can I reuse an idempotency key after changing the saved text?",
+          "expected": 30,
+          "category": "failure",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-22-a",
+          "text": "Do successful saves need an extra read every time?",
+          "expected": 31,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-22-b",
+          "text": "What receipt is sufficient to confirm a stored memory?",
+          "expected": 31,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-23-a",
+          "text": "Does a correction erase the previous text?",
+          "expected": 32,
+          "category": "architecture",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-23-b",
+          "text": "How is an older memory version restored?",
+          "expected": 32,
+          "category": "architecture",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-24-a",
+          "text": "Can an inferred preference override an explicit user choice?",
+          "expected": 33,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-24-b",
+          "text": "Which evidence permits a memory to be confirmed?",
+          "expected": 33,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-25-a",
+          "text": "Does removing a memory from search destroy its history?",
+          "expected": 34,
+          "category": "architecture",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-25-b",
+          "text": "Can an archived preference be brought back?",
+          "expected": 34,
+          "category": "architecture",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-26-a",
+          "text": "How long must I wait before recalling a new record?",
+          "expected": 35,
+          "category": "architecture",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-26-b",
+          "text": "Is there a scheduled job that makes new memories searchable?",
+          "expected": 35,
+          "category": "architecture",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-27-a",
+          "text": "Can search still work if the neural model breaks?",
+          "expected": 36,
+          "category": "failure",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-27-b",
+          "text": "How should an embedding failure be reported to the client?",
+          "expected": 36,
+          "category": "failure",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-28-a",
+          "text": "Which memories should an agent see first at startup?",
+          "expected": 37,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-28-b",
+          "text": "Does a recent note outrank an older confirmed preference?",
+          "expected": 37,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-29-a",
+          "text": "How do clients know some memories were left out?",
+          "expected": 38,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-29-b",
+          "text": "What should be returned when startup context is too large?",
+          "expected": 38,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-30-a",
+          "text": "Why did an unauthenticated API call fail?",
+          "expected": 39,
+          "category": "failure",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-30-b",
+          "text": "What status is returned when authorization is absent?",
+          "expected": 39,
+          "category": "failure",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-31-a",
+          "text": "Does disabling one laptop disconnect all other agents?",
+          "expected": 40,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-31-b",
+          "text": "How can access from a lost device be removed?",
+          "expected": 40,
+          "category": "safety",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-32-a",
+          "text": "How can two coding assistants avoid overwriting each other?",
+          "expected": 41,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-32-b",
+          "text": "Can another agent review while the first is editing?",
+          "expected": 41,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-33-a",
+          "text": "Which modified files should enter the task commit?",
+          "expected": 42,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-33-b",
+          "text": "Can unrelated edits be swept into the release commit?",
+          "expected": 42,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-34-a",
+          "text": "Does a local commit prove the fix reached another machine?",
+          "expected": 43,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-34-b",
+          "text": "What is the difference between pushed and installed work?",
+          "expected": 43,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-35-a",
+          "text": "Do local tests prove the Windows client works?",
+          "expected": 44,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-35-b",
+          "text": "Can unit tests establish desktop authentication success?",
+          "expected": 44,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-36-a",
+          "text": "Can a user operate the interface without a mouse?",
+          "expected": 45,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-36-b",
+          "text": "What controls make actions accessible to assistive technology?",
+          "expected": 45,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-37-a",
+          "text": "Does the desktop force a dark theme?",
+          "expected": 46,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-37-b",
+          "text": "Which client ignores the system light appearance setting?",
+          "expected": 46,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-38-a",
+          "text": "Why did the exporter return E_LOCKED?",
+          "expected": 47,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-38-b",
+          "text": "How should a locked export recover safely?",
+          "expected": 47,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-39-a",
+          "text": "What environment variable enables actual model tests?",
+          "expected": 48,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-39-b",
+          "text": "Can a skipped inference test count as verification?",
+          "expected": 48,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-40-a",
+          "text": "What does PublishSnapshotNoReplace guarantee?",
+          "expected": 49,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-40-b",
+          "text": "Which snapshot helper protects an existing backup?",
+          "expected": 49,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-41-a",
+          "text": "Can two different models share a vector index just because they have equal length?",
+          "expected": 50,
+          "category": "architecture",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-41-b",
+          "text": "What happens to old vectors after changing the active model identity?",
+          "expected": 50,
+          "category": "architecture",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-42-a",
+          "text": "How can we safely switch embedding models?",
+          "expected": 51,
+          "category": "recovery",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-42-b",
+          "text": "Which recovery assets must survive a model replacement?",
+          "expected": 51,
+          "category": "recovery",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-43-a",
+          "text": "Should the service ingest whole agent conversations automatically?",
+          "expected": 52,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-43-b",
+          "text": "What kinds of information deserve durable memory?",
+          "expected": 52,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-44-a",
+          "text": "How do we prove a new agent receives the current policy?",
+          "expected": 53,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-44-b",
+          "text": "Why can an existing chat be misleading in startup tests?",
+          "expected": 53,
+          "category": "workflow",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-45-a",
+          "text": "When should invalid connection parameters be rejected?",
+          "expected": 54,
+          "category": "failure",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-45-b",
+          "text": "Does fixing pending connection options require starting approval over?",
+          "expected": 54,
+          "category": "failure",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-46-a",
+          "text": "How do we prevent stale approval results appearing in the viewer?",
+          "expected": 55,
+          "category": "failure",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-46-b",
+          "text": "Can two device refresh calls run at the same time?",
+          "expected": 55,
+          "category": "failure",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-47-a",
+          "text": "Why can a hook install fail in a path with a single quote?",
+          "expected": 56,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "case-47-b",
+          "text": "What prevents repeated agent-hook installation from duplicating commands?",
+          "expected": 56,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "long-0-a",
+          "text": "Which handoff describes clearing an abandoned socket to restore connectivity?",
+          "expected": 57,
+          "category": "long",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "long-0-b",
+          "text": "Where is the lesson about a crashed process leaving a socket?",
+          "expected": 57,
+          "category": "long",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "long-1-a",
+          "text": "Which handoff explains that a wrong clock caused authentication failures?",
+          "expected": 58,
+          "category": "long",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "long-1-b",
+          "text": "Where is the recovery lesson about time drift invalidating credentials?",
+          "expected": 58,
+          "category": "long",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "long-2-a",
+          "text": "Which handoff describes a missing intermediate certificate?",
+          "expected": 59,
+          "category": "long",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "long-2-b",
+          "text": "Where is the lesson about repairing an incomplete TLS chain?",
+          "expected": 59,
+          "category": "long",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "long-3-a",
+          "text": "Which handoff says insufficient storage prevented database commits?",
+          "expected": 60,
+          "category": "long",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "long-3-b",
+          "text": "Where is the recovery lesson about a full filesystem?",
+          "expected": 60,
+          "category": "long",
+          "scope": {
+            "project": "id:synthetic-model-eval",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        }
+      ]
+    },
+    {
+      "description": "Second synthetic corpus: preferences and unrelated product outcomes. Fixed before its model runs; no real personal or production memory.",
+      "documents": [
+        {
+          "id": 1,
+          "title": "Coffee choice",
+          "text": "In the invented household, Dana drinks decaffeinated coffee with oat milk after lunch. Morgan drinks black tea with dairy milk.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 2,
+          "title": "Meeting window",
+          "text": "Dana prefers meetings after 13:00 local time because mornings are reserved for uninterrupted writing. Early appointments are acceptable only for emergencies.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 3,
+          "title": "Reading format",
+          "text": "For technical manuals Dana prefers searchable PDF files. For fiction Dana prefers printed paperback books and avoids reading novels on a tablet.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 4,
+          "title": "Music queue",
+          "text": "The synthetic music player starts an instrumental jazz queue during focused work. Spoken podcasts are reserved for walks and must not enter the work queue.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 5,
+          "title": "Notification rule",
+          "text": "Only overdue deadlines should create an audible notification. Routine activity updates remain silent but appear in the activity list.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 6,
+          "title": "Travel preference",
+          "text": "Dana chooses direct train journeys over flights for trips shorter than four hours. Longer journeys may use a nonstop flight.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 7,
+          "title": "Book list limit",
+          "text": "The Arcadia reading app shows at most five next books. Finished books belong in history and do not occupy a next-book slot.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 8,
+          "title": "Rain unit",
+          "text": "The Nimbus garden display reports precipitation in millimeters. Indoor room temperature uses degrees Celsius, and air pressure uses hectopascals.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 9,
+          "title": "Artwork cadence",
+          "text": "The Canvas display changes its featured painting at 07:00 local time daily. The weather panel refreshes every fifteen minutes.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 10,
+          "title": "Paused timer",
+          "text": "Pausing a session timer preserves elapsed time. Reset clears the elapsed duration. Resuming a paused session continues from the saved duration.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 11,
+          "title": "Duplicate library items",
+          "text": "The Cedar library app identifies duplicate books by ISBN plus edition. Different editions of the same title remain separate items.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 12,
+          "title": "Invitation recovery",
+          "text": "An invitation link expires after ten minutes. An expired link offers a fresh invitation without losing the draft collaborator list.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 13,
+          "title": "API decision",
+          "text": "The Cedar catalog uses REST endpoints rather than GraphQL because it has two simple clients and stable request shapes. Revisit the decision only if query flexibility becomes a proven problem.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 14,
+          "title": "Storage decision",
+          "text": "The Pocket prototype uses one SQLite database because it runs on a single host. The analytics warehouse is a separate PostgreSQL service.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 15,
+          "title": "Release acceptance",
+          "text": "A synthetic photo export is acceptable only when the album order and original capture dates survive. Pixel-perfect thumbnail appearance is outside acceptance.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 16,
+          "title": "Draft visibility",
+          "text": "The Draftdesk preview can be shared through an expiring signed link. The unpublished draft must not appear in the public directory until the owner publishes it.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 17,
+          "title": "Cache decision",
+          "text": "The Leaf reader caches downloaded articles for offline reading. It does not cache authenticated account responses because another person may use the same device.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 18,
+          "title": "Search preference",
+          "text": "The Cedar catalog sorts exact title matches before approximate matches. Popularity is a tie-breaker only among results with equal relevance.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 19,
+          "title": "Accent regression",
+          "text": "The Leaf search bug came from stripping accents on stored titles but not on queries. Normalize both paths consistently so cafe finds café.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 20,
+          "title": "Badge regression",
+          "text": "The Nimbus unread badge stayed visible because the mark-read handler failed to persist the acknowledged event ID. Save that ID before recalculating the badge.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 21,
+          "title": "Export line endings",
+          "text": "The Cedar exporter must write CRLF line endings for the legacy Windows importer. UTF-8 content stays unchanged; replacing accented letters is not part of the fix.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 22,
+          "title": "Rotation function",
+          "text": "RotateFeaturedArt selects the next painting once per day. RefreshForecast only updates weather data and must never advance the art queue.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 23,
+          "title": "Timeout error",
+          "text": "The Arcadia sync client reports E_REMOTE_TIMEOUT after a fifteen-second response deadline. Retry reads with bounded backoff; never delete the local draft after that error.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 24,
+          "title": "Test root variable",
+          "text": "Set CATALOG_FIXTURE_ROOT to fabricated sample files for exporter acceptance tests. USER_LIBRARY_ROOT refers to the real library and must not be used for destructive trials.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 25,
+          "title": "Coffee grinder",
+          "text": "The coffee grinder burrs need cleaning every second Sunday. Tea bags belong in a separate pantry drawer.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 26,
+          "title": "Transit tickets",
+          "text": "A regional train ticket can be refunded until midnight before departure. Flight vouchers expire in twelve months.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 27,
+          "title": "Book covers",
+          "text": "Arcadia loads cover thumbnails from its image cache. A missing cover uses a text label with the book title.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 28,
+          "title": "Weather source",
+          "text": "Nimbus reads weather observations from the station sensor and forecasts from a remote provider.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 29,
+          "title": "Frames",
+          "text": "Canvas supports a black frame and a wooden frame. Frame choice does not change the painting dimensions.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 30,
+          "title": "Timer colors",
+          "text": "The session timer uses green while running and amber when paused. The elapsed-time font remains readable in both states.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 31,
+          "title": "Catalog storage",
+          "text": "Cedar stores cover images outside the catalog database and includes their checksums in an export manifest.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 32,
+          "title": "Invite permissions",
+          "text": "A collaborator who accepts an invitation receives read access to published albums but cannot publish the owner’s drafts.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 33,
+          "title": "Archive formats",
+          "text": "The photo exporter produces a ZIP archive containing one image per capture plus a JSON manifest.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 34,
+          "title": "Reader browser",
+          "text": "Leaf opens external links in the system browser. A downloaded article can still be read without connectivity.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 35,
+          "title": "Notification history",
+          "text": "Nimbus activity history records device check-ins and successful forecast refreshes, including timestamps.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 36,
+          "title": "Sync schedule",
+          "text": "Arcadia sends background sync reads every five minutes while online and suspends them when disconnected.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": 37,
+          "title": "Coffee choice",
+          "text": "In the invented household, Dana drinks decaffeinated coffee with oat milk after lunch. Morgan drinks black tea with dairy milk.",
+          "scope": {
+            "project": "id:foreign-holdout"
+          }
+        },
+        {
+          "id": 38,
+          "title": "Meeting window",
+          "text": "Dana prefers meetings after 13:00 local time because mornings are reserved for uninterrupted writing. Early appointments are acceptable only for emergencies.",
+          "scope": {
+            "project": "id:foreign-holdout"
+          }
+        },
+        {
+          "id": 39,
+          "title": "Reading format",
+          "text": "For technical manuals Dana prefers searchable PDF files. For fiction Dana prefers printed paperback books and avoids reading novels on a tablet.",
+          "scope": {
+            "project": "id:foreign-holdout"
+          }
+        },
+        {
+          "id": 40,
+          "title": "Music queue",
+          "text": "The synthetic music player starts an instrumental jazz queue during focused work. Spoken podcasts are reserved for walks and must not enter the work queue.",
+          "scope": {
+            "project": "id:foreign-holdout"
+          }
+        },
+        {
+          "id": 41,
+          "title": "Notification rule archived",
+          "text": "Only overdue deadlines should create an audible notification. Routine activity updates remain silent but appear in the activity list.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          },
+          "archived": true
+        },
+        {
+          "id": 42,
+          "title": "Travel preference archived",
+          "text": "Dana chooses direct train journeys over flights for trips shorter than four hours. Longer journeys may use a nonstop flight.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          },
+          "archived": true
+        },
+        {
+          "id": 43,
+          "title": "Book list limit archived",
+          "text": "The Arcadia reading app shows at most five next books. Finished books belong in history and do not occupy a next-book slot.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          },
+          "archived": true
+        },
+        {
+          "id": 44,
+          "title": "Rain unit archived",
+          "text": "The Nimbus garden display reports precipitation in millimeters. Indoor room temperature uses degrees Celsius, and air pressure uses hectopascals.",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          },
+          "archived": true
+        }
+      ],
+      "queries": [
+        {
+          "id": "hold-0-a",
+          "text": "What should go into Dana’s afternoon coffee?",
+          "expected": 1,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-0-b",
+          "text": "Which afternoon drink avoids caffeine for Dana?",
+          "expected": 1,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-1-a",
+          "text": "When does Dana usually want appointments?",
+          "expected": 2,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-1-b",
+          "text": "Why should routine meetings avoid the morning?",
+          "expected": 2,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-2-a",
+          "text": "Which format should we buy for a novel?",
+          "expected": 3,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-2-b",
+          "text": "What document format works best for technical reference?",
+          "expected": 3,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-3-a",
+          "text": "What should play while Dana is concentrating?",
+          "expected": 4,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-3-b",
+          "text": "Can a talk show be mixed into the focus playlist?",
+          "expected": 4,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-4-a",
+          "text": "Which alerts are allowed to make a sound?",
+          "expected": 5,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-4-b",
+          "text": "How should ordinary progress updates be delivered?",
+          "expected": 5,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-5-a",
+          "text": "What transport should a three-hour trip use?",
+          "expected": 6,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-5-b",
+          "text": "When would an airplane be acceptable instead of a train?",
+          "expected": 6,
+          "category": "preferences",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-6-a",
+          "text": "How many upcoming books should the home screen show?",
+          "expected": 7,
+          "category": "product",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-6-b",
+          "text": "Do completed books count toward the current reading shortlist?",
+          "expected": 7,
+          "category": "product",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-7-a",
+          "text": "Which unit should rainfall amounts use?",
+          "expected": 8,
+          "category": "product",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-7-b",
+          "text": "How should barometric pressure be displayed?",
+          "expected": 8,
+          "category": "product",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-8-a",
+          "text": "When is the next painting selected?",
+          "expected": 9,
+          "category": "product",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-8-b",
+          "text": "Does the picture change on every weather refresh?",
+          "expected": 9,
+          "category": "product",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-9-a",
+          "text": "Does pause erase the time already spent?",
+          "expected": 10,
+          "category": "product",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-9-b",
+          "text": "Which timer action starts the count over at zero?",
+          "expected": 10,
+          "category": "product",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-10-a",
+          "text": "How does the catalog decide two books are duplicates?",
+          "expected": 11,
+          "category": "product",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-10-b",
+          "text": "Can two editions with identical titles both remain in the library?",
+          "expected": 11,
+          "category": "product",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-11-a",
+          "text": "How long does a collaborator invitation stay valid?",
+          "expected": 12,
+          "category": "product",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-11-b",
+          "text": "What must survive when an expired invitation is replaced?",
+          "expected": 12,
+          "category": "product",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-12-a",
+          "text": "Why did Cedar choose REST?",
+          "expected": 13,
+          "category": "decisions",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-12-b",
+          "text": "What evidence would justify reconsidering the API style?",
+          "expected": 13,
+          "category": "decisions",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-13-a",
+          "text": "Which database backs the Pocket prototype?",
+          "expected": 14,
+          "category": "decisions",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-13-b",
+          "text": "Why is the prototype not using the warehouse database?",
+          "expected": 14,
+          "category": "decisions",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-14-a",
+          "text": "What metadata must a photo export preserve?",
+          "expected": 15,
+          "category": "decisions",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-14-b",
+          "text": "Is thumbnail styling a release requirement for the exporter?",
+          "expected": 15,
+          "category": "decisions",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-15-a",
+          "text": "How can someone review a draft privately?",
+          "expected": 16,
+          "category": "decisions",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-15-b",
+          "text": "When should a draft become discoverable in the public directory?",
+          "expected": 16,
+          "category": "decisions",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-16-a",
+          "text": "Which data may the reader save for offline use?",
+          "expected": 17,
+          "category": "decisions",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-16-b",
+          "text": "Why are profile API responses excluded from the offline cache?",
+          "expected": 17,
+          "category": "decisions",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-17-a",
+          "text": "Should a popular loosely related book outrank an exact title match?",
+          "expected": 18,
+          "category": "decisions",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-17-b",
+          "text": "When should the catalog use popularity to break a tie?",
+          "expected": 18,
+          "category": "decisions",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-18-a",
+          "text": "Why did an unaccented query fail to match an accented title?",
+          "expected": 19,
+          "category": "lessons",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-18-b",
+          "text": "What normalization fix made café searchable as cafe?",
+          "expected": 19,
+          "category": "lessons",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-19-a",
+          "text": "Why did a read notification still look unread?",
+          "expected": 20,
+          "category": "lessons",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-19-b",
+          "text": "What must be saved before updating the unread badge?",
+          "expected": 20,
+          "category": "lessons",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-20-a",
+          "text": "What newline format does the legacy importer require?",
+          "expected": 21,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-20-b",
+          "text": "Should the export fix remove non-ASCII characters?",
+          "expected": 21,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-21-a",
+          "text": "Which function advances the daily art selection?",
+          "expected": 22,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-21-b",
+          "text": "Can RefreshForecast change the featured painting?",
+          "expected": 22,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-22-a",
+          "text": "What does E_REMOTE_TIMEOUT mean?",
+          "expected": 23,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-22-b",
+          "text": "What data must be preserved after the remote deadline is exceeded?",
+          "expected": 23,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-23-a",
+          "text": "Which variable points acceptance tests at the sample catalog?",
+          "expected": 24,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        },
+        {
+          "id": "hold-23-b",
+          "text": "Can the user library root be used for destructive export tests?",
+          "expected": 24,
+          "category": "identifiers",
+          "scope": {
+            "project": "id:synthetic-holdout",
+            "device": "fixture-mac",
+            "platform": "macos"
+          }
+        }
+      ]
+    }
+  ]
+}
