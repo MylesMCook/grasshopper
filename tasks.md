@@ -2,9 +2,9 @@
 
 Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `codex/thermos-audit-fixes`.
 
-## Verified local audit fixes
+## Audit release closeout
 
-[LAB-216](https://linear.app/mcook/issue/LAB-216/fix-the-four-verified-grasshopper-thermos-audit-defects): fixed snapshot privacy during copying, Cursor hook quoting, connection-option validation/recovery, and stale device polling from baseline `6b0514b`. Regression checks failed before the fixes and passed afterward. Full Go tests, vet, scoped race checks, five binary builds, and four Node regressions passed. Two fresh Thermos reviewers found no remaining defects. A real browser verified cancellation, synthetic device revocation, and stopped polling after disconnect. [Evidence](docs/memory-acceptance.md#local-audit-repairs-september-29). These fixes are local; publishing and deployment require a separate request. No active implementation work remains.
+[LAB-216](https://linear.app/mcook/issue/LAB-216/fix-the-four-verified-grasshopper-thermos-audit-defects): fixed snapshot privacy during copying, Cursor hook quoting, connection-option validation/recovery, and stale device polling in `1a52de3`. Regression checks failed before the fixes and passed afterward. Full Go tests, vet, scoped race checks, five binary builds, and four Node regressions passed. Two fresh Thermos reviewers found no remaining defects. A real browser verified cancellation, synthetic device revocation, and stopped polling after disconnect. [Evidence](docs/memory-acceptance.md#local-audit-repairs-september-29). The owner requested git-it-out: land main, pass three-OS CI, publish 2.3.7 and marketplace packages, verify a restored backup, update the private Mac service/public site and local connector, then record delivery evidence.
 
 ## Released behavior
 
