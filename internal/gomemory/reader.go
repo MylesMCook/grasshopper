@@ -516,28 +516,11 @@ func (r *Reader) browseDevices(ctx context.Context, scope BrowseScope, includeAr
 }
 
 func (r *Reader) contextKeys(ctx context.Context, keys []string, budget int) (Page, error) {
-	records, err := r.scopedRecords(ctx, keys, " AND (confirmed=1 OR purpose='handoff')", false)
+	records, err := r.scopedRecords(ctx, keys, agentContextFilter, false)
 	if err != nil {
 		return Page{}, err
 	}
-	chosen := -1
-	for i, record := range records {
-		if record.Purpose != "handoff" {
-			continue
-		}
-		if chosen < 0 || (records[chosen].Scope.Project == nil && record.Scope.Project != nil) {
-			chosen = i
-		}
-	}
-	selected := make([]Record, 0, len(records))
-	skipped := make([]Record, 0)
-	for i, record := range records {
-		if record.Purpose == "handoff" && i != chosen {
-			skipped = append(skipped, record)
-			continue
-		}
-		selected = append(selected, record)
-	}
+	selected, skipped := chooseHandoff(records)
 	page, err := boundRecords(selected, budget, 0)
 	if err != nil {
 		return Page{}, err
@@ -550,6 +533,103 @@ func (r *Reader) contextKeys(ctx context.Context, keys []string, budget int) (Pa
 		}
 	}
 	return page, nil
+}
+
+// Agent startup context loads confirmed records and handoffs only.
+const agentContextFilter = " AND (confirmed=1 OR purpose='handoff')"
+
+// chooseHandoff keeps every non-handoff record and one handoff, preferring a
+// project handoff; the rest are skipped. The choice is shared by agent context
+// and the owner's startup preview so the two cannot drift apart.
+func chooseHandoff(records []Record) (selected, skipped []Record) {
+	chosen := -1
+	for i, record := range records {
+		if record.Purpose != "handoff" {
+			continue
+		}
+		if chosen < 0 || (records[chosen].Scope.Project == nil && record.Scope.Project != nil) {
+			chosen = i
+		}
+	}
+	selected = make([]Record, 0, len(records))
+	for i, record := range records {
+		if record.Purpose == "handoff" && i != chosen {
+			skipped = append(skipped, record)
+			continue
+		}
+		selected = append(selected, record)
+	}
+	return selected, skipped
+}
+
+// Reasons the owner's startup preview gives for a memory an agent will not load.
+const (
+	NotLoadedUnconfirmed  = "unconfirmed"
+	NotLoadedOlderHandoff = "older_handoff"
+	NotLoadedOverBudget   = "over_budget"
+)
+
+// NotLoaded names a memory in scope that startup context leaves out, and why.
+type NotLoaded struct {
+	ID       int64  `json:"id"`
+	Revision int64  `json:"revision"`
+	Scope    Scope  `json:"scope"`
+	Title    string `json:"title"`
+	Purpose  string `json:"purpose"`
+	Reason   string `json:"reason"`
+}
+
+// Startup is what agent startup context would hold for one scope and budget.
+// It shows what the service would send; it cannot show what a running agent
+// session received.
+type Startup struct {
+	Budget    int         `json:"budget"`
+	Records   []Record    `json:"records"`
+	NotLoaded []NotLoaded `json:"not_loaded"`
+}
+
+// StartupPreview applies the same selection as Context, with previews in place
+// of full text, and reports every active record in scope that would not load.
+func (r *Reader) StartupPreview(ctx context.Context, scope Scope, budget int) (Startup, error) {
+	keys, err := scope.applicableKeys()
+	if err != nil {
+		return Startup{}, err
+	}
+	eligible, err := r.scopedRecords(ctx, keys, agentContextFilter, false)
+	if err != nil {
+		return Startup{}, err
+	}
+	selected, skipped := chooseHandoff(eligible)
+	page, err := boundRecords(selected, budget, 0)
+	if err != nil {
+		return Startup{}, err
+	}
+	// boundRecords lists at most 100 omissions; recompute the exact set here so
+	// the preview never hides a record it was asked to explain.
+	loaded := make(map[int64]bool, len(page.Records))
+	for _, record := range page.Records {
+		loaded[record.ID] = true
+	}
+	preview := Startup{Budget: budget, Records: previewRecords(page.Records), NotLoaded: []NotLoaded{}}
+	add := func(record Record, reason string) {
+		preview.NotLoaded = append(preview.NotLoaded, NotLoaded{record.ID, record.Revision, record.Scope, record.Title, record.Purpose, reason})
+	}
+	for _, record := range selected {
+		if !loaded[record.ID] {
+			add(record, NotLoadedOverBudget)
+		}
+	}
+	for _, record := range skipped {
+		add(record, NotLoadedOlderHandoff)
+	}
+	unconfirmed, err := r.scopedRecords(ctx, keys, " AND confirmed=0 AND purpose<>'handoff'", false)
+	if err != nil {
+		return Startup{}, err
+	}
+	for _, record := range unconfirmed {
+		add(record, NotLoadedUnconfirmed)
+	}
+	return preview, nil
 }
 
 func (r *Reader) browseKeys(ctx context.Context, keys []string, budget int, view string) (Page, error) {

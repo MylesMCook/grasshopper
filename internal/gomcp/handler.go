@@ -313,6 +313,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			"/visualizer/api/record":  visualizerRecord(backend.Store),
 			"/visualizer/api/update":  visualizerUpdate(backend.Store, saveMemory),
 			"/visualizer/api/archive": visualizerArchive(backend.Store),
+			"/visualizer/api/startup": visualizerStartup(backend.Store),
 		}
 	}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

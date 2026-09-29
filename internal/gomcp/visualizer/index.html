@@ -50,10 +50,16 @@
         <button type="button" data-view="" aria-pressed="true">Saved</button>
         <button type="button" data-view="review" aria-pressed="false">Needs review</button>
         <button type="button" data-view="archived" aria-pressed="false">Archived</button>
+        <button type="button" data-view="startup" aria-pressed="false">Startup preview</button>
+      </div>
+      <div id="startup-controls" class="startup-controls" hidden>
+        <label>Agent <select id="startup-agent"><option value="12000">Codex or Cursor · 12,000 bytes</option><option value="3000">Claude Code · 3,000 bytes</option></select></label>
+        <p class="scope-note">This is what the server would send an agent at startup for the project, device and platform chosen above. Agents always send all three, so choose them for an exact match. It does not prove a running session received these memories; a fresh agent session is the real check. Claude Code also skips every record if its whole startup message would be too long.</p>
       </div>
       <div class="results-heading"><div><p id="scope-summary" class="scope-summary" hidden></p><p id="summary" class="summary">Connect to see what is saved.</p></div><div class="results-actions"><span id="status" class="status" role="status" aria-live="polite">Not connected</span><button id="refresh" type="submit" form="connection-form" class="quiet" hidden>Refresh</button></div></div>
       <div id="omissions" class="omissions" hidden></div>
       <div id="records" class="records" aria-live="off"></div>
+      <div id="not-loaded" class="not-loaded" hidden></div>
     </section>
 
     <details id="device-panel" class="device-panel" hidden>

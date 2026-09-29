@@ -501,3 +501,38 @@ test('the server line reports version, search model and counts', () => {
     assert.equal(v.get('server-status').hidden, false);
   });
 });
+
+test('the startup preview asks for one exact scope and explains what is left out', async () => {
+  const v = view();
+  v.get('project').value = 'git:github.com/example/orchard';
+  v.get('startup-agent').value = '3000';
+  v.ui.chooseView('startup');
+  const request = v.requests.at(-1);
+  assert.equal(request.url, '/visualizer/api/startup');
+  assert.deepEqual(JSON.parse(request.options.body), { scope: { project: 'git:github.com/example/orchard' }, budget: 3000 });
+  assert.equal(v.get('startup-controls').hidden, false);
+  assert.equal(v.get('search-form').hidden, true);
+  request.reply({ budget: 3000, records: [memory(1)], not_loaded: [
+    { id: 2, revision: 1, scope: {}, title: 'Maybe weekly', purpose: 'observation', reason: 'unconfirmed' },
+    { id: 3, revision: 1, scope: { project: 'git:github.com/example/orchard' }, title: 'Old handoff', purpose: 'handoff', reason: 'older_handoff' },
+    { id: 4, revision: 1, scope: {}, title: 'Heavy lesson', purpose: 'lesson', reason: 'over_budget' }
+  ] });
+  await tick();
+  assert.equal(v.get('summary').textContent, '1 memory loads at startup within 3,000 bytes · 3 not loaded');
+  const rows = v.get('not-loaded').children[1].children;
+  assert.equal(v.get('not-loaded').hidden, false);
+  assert.equal(rows[0].children[0].children[0].textContent, 'Maybe weekly (#2)');
+  assert.match(rows[0].children[0].children[1].textContent, /^Not confirmed\. Confirm it to load at startup\./);
+  assert.match(rows[1].children[0].children[1].textContent, /^An older handoff\. Only the latest handoff loads\./);
+  assert.match(rows[2].children[0].children[1].textContent, /^Over the startup size budget\./);
+  v.ui.chooseView('');
+  assert.equal(v.get('not-loaded').hidden, true);
+  assert.equal(v.get('startup-controls').hidden, true);
+});
+
+test('the startup preview never widens an unchosen project to every project', () => {
+  const v = view();
+  v.ui.chooseView('startup');
+  assert.deepEqual(JSON.parse(v.requests.at(-1).options.body), { scope: {}, budget: 12000 });
+  assert.match(v.get('scope-summary').textContent, /^No project chosen · global memories only/);
+});
