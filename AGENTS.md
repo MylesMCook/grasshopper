@@ -40,10 +40,12 @@ go run ./cmd/grasshopper-go-migrate --help
 go run ./cmd/grasshopper-go-bundle --help
 ```
 
-The real BGE ONNX tests need `GRASSHOPPER_BGE_TEST_ROOT` and, when outside the
-Mac research layout, `GRASSHOPPER_ONNX_RUNTIME_LIBRARY`. Do not call skipped
-model tests a real-model pass. The model and tokenizer digests are pinned in
-`internal/goembed/bge.go`.
+The real Granite ONNX tests need `GRASSHOPPER_EMBED_TEST_ROOT` (the directory
+containing model.onnx, model.onnx_data, and tokenizer.json) and
+`GRASSHOPPER_ONNX_RUNTIME_LIBRARY`. Restore the pinned test assets with
+`node scripts/fetch-embedding-test-assets.mjs`; CI sets both variables.
+Do not call skipped model tests a real-model pass. All three asset digests
+are pinned in `internal/goembed/granite.go`.
 
 ## Layout and safety
 

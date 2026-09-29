@@ -12,9 +12,9 @@
     <string>--onnx-library</string>
     <string>/Users/you/Library/Application Support/Grasshopper/app/runtime/libonnxruntime.dylib</string>
     <string>--model</string>
-    <string>/Users/you/Library/Application Support/Grasshopper/app/models/bge-small-en-v1.5/model.onnx</string>
+    <string>/Users/you/Library/Application Support/Grasshopper/app/models/granite-embedding-small-english-r2/model.onnx</string>
     <string>--tokenizer</string>
-    <string>/Users/you/Library/Application Support/Grasshopper/app/models/bge-small-en-v1.5/tokenizer.json</string>
+    <string>/Users/you/Library/Application Support/Grasshopper/app/models/granite-embedding-small-english-r2/tokenizer.json</string>
     <string>--token-file</string>
     <string>/Users/you/Library/Application Support/Grasshopper/secrets/token</string>
     <string>--listen</string>

@@ -18,6 +18,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Restore pinned embedding test assets
+        run: node scripts/fetch-embedding-test-assets.mjs
       - run: go test ./...
       - run: go vet ./...
       - run: node --test internal/gomcp/visualizer/app.test.cjs

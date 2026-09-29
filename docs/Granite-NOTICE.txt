@@ -1,0 +1,11 @@
+IBM Granite embedding small English R2
+Original model: https://huggingface.co/ibm-granite/granite-embedding-small-english-r2
+License: Apache License 2.0 (included in Granite-LICENSE).
+
+ONNX export: onnx-community/granite-embedding-small-english-r2-ONNX
+Pinned export revision: 1dc7835ba0cb9c76a3618d0bf0c427c97671b3c8
+Source: https://huggingface.co/onnx-community/granite-embedding-small-english-r2-ONNX/tree/1dc7835ba0cb9c76a3618d0bf0c427c97671b3c8
+
+The bundled graph and external weights are the unmodified FP32 export.
+Tokenization is prefix-free, bounded to 2048 tokens. The sentence_embedding
+output is normalized to 384 dimensions for cosine search.

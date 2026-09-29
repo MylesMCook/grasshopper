@@ -19,13 +19,13 @@ func run() error {
 	flag.StringVar(&source, "source", "", "existing Grasshopper database to read without modification")
 	flag.StringVar(&copyPath, "copy", "", "new shadow database path; must not exist")
 	flag.StringVar(&library, "onnx-library", "", "local ONNX Runtime shared library")
-	flag.StringVar(&model, "model", "", "pinned BGE ONNX model")
-	flag.StringVar(&tokenizer, "tokenizer", "", "pinned BGE tokenizer.json")
+	flag.StringVar(&model, "model", "", "pinned Granite ONNX model")
+	flag.StringVar(&tokenizer, "tokenizer", "", "pinned Granite tokenizer.json")
 	flag.Parse()
 	if source == "" || copyPath == "" || library == "" || model == "" || tokenizer == "" {
 		return errors.New("source, new copy, ONNX library, model, and tokenizer are required")
 	}
-	embedder, err := goembed.NewBGE(library, model, tokenizer)
+	embedder, err := goembed.NewGranite(library, model, tokenizer)
 	if err != nil {
 		return err
 	}

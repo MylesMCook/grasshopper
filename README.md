@@ -121,7 +121,21 @@ If you chose a custom quickstart state folder, add `--data-dir` followed by its 
 ./bin/grasshopper-backup --source /absolute/path/to/memory.db --dest /absolute/path/to/new-backup.db
 ```
 
-On Windows, use `./bin/grasshopper-backup.exe` and Windows paths. Stop the old server, keep its archive, then start the new one with the **same** state, token, listener, and private route settings. Check that a known memory is readable. If it fails, stop the new server and return to the old archive; never run two writers. Restore a backup to a new path and check its records before using it. For an older database, rehearse `grasshopper-migrate` on a copy before any cutover.
+On Windows, use `./bin/grasshopper-backup.exe` and Windows paths. Stop the old server and keep its archive, configuration, and database. Never run two writers. Restore a backup to a new path and check its records before using it.
+
+**Upgrading from 2.3.x or earlier to 2.4.0 requires re-embedding.** The new [Granite model](docs/embedding-model.md) uses a different vector space. From the extracted new server archive, rehearse this command on a backup first. For cutover, run it again with the old server stopped and a destination that does not exist:
+
+```sh
+./bin/grasshopper-migrate --source /absolute/path/to/memory.db \
+  --copy /absolute/path/to/memory-granite.db \
+  --onnx-library ./runtime/libonnxruntime.dylib \
+  --model ./models/granite-embedding-small-english-r2/model.onnx \
+  --tokenizer ./models/granite-embedding-small-english-r2/tokenizer.json
+```
+
+On Linux, use `./runtime/libonnxruntime.so`. On Windows, use `grasshopper-migrate.exe`, `runtime/onnxruntime.dll`, and Windows paths; enter the command on one line in PowerShell. Keep `model.onnx_data` adjacent to `model.onnx`.
+
+Start the new server against the verified copy with the **same** token, listener, and private route settings. For `--quickstart`, retain the old state folder and replace its `memory.db` with the verified copy while both servers are stopped. Check a known memory and earlier revision. If verification fails, stop the new server and restore the old archive and old database. Preserve any database that accepted new writes so those writes can be reconciled before rollback.
 
 [Memory view](https://usegrasshopper.com/view/) · [Verified behavior](https://github.com/MylesMCook/grasshopper/blob/main/docs/memory-acceptance.md) · [Mac mini operator note](https://github.com/MylesMCook/grasshopper/blob/main/docs/operations.md)
 
