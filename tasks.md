@@ -1,10 +1,12 @@
 # Grasshopper release state
 
-Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `codex/connection-reliability`.
+Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
 
-## Active connection reliability
+## Released connection reliability; packaged chat check pending
 
-[LAB-221](https://linear.app/mcook/issue/LAB-221/make-device-connection-identity-and-recovery-deterministic): owner requests simpler reliable setup/recovery and deployment/Git closeout. Codex is the only editor of this checkout. Confirmed gaps: status cannot distinguish owner access from registration; Windows AppData can fork per packaged app; check does not reconcile pending approval with the host. [Scenarios](docs/connection-flow.md) approved September 29. Host identity and read-only pending checks now pass native regressions that failed before implementation. Shared Windows defaults and explicit legacy migration are implemented; cross-platform and live verification remain. Keep all memory tools and permissions, preserve current credentials during outages/conflicts, and use no new dependency or writable client memory store.
+[LAB-221](https://linear.app/mcook/issue/LAB-221/make-device-connection-identity-and-recovery-deterministic): 2.6.0 is released/deployed, code `f16d921`, marketplace `68dc3ed`. Owner-approved [scenarios](docs/connection-flow.md) implement truthful host identity, read-only approval checks, one Windows profile default and explicit verified legacy migration. Local tests/vet/race, actual native Work HP synthetic cases, three-OS real-model CI, seven package/289 embedded hashes, eight published digests and restored-copy/rollback rehearsals pass. Host cutover preserves database counts, credentials, plist, model and routing. Mac Codex/Cursor/Claude and Work HP installed Codex/Cursor 2.6.0 bridge/startup-adapter probes pass. Laptop shared/default config now reports HPLT2MQ5360JD8 using the same approved credential; legacy files remain. Codex plugin upgrade emitted its existing cache-backup warning, but installed/enabled metadata and live 2.6.0 executable checks pass. No forced interruption or ACL change occurred. Public guidance is deployed. [Evidence](docs/memory-acceptance.md#260-connection-identity-and-recovery-september-29).
+
+Remaining acceptance: reopen the laptop's existing Codex chats and confirm a fresh packaged-app turn uses the shared connection. LAB-221 remains In Review, with LAB-219's existing fresh-chat check linked. Native bridges/adapters are verified; packaged GUI AI turns and reboot persistence are not. No further code/deployment work is pending. Rollback and all old connection files are retained.
 
 ## Released memory-view simplification
 
@@ -14,7 +16,7 @@ Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `c
 
 [LAB-219](https://linear.app/mcook/issue/LAB-219/show-connected-devices-accurately-in-the-memory-view): approved dropdown fix `ebd3cea` is shipped. Active paired IDs appear without scoped memories; saved-memory choices remain after revocation; agent retrieval is unchanged. HPLT2MQ5360JD8 is active and present in deployed owner browse/search choices.
 
-Approved native Windows repair replaced the Store-app redirected owner credential with a dedicated paired credential. Memory #8 revision 1, installed Windows client check and owner-controls denial passed. Existing laptop chats still need reopening to clear credentials loaded before repair; a fresh native AI turn remains unverified. No further laptop changes are pending from Codex. User direction for later prevention: minimal reliable connectors and host-owned complexity; a broader connection-flow redesign is unimplemented.
+Approved native Windows repair replaced the Store-app redirected owner credential with a dedicated paired credential. Memory #8 revision 1, installed Windows client check and owner-controls denial passed. Existing laptop chats still need reopening to clear credentials loaded before repair; a fresh native AI turn remains unverified. No further laptop changes are pending from Codex. The prevention work is released in 2.6.0 under LAB-221; fresh packaged-chat acceptance remains.
 
 ## Released memory-view improvement
 
