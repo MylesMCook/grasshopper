@@ -1,18 +1,16 @@
 # Grasshopper release state
 
-Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `codex/device-view`.
+Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
 
-## Active memory-view simplification
+## Released memory-view simplification
 
-[LAB-220](https://linear.app/mcook/issue/LAB-220/simplify-the-memory-view-layout-and-filter-flow): user requested a simpler private memory view and authorized deployment and Git closeout, including LAB-219. Owner remains Codex in this checkout. Search and native scope selectors now share one quiet surface; the exact selected scope precedes results; device management is secondary. Presentation changes preserve search, authentication, retrieval, and history. Research: Nielsen Norman Group progressive disclosure and GOV.UK native select guidance, evaluated through Laws of Taste and Laws of Software. 2.5.1 is live and verified. Owner subsequently supplied Myles Design Foundation; DESIGN.md and typography/shape alignment are being finalized as 2.5.2 before closeout.
+[LAB-220](https://linear.app/mcook/issue/LAB-220/simplify-the-memory-view-layout-and-filter-flow): [2.5.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.5.2) is deployed on the private Mac service. Search and visible filters share one surface; exact scope precedes results; device management is secondary; structural divider lines are removed. Owner-supplied [DESIGN.md](DESIGN.md) governs bundled Geist Mono controls/body, Newsreader headings/reading, colors and 2px corners. Release commits `96fd7ff` and `6fb359e`; marketplace `46b660b`. Three-OS real-model CI, Go tests/vet/race, 10 Node tests, seven package/289 embedded hashes and eight published digests pass. Synthetic desktop/mobile checks covered search, history, manual scope, keyboard focus, contrast and 320–1280px reflow. Restored-copy and old-binary rollback rehearsals pass. Live loopback/private-HTTPS reads, semantic search, exact UI assets and laptop device choices pass. The cutover preserved 23 records, 59 revisions/receipts, four token rows, credentials, plist and private routing; rollback binaries/snapshot remain. Existing Mac Codex/Cursor/Claude 2.5.0 adapters still read through server 2.5.2 without configuration changes. [Evidence](docs/memory-acceptance.md#252-memory-view-layout-september-29).
 
-## Active device-view fix
+## Laptop verification pending
 
-[LAB-219](https://linear.app/mcook/issue/LAB-219/show-connected-devices-accurately-in-the-memory-view): approved dropdown fix is implemented and verified on this local branch, not deployed. Both owner context/search include active paired IDs without scoped memories; scoped-memory choices remain after revocation; agent retrieval is unchanged. Regression failed before the fix and passed afterward; Go tests/vet/race, client/server builds, and 10 Node tests passed. [Evidence](docs/memory-acceptance.md#device-list-investigation-and-local-fix-september-29-unreleased).
+[LAB-219](https://linear.app/mcook/issue/LAB-219/show-connected-devices-accurately-in-the-memory-view): approved dropdown fix `ebd3cea` is shipped. Active paired IDs appear without scoped memories; saved-memory choices remain after revocation; agent retrieval is unchanged. HPLT2MQ5360JD8 is active and present in deployed owner browse/search choices.
 
-Confirmed cause: native Windows Codex had a Store-app redirected config using the owner credential; ordinary Windows Roaming held a separate revoked `work-hp` connection. Approved repair completed: `HPLT2MQ5360JD8` is actively paired, its credential reads #8 revision 1, owner controls reject it with 401, and the installed Windows client check passes. Supported setup updated the packaged config and replaced its owner-token file; staged pairing files were removed. Other connections, Mac credentials/service/routing, and ordinary Windows config were untouched. Next user action: reopen active laptop chats to clear loaded owner credentials; a fresh native AI turn remains unverified. Dropdown deployment is now approved with LAB-220.
-
-User direction: connectors should be minimal and reliable, with complexity on the host. Prevention target: one deterministic connection shared across harnesses, device-only agent credentials, and host-reported identity/status. A broader connection-flow change is not yet implemented or approved.
+Approved native Windows repair replaced the Store-app redirected owner credential with a dedicated paired credential. Memory #8 revision 1, installed Windows client check and owner-controls denial passed. Existing laptop chats still need reopening to clear credentials loaded before repair; a fresh native AI turn remains unverified. No further laptop changes are pending from Codex. User direction for later prevention: minimal reliable connectors and host-owned complexity; a broader connection-flow redesign is unimplemented.
 
 ## Released memory-view improvement
 
