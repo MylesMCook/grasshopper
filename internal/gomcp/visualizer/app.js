@@ -38,6 +38,21 @@ const pendingDevices = document.getElementById('pending-devices');
 const connectedDevices = document.getElementById('connected-devices');
 const connectionPrompt = document.getElementById('connection-prompt');
 const copyConnectionPrompt = document.getElementById('copy-connection-prompt');
+const viewTabs = document.getElementById('view-tabs');
+const memoryActions = document.getElementById('memory-actions');
+const editButton = document.getElementById('edit-memory');
+const confirmButton = document.getElementById('confirm-memory');
+const archiveButton = document.getElementById('archive-memory');
+const restoreButton = document.getElementById('restore-memory');
+const editForm = document.getElementById('edit-form');
+const editTitle = document.getElementById('edit-title');
+const editPurpose = document.getElementById('edit-purpose');
+const editContent = document.getElementById('edit-content');
+const editNote = document.getElementById('edit-note');
+const saveEdit = document.getElementById('save-edit');
+const conflictPanel = document.getElementById('conflict');
+const conflictNote = document.getElementById('conflict-note');
+const conflictText = document.getElementById('conflict-text');
 connectionPrompt.textContent = `Connect Grasshopper to ${location.origin}/visualizer/`;
 function requestFromHash() { return /^#connect=([0-9a-f]{64})$/.exec(location.hash)?.[1] || ''; }
 let approvalID = requestFromHash();
@@ -59,6 +74,9 @@ let searchQuery = '';
 let detailState = null;
 let detailInFlight = null;
 let openButtons = new Map();
+let listView = '';
+let pendingWrite = null;
+let saving = false;
 
 function option(value, text) {
   const item = document.createElement('option');
@@ -127,7 +145,8 @@ function setConnected(value) {
   browseControls.hidden = !value;
   scopeSummary.hidden = !value;
   devicePanel.hidden = !value;
-  searchForm.hidden = !value;
+  searchForm.hidden = !value || listView !== '';
+  viewTabs.hidden = !value;
   if (value && approvalID) openDevicePanel();
   else if (value && devicePanel.open) refreshDevices();
 }
@@ -151,6 +170,10 @@ function stop(clearRecords = false) {
     searchQuery = '';
     searchInput.value = '';
     clearSearch.hidden = true;
+    listView = '';
+    delete viewCounts.review;
+    delete viewCounts.archived;
+    showViewTabs();
     summary.textContent = 'Connect to see what is saved.';
     updateProjectOptions([], false);
     updateDeviceOptions([], false);
@@ -303,6 +326,7 @@ function scopeInput() {
   const device = deviceSelect.value === manualChoice ? manualDeviceInput.value.trim() : deviceSelect.value;
   const platform = document.getElementById('platform').value;
   if (allProjects) scope.all_projects = true;
+  if (listView) scope.view = listView;
   if (project) scope.project = project;
   if (device) scope.device = device;
   if (platform) scope.platform = platform;
@@ -367,6 +391,13 @@ function cancelDetail() {
   if (detailInFlight) detailInFlight.abort();
   detailInFlight = null;
   detailState = null;
+  pendingWrite = null;
+  // `saving` belongs to the request in flight, not to the dialog: it stays set
+  // until that request ends, so closing the dialog cannot allow a second write.
+  editForm.hidden = true;
+  conflictPanel.hidden = true;
+  detailContent.hidden = false;
+  memoryActions.hidden = true;
   detailTitle.textContent = 'Memory';
   detailStatus.textContent = '';
   detailContent.textContent = '';
@@ -381,7 +412,7 @@ function closeMemory() {
 
 function openMemory(record) {
   cancelDetail();
-  detailState = { id: record.id, scope: scopeInput(), revision: 0, maximumRevision: 0 };
+  detailState = { id: record.id, scope: scopeInput(), revision: 0, maximumRevision: 0, record: null, editing: false };
   if (!detailState.scope || !active) { cancelDetail(); return; }
   if (!memoryDialog.open) memoryDialog.showModal();
   loadRecord();
@@ -406,13 +437,14 @@ async function loadRecord(revision = null) {
     const record = await response.json();
     if (detailState !== selected || detailInFlight !== controller || !active) return;
     selected.revision = record.revision;
-    if (revision === null) selected.maximumRevision = record.revision;
+    if (revision === null) { selected.maximumRevision = record.revision; selected.record = record; }
     detailTitle.textContent = record.title || `Memory #${record.id}`;
     detailContent.textContent = record.content;
     detailMeta.replaceChildren(...recordMetadata(record).map(label));
     revisionLabel.textContent = `Memory #${record.id} · Revision ${record.revision} of ${selected.maximumRevision}`;
     history.hidden = false;
     detailStatus.textContent = record.revision === selected.maximumRevision ? 'Latest saved revision' : 'Earlier revision · current memory is unchanged';
+    showActions();
   } catch (error) {
     if (detailState !== selected || detailInFlight !== controller) return;
     if (error.message === 'Connection expired') { stop(true); setStatus('Connection expired', 'error'); return; }
@@ -433,6 +465,224 @@ memoryDialog.addEventListener('close', () => { if (!memoryDialog.open) cancelDet
 previousRevision.addEventListener('click', () => { if (detailState?.revision > 1) loadRecord(detailState.revision - 1); });
 nextRevision.addEventListener('click', () => { if (detailState?.revision < detailState?.maximumRevision) loadRecord(detailState.revision + 1); });
 latestRevision.addEventListener('click', () => loadRecord());
+
+
+function newRequestID() {
+  const id = globalThis.crypto?.randomUUID?.();
+  return id || `mv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+// Owner actions post one JSON body and return the status with any JSON reply.
+async function postOwner(path, body) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      cache: 'no-store', credentials: 'same-origin', signal: controller.signal
+    });
+    let data = null;
+    try { data = await response.json(); } catch { data = null; }
+    return { status: response.status, data };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// A retry of the same change reuses its request ID, so an uncertain first
+// attempt cannot save twice; any different change gets a new ID.
+function requestIDFor(body) {
+  const fingerprint = JSON.stringify(body);
+  if (!pendingWrite || pendingWrite.fingerprint !== fingerprint) pendingWrite = { fingerprint, id: newRequestID() };
+  return pendingWrite.id;
+}
+
+function showActions() {
+  const state = detailState;
+  const record = state?.record;
+  const latest = Boolean(record) && state.revision === state.maximumRevision && record.revision === state.maximumRevision;
+  memoryActions.hidden = !latest || state.editing;
+  const archived = Boolean(record?.archived);
+  editButton.hidden = !record || archived;
+  confirmButton.hidden = !record || archived || Boolean(record.confirmed);
+  archiveButton.hidden = !record || archived;
+  restoreButton.hidden = !record || !archived;
+  for (const button of [editButton, confirmButton, archiveButton, restoreButton]) button.disabled = saving;
+}
+
+function startEdit() {
+  const state = detailState;
+  if (!state?.record || state.record.archived) return;
+  state.editing = true;
+  editTitle.value = state.record.title || '';
+  editPurpose.value = state.record.purpose || 'observation';
+  editContent.value = state.record.content;
+  conflictPanel.hidden = true;
+  editForm.hidden = false;
+  detailContent.hidden = true;
+  showActions();
+  editContent.focus();
+}
+
+function endEdit() {
+  if (!detailState) return;
+  detailState.editing = false;
+  detailState.conflicted = false;
+  pendingWrite = null;
+  editForm.hidden = true;
+  conflictPanel.hidden = true;
+  detailContent.hidden = false;
+  showActions();
+}
+
+function showConflict(current, reason) {
+  const state = detailState;
+  if (reason === 'archived') {
+    detailStatus.textContent = 'This memory is archived. Restore it before editing.';
+    endEdit();
+    loadRecord();
+    return;
+  }
+  if (!current) { detailStatus.textContent = 'This memory changed. Close and reopen it to see the newer text.'; return; }
+  state.record = current;
+  state.conflicted = true;
+  state.revision = state.maximumRevision = current.revision;
+  conflictNote.textContent = `This memory changed after you opened it (now revision ${current.revision}, ${updatedLabel(current)}). Nothing was overwritten. Newer text:`;
+  conflictText.textContent = current.content;
+  conflictPanel.hidden = false;
+  conflictPanel.scrollIntoView({ block: 'nearest' });
+  editNote.textContent = 'Saving again replaces the newer text with yours. Earlier revisions stay in history.';
+  detailStatus.textContent = 'Review the newer text, then save again or cancel.';
+}
+
+// Returns true when the owner's change was stored.
+async function changeMemory(path, fields, done) {
+  const state = detailState;
+  if (!state?.record || !active) return false;
+  if (saving) { detailStatus.textContent = 'Another save is still finishing. Try again in a moment.'; return false; }
+  const body = { id: state.id, expected_revision: state.record.revision, ...fields };
+  body.request_id = requestIDFor(body);
+  saving = true;
+  saveEdit.disabled = true;
+  for (const button of [editButton, confirmButton, archiveButton, restoreButton]) button.disabled = true;
+  detailStatus.textContent = 'Saving…';
+  try {
+    const { status, data } = await postOwner(path, body);
+    if (detailState !== state) {
+      // The dialog closed while the request ran; the list still needs the result.
+      if (status === 200 && active) refreshList();
+      return false;
+    }
+    if (status === 200) {
+      pendingWrite = null;
+      await done(data);
+      return true;
+    }
+    if (status === 401) { stop(true); setStatus('Connection expired', 'error'); return false; }
+    if (status === 409) {
+      pendingWrite = null;
+      if (state.editing) showConflict(data?.current, data?.error);
+      else {
+        // Confirm, archive and restore have no draft to keep: show the latest.
+        await loadRecord();
+        if (detailState === state) detailStatus.textContent = 'This memory changed while you were looking at it. Showing the latest version; review it and try again.';
+      }
+      return false;
+    }
+    detailStatus.textContent = status === 400 ? 'This change is not valid. Check the text and try again.' : 'Could not save. Your text is still here; try again.';
+    return false;
+  } catch (error) {
+    if (detailState === state) detailStatus.textContent = error.name === 'AbortError' ? 'The save timed out. Try again; a repeat cannot save twice.' : 'Could not save. Your text is still here; try again.';
+    return false;
+  } finally {
+    saving = false;
+    saveEdit.disabled = false;
+    showActions();
+  }
+}
+
+function refreshList() {
+  clearTimeout(timer);
+  refresh();
+}
+
+async function saveMemoryEdit(event) {
+  event.preventDefault();
+  const content = editContent.value;
+  if (!content.trim()) { detailStatus.textContent = 'Write some text before saving.'; return; }
+  await changeMemory('/visualizer/api/update', { title: editTitle.value.trim(), content, purpose: editPurpose.value }, async receipt => {
+    endEdit();
+    await loadRecord();
+    detailStatus.textContent = `Saved as revision ${receipt.revision} and confirmed. Agents read this text from their next session.`;
+    refreshList();
+  });
+}
+
+async function confirmMemory() {
+  const record = detailState?.record;
+  if (!record) return;
+  await changeMemory('/visualizer/api/update', { title: record.title || '', content: record.content, purpose: record.purpose }, async receipt => {
+    await loadRecord();
+    detailStatus.textContent = `Confirmed as revision ${receipt.revision}.`;
+    refreshList();
+  });
+}
+
+async function setArchived(archived) {
+  const record = detailState?.record;
+  if (!record) return;
+  await changeMemory('/visualizer/api/archive', { archived }, async () => {
+    const name = record.title || `Memory #${record.id}`;
+    closeMemory();
+    setStatus(archived ? `Archived “${name}”. Restore it from Archived.` : `Restored “${name}”.`, 'live');
+    refreshList();
+  });
+}
+
+editButton.addEventListener('click', startEdit);
+confirmButton.addEventListener('click', confirmMemory);
+archiveButton.addEventListener('click', () => setArchived(true));
+restoreButton.addEventListener('click', () => setArchived(false));
+editForm.addEventListener('submit', saveMemoryEdit);
+document.getElementById('cancel-edit').addEventListener('click', () => {
+  // After a conflict the page still shows the text from before it; reload the latest.
+  const stale = detailState?.conflicted;
+  endEdit();
+  if (stale) loadRecord();
+  else detailStatus.textContent = '';
+});
+
+const viewNames = { '': 'Saved', review: 'Needs review', archived: 'Archived' };
+const viewCounts = {};
+
+function showViewTabs() {
+  for (const tab of viewTabs.children || []) {
+    const name = tab.dataset?.view ?? '';
+    const count = viewCounts[name];
+    // An unknown count shows no number; zero is a real count.
+    tab.textContent = count === undefined ? viewNames[name] : `${viewNames[name]} (${count})`;
+    tab.setAttribute('aria-pressed', String(name === listView));
+  }
+}
+
+function chooseView(name) {
+  if (name === listView) return;
+  listView = name;
+  searchQuery = '';
+  searchInput.value = '';
+  searchForm.hidden = !active || Boolean(name);
+  showViewTabs();
+  restartMemoryView();
+}
+
+function updateViewCounts(page) {
+  if (page.review_count === undefined) return;
+  viewCounts.review = page.review_count;
+  viewCounts.archived = page.archived_count;
+  showViewTabs();
+}
+
+for (const tab of viewTabs.children || []) tab.addEventListener('click', () => chooseView(tab.dataset?.view ?? ''));
 
 function restartMemoryView() {
   clearTimeout(timer);
@@ -462,6 +712,11 @@ function emptyState(omitted) {
   const message = document.createElement('p');
   empty.append(message);
   if (omitted) { message.textContent = 'Open an omitted memory above to read its full content.'; return empty; }
+  if (listView === 'review') {
+    message.textContent = 'Nothing needs review. Memories that agents save without your confirmation appear here. Handoffs are not listed: they load at startup without confirmation.';
+    return empty;
+  }
+  if (listView === 'archived') { message.textContent = 'No archived memories in this view. Archived memories no longer load for agents and can be restored.'; return empty; }
   if (searchQuery) { message.textContent = 'No matching memories. Try fewer words, or search all projects.'; return empty; }
   if (projectSelect.value !== '' || deviceSelect.value !== '' || document.getElementById('platform').value !== '') {
     message.textContent = 'Nothing saved in this view. Choose All projects, All devices and All platforms to see everything.';
@@ -545,6 +800,7 @@ function draw(page) {
     const state = document.createElement('p');
     state.className = 'record-state';
     state.textContent = `${startupNote(record)} · ${updatedLabel(record)}`;
+    if (listView === 'review') state.textContent += ` · Saved by ${record.provenance?.harness || 'an agent'} on ${record.provenance?.device || 'an unknown device'}${record.provenance?.source ? `: ${record.provenance.source}` : ''}`;
     const open = document.createElement('button');
     open.type = 'button'; open.className = 'quiet record-open';
     open.textContent = 'Open memory';
@@ -591,6 +847,7 @@ async function refresh() {
     if (!active || inFlight !== controller) return;
     updateProjectOptions(page.projects);
     updateDeviceOptions(page.devices);
+    updateViewCounts(page);
     draw(page);
     setStatus(searchQuery ? page.semantic_ready ? 'Search results' : 'Wording matches only · meaning search unavailable' : 'Live', 'live');
     // Browsing follows live writes. Search runs on submission or explicit refresh,

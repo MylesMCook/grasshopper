@@ -11,7 +11,7 @@ import (
 func TestBrowseScopeKeysFollowStoredScopesNotTheirCombinations(t *testing.T) {
 	w := fixtureWriter(t)
 	ctx := context.Background()
-	baseline, _, _, err := w.browseScopeKeys(ctx, BrowseScope{AllProjects: true})
+	baseline, _, _, err := w.browseScopeKeys(ctx, BrowseScope{AllProjects: true}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestBrowseScopeKeysFollowStoredScopesNotTheirCombinations(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	keys, _, _, err := w.browseScopeKeys(ctx, BrowseScope{AllProjects: true})
+	keys, _, _, err := w.browseScopeKeys(ctx, BrowseScope{AllProjects: true}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,11 +33,11 @@ func TestBrowseScopeKeysFollowStoredScopesNotTheirCombinations(t *testing.T) {
 		t.Fatalf("%d stored scopes produced %d keys (was %d): keys must not be a Cartesian product", count, len(keys), len(baseline))
 	}
 	one := "id:project-7"
-	keys, _, _, err = w.browseScopeKeys(ctx, BrowseScope{Scope: Scope{Project: &one}})
+	keys, _, _, err = w.browseScopeKeys(ctx, BrowseScope{Scope: Scope{Project: &one}}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, err := w.browseKeys(ctx, keys, 32768)
+	page, err := w.browseKeys(ctx, keys, 32768, "")
 	if err != nil {
 		t.Fatal(err)
 	}
