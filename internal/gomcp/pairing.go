@@ -170,12 +170,18 @@ func (p *pairingManager) adminPairings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		p.mu.Lock()
 		p.expire(time.Now())
-		items := []map[string]string{}
+		now := time.Now()
+		items := []map[string]any{}
 		for _, request := range p.requests {
-			items = append(items, map[string]string{"request_id": request.ID, "code": request.Code, "device": request.Device, "status": request.Status})
+			item := map[string]any{"request_id": request.ID, "code": request.Code, "device": request.Device, "status": request.Status}
+			if request.Status == "pending" {
+				// Seconds left, so the browser needs no synchronized clock.
+				item["expires_in"] = max(0, int(request.Expires.Sub(now).Seconds()))
+			}
+			items = append(items, item)
 		}
 		p.mu.Unlock()
-		sort.Slice(items, func(i, j int) bool { return items[i]["code"] < items[j]["code"] })
+		sort.Slice(items, func(i, j int) bool { return items[i]["code"].(string) < items[j]["code"].(string) })
 		pairingJSON(w, items, http.StatusOK)
 	case http.MethodPost:
 		var input struct {

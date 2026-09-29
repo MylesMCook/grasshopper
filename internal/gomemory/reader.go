@@ -449,6 +449,14 @@ func (r *Reader) Titles(ctx context.Context, ids []int64) (map[int64]string, err
 	return titles, rows.Err()
 }
 
+// Totals counts every active and archived memory, regardless of scope.
+// Quarantined legacy records are not counted.
+func (r *Reader) Totals(ctx context.Context) (active, archived int, err error) {
+	err = r.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(archived=0),0), COALESCE(SUM(archived=1),0)
+ FROM chunks WHERE kind='memory' AND memory_scope<>'legacy'`).Scan(&active, &archived)
+	return active, archived, err
+}
+
 func (r *Reader) browseProjects(ctx context.Context, includeArchived bool) ([]string, error) {
 	const document = "CASE WHEN json_valid(memory_scope) THEN memory_scope ELSE '{}' END"
 	const project = "json_extract(" + document + ", '$.project')"
