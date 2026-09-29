@@ -4,7 +4,7 @@ Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `c
 
 ## Active memory-view simplification
 
-[LAB-220](https://linear.app/mcook/issue/LAB-220/simplify-the-memory-view-layout-and-filter-flow): user requested a simpler private memory view and authorized deployment and Git closeout, including LAB-219. Owner remains Codex in this checkout. Search and native scope selectors now share one quiet surface; the exact selected scope precedes results; device management is secondary. Presentation changes preserve search, authentication, retrieval, and history. Research: Nielsen Norman Group progressive disclosure and GOV.UK native select guidance, evaluated through Laws of Taste and Laws of Software. Browser checks and release are in progress.
+[LAB-220](https://linear.app/mcook/issue/LAB-220/simplify-the-memory-view-layout-and-filter-flow): user requested a simpler private memory view and authorized deployment and Git closeout, including LAB-219. Owner remains Codex in this checkout. Search and native scope selectors now share one quiet surface; the exact selected scope precedes results; device management is secondary. Presentation changes preserve search, authentication, retrieval, and history. Research: Nielsen Norman Group progressive disclosure and GOV.UK native select guidance, evaluated through Laws of Taste and Laws of Software. 2.5.1 is live and verified. Owner subsequently supplied Myles Design Foundation; DESIGN.md and typography/shape alignment are being finalized as 2.5.2 before closeout.
 
 ## Active device-view fix
 
