@@ -352,9 +352,16 @@ function updatedLabel(record) {
 
 const platformNames = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
 
-// Cards name the exact scope in words; the stored project ID keeps its host/path.
+// Cards name the exact scope in words. A Git project and a project ID are
+// different scopes even when the rest of their text matches, so the label says which.
+function projectLabel(project) {
+  if (project.startsWith('git:')) return `Git project ${project.slice(4)}`;
+  if (project.startsWith('id:')) return `Project ID ${project.slice(3)}`;
+  return `Project ${project}`;
+}
+
 function scopeLabelText(scope) {
-  const project = scope.project && scope.project.replace(/^(git|id):/, '');
+  const project = scope.project && projectLabel(scope.project);
   const parts = [project, scope.device && `device ${scope.device}`, scope.platform && (platformNames[scope.platform] || scope.platform)].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'Global';
 }
@@ -712,7 +719,8 @@ function draw(page) {
   const omissionSignature = JSON.stringify([omitted, page.omitted_records, page.omitted_titles]);
   if (omitted && omissionSignature !== lastOmissionSignature) {
     const text = document.createElement('p');
-    text.textContent = `${omitted} ${omitted === 1 ? 'memory is' : 'memories are'} outside this list's size limit. Open a record below, or search to narrow the list.`;
+    const listed = (page.omitted_records || []).length;
+    text.textContent = `${omitted} ${omitted === 1 ? 'memory is' : 'memories are'} outside this list's size limit. ${listed < omitted ? `The first ${listed} are named below; narrow the list with filters or search to reach the other ${omitted - listed}.` : 'Open one below, or search to narrow the list.'}`;
     const links = document.createElement('div');
     links.className = 'omitted-links';
     for (const reference of page.omitted_records || []) {

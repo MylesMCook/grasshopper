@@ -241,7 +241,7 @@ test('cards name their exact scope and say what an agent will load', () => {
   const handoff = { ...memory(4), confirmed: false, purpose: 'handoff' };
   v.ui.draw({ records: [scoped, handoff], omitted: 0 });
   const [first, second] = v.get('records').children[0].children;
-  assert.equal(first.children[0].children[1].textContent, 'github.com/example/orchard · device mac-mini · macOS');
+  assert.equal(first.children[0].children[1].textContent, 'Git project github.com/example/orchard · device mac-mini · macOS');
   assert.equal(first.children[0].children[2].textContent, '#3');
   assert.match(first.children[2].textContent, /^Unconfirmed · not loaded at agent startup/);
   assert.match(second.children[2].textContent, /^Unconfirmed handoff · loads at startup/);
@@ -405,4 +405,24 @@ test('choosing a list view asks the server for it and hides search', async () =>
   v.ui.chooseView('');
   assert.equal(v.get('search-form').hidden, false);
   assert.deepEqual(JSON.parse(v.requests.at(-1).options.body), { all_projects: true });
+});
+
+test('scope labels keep Git projects and project IDs apart', () => {
+  const v = view();
+  v.ui.draw({ records: [
+    { ...memory(20), scope: { project: 'git:github.com/example/orchard' } },
+    { ...memory(21), scope: { project: 'id:github.com/example/orchard' } }
+  ], omitted: 0 });
+  const [git, id] = v.get('records').children[0].children;
+  assert.equal(git.children[0].children[1].textContent, 'Git project github.com/example/orchard');
+  assert.equal(id.children[0].children[1].textContent, 'Project ID github.com/example/orchard');
+});
+
+test('an omission list capped at 100 says how many memories it does not name', () => {
+  const v = view();
+  const named = Array.from({ length: 100 }, (_, index) => ({ id: index + 1, revision: 1, scope: {} }));
+  v.ui.draw({ records: [], omitted: 130, omitted_ids: named.map(item => item.id), omitted_records: named });
+  const text = v.get('omissions').children[0].textContent;
+  assert.match(text, /130 memories are outside/);
+  assert.match(text, /first 100 are named below.*the other 30/);
 });
