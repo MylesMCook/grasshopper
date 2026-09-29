@@ -88,6 +88,8 @@ func TestStartupPreviewMatchesAgentContextAndExplainsWhatIsLeftOut(t *testing.T)
 		`{"scope":{"legacy":true},"budget":12000}`,
 		`{"scope":{"platform":"darwin"},"budget":12000}`,
 		`{"scope":{},"budget":12000,"extra":1}`,
+		`{"scope":{"all_projects":true},"budget":12000}`,
+		`{"scope":{"view":"review"},"budget":12000}`,
 	} {
 		if status, _ := ownerRead(t, server, "/visualizer/api/startup", body); status != http.StatusBadRequest {
 			t.Fatalf("accepted %s: %d", body, status)
