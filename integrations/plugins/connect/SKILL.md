@@ -26,6 +26,23 @@ plugin. This checks the pending request once and finishes setup. If it is still
 pending, show the same link and wait for the owner; do not start another request
 or poll in a loop. Approval expires after five minutes.
 Do not describe a pending or unacknowledged connection as complete.
+A read-only `check --json` reports `approval_ready` when approval has succeeded;
+run `connect --json` once to finish that existing request. Checks never install
+wiring or replace credentials.
+
+`credential_role`, `registered_device`, `server`, and `registration` come from
+the host. `owner_credential` means memory access works but this device is not
+paired: explain that distinction and offer `connect --reconnect` for explicit
+owner-approved pairing. `device_mismatch` needs inspection; never rewrite the
+local device ID or switch servers to make the check pass. Older hosts report
+registration as `unverified` while retaining memory access.
+
+Windows default connections use `%USERPROFILE%\.grasshopper`, shared by
+packaged and ordinary agents. Explicit configuration overrides remain
+unchanged. Explicit Connect can move a verified legacy device connection to
+that shared location while retaining the original files. Do not hunt through
+package directories, copy owner credentials, or select between conflicts.
+
 
 For `network_permission_required`, use the harness's normal approval to let
 this command reach the private server, then retry once. Do not disable its

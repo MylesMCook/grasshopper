@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 )
 
 const unavailable = "Grasshopper unavailable; persistence not acknowledged. Do not automatically retry writes."
@@ -222,4 +223,55 @@ func (r *Remote) Context(ctx context.Context, scope Scope, budget int) (json.Raw
 		return nil, errors.New("context rejected")
 	}
 	return reply.Result.StructuredContent, nil
+}
+
+// ConnectionIdentity is the host's authenticated role and registered device.
+// An owner credential has no registered device identity.
+type ConnectionIdentity struct {
+	Role    string `json:"role"`
+	Device  string `json:"device"`
+	Version string `json:"version"`
+}
+
+// ErrIdentityUnsupported indicates an older host; callers may verify MCP access
+// but must not infer device registration from that verification.
+var ErrIdentityUnsupported = errors.New("host does not report connection identity")
+
+// Identity checks this credential without fetching memories or changing state.
+func (r *Remote) Identity(ctx context.Context) (ConnectionIdentity, error) {
+	var identity ConnectionIdentity
+	endpoint := strings.TrimSuffix(r.endpoint, "/mcp") + "/connection"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return identity, err
+	}
+	request.Header.Set("Authorization", "Bearer "+r.token)
+	response, err := r.client.Do(request)
+	if err != nil {
+		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			return identity, ErrNetworkRestricted
+		}
+		return identity, errors.New("backend unavailable")
+	}
+	defer response.Body.Close()
+	switch response.StatusCode {
+	case 404:
+		return identity, ErrIdentityUnsupported
+	case 401, 403:
+		return identity, ErrAuthenticationRejected
+	case 200:
+	default:
+		return identity, errors.New("connection identity unavailable")
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 2049))
+	if err != nil || len(body) > 2048 {
+		return identity, errors.New("invalid connection identity")
+	}
+	if json.Unmarshal(body, &identity) != nil || identity.Version == "" ||
+		(identity.Role != "owner" && identity.Role != "device") ||
+		(identity.Role == "owner" && identity.Device != "") ||
+		(identity.Role == "device" && (strings.TrimSpace(identity.Device) == "" || len(identity.Device) > 64 || strings.IndexFunc(identity.Device, unicode.IsControl) >= 0)) {
+		return ConnectionIdentity{}, errors.New("invalid connection identity")
+	}
+	return identity, nil
 }

@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -64,6 +65,9 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 			return
 		}
 		if jsonPhase != nil {
+			if resultErr != nil {
+				jsonPhase["status"], jsonPhase["next_step"] = connectErrorStatus(resultErr)
+			}
 			_ = json.NewEncoder(os.Stdout).Encode(jsonPhase)
 			return
 		}
@@ -144,11 +148,11 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 	}
 	*address = mcpURL
 	if *tokenPath == "" {
-		configDir, err := os.UserConfigDir()
+		path, err := goclient.DefaultTokenPath()
 		if err != nil {
 			return err
 		}
-		*tokenPath = filepath.Join(configDir, "Grasshopper", "access-token")
+		*tokenPath = path
 	}
 	if *device == "" {
 		*device, err = os.Hostname()
@@ -167,15 +171,42 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 			return connectProblem("conflicting_configuration", "Grasshopper already uses another server. Confirm the change with --switch-server and its link.")
 		}
 		if existing.URL == *address {
-			state, next := connectionStatus(configPath)
+			report := connectionReport(configPath)
+			state, next := report["status"], report["next_step"]
+			if *jsonOutput {
+				jsonPhase = report
+			}
 			if state == "unreachable_server" || state == "network_permission_required" || state == "conflicting_configuration" {
+				return connectProblem(state, next)
+			}
+			if state == "device_mismatch" || (state == "owner_credential" && !*reconnect) {
 				return connectProblem(state, next)
 			}
 			if state == "authentication_rejected" && !*reconnect {
 				return connectProblem(state, next)
 			}
 			if state == "connected" {
-				if *agents == "none" && !*cursorCLI && !*update {
+				migrating := false
+				// Only explicit Connect migrates a verified default Windows
+				// device connection. Overrides and old-host access stay put.
+				if runtime.GOOS == "windows" && *configArg == "" && os.Getenv("GRASSHOPPER_CLIENT_CONFIG") == "" && report["registration"] == "verified" {
+					canonical, err := goclient.DefaultConfigPath()
+					if err != nil {
+						return err
+					}
+					if canonical != configPath {
+						token, err := migrateDeviceCredential(existing, canonical)
+						if err != nil {
+							return err
+						}
+						configPath, *tokenPath, existing.TokenFile = canonical, token, token
+						// The normal setup transaction installs policy/config and
+						// requested agent wiring; legacy files remain untouched.
+						migrating = true
+					}
+				}
+
+				if *agents == "none" && !*cursorCLI && !*update && !migrating {
 					if !*jsonOutput {
 						fmt.Fprintln(os.Stdout, "Grasshopper is already connected on this machine.")
 					}
@@ -200,6 +231,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		if existing.URL != *address && !*switchServer {
 			return connectProblem("conflicting_configuration", "Switching servers needs --switch-server.")
 		}
+		jsonPhase = nil
 		if *tokenPath == existing.TokenFile {
 			*tokenPath += ".replacement"
 		}
@@ -225,6 +257,35 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 	if _, err := os.Stat(*tokenPath); err == nil {
 		if configErr == nil && pending == nil && *tokenPath != existing.TokenFile && !*reconnect && !*switchServer {
 			return connectProblem("conflicting_configuration", "A replacement credential already exists; inspect it before continuing.")
+		}
+		candidate := goclient.Config{URL: *address, TokenFile: *tokenPath, Device: *device, PolicyPath: filepath.Join(root, "policy", "AGENTS.md")}
+		remote, err := goclient.NewRemote(candidate)
+		if err != nil {
+			return err
+		}
+		verifyCtx, cancel := context.WithTimeout(parent, 6*time.Second)
+		identity, identityErr := remote.Identity(verifyCtx)
+		cancel()
+		if identityErr != nil && !errors.Is(identityErr, goclient.ErrIdentityUnsupported) {
+			if errors.Is(identityErr, goclient.ErrAuthenticationRejected) {
+				return connectProblem("authentication_rejected", "The saved credential was rejected. Request explicit replacement approval with connect --reconnect.")
+			}
+			if errors.Is(identityErr, goclient.ErrNetworkRestricted) {
+				return connectProblem("network_permission_required", "Allow access through the agent's normal network permission, then retry once. Saved access was kept.")
+			}
+			return connectProblem("unreachable_server", "The private server is unavailable. Saved access was kept; retry when it is online.")
+		}
+		if identityErr == nil && identity.Role == "owner" {
+			return connectProblem("owner_credential", "This is owner access, not a device credential. Keep it private and request a dedicated device approval before installing this connection.")
+		}
+		if identityErr == nil && identity.Device != *device {
+			return connectProblem("device_mismatch", "This credential belongs to a different registered device. Inspect it before changing the connection.")
+		}
+		if *jsonOutput {
+			jsonPhase = map[string]string{"status": "connected", "server": *address, "device": *device, "registration": "unverified", "next_step": "Open a fresh agent session after native hook or MCP approval."}
+			if identityErr == nil {
+				jsonPhase["registration"], jsonPhase["registered_device"], jsonPhase["credential_role"], jsonPhase["host_version"] = "verified", identity.Device, identity.Role, identity.Version
+			}
 		}
 		if err := setupClientWithRoot(setupArgs, root, run); err != nil {
 			return fmt.Errorf("saved device credential could not be used; if the server rejected it, run connect --reconnect: %w", err)
@@ -305,6 +366,9 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 			break
 		}
 		if status != http.StatusAccepted || result.Status != "pending" {
+			if status != http.StatusForbidden && status != http.StatusNotFound && status != http.StatusGone {
+				return connectProblem("unreachable_server", "The pairing service is unavailable. Pending approval was kept; retry when it is online.")
+			}
 			if pending != nil {
 				_ = os.Remove(pendingPath(configPath))
 			}
@@ -313,6 +377,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 			}
 			return connectProblem("approval_expired", "The five-minute request expired. Run connect again for a new approval link.")
 		}
+
 		if pending != nil {
 			jsonPhase = pendingStatus(*pending)
 			return nil
@@ -344,6 +409,9 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 	}
 	if pending != nil {
 		_ = os.Remove(pendingPath(configPath))
+	}
+	if *jsonOutput {
+		jsonPhase = map[string]string{"status": "connected", "server": *address, "device": *device, "registered_device": *device, "credential_role": "device", "registration": "verified", "next_step": "Open a fresh agent session after native hook or MCP approval."}
 	}
 	return nil
 }

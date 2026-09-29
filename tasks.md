@@ -1,6 +1,10 @@
 # Grasshopper release state
 
-Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
+Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `codex/connection-reliability`.
+
+## Active connection reliability
+
+[LAB-221](https://linear.app/mcook/issue/LAB-221/make-device-connection-identity-and-recovery-deterministic): owner requests simpler reliable setup/recovery and deployment/Git closeout. Codex is the only editor of this checkout. Confirmed gaps: status cannot distinguish owner access from registration; Windows AppData can fork per packaged app; check does not reconcile pending approval with the host. [Scenarios](docs/connection-flow.md) approved September 29. Host identity and read-only pending checks now pass native regressions that failed before implementation. Shared Windows defaults and explicit legacy migration are implemented; cross-platform and live verification remain. Keep all memory tools and permissions, preserve current credentials during outages/conflicts, and use no new dependency or writable client memory store.
 
 ## Released memory-view simplification
 

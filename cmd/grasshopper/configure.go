@@ -7,8 +7,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/MylesMCook/grasshopper/internal/goclient"
@@ -50,60 +52,112 @@ func checkConnection(args []string) error {
 	if err != nil {
 		return err
 	}
-	state, detail := connectionStatus(path)
+	result := connectionReport(path)
 	if *jsonOutput {
-		result := map[string]string{"status": state, "next_step": detail}
-		if state == "approval_pending" {
-			if pending, err := loadPendingConnection(path); err == nil {
-				result["approval_url"], result["device"], result["code"] = pending.ApprovalURL, pending.Device, pending.Code
-			}
-		}
 		return json.NewEncoder(os.Stdout).Encode(result)
 	}
-	if state != "connected" {
-		return errors.New(detail)
+	if result["status"] != "connected" {
+		return errors.New(result["next_step"])
 	}
-	fmt.Fprintln(os.Stdout, "Authenticated Grasshopper context received. No memory was changed.")
+	fmt.Fprintf(os.Stdout, "Grasshopper connected. Device: %s. Registration: %s. %s\n", result["device"], result["registration"], result["next_step"])
 	return nil
 }
 
 func connectionStatus(path string) (string, string) {
+	report := connectionReport(path)
+	return report["status"], report["next_step"]
+}
+
+func connectionReport(path string) map[string]string {
+	result := map[string]string{}
+	report := func(state, next string) map[string]string {
+		result["status"], result["next_step"] = state, next
+		return result
+	}
 	if pending, err := loadPendingConnection(path); err == nil {
 		currentHash, hashErr := connectionConfigHash(path)
 		if hashErr != nil || currentHash != pending.ConfigHash {
-			return "conflicting_configuration", "Grasshopper configuration changed during approval. Inspect it before continuing."
+			return report("conflicting_configuration", "Grasshopper configuration changed during approval. Inspect it before continuing.")
 		}
-		return "approval_pending", "Approve the matching code in the private memory view, then run connect --json again."
+		result["server"], result["device"] = pending.Address, pending.Device
+		_, base, err := goclient.NormalizeServerAddress(pending.Address)
+		if err != nil {
+			return report("conflicting_configuration", "Inspect the private pending connection before continuing.")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		var polled struct {
+			Status string `json:"status"`
+		}
+		status, err := pairingRequest(ctx, client, base+"/pair/poll", map[string]string{"request_id": pending.RequestID}, &polled)
+		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			return report("network_permission_required", "Allow access through the agent's normal network permission, then retry once. Pending approval was kept.")
+		}
+		if err != nil {
+			return report("unreachable_server", "The private server is unavailable. Pending approval was kept; try again when it is online.")
+		}
+		switch {
+		case status == 200 && polled.Status == "approved":
+			return report("approval_ready", "Approval succeeded. Run connect --json to finish using this approval.")
+		case status == 202 && polled.Status == "pending":
+			result["approval_url"], result["code"] = pending.ApprovalURL, pending.Code
+			return report("approval_pending", "Approve the matching code in the private memory view, then run connect --json again.")
+		case status == 403:
+			return report("approval_denied", "Access was denied. Ask the owner before trying again.")
+		case status == 404 || status == 410:
+			return report("approval_expired", "The approval request expired. Run connect again for a new approval link.")
+		default:
+			return report("unreachable_server", "The pairing service is unavailable. Pending approval was kept; try again when it is online.")
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return "conflicting_configuration", "Inspect the private pending connection before continuing."
+		return report("conflicting_configuration", "Inspect the private pending connection before continuing.")
 	}
 	config, err := goclient.LoadConfig(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return "missing_address", "Connect Grasshopper with your private server link."
+		return report("missing_address", "Connect Grasshopper with your private server link.")
 	}
 	if err != nil {
-		return "conflicting_configuration", "Inspect the existing Grasshopper client configuration before changing it."
+		return report("conflicting_configuration", "Inspect the existing Grasshopper client configuration before changing it.")
 	}
+	result["server"], result["device"] = config.URL, config.Device
 	if info, err := os.Stat(config.PolicyPath); err != nil || !info.Mode().IsRegular() {
-		return "conflicting_configuration", "The shared AGENTS.md is missing; reinstall the plugin without replacing your credential."
+		return report("conflicting_configuration", "The shared AGENTS.md is missing; reinstall the plugin without replacing your credential.")
 	}
 	remote, err := goclient.NewRemote(config)
 	if err != nil {
-		return "conflicting_configuration", "The saved Grasshopper credential or address needs inspection."
+		return report("conflicting_configuration", "The saved Grasshopper credential or address needs inspection.")
 	}
-	platform := goclient.Platform()
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	if _, err := remote.Context(ctx, goclient.Scope{Device: &config.Device, Platform: &platform}, 512); err != nil {
+	identity, err := remote.Identity(ctx)
+	if errors.Is(err, goclient.ErrIdentityUnsupported) {
+		platform := goclient.Platform()
+		_, err = remote.Context(ctx, goclient.Scope{Device: &config.Device, Platform: &platform}, 512)
+		if err == nil {
+			result["registration"] = "unverified"
+			return report("connected", "Memory access works; this older host cannot verify registration. Upgrade the host to verify device identity.")
+		}
+	}
+	if err != nil {
 		if errors.Is(err, goclient.ErrAuthenticationRejected) {
-			return "authentication_rejected", "This device's access was rejected. Run connect --reconnect to request approval for a replacement."
+			return report("authentication_rejected", "This device's access was rejected. Run connect --reconnect to request approval for a replacement.")
 		}
 		if errors.Is(err, goclient.ErrNetworkRestricted) {
-			return "network_permission_required", "Allow Grasshopper to reach this private server through your agent's normal network permission, then retry once."
+			return report("network_permission_required", "Allow Grasshopper to reach this private server through your agent's normal network permission, then retry once.")
 		}
-		return "unreachable_server", "The private server is unavailable. Keep this connection and try again when it is online."
+		return report("unreachable_server", "The private server is unavailable. Keep this connection and try again when it is online.")
 	}
-	return "connected", "Open a fresh agent session after approving any native hook or MCP prompt."
+	result["credential_role"], result["host_version"], result["registered_device"] = identity.Role, identity.Version, identity.Device
+	if identity.Role == "owner" {
+		result["registration"] = "unregistered"
+		return report("owner_credential", "Memory access uses the owner credential. Run connect --reconnect to request a dedicated device approval; current access is retained until setup succeeds.")
+	}
+	result["registration"] = "verified"
+	if identity.Device != config.Device {
+		return report("device_mismatch", "The host's registered device differs from this configuration. Inspect the device identity before changing it; saved access was kept.")
+	}
+	return report("connected", "Open a fresh agent session after approving any native hook or MCP prompt.")
 }
 
 // privateFile writes beside the target and renames after closing, so a

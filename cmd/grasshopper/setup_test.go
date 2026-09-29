@@ -43,6 +43,10 @@ func testClientName() string {
 func setupServer(t *testing.T, allowed bool) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/connection" {
+			w.WriteHeader(404)
+			return
+		}
 		if !allowed || r.Header.Get("Authorization") != "Bearer "+strings.Repeat("t", 40) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return

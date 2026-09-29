@@ -35,11 +35,66 @@ func ConfigPath(explicit string) (string, error) {
 	if path := os.Getenv("GRASSHOPPER_CLIENT_CONFIG"); path != "" {
 		return path, nil
 	}
+	path, err := DefaultConfigPath()
+	if err != nil {
+		return "", err
+	}
+	// Reading an old connection is compatible and has no migration side effects.
+	if runtime.GOOS == "windows" {
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Lstat(path + ".pairing"); errors.Is(err, os.ErrNotExist) {
+				legacy, err := LegacyConfigPath()
+				if err != nil {
+					return "", err
+				}
+				if _, err := os.Lstat(legacy); err == nil || !errors.Is(err, os.ErrNotExist) {
+					return legacy, nil
+				}
+				if _, err := os.Lstat(legacy + ".pairing"); err == nil || !errors.Is(err, os.ErrNotExist) {
+					return legacy, nil
+				}
+			}
+		}
+	}
+	return path, nil
+}
+
+// DefaultConfigPath is the canonical location for new connections. Windows
+// uses the user profile so packaged and ordinary agents share the same path.
+func DefaultConfigPath() (string, error) {
+	if runtime.GOOS == "windows" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, ".grasshopper", "client.json"), nil
+	}
+	return LegacyConfigPath()
+}
+
+// LegacyConfigPath names the prior default; it is only a compatibility input.
+func LegacyConfigPath() (string, error) {
 	directory, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(directory, "grasshopper", "client.json"), nil
+}
+
+// DefaultTokenPath follows the shared Windows profile, preserving other OS defaults.
+func DefaultTokenPath() (string, error) {
+	if runtime.GOOS == "windows" {
+		path, err := DefaultConfigPath()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(filepath.Dir(path), "access-token"), nil
+	}
+	directory, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(directory, "Grasshopper", "access-token"), nil
 }
 
 // LoadConfig parses a bounded, strict JSON file. NewRemote separately

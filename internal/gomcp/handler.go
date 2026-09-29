@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -311,6 +312,40 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Connection identity is bearer-only and reports only this credential.
+		// It neither grants owner controls nor changes the five-tool MCP surface.
+		if r.URL.Path == "/connection" {
+			w.Header().Set("Cache-Control", "no-store")
+			role, device := "owner", ""
+			if !masterBearerValid(r) {
+				provided, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+				if !ok || len(provided) < 32 || len(provided) > 256 {
+					http.Error(w, "authentication required", 401)
+					return
+				}
+				ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+				defer cancel()
+				var err error
+				device, err = backend.Store.ClientTokenDevice(ctx, provided)
+				if err != nil {
+					http.Error(w, "connection unavailable", 503)
+					return
+				}
+				if device == "" {
+					http.Error(w, "authentication required", 401)
+					return
+				}
+				role = "device"
+			}
+			if r.Method != http.MethodGet {
+				w.Header().Set("Allow", "GET")
+				http.Error(w, "method not allowed", 405)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"role": role, "device": device, "version": version})
+			return
+		}
 		if backend.Visualizer && visualizerAsset(w, r, backend.VisualizerStyleHashes) {
 			return
 		}

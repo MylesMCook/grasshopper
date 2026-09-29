@@ -541,3 +541,18 @@ func TestPromptFallbackWithoutSessionDoesNotSuppressContext(t *testing.T) {
 		}
 	}
 }
+
+func TestIdentityRejectsMalformedResponsesAndNetworkDenial(t *testing.T) {
+	for _, body := range []string{`{}`, `{"role":"owner","device":"fake","version":"test"}`, `{"role":"device","device":"","version":"test"}`, strings.Repeat("x", 2049)} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))
+		remote := &Remote{endpoint: server.URL + "/mcp", client: server.Client()}
+		if _, err := remote.Identity(t.Context()); err == nil {
+			t.Fatalf("invalid identity accepted: %.80s", body)
+		}
+		server.Close()
+	}
+	remote := &Remote{endpoint: "http://127.0.0.1:1/mcp", client: &http.Client{Transport: blockedTransport{syscall.EPERM}}}
+	if _, err := remote.Identity(t.Context()); !errors.Is(err, ErrNetworkRestricted) {
+		t.Fatal("identity lost network-permission failure")
+	}
+}

@@ -329,11 +329,11 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 		}
 	}
 	if *tokenFile == "" {
-		base, err := os.UserConfigDir()
+		path, err := goclient.DefaultTokenPath()
 		if err != nil {
 			return err
 		}
-		*tokenFile = filepath.Join(base, "Grasshopper", "access-token")
+		*tokenFile = path
 	}
 	if *device == "" {
 		name, err := os.Hostname()
