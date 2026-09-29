@@ -34,7 +34,7 @@ claude plugin install grasshopper-macos@grasshopper-marketplace
 
 For Windows or Linux, install `grasshopper-windows` or `grasshopper-linux` instead. Claude Code asks before an agent first uses a Grasshopper tool; approve the three read tools once.
 
-Prefer to pre-approve those reads and keep the connector beside your other client files? Download the [client archive for your machine](https://github.com/MylesMCook/grasshopper/releases/latest), check it against the release's `SHA256SUMS`, extract it, and run this instead of the two commands above:
+Prefer to pre-approve those reads and keep the connector beside your other client files? Download the [client archive for your machine](https://github.com/MylesMCook/grasshopper/releases/latest), check it against the release's `SHA256SUMS`, extract it, and run this instead of the two commands above (it installs a separate local plugin, so use one route or the other):
 
 ```sh
 ./bin/grasshopper connect --agents claude --url https://your-private-server

@@ -2,6 +2,13 @@
 
 Observed checks for Grasshopper releases. Synthetic checks and real-client observations are separate below.
 
+## Memory view review and Claude Code marketplace (September 29, unreleased)
+
+- [LAB-222](https://linear.app/mcook/issue/LAB-222/let-the-owner-review-correct-and-understand-memories-in-the-memory), unmerged PRs #9 to #14. Approved [scenarios](memory-view-review.md). Nothing here is released, deployed, or run against the live database.
+- Mac mini, macOS 27.0 (Darwin 27.0.0, arm64). Go tests, vet, scoped race checks and the Node viewer tests pass on the stacked branch; three-OS CI passed on each PR head when opened. These use synthetic records and stub embedders. The real Granite model tests were not run for this work.
+- Real browser checks used the Claude desktop app's built-in browser against a synthetic loopback server (invented records, a test-only token). Observed: default all-project list with none omitted; first-run guidance on an empty store; opening an unconfirmed memory, editing and saving it (revision 2, confirmed); a forced stale edit that kept the draft beside the newer text; the signed-out approval link, sign-in, and landing on the request with its code and countdown; the startup preview listing an unconfirmed memory as not loaded. No native agent session read or wrote through this view.
+- Claude Code 2.1.280 on the same Mac: `claude plugin validate` passed for the built marketplace archive and a plugin directory. Under a scratch `CLAUDE_CONFIG_DIR`, `plugin marketplace add`, `plugin install grasshopper-macos@grasshopper-marketplace` and `plugin details` succeeded (1 skill, 2 hook events, 1 MCP server), and the installed 2.6.0 client returned `missing_address` from `check --json` with no config. The scratch config was removed; the real Claude configuration was not touched. A live Claude Code turn through this plugin, the Windows and Linux plugins, and publishing to the `marketplace` branch have not been done.
+
 ## Device-list investigation and local fix (September 29, unreleased)
 
 - [LAB-219](https://linear.app/mcook/issue/LAB-219/show-connected-devices-accurately-in-the-memory-view). User approved showing active paired device IDs in the scope dropdown without requiring scoped memories, retaining scoped-memory choices after connection revocation, and preserving agent access rules. Both owner context and search now merge the connection metadata into their device choices. Record retrieval still uses the original scoped-memory keys.
