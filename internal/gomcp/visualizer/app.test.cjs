@@ -151,7 +151,7 @@ test('expired record request clears private content and disconnects', async () =
   assert.equal(v.get('memory-detail-content').textContent, '');
   assert.equal(v.get('memory-dialog').open, false);
   assert.equal(v.get('search-form').hidden, true);
-  assert.equal(v.get('status').textContent, 'Connection expired');
+  assert.equal(v.get('status').textContent, 'Session expired');
 });
 
 test('omitted records remain directly openable without replacing focused controls on unchanged polls', async () => {
@@ -394,7 +394,7 @@ test('an expired session during a save clears private content', async () => {
   submitEdit(v);
   v.requests.at(-1).reply(null, 401);
   await tick();
-  assert.equal(v.get('status').textContent, 'Connection expired');
+  assert.equal(v.get('status').textContent, 'Session expired');
   assert.equal(v.get('memory-dialog').open, false);
 });
 

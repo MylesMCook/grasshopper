@@ -12,7 +12,7 @@ confirmation unchanged. The first-memory exercise is static guidance.
 | 2. Review and correction | Review queue, correct, conflict, archive and restore, write authorization | Implemented |
 | 3. Approval, devices and status | Approve a device safely, server status | Implemented |
 | 4. Startup preview | Preview what an agent receives | Implemented |
-| 5. Documentation | README and setup trimmed to the user path | Planned |
+| 5. Documentation | README reordered around the user path | Implemented |
 
 ```gherkin
 Feature: Owner reviews and corrects memories in the memory view
@@ -141,3 +141,17 @@ Feature: Owner reviews and corrects memories in the memory view
   running session received it, and that Claude Code also skips every record if
   its whole startup message is too long.
 - Tests: `visualizer_startup_test.go`, `visualizer/app.test.cjs`.
+
+## Slice 5 evidence and decisions
+
+- The README now follows the user's order: install a connector (Codex, Cursor,
+  Claude Code), connect once, try a first memory, use the memory view, then
+  update, host and back up. Connection status wording is plain language; the
+  spec-style paragraph is gone. The server and migration steps stay in the
+  README because the release archives ship it as their only guide; moving them
+  would change packaging.
+- Not done: a published Claude Code marketplace entry. The `marketplace` branch
+  carries Codex and Cursor plugins only, so Claude Code still installs from the
+  client archive. Publishing one is a release change and is left for a decision.
+- Not done: the public setup page (`web/public/setup`) is unchanged and not
+  redeployed.

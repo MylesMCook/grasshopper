@@ -4,9 +4,11 @@ Keep a few useful memories across Codex, Cursor, and Claude Code. One private se
 
 ## Connect an agent
 
-Install a connector on each machine. They all use the same server and the same memories.
+Install a connector on each machine. They all use the same server and the same memories. Then connect once and try it.
 
-### Codex
+### 1. Install a connector
+
+#### Codex
 
 ```sh
 codex plugin marketplace add MylesMCook/grasshopper --ref marketplace
@@ -15,7 +17,7 @@ codex plugin add grasshopper-macos@grasshopper-marketplace
 
 For Windows or Linux, choose the matching Grasshopper plugin entry instead of the Mac entry.
 
-### Cursor
+#### Cursor
 
 ```sh
 agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace
@@ -23,24 +25,7 @@ agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git
 
 Install your OS entry in Agent CLI's Plugins menu or the IDE's **Customize → Plugins**.
 
-Ask the installed agent: **Connect Grasshopper.** If this machine already has a connection, it reuses it. Otherwise, give it your private server link once (the server, memory-view, or MCP link). Open the approval link it returns **in your already-connected memory view**, match the device and code, and approve. No token goes through the agent. Codex may ask you to trust its hook and allow network access to your private server; Cursor may ask you to enable Grasshopper MCP. On Windows Cursor Agent CLI, keep the default user-level MCP location.
-
-Connection checks report the host's registered device, server and approval state.
-Owner access is identified separately from device registration. Windows agents
-share `%USERPROFILE%\.grasshopper`; explicit configuration paths still take
-precedence. An explicit Connect can reuse a verified legacy device connection
-while keeping the old files recoverable. If the server is offline, keep the
-connection and retry when it is available.
-
-Setup allows Grasshopper's three read tools in Cursor Agent CLI and Claude Code. Saving or archiving a memory still uses each agent's normal approval.
-
-### Find, review and correct a memory
-
-In your private server's memory view, sign in as the owner. It lists everything saved, grouped as **Saved**, **Needs review** and **Archived**. Narrow by project, device or platform, or search for wording or meaning. Open a memory to read its complete text, source, exact scope, confirmation state and date, and to step through earlier revisions.
-
-The owner can also **Edit**, **Confirm as is**, **Archive** or **Restore** a memory. An edit stores a new revision and marks the memory confirmed; earlier revisions stay in history. If an agent changed the memory after you opened it, nothing is overwritten and you see the newer text before saving again. Only confirmed memories and handoffs load into an agent's startup context, so confirming is how you promote an observation. **Needs review** lists unconfirmed memories other than handoffs, which load without confirmation.
-
-### Claude Code
+#### Claude Code
 
 Download the [client archive for your machine](https://github.com/MylesMCook/grasshopper/releases/latest), check it against the release's `SHA256SUMS`, and extract it. Run:
 
@@ -54,9 +39,34 @@ On Windows PowerShell:
 .\bin\grasshopper.exe connect --agents claude --url https://your-private-server
 ```
 
-Approve the matching code in the server's memory view.
+Then approve the matching code in the server's memory view, as in step 2.
 
-Start a fresh session after native approvals. A new server has no memories until you ask an agent to save a preference or decision.
+### 2. Connect once
+
+Ask the installed agent: **Connect Grasshopper.** If this machine already has a connection, it reuses it. Otherwise, give it your private server link once (the server, memory-view, or MCP link). It returns an approval link. Open that link in your memory view, sign in as the owner if asked, check that the device and code match, and approve. No token goes through the agent.
+
+Your agent may ask you to approve a few things natively. Codex may ask you to trust its hook and allow network access to your private server. Cursor may ask you to enable Grasshopper MCP. On Windows Cursor Agent CLI, keep the default user-level MCP location. Setup allows Grasshopper's three read tools in Cursor Agent CLI and Claude Code; saving or archiving a memory still uses each agent's normal approval. Start a fresh session after these approvals.
+
+To check later, ask the agent to check Grasshopper. It reports the device this machine is registered as, whether the server is reachable, and whether an approval is still waiting. If the server is offline, your saved connection stays in place; try again when it is back. Windows agents share one connection under `%USERPROFILE%\.grasshopper`; an older working connection can be moved there and the old files are kept.
+
+### 3. Try it
+
+A new server has no memories. To see it work:
+
+1. Ask the agent to save a preference, such as "Remember that I prefer short commit messages."
+2. Start a fresh session and ask what it remembers about your preferences.
+3. Open your memory view and find it under **Saved**. Memories an agent saves without your confirmation are listed under **Needs review** and are not loaded at startup until you confirm them.
+
+## Use the memory view
+
+In your private server's memory view, sign in as the owner. The tabs are:
+
+- **Saved**: everything active, from every project by default. Narrow by project, device or platform, or search for wording or meaning. Open a memory to read its complete text, source, exact scope, confirmation state and date, and to step through earlier revisions.
+- **Needs review**: memories an agent saved without your confirmation. They are not loaded at startup until you confirm them. Handoffs are left off this list because they load at startup without confirmation.
+- **Archived**: memories hidden from agents, which you can restore.
+- **Startup preview**: what the server would send an agent for a chosen project, device and platform, and why any other memory would not load. It shows what the server would send, not what a running session received.
+
+You can **Edit**, **Confirm as is**, **Archive** or **Restore** a memory. An edit stores a new revision and marks the memory confirmed; earlier revisions stay in history. If an agent changed the memory after you opened it, nothing is overwritten and you see the newer text before saving again. Only confirmed memories and handoffs load into an agent's startup context, so confirming is how you promote an observation. The page also shows the server version, its search model and how many memories it holds. Project, device and platform filters organize what you see; they are not access control.
 
 ## Need a server?
 
