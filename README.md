@@ -62,7 +62,7 @@ A new server has no memories. To see it work:
 In your private server's memory view, sign in as the owner. The tabs are:
 
 - **Saved**: everything active, from every project by default. Narrow by project, device or platform, or search for wording or meaning. Open a memory to read its complete text, source, exact scope, confirmation state and date, and to step through earlier revisions.
-- **Needs review**: unconfirmed memories other than handoffs, which load at startup without confirmation.
+- **Needs review**: memories an agent saved without your confirmation. They are not loaded at startup until you confirm them. Handoffs are left off this list because they load at startup without confirmation.
 - **Archived**: memories hidden from agents, which you can restore.
 - **Startup preview**: what the server would send an agent for a chosen project, device and platform, and why any other memory would not load. It shows what the server would send, not what a running session received.
 

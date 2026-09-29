@@ -79,7 +79,8 @@ Feature: Owner reviews and corrects memories in the memory view
 - The list carries a 240-character preview of each memory and flags it with
   `content_truncated`. Full text opens on demand, so a large memory no longer
   pushes others out of the list. Overflow beyond the 32 KiB list budget is still
-  disclosed, and each omitted memory is named by title.
+  disclosed. The first 100 omitted memories are named by title (the existing cap
+  on omission references); the view says how many more are not named.
 - Agent context, `get` and the five MCP tools are unchanged. `Reference` keeps
   its shape; owner-list titles travel in a separate `omitted_titles` field.
 - Cards say whether an agent will load a memory. Only confirmed memories and
