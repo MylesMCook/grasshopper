@@ -40,7 +40,7 @@ function view() {
   };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8'), sandbox);
-  const ui = vm.runInContext('({ refreshDevices, stop, setConnected, revokeDevice, refresh, draw, openMemory, loadRecord, closeMemory, restartMemoryView, chooseView })', sandbox);
+  const ui = vm.runInContext('({ refreshDevices, stop, setConnected, revokeDevice, refresh, draw, openMemory, loadRecord, closeMemory, restartMemoryView, chooseView, showViewTabs, updateViewCounts })', sandbox);
   ui.setConnected(true);
   get('device-panel').open = true;
   return { ui, get, requests, timers, timerDelays, document: sandbox.document };
@@ -425,4 +425,72 @@ test('an omission list capped at 100 says how many memories it does not name', (
   const text = v.get('omissions').children[0].textContent;
   assert.match(text, /130 memories are outside/);
   assert.match(text, /first 100 are named below.*the other 30/);
+});
+
+test('closing the dialog mid-save keeps the write lock until that request ends', async () => {
+  const v = view();
+  await openLatest(v, memory(30, 1));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'First memory edit.';
+  submitEdit(v);
+  const first = v.requests.at(-1);
+  v.ui.closeMemory();
+  await openLatest(v, memory(31, 1));
+  assert.equal(v.get('edit-memory').disabled, true);
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'Second memory edit.';
+  const before = v.requests.length;
+  submitEdit(v);
+  assert.equal(v.requests.length, before);
+  assert.match(v.get('memory-detail-status').textContent, /still finishing/);
+  first.reply({ id: 30, revision: 2, deduplicated: false });
+  await tick();
+  assert.equal(v.get('edit-memory').disabled, false);
+  assert.equal(v.requests.some(request => request.url === '/visualizer/api/context'), true);
+  submitEdit(v);
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).id, 31);
+});
+
+test('a conflict on confirm reloads the latest memory instead of an edit form', async () => {
+  const v = view();
+  await openLatest(v, { ...memory(32, 1), confirmed: false });
+  v.get('confirm-memory').listeners.click();
+  v.requests.at(-1).reply({ error: 'revision_conflict', current: { ...memory(32, 2, 'Agent text.'), confirmed: false } }, 409);
+  await tick();
+  assert.equal(v.get('conflict').hidden, true);
+  assert.equal(v.get('edit-form').hidden, true);
+  const reload = v.requests.at(-1);
+  assert.equal(reload.url, '/visualizer/api/record');
+  reload.reply({ ...memory(32, 2, 'Agent text.'), confirmed: false });
+  await tick();
+  assert.equal(v.get('memory-detail-content').textContent, 'Agent text.');
+  assert.match(v.get('memory-detail-status').textContent, /changed while you were looking/);
+  assert.equal(v.get('memory-actions').hidden, false);
+});
+
+test('cancelling after a conflict shows the newer text, not the stale page', async () => {
+  const v = view();
+  await openLatest(v, memory(33, 1, 'Original.'));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'Draft.';
+  submitEdit(v);
+  v.requests.at(-1).reply({ error: 'revision_conflict', current: memory(33, 2, 'Agent text.') }, 409);
+  await tick();
+  v.get('cancel-edit').listeners.click();
+  const reload = v.requests.at(-1);
+  assert.equal(reload.url, '/visualizer/api/record');
+  reload.reply(memory(33, 2, 'Agent text.'));
+  await tick();
+  assert.equal(v.get('memory-detail-content').textContent, 'Agent text.');
+  assert.equal(v.get('edit-form').hidden, true);
+});
+
+test('view tabs show zero counts but no number before a count is known', () => {
+  const v = view();
+  const tabs = ['', 'review', 'archived'].map(name => ({ dataset: { view: name }, textContent: '', setAttribute() {}, addEventListener() {} }));
+  v.get('view-tabs').children = tabs;
+  v.ui.showViewTabs();
+  assert.deepEqual(tabs.map(tab => tab.textContent), ['Saved', 'Needs review', 'Archived']);
+  v.ui.updateViewCounts({ review_count: 0, archived_count: 3 });
+  assert.deepEqual(tabs.map(tab => tab.textContent), ['Saved', 'Needs review (0)', 'Archived (3)']);
 });
