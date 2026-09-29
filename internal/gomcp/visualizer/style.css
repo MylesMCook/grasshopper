@@ -106,3 +106,6 @@ textarea { font:inherit; width:100%; min-height:44px; padding:9px 12px; backgrou
 .pairing-code { padding:2px 8px; background:var(--surface); border:1px solid var(--border); border-radius:2px; color:var(--ink); font:600 1rem/1.4 'Geist Mono',ui-monospace,monospace; letter-spacing:.06em; }
 .focused-request .device-detail { color:var(--ink); }
 .device-panel:has(+ .memory) { margin:0 0 32px; }
+.startup-controls { display:grid; gap:12px; margin-top:12px; }
+.startup-controls label { max-width:360px; }
+.not-loaded { display:grid; gap:12px; margin-top:48px; }

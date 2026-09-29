@@ -11,7 +11,7 @@ confirmation unchanged. The first-memory exercise is static guidance.
 | 1. Landing scope and list polish | Landing shows everything | Implemented |
 | 2. Review and correction | Review queue, correct, conflict, archive and restore, write authorization | Implemented |
 | 3. Approval, devices and status | Approve a device safely, server status | Implemented |
-| 4. Startup preview | Preview what an agent receives | Planned |
+| 4. Startup preview | Preview what an agent receives | Implemented |
 | 5. Documentation | README and setup trimmed to the user path | Planned |
 
 ```gherkin
@@ -126,3 +126,18 @@ Feature: Owner reviews and corrects memories in the memory view
   search only") and total active and archived memories. Backup status is not
   shown, by decision: the server does not know about the off-host job.
 - Tests: `visualizer_status_test.go`, `visualizer/app.test.cjs`.
+
+## Slice 4 evidence and decisions
+
+- `POST /visualizer/api/startup` takes one exact scope and one of the two
+  budgets the clients use (12,000 bytes for Codex and Cursor, 3,000 for
+  Claude Code). It applies the same selection as the `context` tool through a
+  shared `chooseHandoff`, so the preview and agent context cannot drift; a test
+  compares the two for both budgets.
+- Each memory in scope that will not load is named with a reason: not
+  confirmed, an older handoff, or over the size budget. The preview never means
+  "every project": an unchosen project previews global memories only.
+- The view says the preview is what the server would send, not proof that a
+  running session received it, and that Claude Code also skips every record if
+  its whole startup message is too long.
+- Tests: `visualizer_startup_test.go`, `visualizer/app.test.cjs`.

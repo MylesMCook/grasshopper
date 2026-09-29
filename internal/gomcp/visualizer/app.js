@@ -54,6 +54,9 @@ const conflictPanel = document.getElementById('conflict');
 const conflictNote = document.getElementById('conflict-note');
 const conflictText = document.getElementById('conflict-text');
 const serverStatus = document.getElementById('server-status');
+const startupControls = document.getElementById('startup-controls');
+const startupAgent = document.getElementById('startup-agent');
+const notLoaded = document.getElementById('not-loaded');
 connectionPrompt.textContent = `Connect Grasshopper to ${location.origin}/visualizer/`;
 function requestFromHash() { return /^#connect=([0-9a-f]{64})$/.exec(location.hash)?.[1] || ''; }
 let approvalID = requestFromHash();
@@ -127,7 +130,7 @@ updateProjectOptions([], false);
 updateDeviceOptions([], false);
 projectSelect.addEventListener('change', () => { showManualProject(); restartMemoryView(); });
 deviceSelect.addEventListener('change', () => { showManualDevice(); restartMemoryView(); });
-for (const input of [manualProjectInput, manualDeviceInput, document.getElementById('platform')]) input.addEventListener('change', restartMemoryView);
+for (const input of [manualProjectInput, manualDeviceInput, document.getElementById('platform'), startupAgent]) input.addEventListener('change', restartMemoryView);
 
 function setStatus(message, kind = '') {
   if (status.textContent !== message) status.textContent = message;
@@ -147,6 +150,7 @@ function setConnected(value) {
   scopeSummary.hidden = !value;
   devicePanel.hidden = !value;
   searchForm.hidden = !value || listView !== '';
+  startupControls.hidden = !value || listView !== 'startup';
   viewTabs.hidden = !value;
   if (value && approvalID) openDevicePanel();
   else if (value && devicePanel.open) refreshDevices();
@@ -174,6 +178,8 @@ function stop(clearRecords = false) {
     searchInput.value = '';
     clearSearch.hidden = true;
     listView = '';
+    startupControls.hidden = true;
+    notLoaded.hidden = true;
     delete viewCounts.review;
     delete viewCounts.archived;
     showViewTabs();
@@ -399,17 +405,18 @@ async function refreshDevices() {
 
 function scopeInput() {
   const scope = {};
-  const allProjects = projectSelect.value === '';
+  // An agent sends one project, so the preview never means "every project".
+  const allProjects = projectSelect.value === '' && listView !== 'startup';
   const project = projectSelect.value === manualChoice ? manualProjectInput.value.trim() : projectSelect.value === globalChoice ? '' : projectSelect.value;
   const device = deviceSelect.value === manualChoice ? manualDeviceInput.value.trim() : deviceSelect.value;
   const platform = document.getElementById('platform').value;
   if (allProjects) scope.all_projects = true;
-  if (listView) scope.view = listView;
+  if (listView === 'review' || listView === 'archived') scope.view = listView;
   if (project) scope.project = project;
   if (device) scope.device = device;
   if (platform) scope.platform = platform;
   const platforms = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
-  const projectView = allProjects ? 'All projects' : project ? `${project} + global memories` : 'Global memories only';
+  const projectView = allProjects ? 'All projects' : project ? `${project} + global memories` : listView === 'startup' && projectSelect.value === '' ? 'No project chosen · global memories only' : 'Global memories only';
   const view = [projectView, device || 'All devices', platforms[platform] || 'All platforms'];
   const description = view.join(' · ');
   if (scopeSummary.textContent !== description) scopeSummary.textContent = description;
@@ -730,7 +737,7 @@ document.getElementById('cancel-edit').addEventListener('click', () => {
   else detailStatus.textContent = '';
 });
 
-const viewNames = { '': 'Saved', review: 'Needs review', archived: 'Archived' };
+const viewNames = { '': 'Saved', review: 'Needs review', archived: 'Archived', startup: 'Startup preview' };
 const viewCounts = {};
 
 function showViewTabs() {
@@ -749,6 +756,8 @@ function chooseView(name) {
   searchQuery = '';
   searchInput.value = '';
   searchForm.hidden = !active || Boolean(name);
+  startupControls.hidden = !active || name !== 'startup';
+  notLoaded.hidden = true;
   showViewTabs();
   restartMemoryView();
 }
@@ -802,6 +811,10 @@ function emptyState(omitted) {
     message.textContent = 'Nothing needs review. Memories that agents save without your confirmation appear here. Handoffs are not listed: they load at startup without confirmation.';
     return empty;
   }
+  if (listView === 'startup') {
+    message.textContent = 'Nothing would load at startup for this scope. Confirm memories, or choose the project, device and platform your agent uses.';
+    return empty;
+  }
   if (listView === 'archived') { message.textContent = 'No archived memories in this view. Archived memories no longer load for agents and can be restored.'; return empty; }
   if (searchQuery) { message.textContent = 'No matching memories. Try fewer words, or search all projects.'; return empty; }
   if (projectSelect.value !== '' || deviceSelect.value !== '' || document.getElementById('platform').value !== '') {
@@ -822,6 +835,53 @@ function emptyState(omitted) {
   }
   empty.append(steps);
   return empty;
+}
+
+// The preview asks for one exact scope, as an agent would send it.
+function startupScope(scope) {
+  const { all_projects, view, ...exact } = scope;
+  return exact;
+}
+
+const notLoadedReasons = {
+  unconfirmed: 'Not confirmed. Confirm it to load at startup.',
+  older_handoff: 'An older handoff. Only the latest handoff loads.',
+  over_budget: 'Over the startup size budget.'
+};
+
+let lastNotLoaded = '';
+
+function drawNotLoaded(page) {
+  const items = page.not_loaded || [];
+  const count = page.records?.length || 0;
+  summary.textContent = `${count} ${count === 1 ? 'memory loads' : 'memories load'} at startup within ${Number(page.budget).toLocaleString()} bytes${items.length ? ` · ${items.length} not loaded` : ''}`;
+  notLoaded.hidden = !items.length;
+  // A memory's title and scope change only with its revision, so this identifies what is drawn.
+  const signature = JSON.stringify(items.map(item => [item.id, item.revision, item.reason]));
+  if (signature === lastNotLoaded) return;
+  lastNotLoaded = signature;
+  const heading = document.createElement('h2');
+  heading.textContent = 'Not loaded at startup';
+  const list = document.createElement('div');
+  list.className = 'device-list';
+  for (const item of items) {
+    const title = item.title || `Memory #${item.id}`;
+    const reason = document.createElement('p');
+    reason.className = 'device-detail';
+    reason.textContent = `${notLoadedReasons[item.reason] || item.reason} · ${scopeLabelText(item.scope || {})}`;
+    const name = document.createElement('p');
+    name.textContent = `${title} (#${item.id})`;
+    const label = document.createElement('div');
+    label.className = 'device-label';
+    label.append(name, reason);
+    const row = document.createElement('div');
+    row.className = 'device-entry';
+    const actions = deviceActions([['Open memory', () => openMemory(item)]]);
+    actions.children[0]?.setAttribute?.('aria-label', `Open memory: ${title}`);
+    row.append(label, actions);
+    list.append(row);
+  }
+  notLoaded.replaceChildren(heading, list);
 }
 
 function draw(page) {
@@ -919,10 +979,11 @@ async function refresh() {
       setStatus('Enter the selected project or device ID', 'error');
       return;
     }
-    const response = await fetch(searchQuery ? '/visualizer/api/search' : '/visualizer/api/context', {
+    const startup = listView === 'startup';
+    const response = await fetch(startup ? '/visualizer/api/startup' : searchQuery ? '/visualizer/api/search' : '/visualizer/api/context', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(searchQuery ? { scope, query: searchQuery } : scope),
+      body: JSON.stringify(startup ? { scope: startupScope(scope), budget: Number(startupAgent.value) || 12000 } : searchQuery ? { scope, query: searchQuery } : scope),
       cache: 'no-store',
       credentials: 'same-origin',
       signal: controller.signal
@@ -931,10 +992,18 @@ async function refresh() {
     const page = await response.json();
     // A disconnected or replaced request must not redraw an older session.
     if (!active || inFlight !== controller) return;
+    if (startup) {
+      draw(page);
+      drawNotLoaded(page);
+      setStatus('Live', 'live');
+      timer = setTimeout(refresh, 3000);
+      return;
+    }
     updateProjectOptions(page.projects);
     updateDeviceOptions(page.devices);
     updateViewCounts(page);
     updateServerStatus(page.server);
+    notLoaded.hidden = true;
     draw(page);
     setStatus(searchQuery ? page.semantic_ready ? 'Search results' : 'Wording matches only · meaning search unavailable' : 'Live', 'live');
     // Browsing follows live writes. Search runs on submission or explicit refresh,

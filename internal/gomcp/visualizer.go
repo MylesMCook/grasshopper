@@ -363,3 +363,28 @@ func ownerConflict(w http.ResponseWriter, r *http.Request, store *gomemory.Write
 		Current *gomemory.Record `json:"current"`
 	}{reason, current})
 }
+
+// visualizerStartup previews the startup context the service would send an
+// agent for one exact scope and one of the two budgets its clients use.
+func visualizerStartup(store *gomemory.Writer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Scope  gomemory.Scope `json:"scope"`
+			Budget int            `json:"budget"`
+		}
+		if !decodeVisualizerRead(w, r, &input) {
+			return
+		}
+		if _, err := input.Scope.Key(); err != nil || input.Scope.Legacy || (input.Budget != 12000 && input.Budget != 3000) {
+			http.Error(w, "invalid startup preview", http.StatusBadRequest)
+			return
+		}
+		preview, err := store.StartupPreview(r.Context(), input.Scope, input.Budget)
+		if err != nil {
+			http.Error(w, "startup preview unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(preview)
+	}
+}
