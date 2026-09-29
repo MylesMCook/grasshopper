@@ -14,6 +14,7 @@ function view(hash = '', connected = true) {
     querySelector() { return null; },
     contains() { return false; },
     showModal() { this.open = true; }, close() { this.open = false; this.listeners.close?.(); },
+    before(node) { node.placedBefore = this; },
     focus() { this.focused = true; }, scrollIntoView() {}, setAttribute(name, value) { this.attributes = { ...this.attributes, [name]: value }; }, classList: { add() {} }
   });
   const get = id => {
@@ -21,12 +22,13 @@ function view(hash = '', connected = true) {
     return elements.get(id);
   };
   const requests = [];
+  const windowListeners = {};
   const timers = new Map();
   const timerDelays = new Map();
   let timerID = 0;
   const sandbox = {
     document: { getElementById: get, querySelector: get, createElement: element, createDocumentFragment: element },
-    window: { addEventListener() {}, confirm: () => true, getSelection: () => null },
+    window: { addEventListener(name, action) { windowListeners[name] = action; }, confirm: () => true, getSelection: () => null },
     location: { origin: 'http://127.0.0.1', hash },
     AbortController,
     setTimeout(fn, delay) { timers.set(++timerID, fn); timerDelays.set(timerID, delay); return timerID; },
@@ -40,12 +42,12 @@ function view(hash = '', connected = true) {
   };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8'), sandbox);
-  const ui = vm.runInContext('({ refreshDevices, stop, setConnected, revokeDevice, refresh, draw, openMemory, loadRecord, closeMemory, restartMemoryView, chooseView })', sandbox);
+  const ui = vm.runInContext('({ refreshDevices, stop, setConnected, revokeDevice, refresh, draw, openMemory, loadRecord, closeMemory, restartMemoryView, chooseView, showViewTabs, updateViewCounts })', sandbox);
   if (connected) {
     ui.setConnected(true);
     get('device-panel').open = true;
   }
-  return { ui, get, requests, timers, timerDelays, document: sandbox.document };
+  return { ui, get, requests, timers, timerDelays, document: sandbox.document, location: sandbox.location, windowListeners };
 }
 
 function replyPair(v, start, devices = []) {
@@ -243,7 +245,7 @@ test('cards name their exact scope and say what an agent will load', () => {
   const handoff = { ...memory(4), confirmed: false, purpose: 'handoff' };
   v.ui.draw({ records: [scoped, handoff], omitted: 0 });
   const [first, second] = v.get('records').children[0].children;
-  assert.equal(first.children[0].children[1].textContent, 'github.com/example/orchard · device mac-mini · macOS');
+  assert.equal(first.children[0].children[1].textContent, 'Git project github.com/example/orchard · device mac-mini · macOS');
   assert.equal(first.children[0].children[2].textContent, '#3');
   assert.match(first.children[2].textContent, /^Unconfirmed · not loaded at agent startup/);
   assert.match(second.children[2].textContent, /^Unconfirmed handoff · loads at startup/);
@@ -498,6 +500,11 @@ test('the server line reports version, search model and counts', () => {
   v.requests.at(-1).reply({ records: [], omitted: 0, devices: [], projects: [], server: { version: '2.7.0', model: 'granite-test', memories: 24, archived: 3 } });
   return tick().then(() => {
     assert.equal(v.get('server-status').textContent, 'Server 2.7.0 · meaning search granite-test · 24 memories, 3 archived');
+    v.ui.refresh();
+    v.requests.at(-1).reply({ records: [], omitted: 0, devices: [], projects: [], server: { version: '2.7.0', model: '', memories: 1, archived: 0 } });
+    return tick();
+  }).then(() => {
+    assert.equal(v.get('server-status').textContent, 'Server 2.7.0 · wording search only · 1 memory, 0 archived');
     assert.equal(v.get('server-status').hidden, false);
   });
 });
@@ -535,4 +542,100 @@ test('the startup preview never widens an unchosen project to every project', ()
   v.ui.chooseView('startup');
   assert.deepEqual(JSON.parse(v.requests.at(-1).options.body), { scope: {}, budget: 12000 });
   assert.match(v.get('scope-summary').textContent, /^No project chosen · global memories only/);
+});
+
+test('scope labels keep Git projects and project IDs apart', () => {
+  const v = view();
+  v.ui.draw({ records: [
+    { ...memory(20), scope: { project: 'git:github.com/example/orchard' } },
+    { ...memory(21), scope: { project: 'id:github.com/example/orchard' } }
+  ], omitted: 0 });
+  const [git, id] = v.get('records').children[0].children;
+  assert.equal(git.children[0].children[1].textContent, 'Git project github.com/example/orchard');
+  assert.equal(id.children[0].children[1].textContent, 'Project ID github.com/example/orchard');
+});
+
+test('an omission list capped at 100 says how many memories it does not name', () => {
+  const v = view();
+  const named = Array.from({ length: 100 }, (_, index) => ({ id: index + 1, revision: 1, scope: {} }));
+  v.ui.draw({ records: [], omitted: 130, omitted_ids: named.map(item => item.id), omitted_records: named });
+  const text = v.get('omissions').children[0].textContent;
+  assert.match(text, /130 memories are outside/);
+  assert.match(text, /first 100 are named below.*the other 30/);
+});
+
+test('closing the dialog mid-save keeps the write lock until that request ends', async () => {
+  const v = view();
+  await openLatest(v, memory(30, 1));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'First memory edit.';
+  submitEdit(v);
+  const first = v.requests.at(-1);
+  v.ui.closeMemory();
+  await openLatest(v, memory(31, 1));
+  assert.equal(v.get('edit-memory').disabled, true);
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'Second memory edit.';
+  const before = v.requests.length;
+  submitEdit(v);
+  assert.equal(v.requests.length, before);
+  assert.match(v.get('memory-detail-status').textContent, /still finishing/);
+  first.reply({ id: 30, revision: 2, deduplicated: false });
+  await tick();
+  assert.equal(v.get('edit-memory').disabled, false);
+  assert.equal(v.requests.some(request => request.url === '/visualizer/api/context'), true);
+  submitEdit(v);
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).id, 31);
+});
+
+test('a conflict on confirm reloads the latest memory instead of an edit form', async () => {
+  const v = view();
+  await openLatest(v, { ...memory(32, 1), confirmed: false });
+  v.get('confirm-memory').listeners.click();
+  v.requests.at(-1).reply({ error: 'revision_conflict', current: { ...memory(32, 2, 'Agent text.'), confirmed: false } }, 409);
+  await tick();
+  assert.equal(v.get('conflict').hidden, true);
+  assert.equal(v.get('edit-form').hidden, true);
+  const reload = v.requests.at(-1);
+  assert.equal(reload.url, '/visualizer/api/record');
+  reload.reply({ ...memory(32, 2, 'Agent text.'), confirmed: false });
+  await tick();
+  assert.equal(v.get('memory-detail-content').textContent, 'Agent text.');
+  assert.match(v.get('memory-detail-status').textContent, /changed while you were looking/);
+  assert.equal(v.get('memory-actions').hidden, false);
+});
+
+test('cancelling after a conflict shows the newer text, not the stale page', async () => {
+  const v = view();
+  await openLatest(v, memory(33, 1, 'Original.'));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'Draft.';
+  submitEdit(v);
+  v.requests.at(-1).reply({ error: 'revision_conflict', current: memory(33, 2, 'Agent text.') }, 409);
+  await tick();
+  v.get('cancel-edit').listeners.click();
+  const reload = v.requests.at(-1);
+  assert.equal(reload.url, '/visualizer/api/record');
+  reload.reply(memory(33, 2, 'Agent text.'));
+  await tick();
+  assert.equal(v.get('memory-detail-content').textContent, 'Agent text.');
+  assert.equal(v.get('edit-form').hidden, true);
+});
+
+test('view tabs show zero counts but no number before a count is known', () => {
+  const v = view();
+  const tabs = ['', 'review', 'archived'].map(name => ({ dataset: { view: name }, textContent: '', setAttribute() {}, addEventListener() {} }));
+  v.get('view-tabs').children = tabs;
+  v.ui.showViewTabs();
+  assert.deepEqual(tabs.map(tab => tab.textContent), ['Saved', 'Needs review', 'Archived']);
+  v.ui.updateViewCounts({ review_count: 0, archived_count: 3 });
+  assert.deepEqual(tabs.map(tab => tab.textContent), ['Saved', 'Needs review (0)', 'Archived (3)']);
+});
+
+test('the device panel returns to its place when the approval fragment is cleared', () => {
+  const v = view('#connect=' + request64);
+  assert.equal(v.get('device-panel').placedBefore, v.get('memory-section'));
+  v.location.hash = '';
+  v.windowListeners.hashchange();
+  assert.equal(v.get('device-panel').placedBefore, v.get('server-status'));
 });

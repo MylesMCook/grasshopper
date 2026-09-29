@@ -180,7 +180,8 @@ function stop(clearRecords = false) {
     listView = '';
     startupControls.hidden = true;
     notLoaded.hidden = true;
-    viewCounts.review = viewCounts.archived = 0;
+    delete viewCounts.review;
+    delete viewCounts.archived;
     showViewTabs();
     summary.textContent = 'Connect to see what is saved.';
     updateProjectOptions([], false);
@@ -192,9 +193,15 @@ function stop(clearRecords = false) {
 }
 
 // A connection request is time-limited, so its panel moves above the memory
-// list instead of waiting at the bottom of a long page.
-function openDevicePanel() {
+// list instead of waiting at the bottom of a long page. Without a request it
+// returns to its usual place after the list.
+function placeDevicePanel() {
   if (approvalID) document.getElementById('memory-section')?.before?.(devicePanel);
+  else serverStatus.before?.(devicePanel);
+}
+
+function openDevicePanel() {
+  placeDevicePanel();
   if (devicePanel.open) refreshDevices();
   else devicePanel.open = true; // The toggle event starts its first refresh.
 }
@@ -211,9 +218,8 @@ copyConnectionPrompt.addEventListener('click', async () => {
 window.addEventListener('hashchange', () => {
   approvalID = requestFromHash();
   approvalFocused = false;
-  if (approvalID && active) {
-    openDevicePanel();
-  }
+  if (approvalID && active) openDevicePanel();
+  else placeDevicePanel();
 });
 
 devicePanel.addEventListener('toggle', () => { if (!devicePanel.open) resetDeviceRows(); refreshDevices(); });
@@ -432,9 +438,16 @@ function updatedLabel(record) {
 
 const platformNames = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
 
-// Cards name the exact scope in words; the stored project ID keeps its host/path.
+// Cards name the exact scope in words. A Git project and a project ID are
+// different scopes even when the rest of their text matches, so the label says which.
+function projectLabel(project) {
+  if (project.startsWith('git:')) return `Git project ${project.slice(4)}`;
+  if (project.startsWith('id:')) return `Project ID ${project.slice(3)}`;
+  return `Project ${project}`;
+}
+
 function scopeLabelText(scope) {
-  const project = scope.project && scope.project.replace(/^(git|id):/, '');
+  const project = scope.project && projectLabel(scope.project);
   const parts = [project, scope.device && `device ${scope.device}`, scope.platform && (platformNames[scope.platform] || scope.platform)].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'Global';
 }
@@ -464,7 +477,8 @@ function cancelDetail() {
   detailInFlight = null;
   detailState = null;
   pendingWrite = null;
-  saving = false;
+  // `saving` belongs to the request in flight, not to the dialog: it stays set
+  // until that request ends, so closing the dialog cannot allow a second write.
   editForm.hidden = true;
   conflictPanel.hidden = true;
   detailContent.hidden = false;
@@ -578,6 +592,7 @@ function showActions() {
   confirmButton.hidden = !record || archived || Boolean(record.confirmed);
   archiveButton.hidden = !record || archived;
   restoreButton.hidden = !record || !archived;
+  for (const button of [editButton, confirmButton, archiveButton, restoreButton]) button.disabled = saving;
 }
 
 function startEdit() {
@@ -597,6 +612,7 @@ function startEdit() {
 function endEdit() {
   if (!detailState) return;
   detailState.editing = false;
+  detailState.conflicted = false;
   pendingWrite = null;
   editForm.hidden = true;
   conflictPanel.hidden = true;
@@ -614,6 +630,7 @@ function showConflict(current, reason) {
   }
   if (!current) { detailStatus.textContent = 'This memory changed. Close and reopen it to see the newer text.'; return; }
   state.record = current;
+  state.conflicted = true;
   state.revision = state.maximumRevision = current.revision;
   conflictNote.textContent = `This memory changed after you opened it (now revision ${current.revision}, ${updatedLabel(current)}). Nothing was overwritten. Newer text:`;
   conflictText.textContent = current.content;
@@ -626,7 +643,8 @@ function showConflict(current, reason) {
 // Returns true when the owner's change was stored.
 async function changeMemory(path, fields, done) {
   const state = detailState;
-  if (!state?.record || saving || !active) return false;
+  if (!state?.record || !active) return false;
+  if (saving) { detailStatus.textContent = 'Another save is still finishing. Try again in a moment.'; return false; }
   const body = { id: state.id, expected_revision: state.record.revision, ...fields };
   body.request_id = requestIDFor(body);
   saving = true;
@@ -635,14 +653,27 @@ async function changeMemory(path, fields, done) {
   detailStatus.textContent = 'Saving…';
   try {
     const { status, data } = await postOwner(path, body);
-    if (detailState !== state) return false;
+    if (detailState !== state) {
+      // The dialog closed while the request ran; the list still needs the result.
+      if (status === 200 && active) refreshList();
+      return false;
+    }
     if (status === 200) {
       pendingWrite = null;
       await done(data);
       return true;
     }
     if (status === 401) { stop(true); setStatus('Connection expired', 'error'); return false; }
-    if (status === 409) { pendingWrite = null; showConflict(data?.current, data?.error); return false; }
+    if (status === 409) {
+      pendingWrite = null;
+      if (state.editing) showConflict(data?.current, data?.error);
+      else {
+        // Confirm, archive and restore have no draft to keep: show the latest.
+        await loadRecord();
+        if (detailState === state) detailStatus.textContent = 'This memory changed while you were looking at it. Showing the latest version; review it and try again.';
+      }
+      return false;
+    }
     detailStatus.textContent = status === 400 ? 'This change is not valid. Check the text and try again.' : 'Could not save. Your text is still here; try again.';
     return false;
   } catch (error) {
@@ -651,7 +682,7 @@ async function changeMemory(path, fields, done) {
   } finally {
     saving = false;
     saveEdit.disabled = false;
-    for (const button of [editButton, confirmButton, archiveButton, restoreButton]) button.disabled = false;
+    showActions();
   }
 }
 
@@ -698,7 +729,13 @@ confirmButton.addEventListener('click', confirmMemory);
 archiveButton.addEventListener('click', () => setArchived(true));
 restoreButton.addEventListener('click', () => setArchived(false));
 editForm.addEventListener('submit', saveMemoryEdit);
-document.getElementById('cancel-edit').addEventListener('click', () => { endEdit(); detailStatus.textContent = ''; });
+document.getElementById('cancel-edit').addEventListener('click', () => {
+  // After a conflict the page still shows the text from before it; reload the latest.
+  const stale = detailState?.conflicted;
+  endEdit();
+  if (stale) loadRecord();
+  else detailStatus.textContent = '';
+});
 
 const viewNames = { '': 'Saved', review: 'Needs review', archived: 'Archived', startup: 'Startup preview' };
 const viewCounts = {};
@@ -707,7 +744,8 @@ function showViewTabs() {
   for (const tab of viewTabs.children || []) {
     const name = tab.dataset?.view ?? '';
     const count = viewCounts[name];
-    tab.textContent = count ? `${viewNames[name]} (${count})` : viewNames[name];
+    // An unknown count shows no number; zero is a real count.
+    tab.textContent = count === undefined ? viewNames[name] : `${viewNames[name]} (${count})`;
     tab.setAttribute('aria-pressed', String(name === listView));
   }
 }
@@ -727,7 +765,7 @@ function chooseView(name) {
 function updateServerStatus(info) {
   if (!info) return;
   const search = info.model ? `meaning search ${info.model}` : 'wording search only';
-  const text = `Server ${info.version} · ${search} · ${info.memories} ${info.memories === 1 ? 'memory' : 'memories'}${info.archived ? `, ${info.archived} archived` : ''}`;
+  const text = `Server ${info.version} · ${search} · ${info.memories} ${info.memories === 1 ? 'memory' : 'memories'}, ${info.archived} archived`;
   if (serverStatus.textContent !== text) serverStatus.textContent = text;
   serverStatus.hidden = !active;
 }
@@ -852,7 +890,8 @@ function draw(page) {
   const omissionSignature = JSON.stringify([omitted, page.omitted_records, page.omitted_titles]);
   if (omitted && omissionSignature !== lastOmissionSignature) {
     const text = document.createElement('p');
-    text.textContent = `${omitted} ${omitted === 1 ? 'memory is' : 'memories are'} outside this list's size limit. Open a record below, or search to narrow the list.`;
+    const listed = (page.omitted_records || []).length;
+    text.textContent = `${omitted} ${omitted === 1 ? 'memory is' : 'memories are'} outside this list's size limit. ${listed < omitted ? `The first ${listed} are named below; narrow the list with filters or search to reach the other ${omitted - listed}.` : 'Open one below, or search to narrow the list.'}`;
     const links = document.createElement('div');
     links.className = 'omitted-links';
     for (const reference of page.omitted_records || []) {
