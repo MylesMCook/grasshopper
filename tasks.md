@@ -1,6 +1,14 @@
 # Grasshopper release state
 
-Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
+Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `codex/device-view`.
+
+## Active device-view fix
+
+[LAB-219](https://linear.app/mcook/issue/LAB-219/show-connected-devices-accurately-in-the-memory-view): approved dropdown fix is implemented and verified on this local branch, not deployed. Both owner context/search include active paired IDs without scoped memories; scoped-memory choices remain after revocation; agent retrieval is unchanged. Regression failed before the fix and passed afterward; Go tests/vet/race, client/server builds, and 10 Node tests passed. [Evidence](docs/memory-acceptance.md#device-list-investigation-and-local-fix-september-29-unreleased).
+
+Confirmed cause: native Windows Codex had a Store-app redirected config using the owner credential; ordinary Windows Roaming held a separate revoked `work-hp` connection. Approved repair completed: `HPLT2MQ5360JD8` is actively paired, its credential reads #8 revision 1, owner controls reject it with 401, and the installed Windows client check passes. Supported setup updated the packaged config and replaced its owner-token file; staged pairing files were removed. Other connections, Mac credentials/service/routing, and ordinary Windows config were untouched. Next user action: reopen active laptop chats to clear loaded owner credentials; a fresh native AI turn remains unverified. Dropdown deployment requires separate approval.
+
+User direction: connectors should be minimal and reliable, with complexity on the host. Prevention target: one deterministic connection shared across harnesses, device-only agent credentials, and host-reported identity/status. A broader connection-flow change is not yet implemented or approved.
 
 ## Released memory-view improvement
 

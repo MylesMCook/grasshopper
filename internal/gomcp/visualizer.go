@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/MylesMCook/grasshopper/internal/gomemory"
@@ -74,6 +75,9 @@ func visualizerSearch(backend Backend, embedQuery func(context.Context, string) 
 			vector = nil
 		}
 		page, devices, projects, err := backend.Store.BrowseSearch(r.Context(), input.Scope, input.Query, vector, backend.Model, 100, 32768)
+		if err == nil {
+			devices, err = visualizerDevices(r.Context(), backend.Store, devices)
+		}
 		if err != nil {
 			http.Error(w, "search unavailable", http.StatusServiceUnavailable)
 			return
@@ -142,6 +146,23 @@ func staticCSP(styleHashes []string, document bool) string {
 	return "default-src 'none'; script-src 'self'; style-src " + styleSource + "; font-src 'self'; img-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 }
 
+// Device choices include active connections even before they have scoped
+// memories. Saved-memory choices retain their project/platform filtering;
+// connection names carry no such scope and do not widen record retrieval.
+func visualizerDevices(ctx context.Context, store *gomemory.Writer, devices []string) ([]string, error) {
+	tokens, err := store.ListClientTokens(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, token := range tokens {
+		if token.RevokedAt == nil {
+			devices = append(devices, token.Device)
+		}
+	}
+	slices.Sort(devices)
+	return slices.Compact(devices), nil
+}
+
 func visualizerContext(store *gomemory.Writer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -166,6 +187,9 @@ func visualizerContext(store *gomemory.Writer) http.HandlerFunc {
 			return
 		}
 		page, devices, projects, err := store.BrowseContext(r.Context(), scope, 32768)
+		if err == nil {
+			devices, err = visualizerDevices(r.Context(), store, devices)
+		}
 		if err != nil {
 			http.Error(w, "context unavailable", http.StatusServiceUnavailable)
 			return
