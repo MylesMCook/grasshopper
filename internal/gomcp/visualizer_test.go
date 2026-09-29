@@ -58,7 +58,7 @@ func TestVisualizerShellDoesNotContainMemoryAndAPIRequiresBearer(t *testing.T) {
 		if resp.StatusCode != http.StatusOK || len(data) == 0 || resp.Header.Get("Cache-Control") != "no-store" {
 			t.Fatalf("public shell asset %s: status=%d bytes=%d", path, resp.StatusCode, len(data))
 		}
-		if path == "/visualizer/" && (!strings.Contains(string(data), "What your agents remember.") || strings.Contains(string(data), "answer-style")) {
+		if path == "/visualizer/" && (!strings.Contains(string(data), "Your memories.") || strings.Contains(string(data), "answer-style")) {
 			t.Fatal("shell missing its title or embedded a memory")
 		}
 		if path == "/visualizer/app.js" && (strings.Contains(string(data), "localStorage") || !strings.Contains(string(data), "textContent")) {

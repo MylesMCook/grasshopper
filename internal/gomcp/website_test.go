@@ -12,7 +12,7 @@ func TestVisualizerLinksToPublicSiteWithoutLocalWebsite(t *testing.T) {
 	if response.StatusCode != http.StatusOK || !strings.Contains(string(page), `href="https://usegrasshopper.com/"`) || !strings.Contains(string(page), `src="/visualizer/theme.js"`) {
 		t.Fatal("memory view must link to the public site and load its own theme asset")
 	}
-	if !strings.Contains(string(page), `id="device-panel"`) || !strings.Contains(string(page), `id="connect-agent"`) || !strings.Contains(string(page), `id="connection-prompt"`) {
+	if !strings.Contains(string(page), `id="device-panel"`) || !strings.Contains(string(page), `<summary>Devices &amp; connections</summary>`) || !strings.Contains(string(page), `id="connection-prompt"`) {
 		t.Fatal("memory view needs a discoverable device connection panel")
 	}
 	response, theme := visualizerRequest(t, http.MethodGet, server.URL+"/visualizer/theme.js", "")

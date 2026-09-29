@@ -20,7 +20,7 @@ const revisionLabel = document.getElementById('memory-revision');
 const previousRevision = document.getElementById('previous-revision');
 const nextRevision = document.getElementById('next-revision');
 const latestRevision = document.getElementById('latest-revision');
-const scopeSummary = document.querySelector('.scope-details summary');
+const scopeSummary = document.getElementById('scope-summary');
 const projectSelect = document.getElementById('project');
 const manualProjectLabel = document.getElementById('manual-project-label');
 const manualProjectInput = document.getElementById('manual-project');
@@ -29,7 +29,8 @@ const manualDeviceLabel = document.getElementById('manual-device-label');
 const manualDeviceInput = document.getElementById('manual-device');
 const manualChoice = '\u0000manual';
 const devicePanel = document.getElementById('device-panel');
-const connectAgent = document.getElementById('connect-agent');
+const browseControls = document.getElementById('browse-controls');
+const refreshButton = document.getElementById('refresh');
 const approvalNotice = document.getElementById('approval-notice');
 const deviceStatus = document.getElementById('device-status');
 const pendingDevices = document.getElementById('pending-devices');
@@ -82,7 +83,7 @@ function updateProjectOptions(projects, preserveSelection = true) {
 }
 
 function updateDeviceOptions(devices, preserveSelection = true) {
-  knownDevices = updateOptions(deviceSelect, devices, knownDevices, 'Any device', 'Enter another device ID…', preserveSelection);
+  knownDevices = updateOptions(deviceSelect, devices, knownDevices, 'All devices', 'Enter another device ID…', preserveSelection);
 }
 
 function showManualProject() {
@@ -117,9 +118,12 @@ function setConnected(value) {
   active = value;
   tokenInput.required = !value;
   tokenField.hidden = value;
-  connectButton.textContent = value ? 'Refresh' : 'Connect';
+  form.hidden = value;
+  refreshButton.hidden = !value;
   disconnectButton.disabled = !value;
-  connectAgent.hidden = !value;
+  disconnectButton.hidden = !value;
+  browseControls.hidden = !value;
+  scopeSummary.hidden = !value;
   devicePanel.hidden = !value;
   searchForm.hidden = !value;
   if (value && approvalID) openDevicePanel();
@@ -153,11 +157,6 @@ function stop(clearRecords = false) {
     scopeInput();
   }
 }
-
-connectAgent.addEventListener('click', () => {
-  openDevicePanel();
-  devicePanel.scrollIntoView({ block: 'start', behavior: 'smooth' });
-});
 
 function openDevicePanel() {
   if (devicePanel.open) refreshDevices();
@@ -303,9 +302,9 @@ function scopeInput() {
   if (project) scope.project = project;
   if (device) scope.device = device;
   if (platform) scope.platform = platform;
-  const view = [project ? 'global + one project' : 'global', device ? 'one device' : 'all devices'];
-  if (platform) view.push(platform);
-  const description = `Scope · ${view.join(' · ')}`;
+  const platforms = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
+  const view = [project ? `${project} + global memories` : 'Global memories', device || 'All devices', platforms[platform] || 'All platforms'];
+  const description = view.join(' · ');
   if (scopeSummary.textContent !== description) scopeSummary.textContent = description;
   if (projectSelect.value === manualChoice && !project) return null;
   if (deviceSelect.value === manualChoice && !device) return null;
@@ -531,7 +530,7 @@ async function refresh() {
     updateProjectOptions(page.projects);
     updateDeviceOptions(page.devices);
     draw(page);
-    setStatus(searchQuery ? page.semantic_ready ? 'Search results' : 'Search by wording' : 'Live · remembered here', 'live');
+    setStatus(searchQuery ? page.semantic_ready ? 'Search results' : 'Search by wording' : 'Live', 'live');
     // Browsing follows live writes. Search runs on submission or explicit refresh,
     // rather than repeating query inference while someone reads the results.
     if (!searchQuery) timer = setTimeout(refresh, 3000);
