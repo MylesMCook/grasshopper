@@ -24,9 +24,10 @@ const ModelName = "onnx-community/granite-embedding-small-english-r2-ONNX@1dc783
 const Dimensions = 384
 
 // The export supports 8192 tokens, but dense CPU attention at that length
-// exceeds the service's inference deadline. Bound work to 2048 tokens while
+// exceeds the service's inference deadline. Native CI maximum-size writes
+// also exceeded it at 2048. Bound work to 1024 tokens while
 // preserving the complete stored text (the previous model embedded 512).
-const maxTokens = 2048
+const maxTokens = 1024
 const modelSHA256 = "cddb145cd1147ec24a3908b2ca2602b98b20a3d198365cff270b7cb26c98179e"
 const modelDataSHA256 = "86a3a705d4598615894d89540ea71a3d9bbdb17a315e79edcd5dfc737222834b"
 const tokenizerSHA256 = "feeb83348dcb033bc6b9d2e1f7906ca9eb2d122845000c9416d894d7c2927149"

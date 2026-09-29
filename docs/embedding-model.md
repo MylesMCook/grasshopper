@@ -38,7 +38,9 @@ The existing hybrid weights and similarity cutoff remain unchanged.
 Granite uses prefix-free query/document encoding and its `sentence_embedding`
 output, normalized to 384 dimensions. The export supports 8192 tokens, but a
 maximum-window CPU inference exceeded the service's five-second deadline on
-the Mac mini. Grasshopper caps tokenization at 2048, compared with BGE's 512.
+the Mac mini; maximum-size writes at 2048 also exceeded that deadline on
+smaller Mac and Windows CI runners. Grasshopper caps tokenization at 1024,
+compared with BGE's 512.
 This bound preserves every measured fixture result. The complete memory text
 remains stored and returned by `get`; only embedding input is truncated.
 Native tests also store and read back a maximum-size 32768-byte memory through
