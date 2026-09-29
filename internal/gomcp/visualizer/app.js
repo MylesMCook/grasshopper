@@ -28,6 +28,7 @@ const deviceSelect = document.getElementById('device');
 const manualDeviceLabel = document.getElementById('manual-device-label');
 const manualDeviceInput = document.getElementById('manual-device');
 const manualChoice = '\u0000manual';
+const globalChoice = '\u0000global';
 const devicePanel = document.getElementById('device-panel');
 const browseControls = document.getElementById('browse-controls');
 const refreshButton = document.getElementById('refresh');
@@ -57,6 +58,7 @@ let deviceInFlight = null;
 let searchQuery = '';
 let detailState = null;
 let detailInFlight = null;
+let openButtons = new Map();
 
 function option(value, text) {
   const item = document.createElement('option');
@@ -65,13 +67,13 @@ function option(value, text) {
   return item;
 }
 
-function updateOptions(select, values, known, emptyLabel, manualLabel, preserveSelection = true) {
+function updateOptions(select, values, known, emptyLabel, manualLabel, preserveSelection = true, extra = []) {
   const names = Array.isArray(values) ? values.filter(value => typeof value === 'string') : [];
   if (preserveSelection && JSON.stringify(names) === JSON.stringify(known)) return known;
   const selected = preserveSelection ? select.value : '';
-  const choices = [option('', emptyLabel)];
+  const choices = [option('', emptyLabel), ...extra];
   for (const name of names) choices.push(option(name, name));
-  if (selected && selected !== manualChoice && !names.includes(selected)) choices.push(option(selected, `Selected: ${selected}`));
+  if (selected && selected !== manualChoice && selected !== globalChoice && !names.includes(selected)) choices.push(option(selected, `Selected: ${selected}`));
   choices.push(option(manualChoice, manualLabel));
   select.replaceChildren(...choices);
   select.value = selected;
@@ -79,7 +81,7 @@ function updateOptions(select, values, known, emptyLabel, manualLabel, preserveS
 }
 
 function updateProjectOptions(projects, preserveSelection = true) {
-  knownProjects = updateOptions(projectSelect, projects, knownProjects, 'Global memories', 'Enter another project ID…', preserveSelection);
+  knownProjects = updateOptions(projectSelect, projects, knownProjects, 'All projects', 'Enter another project ID…', preserveSelection, [option(globalChoice, 'Global memories only')]);
 }
 
 function updateDeviceOptions(devices, preserveSelection = true) {
@@ -296,14 +298,17 @@ async function refreshDevices() {
 
 function scopeInput() {
   const scope = {};
-  const project = projectSelect.value === manualChoice ? manualProjectInput.value.trim() : projectSelect.value;
+  const allProjects = projectSelect.value === '';
+  const project = projectSelect.value === manualChoice ? manualProjectInput.value.trim() : projectSelect.value === globalChoice ? '' : projectSelect.value;
   const device = deviceSelect.value === manualChoice ? manualDeviceInput.value.trim() : deviceSelect.value;
   const platform = document.getElementById('platform').value;
+  if (allProjects) scope.all_projects = true;
   if (project) scope.project = project;
   if (device) scope.device = device;
   if (platform) scope.platform = platform;
   const platforms = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
-  const view = [project ? `${project} + global memories` : 'Global memories', device || 'All devices', platforms[platform] || 'All platforms'];
+  const projectView = allProjects ? 'All projects' : project ? `${project} + global memories` : 'Global memories only';
+  const view = [projectView, device || 'All devices', platforms[platform] || 'All platforms'];
   const description = view.join(' · ');
   if (scopeSummary.textContent !== description) scopeSummary.textContent = description;
   if (projectSelect.value === manualChoice && !project) return null;
@@ -322,12 +327,27 @@ function updatedLabel(record) {
   return Number.isNaN(date.getTime()) ? 'Update date unavailable' : `Updated ${date.toLocaleString()}`;
 }
 
+const platformNames = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
+
+// Cards name the exact scope in words; the stored project ID keeps its host/path.
+function scopeLabelText(scope) {
+  const project = scope.project && scope.project.replace(/^(git|id):/, '');
+  const parts = [project, scope.device && `device ${scope.device}`, scope.platform && (platformNames[scope.platform] || scope.platform)].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'Global';
+}
+
+// Only confirmed records and handoffs load into an agent's startup context.
+function startupNote(record) {
+  if (record.confirmed) return 'Confirmed';
+  return record.purpose === 'handoff' ? 'Unconfirmed handoff · loads at startup' : 'Unconfirmed · not loaded at agent startup';
+}
+
 function recordMetadata(record) {
   const scope = record.scope || {};
   const dimensions = [scope.project && `Project ${scope.project}`, scope.device && `Device ${scope.device}`, scope.platform && `Platform ${scope.platform}`].filter(Boolean);
   return [
     dimensions.length ? dimensions.join(' · ') : 'Global',
-    record.confirmed ? 'Confirmed' : 'Unconfirmed',
+    startupNote(record),
     updatedLabel(record),
     record.archived ? 'Archived' : 'Active',
     `Source: ${record.provenance?.source || 'Unknown'}`,
@@ -429,11 +449,38 @@ searchForm.addEventListener('submit', event => {
 });
 clearSearch.addEventListener('click', () => { searchQuery = ''; searchInput.value = ''; restartMemoryView(); });
 
+function emptyState(omitted) {
+  const empty = document.createElement('div');
+  empty.className = 'empty';
+  const message = document.createElement('p');
+  empty.append(message);
+  if (omitted) { message.textContent = 'Open an omitted memory above to read its full content.'; return empty; }
+  if (searchQuery) { message.textContent = 'No matching memories. Try fewer words, or search all projects.'; return empty; }
+  if (projectSelect.value !== '' || deviceSelect.value !== '' || document.getElementById('platform').value !== '') {
+    message.textContent = 'Nothing saved in this view. Choose All projects, All devices and All platforms to see everything.';
+    return empty;
+  }
+  message.textContent = 'Nothing is saved yet. To try it:';
+  const steps = document.createElement('ol');
+  for (const text of [
+    'Connect an agent: open Devices & connections below and give the agent the prompt.',
+    'Ask it to save a preference, such as “Remember that I prefer short commit messages.”',
+    'Start a fresh session and ask what it remembers about your preferences.',
+    'Check that the memory appears here. Memories that are not confirmed yet are not loaded at startup.'
+  ]) {
+    const step = document.createElement('li');
+    step.textContent = text;
+    steps.append(step);
+  }
+  empty.append(steps);
+  return empty;
+}
+
 function draw(page) {
   const items = page.records || [];
   const omitted = page.omitted || 0;
   omissions.hidden = !omitted;
-  const omissionSignature = JSON.stringify([omitted, page.omitted_records]);
+  const omissionSignature = JSON.stringify([omitted, page.omitted_records, page.omitted_titles]);
   if (omitted && omissionSignature !== lastOmissionSignature) {
     const text = document.createElement('p');
     text.textContent = `${omitted} ${omitted === 1 ? 'memory is' : 'memories are'} outside this list's size limit. Open a record below, or search to narrow the list.`;
@@ -442,7 +489,8 @@ function draw(page) {
     for (const reference of page.omitted_records || []) {
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'quiet';
-      button.textContent = `Open memory #${reference.id}`;
+      const title = page.omitted_titles?.[reference.id];
+      button.textContent = title ? `Open “${title}” (#${reference.id})` : `Open memory #${reference.id}`;
       button.addEventListener('click', () => openMemory(reference));
       links.append(button);
     }
@@ -457,6 +505,9 @@ function draw(page) {
   if (hasLoaded && (signature === lastSignature || selectingRecord)) return;
 
   const next = new Map();
+  // A poll redraw must not strand keyboard focus on a removed button.
+  const focusedID = document.activeElement?.memoryID;
+  openButtons = new Map();
   const fragment = document.createDocumentFragment();
   for (const record of items) {
     const key = `${record.id}`;
@@ -473,31 +524,34 @@ function draw(page) {
     const scope = record.scope || {};
     const scopeLabel = document.createElement('p');
     scopeLabel.className = 'record-scope';
-    scopeLabel.textContent = scope.project ? `Project · ${scope.project.split('/').pop()}` : scope.device ? 'Device' : scope.platform || 'Global';
-    top.append(kind, scopeLabel);
+    scopeLabel.textContent = scopeLabelText(scope);
+    const number = document.createElement('p');
+    number.textContent = `#${record.id}`;
+    top.append(kind, scopeLabel, number);
     const heading = document.createElement('h3');
     heading.textContent = record.title || `Memory #${record.id}`;
     const content = document.createElement('p');
     content.className = 'record-content';
     const preview = Array.from(record.content || '');
-    content.textContent = preview.length > 240 ? preview.slice(0, 240).join('') + '…' : record.content;
+    content.textContent = record.content_truncated || preview.length > 240 ? preview.slice(0, 240).join('') + '…' : record.content;
     const state = document.createElement('p');
     state.className = 'record-state';
-    state.textContent = `${record.confirmed ? 'Confirmed' : 'Unconfirmed'} · ${updatedLabel(record)}`;
+    state.textContent = `${startupNote(record)} · ${updatedLabel(record)}`;
     const open = document.createElement('button');
     open.type = 'button'; open.className = 'quiet record-open';
-    open.textContent = `Open memory #${record.id}`;
+    open.textContent = 'Open memory';
+    open.setAttribute('aria-label', `Open memory: ${record.title || `#${record.id}`}`);
+    open.memoryID = record.id;
+    openButtons.set(record.id, open);
     open.addEventListener('click', () => openMemory(record));
     article.append(top, heading, state, content, open);
     fragment.append(article);
   }
   if (!items.length) {
-    const empty = document.createElement('p');
-    empty.className = 'empty';
-    empty.textContent = omitted ? 'Open an omitted memory above to read its full content.' : searchQuery ? 'No matching memories. Try fewer words or another project.' : 'No memories here yet. Ask an agent to save one, then check back.';
-    fragment.append(empty);
+    fragment.append(emptyState(omitted));
   }
   records.replaceChildren(fragment);
+  if (focusedID !== undefined) openButtons.get(focusedID)?.focus();
   revisions = next;
   lastSignature = signature;
   hasLoaded = true;
@@ -530,7 +584,7 @@ async function refresh() {
     updateProjectOptions(page.projects);
     updateDeviceOptions(page.devices);
     draw(page);
-    setStatus(searchQuery ? page.semantic_ready ? 'Search results' : 'Search by wording' : 'Live', 'live');
+    setStatus(searchQuery ? page.semantic_ready ? 'Search results' : 'Wording matches only · meaning search unavailable' : 'Live', 'live');
     // Browsing follows live writes. Search runs on submission or explicit refresh,
     // rather than repeating query inference while someone reads the results.
     if (!searchQuery) timer = setTimeout(refresh, 3000);

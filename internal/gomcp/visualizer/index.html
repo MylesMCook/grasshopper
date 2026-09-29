@@ -24,7 +24,7 @@
       <form id="connection-form" autocomplete="off">
         <div id="token-field" class="token-field">
           <label>Owner access token <input id="token" type="password" autocomplete="off" required spellcheck="false"></label>
-          <p>This browser stays connected for 30 days. Disconnect to forget it.</p>
+          <p>Use the owner token from the access token file the server printed at startup, not a device token. This browser stays connected for 30 days. Disconnect to forget it.</p>
         </div>
         <div class="actions"><button id="connect" type="submit">Connect browser</button></div>
       </form>
@@ -38,13 +38,13 @@
         <div class="search-row"><input id="search-query" type="search" placeholder="A preference, decision, or lesson" maxlength="4096"><button type="submit">Search</button><button id="clear-search" type="button" class="quiet" hidden>Show all</button></div>
       </form>
         <div class="fields" aria-label="Filter memories">
-          <div class="filter-field"><label>Project <select id="project" aria-describedby="scope-note"><option value="">Global memories</option></select></label>
+          <div class="filter-field"><label>Project <select id="project" aria-describedby="scope-note"><option value="">All projects</option></select></label>
           <label id="manual-project-label" hidden>Project ID <input id="manual-project" type="text" placeholder="id: or git: identifier" spellcheck="false"></label></div>
           <div class="filter-field"><label>Device <select id="device" aria-describedby="scope-note"><option value="">All devices</option></select></label>
           <label id="manual-device-label" hidden>Device ID <input id="manual-device" type="text" placeholder="Exact device ID" spellcheck="false"></label></div>
           <label>Platform <select id="platform" aria-describedby="scope-note"><option value="">All platforms</option><option value="macos">macOS</option><option value="windows">Windows</option><option value="linux">Linux</option></select></label>
         </div>
-        <p id="scope-note" class="scope-note">Every project includes global memories. Device and platform filters keep shared memories visible.</p>
+        <p id="scope-note" class="scope-note">A project view includes global memories, and device and platform filters keep shared memories visible. These filters organize what you see; they do not restrict access.</p>
       </div>
       <div class="results-heading"><div><p id="scope-summary" class="scope-summary" hidden></p><p id="summary" class="summary">Connect to see what is saved.</p></div><div class="results-actions"><span id="status" class="status" role="status" aria-live="polite">Not connected</span><button id="refresh" type="submit" form="connection-form" class="quiet" hidden>Refresh</button></div></div>
       <div id="omissions" class="omissions" hidden></div>

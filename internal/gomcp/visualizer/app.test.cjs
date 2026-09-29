@@ -14,7 +14,7 @@ function view() {
     querySelector() { return null; },
     contains() { return false; },
     showModal() { this.open = true; }, close() { this.open = false; this.listeners.close?.(); },
-    focus() {}, scrollIntoView() {}, classList: { add() {} }
+    focus() { this.focused = true; }, scrollIntoView() {}, setAttribute(name, value) { this.attributes = { ...this.attributes, [name]: value }; }, classList: { add() {} }
   });
   const get = id => {
     if (!elements.has(id)) elements.set(id, element());
@@ -43,7 +43,7 @@ function view() {
   const ui = vm.runInContext('({ refreshDevices, stop, setConnected, revokeDevice, refresh, draw, openMemory, loadRecord, closeMemory, restartMemoryView })', sandbox);
   ui.setConnected(true);
   get('device-panel').open = true;
-  return { ui, get, requests, timers, timerDelays };
+  return { ui, get, requests, timers, timerDelays, document: sandbox.document };
 }
 
 function replyPair(v, start, devices = []) {
@@ -83,7 +83,7 @@ test('search submits the selected scope and runs once until explicit refresh', a
   assert.deepEqual(JSON.parse(request.options.body), { scope: { project: 'id:test' }, query: 'orchard decision' });
   request.reply({ records: [memory(1)], omitted: 0, devices: [], projects: ['id:test'], semantic_ready: false });
   await new Promise(setImmediate);
-  assert.equal(v.get('status').textContent, 'Search by wording');
+  assert.equal(v.get('status').textContent, 'Wording matches only · meaning search unavailable');
   assert.equal(v.get('clear-search').hidden, false);
   assert.equal(v.timers.size, 0);
 });
@@ -207,4 +207,63 @@ test('a failed request cannot let its sibling repaint and polling can recover', 
   await retry;
   assert.deepEqual(deviceLabels(v), ['recovered-device']);
   assert.equal(v.timers.size, 1);
+});
+
+test('the default view asks for every project and other choices narrow it', () => {
+  const v = view();
+  v.ui.refresh();
+  assert.deepEqual(JSON.parse(v.requests[0].options.body), { all_projects: true });
+  assert.equal(v.get('scope-summary').textContent, 'All projects · All devices · All platforms');
+  v.get('project').value = '\u0000global';
+  v.ui.restartMemoryView();
+  assert.deepEqual(JSON.parse(v.requests[1].options.body), {});
+  assert.equal(v.get('scope-summary').textContent, 'Global memories only · All devices · All platforms');
+  v.get('project').value = 'git:github.com/example/orchard';
+  v.ui.restartMemoryView();
+  assert.deepEqual(JSON.parse(v.requests[2].options.body), { project: 'git:github.com/example/orchard' });
+});
+
+test('an empty store guides first use, and an empty filter says how to widen it', () => {
+  const v = view();
+  v.ui.draw({ records: [], omitted: 0 });
+  const empty = v.get('records').children[0].children[0];
+  assert.match(empty.children[0].textContent, /Nothing is saved yet/);
+  assert.equal(empty.children[1].children.length, 4);
+  v.get('project').value = 'id:quiet';
+  v.ui.restartMemoryView();
+  v.ui.draw({ records: [], omitted: 0 });
+  assert.match(v.get('records').children[0].children[0].children[0].textContent, /Choose All projects/);
+});
+
+test('cards name their exact scope and say what an agent will load', () => {
+  const v = view();
+  const scoped = { ...memory(3), confirmed: false, scope: { project: 'git:github.com/example/orchard', device: 'mac-mini', platform: 'macos' } };
+  const handoff = { ...memory(4), confirmed: false, purpose: 'handoff' };
+  v.ui.draw({ records: [scoped, handoff], omitted: 0 });
+  const [first, second] = v.get('records').children[0].children;
+  assert.equal(first.children[0].children[1].textContent, 'github.com/example/orchard · device mac-mini · macOS');
+  assert.equal(first.children[0].children[2].textContent, '#3');
+  assert.match(first.children[2].textContent, /^Unconfirmed · not loaded at agent startup/);
+  assert.match(second.children[2].textContent, /^Unconfirmed handoff · loads at startup/);
+  assert.equal(first.children[4].attributes['aria-label'], 'Open memory: Synthetic decision');
+});
+
+test('omitted records are named and a poll redraw keeps keyboard focus', () => {
+  const v = view();
+  v.ui.draw({ records: [memory(5)], omitted: 1, omitted_ids: [9], omitted_records: [{ id: 9, revision: 1, scope: {} }], omitted_titles: { 9: 'Large lesson' } });
+  assert.equal(v.get('omissions').children[1].children[0].textContent, 'Open “Large lesson” (#9)');
+  v.document.activeElement = v.get('records').children[0].children[0].children[4];
+  const before = v.document.activeElement;
+  v.ui.draw({ records: [memory(5, 2)], omitted: 0 });
+  const after = v.get('records').children[0].children[0].children[4];
+  assert.notEqual(after, before);
+  assert.equal(after.focused, true);
+});
+
+test('a truncated list preview ends with an ellipsis and short text does not', () => {
+  const v = view();
+  v.ui.draw({ records: [{ ...memory(6), content: 'x'.repeat(240), content_truncated: true }, memory(7)], omitted: 0 });
+  const [long, short] = v.get('records').children[0].children;
+  assert.equal(long.children[3].textContent, 'x'.repeat(240) + '…');
+  assert.equal(short.children[3].textContent, 'Synthetic saved decision.');
 });

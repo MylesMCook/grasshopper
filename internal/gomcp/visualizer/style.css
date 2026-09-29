@@ -64,6 +64,7 @@ button:disabled { opacity:.45; cursor:default; }
 .record.changed .record-kind { color:var(--success); font-weight:600; }
 .record-meta { display:grid; gap:6px; color:var(--muted); overflow-wrap:anywhere; font-size:.875rem; }
 .empty { padding:16px 0; color:var(--muted); max-width:60ch; }
+.empty ol { margin:12px 0 0; padding-left:1.5em; display:grid; gap:6px; }
 .omissions { color:var(--muted); font-size:.875rem; margin-top:16px; }
 .omitted-links { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
 dialog { width:min(100% - 32px,800px); max-height:85vh; padding:32px; background:var(--paper); color:var(--ink); border:1px solid var(--border); border-radius:2px; overflow:auto; }

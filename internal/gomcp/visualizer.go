@@ -60,8 +60,8 @@ func visualizerAsset(w http.ResponseWriter, r *http.Request, styleHashes []strin
 func visualizerSearch(backend Backend, embedQuery func(context.Context, string) ([]float32, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
-			Scope gomemory.Scope `json:"scope"`
-			Query string         `json:"query"`
+			Scope gomemory.BrowseScope `json:"scope"`
+			Query string               `json:"query"`
 		}
 		if !decodeVisualizerRead(w, r, &input) {
 			return
@@ -75,8 +75,12 @@ func visualizerSearch(backend Backend, embedQuery func(context.Context, string) 
 			vector = nil
 		}
 		page, devices, projects, err := backend.Store.BrowseSearch(r.Context(), input.Scope, input.Query, vector, backend.Model, 100, 32768)
+		var titles map[int64]string
 		if err == nil {
 			devices, err = visualizerDevices(r.Context(), backend.Store, devices)
+		}
+		if err == nil {
+			titles, err = omittedTitles(r.Context(), backend.Store, page)
 		}
 		if err != nil {
 			http.Error(w, "search unavailable", http.StatusServiceUnavailable)
@@ -85,16 +89,21 @@ func visualizerSearch(backend Backend, embedQuery func(context.Context, string) 
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(struct {
 			gomemory.Page
-			Devices       []string `json:"devices"`
-			Projects      []string `json:"projects"`
-			SemanticReady bool     `json:"semantic_ready"`
-		}{page, devices, projects, vector != nil})
+			Devices       []string         `json:"devices"`
+			Projects      []string         `json:"projects"`
+			OmittedTitles map[int64]string `json:"omitted_titles"`
+			SemanticReady bool             `json:"semantic_ready"`
+		}{page, devices, projects, titles, vector != nil})
 	}
 }
 
 func visualizerRecord(store *gomemory.Writer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var input getInput
+		var input struct {
+			Scope    gomemory.BrowseScope `json:"scope"`
+			ID       int64                `json:"id"`
+			Revision *int64               `json:"revision,omitempty"`
+		}
 		if !decodeVisualizerRead(w, r, &input) {
 			return
 		}
@@ -171,7 +180,7 @@ func visualizerContext(store *gomemory.Writer) http.HandlerFunc {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		scope := gomemory.Scope{}
+		scope := gomemory.BrowseScope{}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&scope); err != nil {
@@ -187,8 +196,12 @@ func visualizerContext(store *gomemory.Writer) http.HandlerFunc {
 			return
 		}
 		page, devices, projects, err := store.BrowseContext(r.Context(), scope, 32768)
+		var titles map[int64]string
 		if err == nil {
 			devices, err = visualizerDevices(r.Context(), store, devices)
+		}
+		if err == nil {
+			titles, err = omittedTitles(r.Context(), store, page)
 		}
 		if err != nil {
 			http.Error(w, "context unavailable", http.StatusServiceUnavailable)
@@ -197,8 +210,16 @@ func visualizerContext(store *gomemory.Writer) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(struct {
 			gomemory.Page
-			Devices  []string `json:"devices"`
-			Projects []string `json:"projects"`
-		}{page, devices, projects})
+			Devices       []string         `json:"devices"`
+			Projects      []string         `json:"projects"`
+			OmittedTitles map[int64]string `json:"omitted_titles"`
+		}{page, devices, projects, titles})
 	}
+}
+
+// omittedTitles names records a size-limited page left out. The titles travel
+// beside the page rather than inside it, so agent-facing references keep their
+// existing shape.
+func omittedTitles(ctx context.Context, store *gomemory.Writer, page gomemory.Page) (map[int64]string, error) {
+	return store.Titles(ctx, page.OmittedIDs)
 }

@@ -226,7 +226,7 @@ func TestViewerBrowsesObservationsAndAllHandoffs(t *testing.T) {
 	if !seenProject || seenGlobal || seenObservation || contextPage.Omitted == 0 {
 		t.Fatalf("agent context should prefer project handoff and disclose omissions: %+v", contextPage)
 	}
-	browse, _, _, err := w.BrowseContext(ctx, scope, 16000)
+	browse, _, _, err := w.BrowseContext(ctx, BrowseScope{Scope: scope}, 16000)
 	if err != nil {
 		t.Fatal(err)
 	}
