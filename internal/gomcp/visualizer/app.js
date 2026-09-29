@@ -856,7 +856,8 @@ function drawNotLoaded(page) {
   const count = page.records?.length || 0;
   summary.textContent = `${count} ${count === 1 ? 'memory loads' : 'memories load'} at startup within ${Number(page.budget).toLocaleString()} bytes${items.length ? ` · ${items.length} not loaded` : ''}`;
   notLoaded.hidden = !items.length;
-  const signature = JSON.stringify(items);
+  // A memory's title and scope change only with its revision, so this identifies what is drawn.
+  const signature = JSON.stringify(items.map(item => [item.id, item.revision, item.reason]));
   if (signature === lastNotLoaded) return;
   lastNotLoaded = signature;
   const heading = document.createElement('h2');
