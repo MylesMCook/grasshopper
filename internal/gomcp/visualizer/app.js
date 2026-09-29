@@ -187,9 +187,15 @@ function stop(clearRecords = false) {
 }
 
 // A connection request is time-limited, so its panel moves above the memory
-// list instead of waiting at the bottom of a long page.
-function openDevicePanel() {
+// list instead of waiting at the bottom of a long page. Without a request it
+// returns to its usual place after the list.
+function placeDevicePanel() {
   if (approvalID) document.getElementById('memory-section')?.before?.(devicePanel);
+  else serverStatus.before?.(devicePanel);
+}
+
+function openDevicePanel() {
+  placeDevicePanel();
   if (devicePanel.open) refreshDevices();
   else devicePanel.open = true; // The toggle event starts its first refresh.
 }
@@ -206,9 +212,8 @@ copyConnectionPrompt.addEventListener('click', async () => {
 window.addEventListener('hashchange', () => {
   approvalID = requestFromHash();
   approvalFocused = false;
-  if (approvalID && active) {
-    openDevicePanel();
-  }
+  if (approvalID && active) openDevicePanel();
+  else placeDevicePanel();
 });
 
 devicePanel.addEventListener('toggle', () => { if (!devicePanel.open) resetDeviceRows(); refreshDevices(); });
@@ -751,7 +756,7 @@ function chooseView(name) {
 function updateServerStatus(info) {
   if (!info) return;
   const search = info.model ? `meaning search ${info.model}` : 'wording search only';
-  const text = `Server ${info.version} · ${search} · ${info.memories} ${info.memories === 1 ? 'memory' : 'memories'}${info.archived ? `, ${info.archived} archived` : ''}`;
+  const text = `Server ${info.version} · ${search} · ${info.memories} ${info.memories === 1 ? 'memory' : 'memories'}, ${info.archived} archived`;
   if (serverStatus.textContent !== text) serverStatus.textContent = text;
   serverStatus.hidden = !active;
 }

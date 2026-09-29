@@ -14,6 +14,7 @@ function view(hash = '', connected = true) {
     querySelector() { return null; },
     contains() { return false; },
     showModal() { this.open = true; }, close() { this.open = false; this.listeners.close?.(); },
+    before(node) { node.placedBefore = this; },
     focus() { this.focused = true; }, scrollIntoView() {}, setAttribute(name, value) { this.attributes = { ...this.attributes, [name]: value }; }, classList: { add() {} }
   });
   const get = id => {
@@ -21,12 +22,13 @@ function view(hash = '', connected = true) {
     return elements.get(id);
   };
   const requests = [];
+  const windowListeners = {};
   const timers = new Map();
   const timerDelays = new Map();
   let timerID = 0;
   const sandbox = {
     document: { getElementById: get, querySelector: get, createElement: element, createDocumentFragment: element },
-    window: { addEventListener() {}, confirm: () => true, getSelection: () => null },
+    window: { addEventListener(name, action) { windowListeners[name] = action; }, confirm: () => true, getSelection: () => null },
     location: { origin: 'http://127.0.0.1', hash },
     AbortController,
     setTimeout(fn, delay) { timers.set(++timerID, fn); timerDelays.set(timerID, delay); return timerID; },
@@ -45,7 +47,7 @@ function view(hash = '', connected = true) {
     ui.setConnected(true);
     get('device-panel').open = true;
   }
-  return { ui, get, requests, timers, timerDelays, document: sandbox.document };
+  return { ui, get, requests, timers, timerDelays, document: sandbox.document, location: sandbox.location, windowListeners };
 }
 
 function replyPair(v, start, devices = []) {
@@ -498,6 +500,11 @@ test('the server line reports version, search model and counts', () => {
   v.requests.at(-1).reply({ records: [], omitted: 0, devices: [], projects: [], server: { version: '2.7.0', model: 'granite-test', memories: 24, archived: 3 } });
   return tick().then(() => {
     assert.equal(v.get('server-status').textContent, 'Server 2.7.0 · meaning search granite-test · 24 memories, 3 archived');
+    v.ui.refresh();
+    v.requests.at(-1).reply({ records: [], omitted: 0, devices: [], projects: [], server: { version: '2.7.0', model: '', memories: 1, archived: 0 } });
+    return tick();
+  }).then(() => {
+    assert.equal(v.get('server-status').textContent, 'Server 2.7.0 · wording search only · 1 memory, 0 archived');
     assert.equal(v.get('server-status').hidden, false);
   });
 });
@@ -588,4 +595,12 @@ test('view tabs show zero counts but no number before a count is known', () => {
   assert.deepEqual(tabs.map(tab => tab.textContent), ['Saved', 'Needs review', 'Archived']);
   v.ui.updateViewCounts({ review_count: 0, archived_count: 3 });
   assert.deepEqual(tabs.map(tab => tab.textContent), ['Saved', 'Needs review (0)', 'Archived (3)']);
+});
+
+test('the device panel returns to its place when the approval fragment is cleared', () => {
+  const v = view('#connect=' + request64);
+  assert.equal(v.get('device-panel').placedBefore, v.get('memory-section'));
+  v.location.hash = '';
+  v.windowListeners.hashchange();
+  assert.equal(v.get('device-panel').placedBefore, v.get('server-status'));
 });
