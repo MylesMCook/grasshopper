@@ -25,6 +25,13 @@ Install your OS entry in Agent CLI's Plugins menu or the IDE's **Customize → P
 
 Ask the installed agent: **Connect Grasshopper.** If this machine already has a connection, it reuses it. Otherwise, give it your private server link once (the server, memory-view, or MCP link). Open the approval link it returns **in your already-connected memory view**, match the device and code, and approve. No token goes through the agent. Codex may ask you to trust its hook and allow network access to your private server; Cursor may ask you to enable Grasshopper MCP. On Windows Cursor Agent CLI, keep the default user-level MCP location.
 
+Connection checks report the host's registered device, server and approval state.
+Owner access is identified separately from device registration. Windows agents
+share `%USERPROFILE%\.grasshopper`; explicit configuration paths still take
+precedence. An explicit Connect can reuse a verified legacy device connection
+while keeping the old files recoverable. If the server is offline, keep the
+connection and retry when it is available.
+
 Setup allows Grasshopper's three read tools in Cursor Agent CLI and Claude Code. Saving or archiving a memory still uses each agent's normal approval.
 
 ### Find and inspect a memory
