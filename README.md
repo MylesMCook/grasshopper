@@ -27,7 +27,14 @@ Install your OS entry in Agent CLI's Plugins menu or the IDE's **Customize → P
 
 #### Claude Code
 
-Download the [client archive for your machine](https://github.com/MylesMCook/grasshopper/releases/latest), check it against the release's `SHA256SUMS`, and extract it. Run:
+```sh
+claude plugin marketplace add MylesMCook/grasshopper#marketplace
+claude plugin install grasshopper-macos@grasshopper-marketplace
+```
+
+For Windows or Linux, install `grasshopper-windows` or `grasshopper-linux` instead. Claude Code asks before an agent first uses a Grasshopper tool; approve the three read tools once.
+
+Prefer to pre-approve those reads and keep the connector beside your other client files? Download the [client archive for your machine](https://github.com/MylesMCook/grasshopper/releases/latest), check it against the release's `SHA256SUMS`, extract it, and run this instead of the two commands above:
 
 ```sh
 ./bin/grasshopper connect --agents claude --url https://your-private-server
@@ -110,7 +117,19 @@ Before removing Cursor, run this from its client archive to clear Grasshopper's 
 ./bin/grasshopper cursor remove
 ```
 
-Claude Code: extract the new client beside the old one and update it. Before uninstalling, clear its Grasshopper read allowlist, then remove the plugin in Claude Code's manager.
+Claude Code (marketplace install): update the marketplace, then the plugin. Remove it with the second pair of commands.
+
+```sh
+claude plugin marketplace update grasshopper-marketplace
+claude plugin update grasshopper-macos@grasshopper-marketplace
+```
+
+```sh
+claude plugin uninstall grasshopper-macos@grasshopper-marketplace
+claude plugin marketplace remove grasshopper-marketplace
+```
+
+Claude Code (client archive install): extract the new client beside the old one and update it. Before uninstalling, clear its Grasshopper read allowlist, then remove the plugin in Claude Code's manager.
 
 ```sh
 ./bin/grasshopper setup --agents claude --update
