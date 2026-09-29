@@ -2,6 +2,13 @@
 
 Observed checks for Grasshopper releases. Synthetic checks and real-client observations are separate below.
 
+## 2.5.0 memory-view search and inspection (release verification in progress)
+
+- Owner-only browser search uses the same Granite query inference, hybrid ranking, and limits as MCP search, with the viewer's existing project/device/platform browsing scope. A failed embedding is disclosed as wording-only search. Agent retrieval scope and the five MCP tools are unchanged.
+- Native HTTP regressions cover a full 32,768-byte current read and an earlier revision, cross-device owner browsing, wrong-project exclusion, bearer/cookie authentication, exact Origin, malformed requests, and semantic/wording-only paths. Ten Node viewer tests cover request lifetime, scope changes, omitted-record links, and device polling. Mac Go tests with the pinned Granite ONNX files, vet, scoped race checks, and builds passed.
+- In a synthetic 2.5.0 server and isolated Chromium session on Mac mini, owner search in `id:demo` found the corrected backup decision; opening it showed revision 2, source, scope, confirmation and date, and Previous revision showed the original text. In `id:growth`, the compact list reported four omissions and Open memory #32 displayed all 32,768 characters of an omitted record. A 390 px viewport had no horizontal overflow; Escape closed the modal and returned focus to the opener. This fixture uses invented records and no document embeddings, so browser search exercised the wording fallback. Native HTTP tests separately cover semantic query ranking. Screenshots and fixture are task-local under `2026-09-29-grasshopper-2.5.0-release`.
+- Three-OS CI, package publication, installed clients, and private-service deployment have not yet been verified.
+
 ## 2.4.0 Granite recall upgrade (September 29)
 
 [Release](https://github.com/MylesMCook/grasshopper/releases/tag/v2.4.0) · [native main CI](https://github.com/MylesMCook/grasshopper/actions/runs/36581290182) · [PR #8](https://github.com/MylesMCook/grasshopper/pull/8) · release commit `58b670a` · marketplace `ede417f` · [LAB-217](https://linear.app/mcook/issue/LAB-217/improve-memory-recall-with-a-verified-model-upgrade-and-reversible).

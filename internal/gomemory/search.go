@@ -16,12 +16,28 @@ import (
 // the query vector and model; a nil vector gives lexical-only results. Scope
 // is constrained in SQLite before either candidate list is ranked.
 func (r *Reader) Search(ctx context.Context, scope Scope, query string, vector []float32, model string, limit, budget int) (Page, error) {
-	if strings.TrimSpace(query) == "" || len(query) > 4096 {
-		return Page{}, errors.New("query must be 1-4096 bytes")
-	}
 	keys, err := scope.applicableKeys()
 	if err != nil {
 		return Page{}, err
+	}
+	return r.searchKeys(ctx, keys, query, vector, model, limit, budget)
+}
+
+// BrowseSearch matches the owner's BrowseContext scope, including any device
+// and platform when those dimensions are absent. It uses the same ranking as
+// agent Search; only candidate scope differs.
+func (r *Reader) BrowseSearch(ctx context.Context, scope Scope, query string, vector []float32, model string, limit, budget int) (Page, []string, []string, error) {
+	keys, devices, projects, err := r.browseScopeKeys(ctx, scope)
+	if err != nil {
+		return Page{}, nil, nil, err
+	}
+	page, err := r.searchKeys(ctx, keys, query, vector, model, limit, budget)
+	return page, devices, projects, err
+}
+
+func (r *Reader) searchKeys(ctx context.Context, keys []string, query string, vector []float32, model string, limit, budget int) (Page, error) {
+	if strings.TrimSpace(query) == "" || len(query) > 4096 {
+		return Page{}, errors.New("query must be 1-4096 bytes")
 	}
 	keyJSON, err := json.Marshal(keys)
 	if err != nil {

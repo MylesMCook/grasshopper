@@ -237,6 +237,10 @@ func (r *Reader) Get(ctx context.Context, scope Scope, id int64, revision *int64
 	if err != nil {
 		return nil, err
 	}
+	return r.getKeys(ctx, keys, id, revision)
+}
+
+func (r *Reader) getKeys(ctx context.Context, keys []string, id int64, revision *int64) (*Record, error) {
 	keyJSON, err := json.Marshal(keys)
 	if err != nil {
 		return nil, err
@@ -276,16 +280,60 @@ func (r *Reader) Context(ctx context.Context, scope Scope, budget int) (Page, er
 // device or platform means all of them; a missing project still means only
 // global project scope. Agent context keeps its narrower applicable-scope rule.
 func (r *Reader) BrowseContext(ctx context.Context, scope Scope, budget int) (Page, []string, []string, error) {
+	keys, devices, projects, err := r.browseScopeKeys(ctx, scope)
+	if err != nil {
+		return Page{}, nil, nil, err
+	}
+	page, err := r.browseKeys(ctx, keys, budget)
+	return page, devices, projects, err
+}
+
+// BrowseGet uses the owner's device/platform browsing semantics for a full
+// current or historical record. Agent Get retains its narrower scope rule.
+func (r *Reader) BrowseGet(ctx context.Context, scope Scope, id int64, revision *int64) (*Record, error) {
 	if _, err := scope.Key(); err != nil || scope.Legacy {
-		return Page{}, nil, nil, errors.New("invalid visualizer scope")
+		return nil, errors.New("invalid visualizer scope")
+	}
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var scopeJSON string
+	err = tx.QueryRowContext(ctx, "SELECT memory_scope FROM chunks WHERE id=? AND kind='memory'", id).Scan(&scopeJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if scopeJSON == "legacy" {
+		return nil, nil
+	}
+	var exact Scope
+	if err := json.Unmarshal([]byte(scopeJSON), &exact); err != nil {
+		return nil, err
+	}
+	if exact.Legacy ||
+		(exact.Project != nil && (scope.Project == nil || *scope.Project != *exact.Project)) ||
+		(scope.Device != nil && exact.Device != nil && *scope.Device != *exact.Device) ||
+		(scope.Platform != nil && exact.Platform != nil && *scope.Platform != *exact.Platform) {
+		return nil, nil
+	}
+	return getInTx(ctx, tx, exact, id, revision)
+}
+
+func (r *Reader) browseScopeKeys(ctx context.Context, scope Scope) ([]string, []string, []string, error) {
+	if _, err := scope.Key(); err != nil || scope.Legacy {
+		return nil, nil, nil, errors.New("invalid visualizer scope")
 	}
 	devices, err := r.browseDevices(ctx, scope)
 	if err != nil {
-		return Page{}, nil, nil, err
+		return nil, nil, nil, err
 	}
 	knownProjects, err := r.browseProjects(ctx)
 	if err != nil {
-		return Page{}, nil, nil, err
+		return nil, nil, nil, err
 	}
 	projects := []*string{nil}
 	if scope.Project != nil {
@@ -314,14 +362,13 @@ func (r *Reader) BrowseContext(ctx context.Context, scope Scope, budget int) (Pa
 			for _, platform := range platforms {
 				key, err := (Scope{Project: project, Device: device, Platform: platform}).Key()
 				if err != nil {
-					return Page{}, nil, nil, err
+					return nil, nil, nil, err
 				}
 				keys = append(keys, key)
 			}
 		}
 	}
-	page, err := r.browseKeys(ctx, keys, budget)
-	return page, devices, knownProjects, err
+	return keys, devices, knownProjects, nil
 }
 
 func (r *Reader) browseProjects(ctx context.Context) ([]string, error) {

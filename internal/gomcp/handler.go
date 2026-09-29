@@ -163,6 +163,12 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			return nil, inferenceCtx.Err()
 		}
 	}
+	embedQuery := func(ctx context.Context, query string) ([]float32, error) {
+		if backend.Embedder == nil {
+			return nil, nil
+		}
+		return runInference(ctx, func() ([]float32, error) { return backend.Embedder.EmbedQuery(query) })
+	}
 	tokenHash := sha256.Sum256([]byte(token))
 	masterBearerValid := func(r *http.Request) bool {
 		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -171,6 +177,13 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		}
 		providedHash := sha256.Sum256([]byte(provided))
 		return subtle.ConstantTimeCompare(providedHash[:], tokenHash[:]) == 1
+	}
+	ownerValid := func(r *http.Request) bool {
+		if masterBearerValid(r) {
+			return true
+		}
+		cookie, err := r.Cookie(visualizerCookieName)
+		return err == nil && validVisualizerSession(cookie.Value, tokenHash[:], time.Now())
 	}
 	bearerValid := func(r *http.Request) bool {
 		if masterBearerValid(r) {
@@ -224,14 +237,10 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			if in.Budget != nil {
 				budget = *in.Budget
 			}
-			var vector []float32
-			if backend.Embedder != nil {
-				var err error
-				vector, err = runInference(ctx, func() ([]float32, error) { return backend.Embedder.EmbedQuery(in.Query) })
-				if err != nil {
-					vector = nil // Disclose lexical-only recall through semantic_ready.
-				}
-			}
+			vector, err := embedQuery(ctx, in.Query)
+			if err != nil {
+				vector = nil
+			} // Disclose lexical-only recall through semantic_ready.
 			page, err := backend.Store.Search(ctx, in.Scope, in.Query, vector, backend.Model, limit, budget)
 			return nil, searchOutput{page, vector != nil}, err
 		})
@@ -289,8 +298,13 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		}
 		mcpHandler.ServeHTTP(w, r)
 	}))
+	var ownerReads map[string]http.HandlerFunc
 	if backend.Visualizer {
 		mux.HandleFunc("/visualizer/api/context", visualizerContext(backend.Store))
+		ownerReads = map[string]http.HandlerFunc{
+			"/visualizer/api/search": visualizerSearch(backend, embedQuery),
+			"/visualizer/api/record": visualizerRecord(backend.Store),
+		}
 	}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -312,11 +326,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			case "/visualizer/api/pairings", "/visualizer/api/devices":
 				// The master bearer or owner browser session manages these
 				// routes. Paired device bearers may use MCP, but not this API.
-				admin := masterBearerValid(r)
-				if cookie, err := r.Cookie(visualizerCookieName); err == nil && validVisualizerSession(cookie.Value, tokenHash[:], time.Now()) {
-					admin = true
-				}
-				if !admin {
+				if !ownerValid(r) {
 					http.Error(w, "authentication required", http.StatusUnauthorized)
 					return
 				}
@@ -337,6 +347,23 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		}
 		if backend.Visualizer && r.URL.Path == "/visualizer/api/session" {
 			visualizerSession(w, r, tokenHash[:], masterBearerValid(r), backend.AllowedProxyHost)
+			return
+		}
+		if ownerRead, ok := ownerReads[r.URL.Path]; ok {
+			// Owner inspection accepts only the master bearer or owner session.
+			// Require the exact Origin for both; paired agents retain the MCP API.
+			w.Header().Set("Cache-Control", "no-store")
+			if !ownerValid(r) {
+				http.Error(w, "authentication required", http.StatusUnauthorized)
+				return
+			}
+			if r.Header.Get("Origin") != visualizerOrigin(r, backend.AllowedProxyHost) {
+				http.Error(w, "invalid Origin header", http.StatusForbidden)
+				return
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+			defer cancel()
+			ownerRead(w, r.WithContext(ctx))
 			return
 		}
 		// Context also accepts an owner browser session after an exact Origin

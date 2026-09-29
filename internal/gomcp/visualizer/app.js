@@ -7,6 +7,19 @@ const status = document.getElementById('status');
 const summary = document.getElementById('summary');
 const omissions = document.getElementById('omissions');
 const records = document.getElementById('records');
+const searchForm = document.getElementById('search-form');
+const searchInput = document.getElementById('search-query');
+const clearSearch = document.getElementById('clear-search');
+const memoryDialog = document.getElementById('memory-dialog');
+const detailTitle = document.getElementById('memory-detail-title');
+const detailStatus = document.getElementById('memory-detail-status');
+const detailContent = document.getElementById('memory-detail-content');
+const detailMeta = document.getElementById('memory-detail-meta');
+const history = document.getElementById('memory-history');
+const revisionLabel = document.getElementById('memory-revision');
+const previousRevision = document.getElementById('previous-revision');
+const nextRevision = document.getElementById('next-revision');
+const latestRevision = document.getElementById('latest-revision');
 const scopeSummary = document.querySelector('.scope-details summary');
 const projectSelect = document.getElementById('project');
 const manualProjectLabel = document.getElementById('manual-project-label');
@@ -37,8 +50,12 @@ let hasLoaded = false;
 let knownProjects = [];
 let knownDevices = [];
 let lastSignature = '';
+let lastOmissionSignature = '';
 let deviceTimer = null;
 let deviceInFlight = null;
+let searchQuery = '';
+let detailState = null;
+let detailInFlight = null;
 
 function option(value, text) {
   const item = document.createElement('option');
@@ -86,8 +103,9 @@ function showManualDevice() {
 
 updateProjectOptions([], false);
 updateDeviceOptions([], false);
-projectSelect.addEventListener('change', showManualProject);
-deviceSelect.addEventListener('change', showManualDevice);
+projectSelect.addEventListener('change', () => { showManualProject(); restartMemoryView(); });
+deviceSelect.addEventListener('change', () => { showManualDevice(); restartMemoryView(); });
+for (const input of [manualProjectInput, manualDeviceInput, document.getElementById('platform')]) input.addEventListener('change', restartMemoryView);
 
 function setStatus(message, kind = '') {
   if (status.textContent !== message) status.textContent = message;
@@ -103,6 +121,7 @@ function setConnected(value) {
   disconnectButton.disabled = !value;
   connectAgent.hidden = !value;
   devicePanel.hidden = !value;
+  searchForm.hidden = !value;
   if (value && approvalID) openDevicePanel();
   else if (value && devicePanel.open) refreshDevices();
 }
@@ -114,13 +133,18 @@ function stop(clearRecords = false) {
   if (inFlight) inFlight.abort();
   inFlight = null;
   stopDeviceRefresh();
+  closeMemory();
   devicePanel.hidden = true;
   if (clearRecords) {
     records.replaceChildren();
     omissions.hidden = true;
     revisions = new Map();
     lastSignature = '';
+    lastOmissionSignature = '';
     hasLoaded = false;
+    searchQuery = '';
+    searchInput.value = '';
+    clearSearch.hidden = true;
     summary.textContent = 'Connect to see what is saved.';
     updateProjectOptions([], false);
     updateDeviceOptions([], false);
@@ -294,17 +318,140 @@ function label(text) {
   return span;
 }
 
+function updatedLabel(record) {
+  const date = new Date(record.updated_at);
+  return Number.isNaN(date.getTime()) ? 'Update date unavailable' : `Updated ${date.toLocaleString()}`;
+}
+
+function recordMetadata(record) {
+  const scope = record.scope || {};
+  const dimensions = [scope.project && `Project ${scope.project}`, scope.device && `Device ${scope.device}`, scope.platform && `Platform ${scope.platform}`].filter(Boolean);
+  return [
+    dimensions.length ? dimensions.join(' · ') : 'Global',
+    record.confirmed ? 'Confirmed' : 'Unconfirmed',
+    updatedLabel(record),
+    record.archived ? 'Archived' : 'Active',
+    `Source: ${record.provenance?.source || 'Unknown'}`,
+    `Agent: ${record.provenance?.harness || 'Unknown'}`,
+    `Source device: ${record.provenance?.device || 'Unknown'}`
+  ];
+}
+
+function cancelDetail() {
+  if (detailInFlight) detailInFlight.abort();
+  detailInFlight = null;
+  detailState = null;
+  detailTitle.textContent = 'Memory';
+  detailStatus.textContent = '';
+  detailContent.textContent = '';
+  detailMeta.replaceChildren();
+  history.hidden = true;
+}
+
+function closeMemory() {
+  cancelDetail();
+  if (memoryDialog.open) memoryDialog.close();
+}
+
+function openMemory(record) {
+  cancelDetail();
+  detailState = { id: record.id, scope: scopeInput(), revision: 0, maximumRevision: 0 };
+  if (!detailState.scope || !active) { cancelDetail(); return; }
+  if (!memoryDialog.open) memoryDialog.showModal();
+  loadRecord();
+}
+
+async function loadRecord(revision = null) {
+  if (!active || !detailState) return;
+  const selected = detailState;
+  if (detailInFlight) detailInFlight.abort();
+  const controller = new AbortController();
+  detailInFlight = controller;
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  detailStatus.textContent = 'Loading memory…';
+  for (const button of [previousRevision, nextRevision, latestRevision]) button.disabled = true;
+  try {
+    const response = await fetch('/visualizer/api/record', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope: selected.scope, id: selected.id, revision }),
+      cache: 'no-store', credentials: 'same-origin', signal: controller.signal
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? 'Connection expired' : response.status === 404 ? 'Memory or revision not found' : 'Could not load memory');
+    const record = await response.json();
+    if (detailState !== selected || detailInFlight !== controller || !active) return;
+    selected.revision = record.revision;
+    if (revision === null) selected.maximumRevision = record.revision;
+    detailTitle.textContent = record.title || `Memory #${record.id}`;
+    detailContent.textContent = record.content;
+    detailMeta.replaceChildren(...recordMetadata(record).map(label));
+    revisionLabel.textContent = `Memory #${record.id} · Revision ${record.revision} of ${selected.maximumRevision}`;
+    history.hidden = false;
+    detailStatus.textContent = record.revision === selected.maximumRevision ? 'Latest saved revision' : 'Earlier revision · current memory is unchanged';
+  } catch (error) {
+    if (detailState !== selected || detailInFlight !== controller) return;
+    if (error.message === 'Connection expired') { stop(true); setStatus('Connection expired', 'error'); return; }
+    detailStatus.textContent = error.name === 'AbortError' ? 'Request timed out. Close and open this memory to retry.' : error.message;
+  } finally {
+    clearTimeout(timeout);
+    if (detailInFlight === controller) {
+      detailInFlight = null;
+      previousRevision.disabled = selected.revision <= 1;
+      nextRevision.disabled = selected.revision >= selected.maximumRevision;
+      latestRevision.disabled = false;
+    }
+  }
+}
+
+document.getElementById('close-memory').addEventListener('click', closeMemory);
+memoryDialog.addEventListener('close', () => { if (!memoryDialog.open) cancelDetail(); });
+previousRevision.addEventListener('click', () => { if (detailState?.revision > 1) loadRecord(detailState.revision - 1); });
+nextRevision.addEventListener('click', () => { if (detailState?.revision < detailState?.maximumRevision) loadRecord(detailState.revision + 1); });
+latestRevision.addEventListener('click', () => loadRecord());
+
+function restartMemoryView() {
+  clearTimeout(timer);
+  if (inFlight) inFlight.abort();
+  inFlight = null;
+  closeMemory();
+  records.replaceChildren();
+  omissions.hidden = true;
+  lastSignature = '';
+  lastOmissionSignature = '';
+  hasLoaded = false;
+  revisions = new Map();
+  clearSearch.hidden = !searchQuery;
+  if (active) { summary.textContent = searchQuery ? 'Searching…' : 'Loading memories…'; refresh(); }
+}
+
+searchForm.addEventListener('submit', event => {
+  event.preventDefault();
+  searchQuery = searchInput.value.trim();
+  restartMemoryView();
+});
+clearSearch.addEventListener('click', () => { searchQuery = ''; searchInput.value = ''; restartMemoryView(); });
+
 function draw(page) {
   const items = page.records || [];
   const omitted = page.omitted || 0;
   omissions.hidden = !omitted;
-  if (omitted) {
-    const ids = (page.omitted_ids || []).join(', ');
-    const message = `${omitted} ${omitted === 1 ? 'memory was' : 'memories were'} left out because this view is full.${ids ? ` IDs: ${ids}.` : ''} Use Grasshopper get to read the full record.`;
-    if (omissions.textContent !== message) omissions.textContent = message;
+  const omissionSignature = JSON.stringify([omitted, page.omitted_records]);
+  if (omitted && omissionSignature !== lastOmissionSignature) {
+    const text = document.createElement('p');
+    text.textContent = `${omitted} ${omitted === 1 ? 'memory is' : 'memories are'} outside this list's size limit. Open a record below, or search to narrow the list.`;
+    const links = document.createElement('div');
+    links.className = 'omitted-links';
+    for (const reference of page.omitted_records || []) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'quiet';
+      button.textContent = `Open memory #${reference.id}`;
+      button.addEventListener('click', () => openMemory(reference));
+      links.append(button);
+    }
+    omissions.replaceChildren(text, links);
   }
-  const signature = JSON.stringify(items.map(record => [record.id, record.revision, record.title, record.content, record.scope, record.provenance, record.confirmed, record.purpose]));
-  summary.textContent = `${items.length} ${items.length === 1 ? 'memory' : 'memories'}`;
+  lastOmissionSignature = omissionSignature;
+  const signature = JSON.stringify(items.map(record => [record.id, record.revision, record.title, record.content, record.scope, record.provenance, record.confirmed, record.purpose, record.updated_at]));
+  summary.textContent = `${items.length} ${items.length === 1 ? 'memory' : 'memories'}${searchQuery ? ' in search results' : ''}`;
   const selection = window.getSelection();
   const selectingRecord = selection && !selection.isCollapsed && (records.contains(selection.anchorNode) || records.contains(selection.focusNode));
   // Defer replacement while someone is selecting text; the next poll can draw it.
@@ -333,29 +480,22 @@ function draw(page) {
     heading.textContent = record.title || `Memory #${record.id}`;
     const content = document.createElement('p');
     content.className = 'record-content';
-    content.textContent = record.content;
-    const details = document.createElement('details');
-    details.className = 'record-details';
-    const detailsLabel = document.createElement('summary');
-    detailsLabel.textContent = `Details · #${record.id} · revision ${record.revision}`;
-    const meta = document.createElement('div');
-    meta.className = 'record-meta';
-    const dimensions = [scope.project && `Project ${scope.project}`, scope.device && `Device ${scope.device}`, scope.platform && `Platform ${scope.platform}`].filter(Boolean);
-    meta.append(
-      label(dimensions.length ? dimensions.join(' · ') : 'Global'),
-      label(record.confirmed ? 'Confirmed' : record.purpose === 'handoff' ? 'Handoff' : 'Agent observation'),
-      label(`Source: ${record.provenance?.source || 'Unknown'}`),
-      label(`Agent: ${record.provenance?.harness || 'Unknown'}`),
-      label(`Source device: ${record.provenance?.device || 'Unknown'}`)
-    );
-    details.append(detailsLabel, meta);
-    article.append(top, heading, content, details);
+    const preview = Array.from(record.content || '');
+    content.textContent = preview.length > 240 ? preview.slice(0, 240).join('') + '…' : record.content;
+    const state = document.createElement('p');
+    state.className = 'record-state';
+    state.textContent = `${record.confirmed ? 'Confirmed' : 'Unconfirmed'} · ${updatedLabel(record)}`;
+    const open = document.createElement('button');
+    open.type = 'button'; open.className = 'quiet record-open';
+    open.textContent = `Open memory #${record.id}`;
+    open.addEventListener('click', () => openMemory(record));
+    article.append(top, heading, state, content, open);
     fragment.append(article);
   }
   if (!items.length) {
     const empty = document.createElement('p');
     empty.className = 'empty';
-    empty.textContent = 'No memories here yet. Ask an agent to save one, then check back.';
+    empty.textContent = omitted ? 'Open an omitted memory above to read its full content.' : searchQuery ? 'No matching memories. Try fewer words or another project.' : 'No memories here yet. Ask an agent to save one, then check back.';
     fragment.append(empty);
   }
   records.replaceChildren(fragment);
@@ -368,17 +508,18 @@ async function refresh() {
   if (!active || inFlight) return;
   const controller = new AbortController();
   inFlight = controller;
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  // Search can wait for the server's bounded inference and wording fallback.
+  const timeout = setTimeout(() => controller.abort(), searchQuery ? 20000 : 5000);
   try {
     const scope = scopeInput();
     if (!scope) {
       setStatus('Enter the selected project or device ID', 'error');
       return;
     }
-    const response = await fetch('/visualizer/api/context', {
+    const response = await fetch(searchQuery ? '/visualizer/api/search' : '/visualizer/api/context', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(scope),
+      body: JSON.stringify(searchQuery ? { scope, query: searchQuery } : scope),
       cache: 'no-store',
       credentials: 'same-origin',
       signal: controller.signal
@@ -390,8 +531,10 @@ async function refresh() {
     updateProjectOptions(page.projects);
     updateDeviceOptions(page.devices);
     draw(page);
-    setStatus('Live · remembered here', 'live');
-    timer = setTimeout(refresh, 3000);
+    setStatus(searchQuery ? page.semantic_ready ? 'Search results' : 'Search by wording' : 'Live · remembered here', 'live');
+    // Browsing follows live writes. Search runs on submission or explicit refresh,
+    // rather than repeating query inference while someone reads the results.
+    if (!searchQuery) timer = setTimeout(refresh, 3000);
   } catch (error) {
     if (inFlight !== controller) return;
     const message = error.name === 'AbortError' ? 'Request timed out' : error instanceof TypeError ? 'Service unavailable' : error.message;

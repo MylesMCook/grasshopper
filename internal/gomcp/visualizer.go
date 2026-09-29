@@ -1,11 +1,13 @@
 package gomcp
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/MylesMCook/grasshopper/internal/gomemory"
 )
@@ -49,6 +51,84 @@ func visualizerAsset(w http.ResponseWriter, r *http.Request, styleHashes []strin
 	}
 	w.Header().Set("Content-Type", contentType)
 	_, _ = w.Write(contents)
+	return true
+}
+
+// Owner reads never write or re-embed stored records. Search shares the MCP
+// inference gate; a failed query embedding falls back to disclosed lexical recall.
+func visualizerSearch(backend Backend, embedQuery func(context.Context, string) ([]float32, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Scope gomemory.Scope `json:"scope"`
+			Query string         `json:"query"`
+		}
+		if !decodeVisualizerRead(w, r, &input) {
+			return
+		}
+		if _, err := input.Scope.Key(); err != nil || input.Scope.Legacy || strings.TrimSpace(input.Query) == "" || len(input.Query) > 4096 {
+			http.Error(w, "invalid search", http.StatusBadRequest)
+			return
+		}
+		vector, err := embedQuery(r.Context(), input.Query)
+		if err != nil {
+			vector = nil
+		}
+		page, devices, projects, err := backend.Store.BrowseSearch(r.Context(), input.Scope, input.Query, vector, backend.Model, 100, 32768)
+		if err != nil {
+			http.Error(w, "search unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(struct {
+			gomemory.Page
+			Devices       []string `json:"devices"`
+			Projects      []string `json:"projects"`
+			SemanticReady bool     `json:"semantic_ready"`
+		}{page, devices, projects, vector != nil})
+	}
+}
+
+func visualizerRecord(store *gomemory.Writer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var input getInput
+		if !decodeVisualizerRead(w, r, &input) {
+			return
+		}
+		if _, err := input.Scope.Key(); err != nil || input.Scope.Legacy || input.ID < 1 || (input.Revision != nil && *input.Revision < 1) {
+			http.Error(w, "invalid record request", http.StatusBadRequest)
+			return
+		}
+		record, err := store.BrowseGet(r.Context(), input.Scope, input.ID, input.Revision)
+		if err != nil {
+			http.Error(w, "record unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if record == nil {
+			http.Error(w, "memory not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(record)
+	}
+}
+
+func decodeVisualizerRead(w http.ResponseWriter, r *http.Request, input any) bool {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32768))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(input); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return false
+	}
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return false
+	}
 	return true
 }
 

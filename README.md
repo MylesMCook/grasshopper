@@ -27,6 +27,10 @@ Ask the installed agent: **Connect Grasshopper.** If this machine already has a 
 
 Setup allows Grasshopper's three read tools in Cursor Agent CLI and Claude Code. Saving or archiving a memory still uses each agent's normal approval.
 
+### Find and inspect a memory
+
+In your private server's memory view, sign in as the owner and choose a project or device. Search for wording or meaning, then open a result to read its complete text, source, exact scope, confirmation state, and update date. Use the revision controls to inspect earlier versions. The live list also offers **Open memory** for a large record that does not fit in its compact preview. Search and inspection do not edit memories.
+
 ### Claude Code
 
 Download the [client archive for your machine](https://github.com/MylesMCook/grasshopper/releases/latest), check it against the release's `SHA256SUMS`, and extract it. Run:

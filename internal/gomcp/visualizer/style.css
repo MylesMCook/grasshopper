@@ -48,6 +48,19 @@ button:disabled { opacity:.45; cursor:default; }
 .status.live { color:var(--success); }
 .status.error,.omissions { color:var(--danger); }
 .summary { margin-top:6px; }
+.search-form { margin-top:20px; }
+.search-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+.search-row input { flex:1 1 240px; width:auto; }
+.record-state { margin-top:8px; color:var(--muted); font-size:.75rem; }
+.record-open { margin-top:14px; }
+.omitted-links { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+dialog { width:min(100% - 32px,800px); max-height:85vh; padding:24px; background:var(--paper); color:var(--ink); border:1px solid var(--border); overflow:auto; }
+dialog::backdrop { background:rgb(0 0 0 / .45); }
+.detail-heading { display:flex; justify-content:space-between; align-items:start; gap:20px; }
+.detail-heading h2 { overflow-wrap:anywhere; }
+dialog .record-content { margin-top:20px; }
+dialog .record-meta { padding-top:16px; border-top:1px solid var(--divider); margin-top:24px; }
+.history { border-top:1px solid var(--divider); margin-top:20px; padding-top:16px; font-size:.875rem; }
 .omissions { margin-top:10px; }
 .records { margin-top:16px; border-top:1px solid var(--divider); }
 .record { padding:22px 0 24px; border-bottom:1px solid var(--divider); user-select:text; }
