@@ -1,10 +1,12 @@
 # Grasshopper release state
 
-Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `codex/granite-recall-release`.
+Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
 
-## Active model upgrade
+## Released model upgrade
 
-[LAB-217](https://linear.app/mcook/issue/LAB-217/improve-memory-recall-with-a-verified-model-upgrade-and-reversible): Granite small English R2 is implemented for 2.4.0 with graph/weights/tokenizer pins and a 1024-token CPU bound; API and hybrid rules remain. User authorized choosing the best verified option and completing release/deployment. Baseline `7b6b926`; production remains BGE 2.3.7. Mac tests, vet, race checks, real ONNX/MCP maximum-size writes, and an extracted native archive passed. Frozen synthetic hybrid recall is 122/160 top-1 and 143/160 top-3; long handoffs improve from BGE's 2/8 and 3/8 to 7/8 and 8/8. A private shadow preserved 20 records, 51 revisions/receipts, and three token rows; 16 labeled queries improve from 12 to 13 top-1, with 16/16 top-3 and no boundary leaks. Evidence: `docs/embedding-model.md` and private task-local `2026-09-29-grasshopper-model-comparison/results/private-shadow.json`. Next: Thermos review, native three-OS CI, then verified package release and reversible live cutover.
+[LAB-217](https://linear.app/mcook/issue/LAB-217/improve-memory-recall-with-a-verified-model-upgrade-and-reversible): [2.4.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.4.0) ships Granite small English R2 with pinned graph/weights/tokenizer, 1024-token input, and a bounded CPU pool. API and hybrid rules remain. [PR #8](https://github.com/MylesMCook/grasshopper/pull/8) merged as `58b670a`; marketplace `ede417f`. Synthetic hybrid recall is 122/160 top-1 and 143/160 top-3; longer handoffs improve from BGE's 2/8 and 3/8 to 7/8 and 8/8. The private 16-query shadow improves top-1 from 12 to 13 while retaining all top-three results. Three-OS real-model CI, Mac tests/vet/race, paired Thermos reviews, 289 archive hashes, and eight published asset digests pass. BGE/Granite restore and post-switch write/correction rollback rehearsals pass. The Mac service and connectors run 2.4.0; cutover preserved 20 records, 51 revisions/receipts, three device tokens, credentials, policy, and routing. Old BGE assets/state/configuration and checked encrypted off-host backups remain. [Evidence](docs/memory-acceptance.md#240-granite-recall-upgrade-september-29). No implementation or delivery work remains in this scope.
+
+Direct installed adapter/bridge probes passed for Mac Codex, Cursor, and Claude; fresh native AI turns and desktop apps were not repeated. Other machines, reboot persistence, and full machine-loss recovery were not tested for 2.4.0.
 
 ## Released audit fixes
 
