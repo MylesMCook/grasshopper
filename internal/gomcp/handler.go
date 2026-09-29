@@ -170,6 +170,34 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		}
 		return runInference(ctx, func() ([]float32, error) { return backend.Embedder.EmbedQuery(query) })
 	}
+	// saveMemory embeds the saved text before writing so search finds it at
+	// once. The MCP store tool and the owner's memory-view actions share it.
+	saveMemory := func(ctx context.Context, in gomemory.WriteInput) (gomemory.Receipt, bool, error) {
+		var vector []float32
+		if backend.Embedder != nil {
+			content := in.Content
+			if in.RestoreRevision != nil {
+				if in.ID == nil {
+					return gomemory.Receipt{}, false, errors.New("restore requires record ID")
+				}
+				prior, err := backend.Store.Get(ctx, in.Scope, *in.ID, in.RestoreRevision)
+				if err != nil {
+					return gomemory.Receipt{}, false, err
+				}
+				if prior == nil {
+					return gomemory.Receipt{}, false, errors.New("revision_not_found")
+				}
+				content = prior.Content
+			}
+			var err error
+			vector, err = runInference(ctx, func() ([]float32, error) { return backend.Embedder.EmbedDocument(content) })
+			if err != nil {
+				return gomemory.Receipt{}, false, err
+			}
+		}
+		receipt, err := backend.Store.Write(ctx, in, vector, backend.Model)
+		return receipt, vector != nil, err
+	}
 	tokenHash := sha256.Sum256([]byte(token))
 	masterBearerValid := func(r *http.Request) bool {
 		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -247,30 +275,8 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "store", Title: "Save or correct memory", Description: "Use this when saving an explicit preference, accepted decision, verified lesson, or concise handoff with provenance and a request ID.", Annotations: write, InputSchema: writeSchema()},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gomemory.WriteInput) (*mcp.CallToolResult, storeOutput, error) {
-			var vector []float32
-			if backend.Embedder != nil {
-				content := in.Content
-				if in.RestoreRevision != nil {
-					if in.ID == nil {
-						return nil, storeOutput{}, errors.New("restore requires record ID")
-					}
-					prior, err := backend.Store.Get(ctx, in.Scope, *in.ID, in.RestoreRevision)
-					if err != nil {
-						return nil, storeOutput{}, err
-					}
-					if prior == nil {
-						return nil, storeOutput{}, errors.New("revision_not_found")
-					}
-					content = prior.Content
-				}
-				var err error
-				vector, err = runInference(ctx, func() ([]float32, error) { return backend.Embedder.EmbedDocument(content) })
-				if err != nil {
-					return nil, storeOutput{}, err
-				}
-			}
-			receipt, err := backend.Store.Write(ctx, in, vector, backend.Model)
-			return nil, storeOutput{receipt, receipt.ID, receipt.Revision, receipt.Deduplicated, vector != nil}, err
+			receipt, embedded, err := saveMemory(ctx, in)
+			return nil, storeOutput{receipt, receipt.ID, receipt.Revision, receipt.Deduplicated, embedded}, err
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "archive", Title: "Archive or restore memory", Description: "Use this when reversibly hiding or restoring a scoped record with an expected revision and request ID.", Annotations: write, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "id": map[string]any{"type": "integer"}, "expected_revision": map[string]any{"type": "integer"}, "archived": map[string]any{"type": "boolean"}, "request_id": map[string]any{"type": "string"}, "provenance": provenanceSchema()}, "scope", "id", "expected_revision", "archived", "request_id", "provenance")},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gomemory.ArchiveInput) (*mcp.CallToolResult, gomemory.Receipt, error) {
@@ -303,8 +309,10 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	if backend.Visualizer {
 		mux.HandleFunc("/visualizer/api/context", visualizerContext(backend.Store))
 		ownerReads = map[string]http.HandlerFunc{
-			"/visualizer/api/search": visualizerSearch(backend, embedQuery),
-			"/visualizer/api/record": visualizerRecord(backend.Store),
+			"/visualizer/api/search":  visualizerSearch(backend, embedQuery),
+			"/visualizer/api/record":  visualizerRecord(backend.Store),
+			"/visualizer/api/update":  visualizerUpdate(backend.Store, saveMemory),
+			"/visualizer/api/archive": visualizerArchive(backend.Store),
 		}
 	}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

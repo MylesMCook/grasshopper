@@ -108,7 +108,17 @@ func (s Scope) applicableKeys() ([]string, error) {
 type BrowseScope struct {
 	Scope
 	AllProjects bool `json:"all_projects"`
+	// View selects what the owner lists: active memories (empty), those
+	// awaiting review, or archived ones.
+	View string `json:"view"`
 }
+
+// Owner list views. Review omits handoffs: they load at startup unconfirmed
+// by design, so they never wait on the owner's decision.
+const (
+	ViewReview   = "review"
+	ViewArchived = "archived"
+)
 
 // Provenance records the harness, device, and source supplied with a write.
 type Provenance struct {
@@ -291,11 +301,11 @@ func (r *Reader) Context(ctx context.Context, scope Scope, budget int) (Page, er
 // device or platform means all of them; a missing project still means only
 // global project scope. Agent context keeps its narrower applicable-scope rule.
 func (r *Reader) BrowseContext(ctx context.Context, scope BrowseScope, budget int) (Page, []string, []string, error) {
-	keys, devices, projects, err := r.browseScopeKeys(ctx, scope)
+	keys, devices, projects, err := r.browseScopeKeys(ctx, scope, scope.View == ViewArchived)
 	if err != nil {
 		return Page{}, nil, nil, err
 	}
-	page, err := r.browseKeys(ctx, keys, budget)
+	page, err := r.browseKeys(ctx, keys, budget, scope.View)
 	return page, devices, projects, err
 }
 
@@ -305,6 +315,21 @@ func (r *Reader) BrowseGet(ctx context.Context, scope BrowseScope, id int64, rev
 	if _, err := scope.Key(); err != nil || scope.Legacy {
 		return nil, errors.New("invalid visualizer scope")
 	}
+	return r.ownerRecord(ctx, id, revision, func(exact Scope) bool {
+		return !(exact.Project != nil && !scope.AllProjects && (scope.Project == nil || *scope.Project != *exact.Project)) &&
+			!(scope.Device != nil && exact.Device != nil && *scope.Device != *exact.Device) &&
+			!(scope.Platform != nil && exact.Platform != nil && *scope.Platform != *exact.Platform)
+	})
+}
+
+// RecordByID returns a record by ID alone, with the exact scope it is stored
+// under. Owner actions use it to act on that scope rather than a client's
+// claim. Missing and legacy records return nil.
+func (r *Reader) RecordByID(ctx context.Context, id int64, revision *int64) (*Record, error) {
+	return r.ownerRecord(ctx, id, revision, func(Scope) bool { return true })
+}
+
+func (r *Reader) ownerRecord(ctx context.Context, id int64, revision *int64, visible func(Scope) bool) (*Record, error) {
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
@@ -325,24 +350,45 @@ func (r *Reader) BrowseGet(ctx context.Context, scope BrowseScope, id int64, rev
 	if err := json.Unmarshal([]byte(scopeJSON), &exact); err != nil {
 		return nil, err
 	}
-	if exact.Legacy ||
-		(exact.Project != nil && !scope.AllProjects && (scope.Project == nil || *scope.Project != *exact.Project)) ||
-		(scope.Device != nil && exact.Device != nil && *scope.Device != *exact.Device) ||
-		(scope.Platform != nil && exact.Platform != nil && *scope.Platform != *exact.Platform) {
+	if exact.Legacy || !visible(exact) {
 		return nil, nil
 	}
 	return getInTx(ctx, tx, exact, id, revision)
 }
 
-func (r *Reader) browseScopeKeys(ctx context.Context, scope BrowseScope) ([]string, []string, []string, error) {
+// BrowseCounts reports how many memories await the owner's review and how many
+// are archived within the owner's project, device and platform filter.
+func (r *Reader) BrowseCounts(ctx context.Context, scope BrowseScope) (review, archived int, err error) {
+	keys, _, _, err := r.browseScopeKeys(ctx, scope, true)
+	if err != nil {
+		return 0, 0, err
+	}
+	keyJSON, err := json.Marshal(keys)
+	if err != nil {
+		return 0, 0, err
+	}
+	err = r.db.QueryRowContext(ctx, `SELECT
+ COALESCE(SUM(archived=0 AND confirmed=0 AND purpose<>'handoff'),0),
+ COALESCE(SUM(archived=1),0)
+ FROM chunks WHERE kind='memory' AND memory_scope IN (SELECT value FROM json_each(?))`, string(keyJSON)).Scan(&review, &archived)
+	return review, archived, err
+}
+
+// browseScopeKeys expands the owner's filter into stored scope keys. Choices
+// normally come from active memories; includeArchived also counts archived
+// ones so their scopes can be listed and counted.
+func (r *Reader) browseScopeKeys(ctx context.Context, scope BrowseScope, includeArchived bool) ([]string, []string, []string, error) {
 	if _, err := scope.Key(); err != nil || scope.Legacy {
 		return nil, nil, nil, errors.New("invalid visualizer scope")
 	}
-	devices, err := r.browseDevices(ctx, scope)
+	if scope.View != "" && scope.View != ViewReview && scope.View != ViewArchived {
+		return nil, nil, nil, errors.New("invalid visualizer view")
+	}
+	devices, err := r.browseDevices(ctx, scope, includeArchived)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	knownProjects, err := r.browseProjects(ctx)
+	knownProjects, err := r.browseProjects(ctx, includeArchived)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -413,12 +459,12 @@ func (r *Reader) Titles(ctx context.Context, ids []int64) (map[int64]string, err
 	return titles, rows.Err()
 }
 
-func (r *Reader) browseProjects(ctx context.Context) ([]string, error) {
+func (r *Reader) browseProjects(ctx context.Context, includeArchived bool) ([]string, error) {
 	const document = "CASE WHEN json_valid(memory_scope) THEN memory_scope ELSE '{}' END"
 	const project = "json_extract(" + document + ", '$.project')"
-	query := "SELECT DISTINCT " + project + " FROM chunks WHERE kind='memory' AND archived=0" +
+	query := "SELECT DISTINCT " + project + " FROM chunks WHERE kind='memory' AND (? OR archived=0)" +
 		" AND " + project + " IS NOT NULL ORDER BY 1"
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.QueryContext(ctx, query, includeArchived)
 	if err != nil {
 		return nil, err
 	}
@@ -434,18 +480,18 @@ func (r *Reader) browseProjects(ctx context.Context) ([]string, error) {
 	return projects, rows.Err()
 }
 
-func (r *Reader) browseDevices(ctx context.Context, scope BrowseScope) ([]string, error) {
+func (r *Reader) browseDevices(ctx context.Context, scope BrowseScope, includeArchived bool) ([]string, error) {
 	// Legacy rows are not JSON. CASE keeps JSON extraction safe even if the
 	// query planner reorders predicates; project filtering happens in SQLite.
 	const document = "CASE WHEN json_valid(memory_scope) THEN memory_scope ELSE '{}' END"
 	const device = "json_extract(" + document + ", '$.device')"
 	const project = "json_extract(" + document + ", '$.project')"
 	const platform = "json_extract(" + document + ", '$.platform')"
-	query := "SELECT DISTINCT " + device + " FROM chunks WHERE kind='memory' AND archived=0" +
+	query := "SELECT DISTINCT " + device + " FROM chunks WHERE kind='memory' AND (? OR archived=0)" +
 		" AND " + device + " IS NOT NULL" +
 		" AND (? OR " + project + " IS NULL OR " + project + "=?)" +
 		" AND (? IS NULL OR " + platform + " IS NULL OR " + platform + "=?) ORDER BY 1"
-	rows, err := r.db.QueryContext(ctx, query, scope.AllProjects, scope.Project, scope.Platform, scope.Platform)
+	rows, err := r.db.QueryContext(ctx, query, includeArchived, scope.AllProjects, scope.Project, scope.Platform, scope.Platform)
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +508,7 @@ func (r *Reader) browseDevices(ctx context.Context, scope BrowseScope) ([]string
 }
 
 func (r *Reader) contextKeys(ctx context.Context, keys []string, budget int) (Page, error) {
-	records, err := r.scopedActive(ctx, keys, false)
+	records, err := r.scopedRecords(ctx, keys, " AND (confirmed=1 OR purpose='handoff')", false)
 	if err != nil {
 		return Page{}, err
 	}
@@ -498,8 +544,15 @@ func (r *Reader) contextKeys(ctx context.Context, keys []string, budget int) (Pa
 	return page, nil
 }
 
-func (r *Reader) browseKeys(ctx context.Context, keys []string, budget int) (Page, error) {
-	records, err := r.scopedActive(ctx, keys, true)
+func (r *Reader) browseKeys(ctx context.Context, keys []string, budget int, view string) (Page, error) {
+	filter, archived := "", false
+	switch view {
+	case ViewReview:
+		filter = " AND confirmed=0 AND purpose<>'handoff'"
+	case ViewArchived:
+		archived = true
+	}
+	records, err := r.scopedRecords(ctx, keys, filter, archived)
 	if err != nil {
 		return Page{}, err
 	}
@@ -520,18 +573,16 @@ func previewRecords(records []Record) []Record {
 	return records
 }
 
-func (r *Reader) scopedActive(ctx context.Context, keys []string, browse bool) ([]Record, error) {
+// scopedRecords lists records in the given scope keys, active or archived,
+// narrowed by an extra SQL condition that never contains caller input.
+func (r *Reader) scopedRecords(ctx context.Context, keys []string, filter string, archived bool) ([]Record, error) {
 	keyJSON, err := json.Marshal(keys)
 	if err != nil {
 		return nil, err
 	}
-	filter := " AND (confirmed=1 OR purpose='handoff')"
-	if browse {
-		filter = ""
-	}
-	rows, err := r.db.QueryContext(ctx, "SELECT "+recordColumns+` FROM chunks WHERE kind='memory' AND archived=0
+	rows, err := r.db.QueryContext(ctx, "SELECT "+recordColumns+` FROM chunks WHERE kind='memory' AND archived=?
  AND memory_scope IN (SELECT value FROM json_each(?))`+filter+`
- ORDER BY CASE purpose WHEN 'preference' THEN 0 WHEN 'decision' THEN 1 WHEN 'lesson' THEN 2 WHEN 'handoff' THEN 3 ELSE 4 END, updated_at DESC,id DESC`, string(keyJSON))
+ ORDER BY CASE purpose WHEN 'preference' THEN 0 WHEN 'decision' THEN 1 WHEN 'lesson' THEN 2 WHEN 'handoff' THEN 3 ELSE 4 END, updated_at DESC,id DESC`, archived, string(keyJSON))
 	if err != nil {
 		return nil, err
 	}

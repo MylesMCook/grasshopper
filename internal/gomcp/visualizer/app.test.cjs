@@ -40,7 +40,7 @@ function view() {
   };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8'), sandbox);
-  const ui = vm.runInContext('({ refreshDevices, stop, setConnected, revokeDevice, refresh, draw, openMemory, loadRecord, closeMemory, restartMemoryView })', sandbox);
+  const ui = vm.runInContext('({ refreshDevices, stop, setConnected, revokeDevice, refresh, draw, openMemory, loadRecord, closeMemory, restartMemoryView, chooseView })', sandbox);
   ui.setConnected(true);
   get('device-panel').open = true;
   return { ui, get, requests, timers, timerDelays, document: sandbox.document };
@@ -266,4 +266,143 @@ test('a truncated list preview ends with an ellipsis and short text does not', (
   const [long, short] = v.get('records').children[0].children;
   assert.equal(long.children[3].textContent, 'x'.repeat(240) + '…');
   assert.equal(short.children[3].textContent, 'Synthetic saved decision.');
+});
+
+const tick = () => new Promise(setImmediate);
+
+async function openLatest(v, record) {
+  v.ui.openMemory(record);
+  v.requests.at(-1).reply(record);
+  await tick();
+}
+
+const withoutRequestID = ({ request_id, ...rest }) => rest;
+const submitEdit = v => v.get('edit-form').listeners.submit({ preventDefault() {} });
+
+test('actions appear only on the latest revision and follow the memory state', async () => {
+  const v = view();
+  await openLatest(v, { ...memory(1, 2), confirmed: false });
+  assert.equal(v.get('memory-actions').hidden, false);
+  assert.equal(v.get('confirm-memory').hidden, false);
+  assert.equal(v.get('archive-memory').hidden, false);
+  assert.equal(v.get('restore-memory').hidden, true);
+  v.get('previous-revision').listeners.click();
+  v.requests.at(-1).reply(memory(1, 1));
+  await tick();
+  assert.equal(v.get('memory-actions').hidden, true);
+  v.get('latest-revision').listeners.click();
+  v.requests.at(-1).reply({ ...memory(1, 2), confirmed: true });
+  await tick();
+  assert.equal(v.get('confirm-memory').hidden, true);
+  await openLatest(v, { ...memory(2, 3), archived: true });
+  assert.equal(v.get('restore-memory').hidden, false);
+  assert.equal(v.get('edit-memory').hidden, true);
+  assert.equal(v.get('archive-memory').hidden, true);
+});
+
+test('saving an edit sends the expected revision, confirms, and a retry cannot save twice', async () => {
+  const v = view();
+  await openLatest(v, { ...memory(7, 2), confirmed: false, purpose: 'observation' });
+  v.get('edit-memory').listeners.click();
+  assert.equal(v.get('edit-form').hidden, false);
+  assert.equal(v.get('edit-content').value, 'Synthetic saved decision.');
+  v.get('edit-content').value = 'Corrected decision.';
+  v.get('edit-purpose').value = 'decision';
+  submitEdit(v);
+  const first = v.requests.at(-1);
+  assert.equal(first.url, '/visualizer/api/update');
+  const body = JSON.parse(first.options.body);
+  assert.deepEqual(withoutRequestID(body), { id: 7, expected_revision: 2, title: 'Synthetic decision', content: 'Corrected decision.', purpose: 'decision' });
+  assert.ok(body.request_id.length > 8);
+  first.reply(null, 503);
+  await tick();
+  assert.match(v.get('memory-detail-status').textContent, /Your text is still here/);
+  assert.equal(v.get('edit-form').hidden, false);
+  submitEdit(v);
+  const retry = v.requests.at(-1);
+  assert.equal(JSON.parse(retry.options.body).request_id, body.request_id);
+  retry.reply({ id: 7, revision: 3, deduplicated: false });
+  await tick();
+  v.requests.at(-1).reply({ ...memory(7, 3, 'Corrected decision.'), confirmed: true });
+  await tick();
+  assert.equal(v.get('edit-form').hidden, true);
+  assert.equal(v.get('memory-detail-content').textContent, 'Corrected decision.');
+  assert.match(v.get('memory-detail-status').textContent, /Saved as revision 3 and confirmed/);
+  assert.equal(v.requests.some(request => request.url === '/visualizer/api/context'), true);
+});
+
+test('a different edit after a failed save gets its own request ID', async () => {
+  const v = view();
+  await openLatest(v, memory(8, 1));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'First draft.';
+  submitEdit(v);
+  const first = JSON.parse(v.requests.at(-1).options.body).request_id;
+  v.requests.at(-1).reply(null, 503);
+  await tick();
+  v.get('edit-content').value = 'Second draft.';
+  submitEdit(v);
+  assert.notEqual(JSON.parse(v.requests.at(-1).options.body).request_id, first);
+});
+
+test('a conflicting save keeps the draft, shows the newer text, and saves against the new revision', async () => {
+  const v = view();
+  await openLatest(v, memory(9, 1));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'My draft.';
+  submitEdit(v);
+  v.requests.at(-1).reply({ error: 'revision_conflict', current: { ...memory(9, 2, 'Agent text.'), title: 'Synthetic decision' } }, 409);
+  await tick();
+  assert.equal(v.get('conflict').hidden, false);
+  assert.equal(v.get('conflict-text').textContent, 'Agent text.');
+  assert.match(v.get('conflict-note').textContent, /revision 2/);
+  assert.equal(v.get('edit-content').value, 'My draft.');
+  submitEdit(v);
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).expected_revision, 2);
+});
+
+test('confirm as is resends the existing text, and archive and restore change visibility', async () => {
+  const v = view();
+  await openLatest(v, { ...memory(10, 1), confirmed: false });
+  v.get('confirm-memory').listeners.click();
+  let request = v.requests.at(-1);
+  assert.deepEqual(withoutRequestID(JSON.parse(request.options.body)), { id: 10, expected_revision: 1, title: 'Synthetic decision', content: 'Synthetic saved decision.', purpose: 'decision' });
+  request.reply({ id: 10, revision: 2, deduplicated: false });
+  await tick();
+  v.requests.at(-1).reply({ ...memory(10, 2), confirmed: true });
+  await tick();
+  assert.match(v.get('memory-detail-status').textContent, /Confirmed as revision 2/);
+  v.get('archive-memory').listeners.click();
+  request = v.requests.at(-1);
+  assert.equal(request.url, '/visualizer/api/archive');
+  assert.deepEqual(withoutRequestID(JSON.parse(request.options.body)), { id: 10, expected_revision: 2, archived: true });
+  request.reply({ id: 10, revision: 3, deduplicated: false });
+  await tick();
+  assert.equal(v.get('memory-dialog').open, false);
+  assert.match(v.get('status').textContent, /Archived “Synthetic decision”/);
+});
+
+test('an expired session during a save clears private content', async () => {
+  const v = view();
+  await openLatest(v, memory(11, 1));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'Draft.';
+  submitEdit(v);
+  v.requests.at(-1).reply(null, 401);
+  await tick();
+  assert.equal(v.get('status').textContent, 'Connection expired');
+  assert.equal(v.get('memory-dialog').open, false);
+});
+
+test('choosing a list view asks the server for it and hides search', async () => {
+  const v = view();
+  v.ui.chooseView('review');
+  assert.deepEqual(JSON.parse(v.requests.at(-1).options.body), { all_projects: true, view: 'review' });
+  assert.equal(v.get('search-form').hidden, true);
+  v.requests.at(-1).reply({ records: [], omitted: 0, devices: [], projects: [], review_count: 0, archived_count: 2 });
+  await tick();
+  assert.match(v.get('records').children[0].children[0].children[0].textContent, /Nothing needs review/);
+  v.ui.chooseView('');
+  assert.equal(v.get('search-form').hidden, false);
+  assert.deepEqual(JSON.parse(v.requests.at(-1).options.body), { all_projects: true });
 });

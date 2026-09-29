@@ -34,9 +34,11 @@ connection and retry when it is available.
 
 Setup allows Grasshopper's three read tools in Cursor Agent CLI and Claude Code. Saving or archiving a memory still uses each agent's normal approval.
 
-### Find and inspect a memory
+### Find, review and correct a memory
 
-In your private server's memory view, sign in as the owner and choose a project or device. Search for wording or meaning, then open a result to read its complete text, source, exact scope, confirmation state, and update date. Use the revision controls to inspect earlier versions. The live list also offers **Open memory** for a large record that does not fit in its compact preview. Search and inspection do not edit memories.
+In your private server's memory view, sign in as the owner. It lists everything saved, grouped as **Saved**, **Needs review** and **Archived**. Narrow by project, device or platform, or search for wording or meaning. Open a memory to read its complete text, source, exact scope, confirmation state and date, and to step through earlier revisions.
+
+The owner can also **Edit**, **Confirm as is**, **Archive** or **Restore** a memory. An edit stores a new revision and marks the memory confirmed; earlier revisions stay in history. If an agent changed the memory after you opened it, nothing is overwritten and you see the newer text before saving again. Only confirmed memories and handoffs load into an agent's startup context, so confirming is how you promote an observation. **Needs review** lists unconfirmed memories other than handoffs, which load without confirmation.
 
 ### Claude Code
 

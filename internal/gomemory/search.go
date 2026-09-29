@@ -27,7 +27,7 @@ func (r *Reader) Search(ctx context.Context, scope Scope, query string, vector [
 // and platform when those dimensions are absent. It uses the same ranking as
 // agent Search; only candidate scope differs.
 func (r *Reader) BrowseSearch(ctx context.Context, scope BrowseScope, query string, vector []float32, model string, limit, budget int) (Page, []string, []string, error) {
-	keys, devices, projects, err := r.browseScopeKeys(ctx, scope)
+	keys, devices, projects, err := r.browseScopeKeys(ctx, scope, false)
 	if err != nil {
 		return Page{}, nil, nil, err
 	}

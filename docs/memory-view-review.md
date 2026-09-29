@@ -9,7 +9,7 @@ confirmation unchanged. The first-memory exercise is static guidance.
 | Slice | Scenarios | State |
 | --- | --- | --- |
 | 1. Landing scope and list polish | Landing shows everything | Implemented |
-| 2. Review and correction | Review queue, correct, conflict, archive and restore, write authorization | Planned |
+| 2. Review and correction | Review queue, correct, conflict, archive and restore, write authorization | Implemented |
 | 3. Approval, devices and status | Approve a device safely, server status | Planned |
 | 4. Startup preview | Preview what an agent receives | Planned |
 | 5. Documentation | README and setup trimmed to the user path | Planned |
@@ -86,3 +86,25 @@ Feature: Owner reviews and corrects memories in the memory view
   handoffs load at startup.
 - Tests: `internal/gomcp/visualizer_all_projects_test.go`,
   `visualizer_test.go`, `visualizer/app.test.cjs`.
+
+## Slice 2 evidence and decisions
+
+- The memory view gains its first write path: `POST /visualizer/api/update`
+  (save and confirm) and `/visualizer/api/archive` (archive or restore). Both
+  use the existing owner check: master bearer or owner session plus the exact
+  Origin. Paired-device bearers, expired sessions and foreign origins are
+  rejected before any read of the record.
+- The server takes the record's exact scope, tags, type and key from the stored
+  row. A client cannot name a scope, and a request with an unknown field is
+  rejected. Stored edits go through the same writer as the MCP `store` tool:
+  expected revision, request-ID replay, history snapshots and embedding.
+  A save the embedding model cannot process is refused whole.
+- An owner edit sets the memory confirmed and attributes the revision to
+  `memory-view`. Archive and restore leave confirmation unchanged. An archived
+  memory must be restored before it is edited.
+- A stale edit returns 409 with the newer record and writes nothing; the view
+  keeps the owner's draft beside the newer text.
+- **Needs review** lists active, unconfirmed memories other than handoffs.
+  Counts for it and for Archived appear on the tabs.
+- Tests: `internal/gomcp/visualizer_correct_test.go`,
+  `visualizer/app.test.cjs`. Agent context and the five MCP tools are unchanged.
