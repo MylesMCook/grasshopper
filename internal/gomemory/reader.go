@@ -392,42 +392,32 @@ func (r *Reader) browseScopeKeys(ctx context.Context, scope BrowseScope, include
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	projects := []*string{nil}
-	if scope.AllProjects {
-		for index := range knownProjects {
-			projects = append(projects, &knownProjects[index])
-		}
-	} else if scope.Project != nil {
-		projects = append(projects, scope.Project)
+	// Each dimension is independent: a record shows when its project, device
+	// and platform are each unset or selected. Reading the scopes that exist
+	// keeps the cost proportional to stored scopes, not to their combinations.
+	rows, err := r.db.QueryContext(ctx, "SELECT DISTINCT memory_scope FROM chunks WHERE kind='memory' AND memory_scope<>'legacy'")
+	if err != nil {
+		return nil, nil, nil, err
 	}
-	selectedDevices := []*string{nil}
-	if scope.Device != nil {
-		selectedDevices = append(selectedDevices, scope.Device)
-	} else {
-		for index := range devices {
-			selectedDevices = append(selectedDevices, &devices[index])
+	defer rows.Close()
+	keys := []string{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, nil, nil, err
+		}
+		var stored Scope
+		if json.Unmarshal([]byte(key), &stored) != nil || stored.Legacy {
+			continue
+		}
+		if (stored.Project == nil || scope.AllProjects || (scope.Project != nil && *scope.Project == *stored.Project)) &&
+			(stored.Device == nil || scope.Device == nil || *scope.Device == *stored.Device) &&
+			(stored.Platform == nil || scope.Platform == nil || *scope.Platform == *stored.Platform) {
+			keys = append(keys, key)
 		}
 	}
-	platforms := []*string{nil}
-	if scope.Platform != nil {
-		platforms = append(platforms, scope.Platform)
-	} else {
-		for _, value := range []string{"macos", "windows", "linux"} {
-			platform := value
-			platforms = append(platforms, &platform)
-		}
-	}
-	keys := make([]string, 0, len(projects)*len(selectedDevices)*len(platforms))
-	for _, project := range projects {
-		for _, device := range selectedDevices {
-			for _, platform := range platforms {
-				key, err := (Scope{Project: project, Device: device, Platform: platform}).Key()
-				if err != nil {
-					return nil, nil, nil, err
-				}
-				keys = append(keys, key)
-			}
-		}
+	if err := rows.Err(); err != nil {
+		return nil, nil, nil, err
 	}
 	return keys, devices, knownProjects, nil
 }
