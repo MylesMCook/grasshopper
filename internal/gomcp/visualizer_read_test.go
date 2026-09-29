@@ -60,8 +60,8 @@ func TestVisualizerSearchFullRecordAndHistory(t *testing.T) {
 	if err := json.Unmarshal(data, &page); err != nil {
 		t.Fatal(err)
 	}
-	if page.Omitted != 1 || len(page.OmittedRecords) != 1 || page.OmittedRecords[0].ID != receipt.ID {
-		t.Fatalf("large cross-device result not discoverable: %+v", page)
+	if page.Omitted != 0 || len(page.Records) != 1 || page.Records[0].ID != receipt.ID || !page.Records[0].ContentTruncated {
+		t.Fatalf("large cross-device result not discoverable as a preview: %+v", page)
 	}
 	for _, revision := range []int64{1, 2} {
 		body, _ := json.Marshal(map[string]any{"scope": scope, "id": receipt.ID, "revision": revision})

@@ -102,6 +102,14 @@ func (s Scope) applicableKeys() ([]string, error) {
 	return keys, nil
 }
 
+// BrowseScope is the owner's view filter. AllProjects widens the view to every
+// project's memories plus global ones; without it a nil project means only
+// global scope. It never changes what agents retrieve.
+type BrowseScope struct {
+	Scope
+	AllProjects bool `json:"all_projects"`
+}
+
 // Provenance records the harness, device, and source supplied with a write.
 type Provenance struct {
 	Harness string `json:"harness"`
@@ -125,6 +133,9 @@ type Record struct {
 	Archived   bool       `json:"archived"`
 	CreatedAt  string     `json:"created_at"`
 	UpdatedAt  string     `json:"updated_at"`
+	// ContentTruncated marks an owner-list preview. Only browse lists set it;
+	// Get and agent context always carry complete text.
+	ContentTruncated bool `json:"content_truncated,omitempty"`
 }
 
 // Reference identifies an omitted record without repeating its content.
@@ -279,7 +290,7 @@ func (r *Reader) Context(ctx context.Context, scope Scope, budget int) (Page, er
 // BrowseContext is for the authenticated read-only visualizer. A missing
 // device or platform means all of them; a missing project still means only
 // global project scope. Agent context keeps its narrower applicable-scope rule.
-func (r *Reader) BrowseContext(ctx context.Context, scope Scope, budget int) (Page, []string, []string, error) {
+func (r *Reader) BrowseContext(ctx context.Context, scope BrowseScope, budget int) (Page, []string, []string, error) {
 	keys, devices, projects, err := r.browseScopeKeys(ctx, scope)
 	if err != nil {
 		return Page{}, nil, nil, err
@@ -290,7 +301,7 @@ func (r *Reader) BrowseContext(ctx context.Context, scope Scope, budget int) (Pa
 
 // BrowseGet uses the owner's device/platform browsing semantics for a full
 // current or historical record. Agent Get retains its narrower scope rule.
-func (r *Reader) BrowseGet(ctx context.Context, scope Scope, id int64, revision *int64) (*Record, error) {
+func (r *Reader) BrowseGet(ctx context.Context, scope BrowseScope, id int64, revision *int64) (*Record, error) {
 	if _, err := scope.Key(); err != nil || scope.Legacy {
 		return nil, errors.New("invalid visualizer scope")
 	}
@@ -315,7 +326,7 @@ func (r *Reader) BrowseGet(ctx context.Context, scope Scope, id int64, revision 
 		return nil, err
 	}
 	if exact.Legacy ||
-		(exact.Project != nil && (scope.Project == nil || *scope.Project != *exact.Project)) ||
+		(exact.Project != nil && !scope.AllProjects && (scope.Project == nil || *scope.Project != *exact.Project)) ||
 		(scope.Device != nil && exact.Device != nil && *scope.Device != *exact.Device) ||
 		(scope.Platform != nil && exact.Platform != nil && *scope.Platform != *exact.Platform) {
 		return nil, nil
@@ -323,7 +334,7 @@ func (r *Reader) BrowseGet(ctx context.Context, scope Scope, id int64, revision 
 	return getInTx(ctx, tx, exact, id, revision)
 }
 
-func (r *Reader) browseScopeKeys(ctx context.Context, scope Scope) ([]string, []string, []string, error) {
+func (r *Reader) browseScopeKeys(ctx context.Context, scope BrowseScope) ([]string, []string, []string, error) {
 	if _, err := scope.Key(); err != nil || scope.Legacy {
 		return nil, nil, nil, errors.New("invalid visualizer scope")
 	}
@@ -335,40 +346,61 @@ func (r *Reader) browseScopeKeys(ctx context.Context, scope Scope) ([]string, []
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	projects := []*string{nil}
-	if scope.Project != nil {
-		projects = append(projects, scope.Project)
+	// Each dimension is independent: a record shows when its project, device
+	// and platform are each unset or selected. Reading the scopes that exist
+	// keeps the cost proportional to stored scopes, not to their combinations.
+	rows, err := r.db.QueryContext(ctx, "SELECT DISTINCT memory_scope FROM chunks WHERE kind='memory' AND memory_scope<>'legacy'")
+	if err != nil {
+		return nil, nil, nil, err
 	}
-	selectedDevices := []*string{nil}
-	if scope.Device != nil {
-		selectedDevices = append(selectedDevices, scope.Device)
-	} else {
-		for index := range devices {
-			selectedDevices = append(selectedDevices, &devices[index])
+	defer rows.Close()
+	keys := []string{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, nil, nil, err
+		}
+		var stored Scope
+		if json.Unmarshal([]byte(key), &stored) != nil || stored.Legacy {
+			continue
+		}
+		if (stored.Project == nil || scope.AllProjects || (scope.Project != nil && *scope.Project == *stored.Project)) &&
+			(stored.Device == nil || scope.Device == nil || *scope.Device == *stored.Device) &&
+			(stored.Platform == nil || scope.Platform == nil || *scope.Platform == *stored.Platform) {
+			keys = append(keys, key)
 		}
 	}
-	platforms := []*string{nil}
-	if scope.Platform != nil {
-		platforms = append(platforms, scope.Platform)
-	} else {
-		for _, value := range []string{"macos", "windows", "linux"} {
-			platform := value
-			platforms = append(platforms, &platform)
-		}
-	}
-	keys := make([]string, 0, len(projects)*len(selectedDevices)*len(platforms))
-	for _, project := range projects {
-		for _, device := range selectedDevices {
-			for _, platform := range platforms {
-				key, err := (Scope{Project: project, Device: device, Platform: platform}).Key()
-				if err != nil {
-					return nil, nil, nil, err
-				}
-				keys = append(keys, key)
-			}
-		}
+	if err := rows.Err(); err != nil {
+		return nil, nil, nil, err
 	}
 	return keys, devices, knownProjects, nil
+}
+
+// Titles returns current titles for memory IDs so the owner's view can name
+// records that a size-limited list omitted. Unknown IDs are absent.
+func (r *Reader) Titles(ctx context.Context, ids []int64) (map[int64]string, error) {
+	titles := make(map[int64]string, len(ids))
+	if len(ids) == 0 {
+		return titles, nil
+	}
+	idJSON, err := json.Marshal(ids)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, "SELECT id, title FROM chunks WHERE kind='memory' AND id IN (SELECT value FROM json_each(?))", string(idJSON))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var title string
+		if err := rows.Scan(&id, &title); err != nil {
+			return nil, err
+		}
+		titles[id] = title
+	}
+	return titles, rows.Err()
 }
 
 func (r *Reader) browseProjects(ctx context.Context) ([]string, error) {
@@ -392,7 +424,7 @@ func (r *Reader) browseProjects(ctx context.Context) ([]string, error) {
 	return projects, rows.Err()
 }
 
-func (r *Reader) browseDevices(ctx context.Context, scope Scope) ([]string, error) {
+func (r *Reader) browseDevices(ctx context.Context, scope BrowseScope) ([]string, error) {
 	// Legacy rows are not JSON. CASE keeps JSON extraction safe even if the
 	// query planner reorders predicates; project filtering happens in SQLite.
 	const document = "CASE WHEN json_valid(memory_scope) THEN memory_scope ELSE '{}' END"
@@ -401,9 +433,9 @@ func (r *Reader) browseDevices(ctx context.Context, scope Scope) ([]string, erro
 	const platform = "json_extract(" + document + ", '$.platform')"
 	query := "SELECT DISTINCT " + device + " FROM chunks WHERE kind='memory' AND archived=0" +
 		" AND " + device + " IS NOT NULL" +
-		" AND (" + project + " IS NULL OR " + project + "=?)" +
+		" AND (? OR " + project + " IS NULL OR " + project + "=?)" +
 		" AND (? IS NULL OR " + platform + " IS NULL OR " + platform + "=?) ORDER BY 1"
-	rows, err := r.db.QueryContext(ctx, query, scope.Project, scope.Platform, scope.Platform)
+	rows, err := r.db.QueryContext(ctx, query, scope.AllProjects, scope.Project, scope.Platform, scope.Platform)
 	if err != nil {
 		return nil, err
 	}
@@ -461,7 +493,21 @@ func (r *Reader) browseKeys(ctx context.Context, keys []string, budget int) (Pag
 	if err != nil {
 		return Page{}, err
 	}
-	return boundRecords(records, budget, 0)
+	return boundRecords(previewRecords(records), budget, 0)
+}
+
+// browsePreviewRunes is how much of a memory the owner's list carries. A list
+// of previews shows every memory; the full text opens on demand through Get.
+const browsePreviewRunes = 240
+
+func previewRecords(records []Record) []Record {
+	for i, record := range records {
+		if runes := []rune(record.Content); len(runes) > browsePreviewRunes {
+			records[i].Content = string(runes[:browsePreviewRunes])
+			records[i].ContentTruncated = true
+		}
+	}
+	return records
 }
 
 func (r *Reader) scopedActive(ctx context.Context, keys []string, browse bool) ([]Record, error) {

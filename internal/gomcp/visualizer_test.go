@@ -262,32 +262,64 @@ func TestVisualizerAnyDeviceBrowsesActiveScopedRecords(t *testing.T) {
 	}
 }
 
-func TestVisualizerDisclosesBoundedOmissions(t *testing.T) {
+func TestVisualizerListsPreviewsAndDisclosesOverflow(t *testing.T) {
 	server, store := testServer(t, true)
-	for index, content := range []string{strings.Repeat("alpha ", 4000), strings.Repeat("beta ", 4000)} {
+	write := func(request, title, content string) {
+		t.Helper()
 		_, err := store.Write(context.Background(), gomemory.WriteInput{
-			Scope: gomemory.Scope{}, Content: content, Purpose: "lesson", Confirmed: true,
+			Scope: gomemory.Scope{}, Title: &title, Content: content, Purpose: "lesson", Confirmed: true,
 			Provenance: gomemory.Provenance{Harness: "codex", Device: "synthetic-mac", Source: "bounded view test"},
-			RequestID:  "visualizer-bound-" + string(rune('a'+index)),
+			RequestID:  request,
 		}, nil, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	resp, body := visualizerRequest(t, http.MethodPost, server.URL+"/visualizer/api/context", testToken, "{}")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("bounded view status=%d body=%q", resp.StatusCode, body)
+	load := func() (gomemory.Page, map[string]string) {
+		t.Helper()
+		resp, body := visualizerRequest(t, http.MethodPost, server.URL+"/visualizer/api/context", testToken, "{}")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("bounded view status=%d body=%q", resp.StatusCode, body)
+		}
+		var page struct {
+			gomemory.Page
+			OmittedTitles map[string]string `json:"omitted_titles"`
+		}
+		if err := json.Unmarshal(body, &page); err != nil {
+			t.Fatal(err)
+		}
+		return page.Page, page.OmittedTitles
 	}
-	var page gomemory.Page
-	if err := json.Unmarshal(body, &page); err != nil {
-		t.Fatal(err)
+	full := strings.Repeat("alpha ", 4000)
+	write("visualizer-bound-large", "Large alpha", full)
+	page, _ := load()
+	if page.Omitted != 0 {
+		t.Fatalf("a large record must not push others out of the list: %+v", page)
 	}
-	if page.Omitted == 0 || len(page.OmittedIDs) == 0 || len(page.Records) == 0 {
-		t.Fatalf("omissions not disclosed: %+v", page)
-	}
+	found := false
 	for _, record := range page.Records {
-		if strings.HasPrefix(record.Content, "alpha ") && record.Content != strings.Repeat("alpha ", 4000) {
-			t.Fatal("returned content was truncated")
+		if record.Title == "Large alpha" {
+			found = true
+			if !record.ContentTruncated || len([]rune(record.Content)) != 240 || !strings.HasPrefix(full, record.Content) {
+				t.Fatalf("large record is not a 240-character preview: truncated=%v length=%d", record.ContentTruncated, len([]rune(record.Content)))
+			}
+		} else if record.ContentTruncated != (len([]rune(record.Content)) == 240) {
+			t.Fatalf("truncation flag disagrees with preview length: %+v", record)
+		}
+	}
+	if !found {
+		t.Fatal("large record missing from the owner's list")
+	}
+	for index := 0; index < 120; index++ {
+		write("visualizer-bound-many-"+jsonNumber(int64(index)), "Overflow "+jsonNumber(int64(index)), strings.Repeat("beta ", 60))
+	}
+	page, titles := load()
+	if page.Omitted == 0 || len(page.OmittedIDs) == 0 || len(page.Records) == 0 {
+		t.Fatalf("overflow not disclosed: omitted=%d records=%d", page.Omitted, len(page.Records))
+	}
+	for _, reference := range page.OmittedRecords {
+		if titles[jsonNumber(reference.ID)] == "" {
+			t.Fatalf("omitted record %d is unnamed: %v", reference.ID, titles)
 		}
 	}
 }
