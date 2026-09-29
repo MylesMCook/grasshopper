@@ -150,8 +150,12 @@ Feature: Owner reviews and corrects memories in the memory view
   spec-style paragraph is gone. The server and migration steps stay in the
   README because the release archives ship it as their only guide; moving them
   would change packaging.
-- Not done: a published Claude Code marketplace entry. The `marketplace` branch
-  carries Codex and Cursor plugins only, so Claude Code still installs from the
-  client archive. Publishing one is a release change and is left for a decision.
-- Not done: the public setup page (`web/public/setup`) is unchanged and not
-  redeployed.
+- Claude Code marketplace: the bundler now packages Claude Code plugins
+  (`grasshopper-macos`, `-windows`, `-linux`) in the marketplace archive with a
+  `.claude-plugin/marketplace.json`, in their own `plugins/claude-grasshopper-<os>`
+  directories because Claude Code merges a plugin's default `hooks/hooks.json`
+  and `.mcp.json` and those files already hold Codex's commands. Verified with
+  `claude plugin validate`, and an isolated install (marketplace add, install,
+  details) under a scratch `CLAUDE_CONFIG_DIR`. Publishing them to the
+  `marketplace` branch and redeploying the setup page wait for the merge and a
+  release; until then the published site and branch are unchanged.

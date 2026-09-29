@@ -21,8 +21,8 @@
         <div class="grid downloads agent-options">
           <article><h3>Codex</h3><pre><code>codex plugin marketplace add MylesMCook/grasshopper --ref marketplace</code></pre><pre><code>codex plugin add grasshopper-macos@grasshopper-marketplace</code></pre><p>On Windows or Linux, use its matching plugin entry.</p></article>
           <article><h3>Cursor</h3><pre><code>agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace</code></pre><p>Install your OS entry in the Plugins menu, or in the IDE under <strong>Customize → Plugins</strong>.</p></article>
+          <article class="wide"><h3>Claude Code</h3><pre><code>claude plugin marketplace add MylesMCook/grasshopper#marketplace</code></pre><pre><code>claude plugin install grasshopper-macos@grasshopper-marketplace</code></pre><p>On Windows or Linux, install <code>grasshopper-windows</code> or <code>grasshopper-linux</code>. Approve the three read tools when Claude Code asks. To pre-approve them instead, skip the two commands above: extract the <a href="https://github.com/MylesMCook/grasshopper/releases/latest">client archive</a> and run <code>./bin/grasshopper connect --agents claude --url https://your-private-server</code>. That installs a separate local plugin, so use one route or the other.</p></article>
         </div>
-        <details><summary>Claude Code</summary><p>Download your OS's <a href="https://github.com/MylesMCook/grasshopper/releases/latest">client archive</a>, verify it against <code>SHA256SUMS</code>, and extract it. Then run:</p><pre><code>./bin/grasshopper connect --agents claude --url https://your-private-server</code></pre><p>On Windows, use <code>grasshopper.exe</code>.</p></details>
       </section>
       <section aria-labelledby="connect-title">
         <div class="heading"><h2 id="connect-title">2. Connect once</h2></div>

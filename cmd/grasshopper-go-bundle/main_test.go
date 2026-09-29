@@ -262,6 +262,67 @@ func TestMarketplacePackagesOneStatelessClientPerPlatform(t *testing.T) {
 			}
 		}
 	}
+	read := func(name string) string {
+		t.Helper()
+		entry := entries[name]
+		if entry == nil {
+			t.Fatalf("missing %s", name)
+		}
+		reader, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reader.Close()
+		data, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	var claudeMarketplace struct {
+		Name    string `json:"name"`
+		Plugins []struct {
+			Name   string `json:"name"`
+			Source string `json:"source"`
+		} `json:"plugins"`
+	}
+	if err := json.Unmarshal([]byte(read(".claude-plugin/marketplace.json")), &claudeMarketplace); err != nil || claudeMarketplace.Name != "grasshopper-marketplace" || len(claudeMarketplace.Plugins) != 3 {
+		t.Fatalf("Claude marketplace must list one plugin per platform: %+v err=%v", claudeMarketplace, err)
+	}
+	for _, plugin := range claudeMarketplace.Plugins {
+		slug := strings.TrimPrefix(plugin.Name, "grasshopper-")
+		root := strings.TrimPrefix(plugin.Source, "./") + "/"
+		if plugin.Source != "./plugins/claude-grasshopper-"+slug {
+			t.Fatalf("entry %s points at %s", plugin.Name, plugin.Source)
+		}
+		exe := ""
+		if slug == "windows" {
+			exe = ".exe"
+		}
+		for _, path := range []string{"bin/grasshopper" + exe, "policy/AGENTS.md", "LICENSE", ".claude-plugin/plugin.json", ".mcp.json", "hooks/hooks.json", "skills/connect-grasshopper/SKILL.md"} {
+			if entries[root+path] == nil {
+				t.Errorf("Claude plugin %s is missing %s", plugin.Name, path)
+			}
+		}
+		var manifest struct {
+			Name    string `json:"name"`
+			Version string `json:"version"`
+		}
+		if err := json.Unmarshal([]byte(read(root+".claude-plugin/plugin.json")), &manifest); err != nil || manifest.Name != plugin.Name || manifest.Version != "2.2.0" {
+			t.Fatalf("manifest name must equal the marketplace entry name: %+v err=%v", manifest, err)
+		}
+		hooks := read(root + "hooks/hooks.json")
+		if !strings.Contains(hooks, "--harness claude") || strings.Contains(hooks, "--harness codex") || !strings.Contains(hooks, "${CLAUDE_PLUGIN_ROOT}/bin/grasshopper"+exe) {
+			t.Fatalf("Claude hooks must run the Claude harness from the plugin root: %s", hooks)
+		}
+		if mcp := read(root + ".mcp.json"); !strings.Contains(mcp, "${CLAUDE_PLUGIN_ROOT}/bin/grasshopper"+exe) || strings.Contains(mcp, "\"cwd\"") {
+			t.Fatalf("Claude MCP config must not reuse Codex's: %s", mcp)
+		}
+		// Codex's directory keeps its own hook and MCP files, untouched by Claude's.
+		if codexHooks := read("plugins/grasshopper-" + slug + "/hooks/hooks.json"); !strings.Contains(codexHooks, "--harness codex") {
+			t.Fatalf("Codex hooks were replaced: %s", codexHooks)
+		}
+	}
 }
 
 func TestBundleRejectsUnsafeEntriesAndMissingFiles(t *testing.T) {

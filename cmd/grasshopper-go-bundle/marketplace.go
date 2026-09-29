@@ -11,7 +11,9 @@ import (
 
 // marketplaceFiles builds one OS-specific plugin per platform. Codex and
 // Cursor share its executable and canonical policy, but load their own native
-// manifests and hooks. No credentials or writable memory are packaged.
+// manifests and hooks. Claude Code gets a sibling directory with the same
+// client. Every entry is named grasshopper-<os> so the install command matches
+// across agents. No credentials or writable memory are packaged.
 func marketplaceFiles(binaries map[string]string, version, output string) ([]input, func(), error) {
 	if !pluginVersion.MatchString(version) {
 		return nil, nil, errors.New("plugin version must be major.minor.patch")
@@ -140,10 +142,38 @@ func marketplaceFiles(binaries map[string]string, version, output string) ([]inp
 			cleanup()
 			return nil, nil, err
 		}
+		// Claude Code merges the plugin's default hooks/hooks.json and .mcp.json
+		// with anything its manifest names, and those files already hold Codex's
+		// commands. Claude therefore gets its own plugin directory.
+		claudeRoot := "plugins/" + claudePluginDirectory(platform.slug) + "/"
+		files = append(files,
+			input{claudeRoot + "bin/grasshopper" + exe, binaries[platform.target]},
+			input{claudeRoot + "policy/AGENTS.md", "integrations/policy/AGENTS.md"},
+			input{claudeRoot + "LICENSE", "LICENSE"},
+		)
+		if err := stageTemplate(claudeRoot+".claude-plugin/plugin.json", "integrations/plugins/claude/.claude-plugin/plugin.json", exe, map[string]any{"name": plugin}); err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		if err := stageTemplate(claudeRoot+".mcp.json", "integrations/plugins/claude/.mcp.json", exe, nil); err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		if err := stageTemplate(claudeRoot+"hooks/hooks.json", "integrations/plugins/claude/hooks/hooks.json", exe, nil); err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		if err := stage(claudeRoot+"skills/connect-grasshopper/SKILL.md", skill); err != nil {
+			cleanup()
+			return nil, nil, err
+		}
 	}
-	var codexPlugins, cursorPlugins []map[string]any
+	var codexPlugins, cursorPlugins, claudePlugins []map[string]any
 	for _, platform := range platforms {
 		name := "grasshopper-" + platform.slug
+		claudePlugins = append(claudePlugins, map[string]any{
+			"name": name, "source": "./plugins/" + claudePluginDirectory(platform.slug), "description": "Connect to your private Grasshopper memory server",
+		})
 		codexPlugins = append(codexPlugins, map[string]any{
 			"name":     name,
 			"source":   map[string]any{"source": "local", "path": "./plugins/" + name},
@@ -157,6 +187,7 @@ func marketplaceFiles(binaries map[string]string, version, output string) ([]inp
 	for name, object := range map[string]any{
 		".agents/plugins/marketplace.json": map[string]any{"name": "grasshopper-marketplace", "interface": map[string]any{"displayName": "Grasshopper"}, "plugins": codexPlugins},
 		".cursor-plugin/marketplace.json":  map[string]any{"name": "grasshopper-marketplace", "owner": map[string]any{"name": "Myles Cook"}, "plugins": cursorPlugins},
+		".claude-plugin/marketplace.json":  map[string]any{"name": "grasshopper-marketplace", "description": "Shared, self-hosted agent memory. Install the entry for your operating system.", "owner": map[string]any{"name": "Myles Cook"}, "plugins": claudePlugins},
 	} {
 		data, err := json.MarshalIndent(object, "", "  ")
 		if err != nil {
@@ -170,3 +201,7 @@ func marketplaceFiles(binaries map[string]string, version, output string) ([]inp
 	}
 	return files, cleanup, nil
 }
+
+// claudePluginDirectory names the Claude Code plugin directory for an OS. The
+// entry in Claude's marketplace keeps the shared grasshopper-<os> name.
+func claudePluginDirectory(slug string) string { return "claude-grasshopper-" + slug }
