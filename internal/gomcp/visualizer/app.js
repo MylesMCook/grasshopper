@@ -127,6 +127,10 @@ function updateTabsHint() {
 viewTabs.addEventListener('scroll', updateTabsHint);
 window.addEventListener('resize', updateTabsHint);
 document.fonts?.ready.then(updateTabsHint);
+if (window.ResizeObserver) {
+  const tabLayout = new window.ResizeObserver(updateTabsHint);
+  for (const target of [viewTabs, ...viewTabs.children]) tabLayout.observe(target);
+}
 
 filterToggle.addEventListener('click', () => {
   const expanded = filterToggle.getAttribute('aria-expanded') !== 'true';

@@ -52,6 +52,11 @@ function view(hash = '', connected = true, sessionStatus = 200, options = {}) {
       } }));
     }
   };
+  const layoutObservers = [];
+  if (options.observeLayout) sandbox.window.ResizeObserver = class {
+    constructor(callback) { this.callback = callback; layoutObservers.push(this); }
+    observe(node) { this.node = node; }
+  };
   sandbox.window.history = sandbox.history;
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8'), sandbox);
@@ -60,7 +65,7 @@ function view(hash = '', connected = true, sessionStatus = 200, options = {}) {
     ui.setConnected(true);
     get('device-panel').open = true;
   }
-  return { ui, get, requests, timers, timerDelays, document: sandbox.document, location: sandbox.location, windowListeners, documentListeners, blobs, downloads, window: sandbox.window };
+  return { ui, get, requests, timers, timerDelays, document: sandbox.document, location: sandbox.location, windowListeners, documentListeners, blobs, downloads, window: sandbox.window, layoutObservers };
 }
 
 function replyPair(v, start, devices = []) {
@@ -1471,4 +1476,20 @@ test('scope labels stay whole with bounded raw identifiers and concise settings 
   assert.match(html, /Uses your filters, not your search or the startup preview/);
   assert.match(css, /scrollbar-width:none/);
   assert.match(css, /\.scope-segment .*white-space:nowrap/);
+});
+
+
+test('tab overflow cue follows text layout changes without a window resize', () => {
+  const v=view('',true,200,{observeLayout:true});
+  const tabs=v.get('view-tabs');
+  tabs.clientWidth=960; tabs.scrollWidth=800; tabs.scrollLeft=0;
+  assert.equal(v.layoutObservers.length,1);
+  v.layoutObservers[0].callback();
+  assert.equal(v.get('tabs-wrap').attributes['data-overflow'],'false');
+  tabs.scrollWidth=978;
+  v.layoutObservers[0].callback();
+  assert.equal(v.get('tabs-wrap').attributes['data-overflow'],'true');
+  tabs.scrollLeft=18;
+  v.layoutObservers[0].callback();
+  assert.equal(v.get('tabs-wrap').attributes['data-overflow'],'false');
 });
