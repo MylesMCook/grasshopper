@@ -2,6 +2,74 @@
 
 Observed checks for Grasshopper releases. Synthetic checks and real-client observations are separate below.
 
+## 2.8.0 UX audits release and rollout (September 29)
+
+[2.8.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.0) ships
+PRs #16–#17 at release commit `b772736` (PR #18), marketplace `2159643`.
+Release-preparation head `6efab51` passed macOS, Linux and Windows CI and
+Copilot review with no findings before merge. Its tree matches the merge.
+[Native release CI](https://github.com/MylesMCook/grasshopper/actions/runs/36662326718)
+passed on all three platforms. Seven archives and 287 embedded hashes verify;
+all eight published asset digests match local verified files. Client and
+marketplace binaries retain the existing portable builds. Executables remain
+unsigned. No new dependency, framework or networking configuration was added.
+
+A fresh supported backup of the live database passed integrity checks. The exact
+packaged 2.8.0 server opened that copy with the existing pinned Granite model,
+preserved current and historical reads and passed semantic search. The existing
+2.7.0 binary then opened a separate copy of the upgraded database successfully.
+Separate synthetic real-model rehearsals verified full exports/history, paired
+credentials, exact persistent row fingerprints, old-cookie rejection, active and
+revoked sessions across restart and restored backup, and Sign out everywhere.
+The older server accepts cookies revoked by 2.8.0: retained old binaries are for
+immediate failed-cutover recovery, not a security-equivalent later downgrade.
+Automatic downgrade was disabled once candidate readiness succeeded; early
+recovery waits for process exit and refuses downgrade if new session state exists.
+
+The authorized live cutover took 3.12 seconds to readiness. Exact row fingerprints
+and counts preserved 27 memory rows (13 active), 65 revisions, 65 request receipts
+and four device-token rows. Credentials, supervisor configuration and existing
+private routing were unchanged. Original binaries/configuration and a verified
+stopped-writer snapshot are retained privately. Encrypted off-host backup and
+repository checks passed before and after the upgrade. The service is running
+on its existing loopback listener; startup/session event logs are present and
+the recent log contains no owner token.
+
+Read-only memory checks through loopback and existing private HTTPS passed:
+all 13 active memories paged once, startup selection matching agent context at
+3,000 and 12,000 bytes, conditional preview responses returning 304, current and
+historical reads, exact embedded HTML/CSS/JavaScript, and rejection of anonymous
+or originless owner writes. HTTP browser-session checks verified seven-day
+HttpOnly/SameSite cookies, Secure cookies on private HTTPS, sign-in, sign-out and
+rejection of a copied signed-out cookie. Only verification sessions were created
+and revoked; no live memory was edited for testing. Existing stateless browser
+cookies need sign-in again after this upgrade.
+
+Installed Mac Codex, Cursor and Claude 2.8.0 executables pass scoped startup
+adapters, the five-tool bridge and known-record reads against server 2.8.0.
+Existing credentials were retained. Cursor's archive is in durable application
+storage; Claude's existing local-plugin route remains singular. A separate
+scratch Claude configuration installed the published marketplace plugin and
+verified its 2.8.0 manifest/executable. These are adapter/bridge and installation
+checks, not fresh native AI turns. Existing chats may retain old bridges until
+reopened.
+
+The public site deployed as `d8d907aa-01bb-43b5-a2bf-ba04eefd4d1d`. All 14
+served build assets match local bytes and hashes; CSP, referrer and nosniff
+headers match the configured policy. Playwright CLI Chromium on macOS at
+375×812 and 1280×960 verified server-first setup, decoded synthetic screenshot,
+macOS/Windows/Linux commands and actual copy results, no horizontal overflow,
+invalid-address guidance and 404 recovery. Public address entry has no token
+field. Screenshots and detailed logs remain private task-local evidence.
+
+The eight requested stale remote branches from PRs #9–#16 were removed only
+when their fresh remote tips exactly matched the merged PR heads and retained
+squash commits were ancestors of main. Lease-guarded deletion prevented removing
+a concurrently updated branch. The primary checkout and unrelated local evidence
+were preserved. Physical phones, screen readers, Safari/Firefox, persistent
+Windows/Linux installations, reboot persistence and fresh native model turns
+were not tested in this rollout.
+
 ## 2.7.0 memory review and Claude marketplace (September 29)
 
 [LAB-223](https://linear.app/mcook/issue/LAB-223/release-and-deploy-the-merged-memory-review-and-claude-marketplace) delivers the owner-requested release/deployment of LAB-222 and merged PRs #9–#15. [2.7.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.7.0) ships code `4fea645`; marketplace `d272aa3` publishes Codex/Cursor and the new Claude Code plugins for all three platforms. [Release CI](https://github.com/MylesMCook/grasshopper/actions/runs/36650324186) passed on macOS, Linux and Windows with pinned real Granite tests. Local real-model Go tests, vet, race and 36 Node tests passed. Seven archives passed 311 embedded hashes; all eight published GitHub asset digests match locally verified artifacts.
