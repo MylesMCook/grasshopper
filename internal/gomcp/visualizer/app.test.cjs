@@ -1547,3 +1547,15 @@ test('filters default collapsed everywhere and subtitle follows authentication',
   assert.match(css, /\.filter-controls \{ display:none; \}/);
   assert.match(css, /\.records \{ gap:var\(--space-4\)/);
 });
+
+
+test('review keeps truthful attribution with the full source available', () => {
+  const v=view();
+  v.ui.chooseView('review');
+  const record={...memory(1),confirmed:false,provenance:{harness:'cursor',device:'sample-device',source:'invented long source '.repeat(30)}};
+  v.ui.draw({records:[record]});
+  const attribution=memoryRows(v)[0].children.at(-1);
+  assert.equal(attribution.className,'review-attribution');
+  assert.equal(attribution.textContent,`Saved by Cursor on sample-device: ${record.provenance.source}`);
+  assert.equal(attribution.title,attribution.textContent);
+});

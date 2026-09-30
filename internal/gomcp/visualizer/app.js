@@ -558,8 +558,6 @@ function updatedLabel(record) {
 
 const platformNames = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
 
-// Cards name the exact scope in words. A Git project and a project ID are
-// different scopes even when the rest of their text matches, so the label says which.
 function relativeUpdatedLabel(record, now = new Date()) {
   const date = new Date(record.updated_at || NaN);
   if (Number.isNaN(date.getTime())) return 'Update date unavailable';
@@ -569,6 +567,8 @@ function relativeUpdatedLabel(record, now = new Date()) {
   return days === 0 ? 'Today' : days === 1 ? 'Yesterday' : days > 1 ? `${days} days ago` : updatedLabel(record);
 }
 
+// Cards name the exact scope in words. A Git project and a project ID are
+// different scopes even when the rest of their text matches, so the label says which.
 function projectLabel(project) {
   if (project.startsWith('git:')) return `Git project ${project.slice(4)}`;
   if (project.startsWith('id:')) return `Project ID ${project.slice(3)}`;
@@ -1446,6 +1446,11 @@ function draw(page) {
         actions.append(button);
       }
       stateLine.append(actions);
+      const attribution = document.createElement('p');
+      attribution.className = 'review-attribution';
+      attribution.textContent = `Saved by ${harnessLabel(record.provenance?.harness)} on ${record.provenance?.device || 'an unknown device'}${record.provenance?.source ? `: ${record.provenance.source}` : ''}`;
+      attribution.title = attribution.textContent;
+      article.append(attribution);
     }
     fragment.append(article);
   }
