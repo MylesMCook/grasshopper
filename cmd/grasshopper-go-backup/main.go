@@ -70,13 +70,20 @@ func prepareQuickstartBackup(dataDir string) (string, error) {
 }
 
 func run() error {
-	var source, destination, dataDir string
+	var source, destination, dataDir, verify string
 	var quickstart bool
+	flag.StringVar(&verify, "verify", "", "verify an existing private snapshot without changing it")
 	flag.StringVar(&source, "source", "", "existing Grasshopper database to back up")
 	flag.StringVar(&destination, "dest", "", "new backup path; must not exist")
 	flag.BoolVar(&quickstart, "quickstart", false, "back up and verify a local quickstart database before an update")
 	flag.StringVar(&dataDir, "data-dir", "", "quickstart state directory")
 	flag.Parse()
+	if verify != "" {
+		if quickstart || source != "" || destination != "" || dataDir != "" {
+			return errors.New("verify cannot be combined with backup flags")
+		}
+		return printBackupReport(verify)
+	}
 	if quickstart {
 		if source != "" || destination != "" {
 			return errors.New("quickstart backup cannot use source or dest flags")
@@ -85,7 +92,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Verified local snapshot: %s\nKeep an off-host backup too.\n", path)
+		if err := printBackupReport(path); err != nil {
+			return err
+		}
+		fmt.Println("Keep an off-host backup too.")
 		return nil
 	}
 	if dataDir != "" {
@@ -103,8 +113,7 @@ func run() error {
 	if err := copy.Close(); err != nil {
 		return err
 	}
-	fmt.Println("Consistent backup ready. Verify it before changing the source.")
-	return nil
+	return printBackupReport(destination)
 }
 
 func main() {

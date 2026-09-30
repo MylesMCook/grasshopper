@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -118,5 +119,45 @@ func TestQuickstartRequiresAnExtractedBundle(t *testing.T) {
 	executable := filepath.Join(t.TempDir(), "bin", "grasshopper-go-server")
 	if _, _, _, err := quickstartFiles(executable); err == nil {
 		t.Fatal("accepted a missing model and runtime")
+	}
+}
+
+func TestQuickstartAllowsPrivateProxyFlagBeforeBundleValidation(t *testing.T) {
+	oldFlags, oldArgs := flag.CommandLine, os.Args
+	defer func() { flag.CommandLine = oldFlags; os.Args = oldArgs }()
+	flag.CommandLine = flag.NewFlagSet("server", flag.ContinueOnError)
+	os.Args = []string{"server", "--quickstart", "--allowed-proxy-host", "memory.example:443", "--data-dir", filepath.Join(t.TempDir(), "state")}
+	err := run()
+	if err == nil || !strings.Contains(err.Error(), "bundle file missing") {
+		t.Fatalf("quickstart proxy parsing did not reach bundle validation: %v", err)
+	}
+}
+
+func TestStartupErrorsIdentifyRelevantFlags(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		tokenPresent bool
+		want         string
+	}{
+		{"token", false, "--token-file"},
+		{"model", true, "--model"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldFlags, oldArgs := flag.CommandLine, os.Args
+			defer func() { flag.CommandLine = oldFlags; os.Args = oldArgs }()
+			dir := t.TempDir()
+			token := filepath.Join(dir, "token")
+			if tc.tokenPresent {
+				if err := os.WriteFile(token, []byte(strings.Repeat("s", 40)), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			flag.CommandLine = flag.NewFlagSet("server", flag.ContinueOnError)
+			os.Args = []string{"server", "--db", filepath.Join(dir, "memory.db"), "--onnx-library", filepath.Join(dir, "runtime"), "--model", filepath.Join(dir, "model"), "--tokenizer", filepath.Join(dir, "tokenizer"), "--token-file", token}
+			err := run()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("startup error lacks %s context: %v", tc.want, err)
+			}
+		})
 	}
 }

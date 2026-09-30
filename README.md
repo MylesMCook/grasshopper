@@ -93,6 +93,28 @@ Windows PowerShell:
 
 This creates an empty database and master token without overwriting existing state. Open its memory view and sign in with that token. For other machines, give the server a **private HTTPS** address, such as [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve). Keep public access off and the master token on the server.
 
+An existing Tailscale Serve route must forward to `http://127.0.0.1:8106` with
+public access off. Restart the server with its exact HTTPS hostname and port:
+
+```sh
+./bin/grasshopper-server --quickstart --allowed-proxy-host memory.example:443
+```
+
+Use the same `--data-dir` if you chose one. This flag allows the configured proxy
+Host and HTTPS Origin; it does not change saved state or create a private route.
+Creating or changing your private route is a separate host operation. See
+[service templates and token recovery](docs/operations.md).
+
+The release executables are unsigned. After verifying the archive hash and its
+trusted source, macOS may require the supported **System Settings > Privacy &
+Security > Open Anyway** flow for an identified app. Follow [Apple's opening
+instructions](https://support.apple.com/en-us/102445); do not disable Gatekeeper
+or remove quarantine recursively. On Windows, inspect the publisher/source and
+follow [Microsoft SmartScreen guidance](https://learn.microsoft.com/en-us/windows/security/operating-system-security/virus-and-threat-protection/microsoft-defender-smartscreen/)
+if blocked. SmartScreen behavior for these archives has not been tested. Linux
+archives retain executable permissions; verify the digest before executing.
+
+
 ### Archive names and source builds
 
 The commands above use packaged archive names. The Go source directories have
@@ -184,6 +206,22 @@ If you chose a custom quickstart state folder, add `--data-dir` followed by its 
 ```sh
 ./bin/grasshopper-backup --source /absolute/path/to/memory.db --dest /absolute/path/to/new-backup.db
 ```
+
+Verify any saved snapshot independently:
+
+```sh
+./bin/grasshopper-backup --verify /absolute/path/to/new-backup.db
+```
+
+Both backup and verification print record count, historical revision count,
+SQLite `quick_check`, size and SHA-256. Verification is read-only and fails on a
+corrupt, empty or nonprivate file, or a database with pending WAL/journal state.
+Use `--source` and `--dest` to make a standalone snapshot first. Compare the digest after transferring an
+off-host copy. With the server stopped, copy a verified snapshot to a new private
+path (mode 0600 on Mac/Linux), verify that copy again, then start the server
+against it with the retained token and model settings. Open a known memory and
+an earlier revision before selecting that copy for cutover. Retain the original
+state and any WAL/SHM files; reconcile accepted writes before rollback.
 
 On Windows, use `./bin/grasshopper-backup.exe` and Windows paths. Stop the old server and keep its archive, configuration, and database. Never run two writers. Restore a backup to a new path and check its records before using it.
 

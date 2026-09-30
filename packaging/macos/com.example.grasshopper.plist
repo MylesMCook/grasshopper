@@ -6,7 +6,7 @@
   <string>com.example.grasshopper</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/you/Library/Application Support/Grasshopper/app/bin/grasshopper-go-server</string>
+    <string>/Users/you/Library/Application Support/Grasshopper/app/bin/grasshopper-server</string>
     <string>--db</string>
     <string>/Users/you/Library/Application Support/Grasshopper/data/memory.db</string>
     <string>--onnx-library</string>
@@ -20,6 +20,10 @@
     <string>--listen</string>
     <string>127.0.0.1:8106</string>
     <string>--visualizer</string>
+    <!-- Optional existing private HTTPS proxy:
+    <string>--allowed-proxy-host</string>
+    <string>memory.example:443</string>
+    -->
   </array>
   <key>RunAtLoad</key>
   <true/>
