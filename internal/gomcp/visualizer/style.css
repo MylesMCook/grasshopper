@@ -207,3 +207,4 @@ input[type="checkbox"] { width:20px; height:20px; min-height:0; padding:0; accen
 p { text-wrap:pretty; }
 h1,h2,h3 { text-wrap:balance; }
 @media(max-width:700px) { .masthead { margin-top:var(--space-3); } }
+.results-heading > div:first-child { min-width:0; flex:1; max-width:100%; }
