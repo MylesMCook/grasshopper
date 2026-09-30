@@ -10,6 +10,8 @@ function setup(writeText, script = readFileSync(`${__dirname}/public/setup.js`, 
     { textContent: 'claude plugin install grasshopper-macos@grasshopper-marketplace' },
   ];
   const button = { textContent: 'Copy command', previousElementSibling: commands[0], addEventListener(_, fn) { this.click = fn; } };
+  const secondButton = { textContent: 'Copy command', previousElementSibling: commands[1], addEventListener(_, fn) { this.click = fn; } };
+  const serverChecksums = { href: '' };
   const cursorPlugin = { textContent: 'grasshopper-macos' };
   const archiveCommand = { textContent: '' };
   const copyStatus = { textContent: '' };
@@ -24,12 +26,12 @@ function setup(writeText, script = readFileSync(`${__dirname}/public/setup.js`, 
     navigator: { clipboard: { writeText } },
     window: { getSelection: () => ({ removeAllRanges() {}, addRange() {} }) },
     document: {
-      getElementById: id => ({ 'connector-os': osChoice, 'cursor-plugin': cursorPlugin, 'archive-connect-command': archiveCommand, 'copy-status': copyStatus, 'server-quickstart-command': serverCommand, 'server-archive': serverArchive })[id],
-      querySelectorAll: selector => selector === '[data-plugin-command]' ? commands : [button],
+      getElementById: id => ({ 'connector-os': osChoice, 'cursor-plugin': cursorPlugin, 'archive-connect-command': archiveCommand, 'copy-status': copyStatus, 'server-quickstart-command': serverCommand, 'server-archive': serverArchive, 'server-checksums': serverChecksums })[id],
+      querySelectorAll: selector => selector === '[data-plugin-command]' ? commands : [button, secondButton],
       createRange: () => ({ selectNodeContents: node => { selected = node.textContent; } }),
     },
   });
-  return { osChoice, commands, button, cursorPlugin, archiveCommand, copyStatus, serverCommand, serverArchive, timers, selected: () => selected };
+  return { osChoice, commands, button, secondButton, serverChecksums, cursorPlugin, archiveCommand, copyStatus, serverCommand, serverArchive, timers, selected: () => selected };
 }
 
 test('OS choice rewrites all agent plugin names and preserves marketplace names', () => {
@@ -98,6 +100,7 @@ test('site build injects VERSION into selected server archive URLs and leaves no
   for(const [os,target] of [['macos','darwin-arm64'],['windows','windows-amd64'],['linux','linux-amd64']]) {
     ui.osChoice.value=os;ui.osChoice.change();
     assert.equal(ui.serverArchive.href,`https://github.com/MylesMCook/grasshopper/releases/download/v${version}/grasshopper-server-${target}-${version}.zip`);
+    assert.equal(ui.serverChecksums.href,`https://github.com/MylesMCook/grasshopper/releases/download/v${version}/SHA256SUMS`);
   }
 });
 
@@ -114,4 +117,43 @@ test('public navigation and privacy are consistent and later links stay below se
   assert.ok(html.indexOf('back-up-and-update-the-server')>html.indexOf('<footer'));
   assert.match(html,/href="http:\/\/127\.0\.0\.1:8106\/visualizer\/"/);
   assert.match(html,/grasshopper#need-a-server/);
+});
+
+
+test('copy status and label clear together after two seconds, without an older timer clearing newer feedback', async () => {
+  const ui=setup(async()=>{});await ui.button.click();
+  const oldTimer=[...ui.timers.values()][0];
+  await ui.secondButton.click();
+  assert.equal(ui.button.textContent,'Copy command');
+  assert.equal(ui.timers.size,1);
+  oldTimer.fn();assert.equal(ui.copyStatus.textContent,'Command copied.');assert.equal(ui.secondButton.textContent,'Copied');
+  [...ui.timers.values()][0].fn();assert.equal(ui.copyStatus.textContent,'');assert.equal(ui.secondButton.textContent,'Copy command');
+});
+
+test('each copy click supersedes another button pending success or failure in either completion order', async () => {
+  for(const order of [[0,1],[1,0]]) for(const olderFails of [true,false]) {
+    const pending=[];const ui=setup(()=>new Promise((resolve,reject)=>pending.push({resolve,reject})));
+    const older=ui.button.click();const newer=ui.secondButton.click();
+    for(const index of order) {
+      const fails=index===0?olderFails:!olderFails;
+      if(fails)pending[index].reject(new Error('denied'));else pending[index].resolve();
+      await (index===0?older:newer);
+    }
+    assert.equal(ui.button.textContent,'Copy command');
+    assert.equal(ui.selected(),olderFails?undefined:ui.commands[1].textContent);
+    assert.equal(ui.secondButton.textContent,olderFails?'Copied':'Select and copy');
+    assert.match(ui.copyStatus.textContent,olderFails?/^Command copied\.$/:/^Command selected\./);
+    assert.equal(ui.timers.size,1);
+  }
+});
+
+test('checksum download is pinned to the same build release as every selected server archive', () => {
+  const ui=setup(async()=>{});
+  for(const os of ['macos','windows','linux']) {
+    ui.osChoice.value=os;ui.osChoice.change();
+    assert.equal(ui.serverChecksums.href,'https://github.com/MylesMCook/grasshopper/releases/download/v9.8.7/SHA256SUMS');
+    assert.equal(new URL(ui.serverArchive.href).pathname.split('/').slice(0,-1).join('/'),new URL(ui.serverChecksums.href).pathname.split('/').slice(0,-1).join('/'));
+  }
+  const html=readFileSync(`${__dirname}/public/setup/index.html`,'utf8');
+  assert.match(html,/<a id="server-checksums"/);
 });

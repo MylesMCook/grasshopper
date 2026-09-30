@@ -28,7 +28,7 @@
 <label class="os-choice" for="connector-os">Your operating system <select id="connector-os"><option value="macos">macOS</option><option value="windows">Windows</option><option value="linux">Linux</option></select></label>
       <section aria-labelledby="server-title">
         <div class="heading"><h2 id="server-title">1. Start your server</h2></div>
-        <p class="intro"><a id="server-archive" href="https://github.com/MylesMCook/grasshopper/releases/latest">Download server for macOS</a> (macOS Apple silicon; Windows and Linux x64). Check the release’s <a href="https://github.com/MylesMCook/grasshopper/releases/latest">SHA-256 sums</a>, extract the archive, and open a terminal in the extracted folder.</p>
+        <p class="intro"><a id="server-archive" href="https://github.com/MylesMCook/grasshopper/releases/latest">Download server for macOS</a> (macOS Apple silicon; Windows and Linux x64). Check the release’s <a id="server-checksums" href="https://github.com/MylesMCook/grasshopper/releases/latest">SHA-256 sums</a>, extract the archive, and open a terminal in the extracted folder.</p>
         <pre><code id="server-quickstart-command">./bin/grasshopper-server --quickstart</code></pre><button type="button" class="copy-command" aria-label="Copy server quickstart command">Copy command</button>
         <p class="note">Keep that terminal open. Quickstart creates private storage and prints the memory-view address and owner access-token file location. Open the <a href="http://127.0.0.1:8106/visualizer/">memory view on this machine</a>, then read that file locally to sign in. Never paste its token into an agent chat.</p>
         <p id="copy-status" class="note" role="status" aria-live="polite"></p>
