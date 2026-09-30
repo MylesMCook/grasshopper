@@ -4,6 +4,10 @@ const editContentCount = document.getElementById('edit-content-count');
 const searchHint = document.getElementById('search-hint');
 const form = document.getElementById('connection-form');
 const tokenInput = document.getElementById('token');
+const tokenError = document.getElementById('token-error');
+const devicesLink = document.getElementById('devices-link');
+const showMore = document.getElementById('show-more');
+const editActions = document.getElementById('edit-actions');
 const tokenField = document.getElementById('token-field');
 const connectButton = document.getElementById('connect');
 const disconnectButton = document.getElementById('disconnect');
@@ -67,6 +71,7 @@ let approvalID = requestFromHash();
 let approvalFocused = false;
 
 let active = false;
+let sessionGeneration = 0;
 let loggingIn = false;
 let timer = null;
 let pollFailures = 0;
@@ -87,6 +92,29 @@ let openButtons = new Map();
 let listView = '';
 let pendingWrite = null;
 let saving = false;
+let visibleLimit = 8;
+let latestPage = null;
+const inlineWrites = new Map();
+const inlineBusy = new Set();
+let inlineActionRows = new Map();
+
+const filterToggle = document.getElementById('toggle-filters');
+filterToggle.addEventListener('click', () => {
+  const expanded = filterToggle.getAttribute('aria-expanded') !== 'true';
+  filterToggle.setAttribute('aria-expanded', String(expanded));
+  browseControls.classList.toggle('filters-expanded', expanded);
+});
+showMore.addEventListener('click', () => {
+  visibleLimit += 8;
+  lastSignature = '';
+  if (latestPage) draw(latestPage);
+});
+devicesLink.addEventListener('click', event => {
+  event.preventDefault();
+  openDevicePanel();
+  devicePanel.scrollIntoView({ block: 'start' });
+  devicePanel.querySelector('summary')?.focus();
+});
 
 function option(value, text) {
   const item = document.createElement('option');
@@ -145,7 +173,12 @@ function setStatus(message, kind = '') {
 }
 
 function setConnected(value) {
+  if (active !== value) sessionGeneration++;
   active = value;
+  if (!value) { inlineWrites.clear(); inlineBusy.clear(); }
+  devicesLink.hidden = !value;
+  tokenError.hidden = true;
+  tokenInput.setAttribute('aria-invalid', 'false');
   tokenInput.required = !value;
   tokenField.hidden = value;
   form.hidden = value;
@@ -177,6 +210,10 @@ function stop(clearRecords = false) {
   serverStatus.hidden = true;
   if (clearRecords) {
     records.replaceChildren();
+    showMore.hidden = true;
+    latestPage = null;
+    visibleLimit = 8;
+    inlineWrites.clear();
     omissions.hidden = true;
     revisions = new Map();
     lastSignature = '';
@@ -488,6 +525,7 @@ function cancelDetail() {
   // `saving` belongs to the request in flight, not to the dialog: it stays set
   // until that request ends, so closing the dialog cannot allow a second write.
   editForm.hidden = true;
+  editActions.hidden = true;
   conflictPanel.hidden = true;
   detailContent.hidden = false;
   memoryActions.hidden = true;
@@ -658,6 +696,7 @@ function startEdit() {
   editContent.value = state.record.content;
   conflictPanel.hidden = true;
   editForm.hidden = false;
+  editActions.hidden = false;
   detailContent.hidden = true;
   showActions();
   updateEditLimits();
@@ -670,6 +709,7 @@ function endEdit() {
   detailState.conflicted = false;
   pendingWrite = null;
   editForm.hidden = true;
+  editActions.hidden = true;
   conflictPanel.hidden = true;
   detailContent.hidden = false;
   showActions();
@@ -738,6 +778,59 @@ async function changeMemory(path, fields, done) {
     saving = false;
     updateEditLimits();
     showActions();
+  }
+}
+
+// List previews may be truncated. Read full text before confirmation and refuse
+// a changed revision, so one-click review cannot overwrite a concurrent edit.
+async function reviewInline(reference, archived, actions) {
+  if (!active || inlineBusy.has(reference.id)) return;
+  const generation = sessionGeneration;
+  const currentSession = () => active && sessionGeneration === generation;
+  inlineBusy.add(reference.id);
+  for (const button of actions.children) button.disabled = true;
+  const key = `${reference.id}:${archived}`;
+  setStatus(archived ? 'Archiving…' : 'Confirming…');
+  try {
+    let pending = inlineWrites.get(key);
+    if (!pending) {
+      const { status: readStatus, data: record } = await postOwner('/visualizer/api/record', { scope: scopeInput(), id: reference.id });
+      if (!currentSession()) return;
+      if (readStatus === 401) { stop(true); setStatus('Session expired', 'error'); return; }
+      if (readStatus !== 200) throw new Error('Could not read the memory. Try again.');
+      if (record.revision !== reference.revision || record.archived) {
+        setStatus('This memory changed. Review the latest text before trying again.', 'error');
+        refreshList();
+        return;
+      }
+      pending = { path: archived ? '/visualizer/api/archive' : '/visualizer/api/update', body: {
+        id: record.id, expected_revision: record.revision,
+        ...(archived ? { archived: true } : { title: record.title || '', content: record.content, purpose: record.purpose }),
+        request_id: newRequestID()
+      } };
+      inlineWrites.set(key, pending);
+    }
+    const { status: writeStatus } = await postOwner(pending.path, pending.body);
+    if (!currentSession()) return;
+    if (writeStatus === 200) {
+      inlineWrites.delete(key);
+      setStatus(archived ? 'Memory archived. Restore it from Archived.' : 'Memory confirmed.', 'live');
+      refreshList();
+    } else if (writeStatus === 401) { stop(true); setStatus('Session expired', 'error'); }
+    else if (writeStatus === 409) {
+      inlineWrites.delete(key);
+      setStatus('This memory changed. Review the latest text before trying again.', 'error');
+      refreshList();
+    } else throw new Error('Could not save. Try again; a repeat cannot save twice.');
+  } catch (error) {
+    if (currentSession()) setStatus(error.name === 'AbortError' ? 'The request timed out. Try again; a repeat cannot save twice.' : error.message, 'error');
+  } finally {
+    if (currentSession()) {
+      inlineBusy.delete(reference.id);
+      for (const row of [actions, inlineActionRows.get(reference.id)]) {
+        for (const button of row?.children || []) button.disabled = false;
+      }
+    }
   }
 }
 
@@ -841,6 +934,9 @@ function restartMemoryView() {
   inFlight = null;
   closeMemory();
   records.replaceChildren();
+  showMore.hidden = true;
+  latestPage = null;
+  visibleLimit = 8;
   omissions.hidden = true;
   lastSignature = '';
   lastOmissionSignature = '';
@@ -941,8 +1037,11 @@ function drawNotLoaded(page) {
 }
 
 function draw(page) {
+  latestPage = page;
   const items = page.records || [];
   const omitted = page.omitted || 0;
+  showMore.hidden = items.length <= visibleLimit;
+  showMore.textContent = `Show more memories (${Math.max(0, items.length - visibleLimit)} remaining)`;
   omissions.hidden = !omitted;
   const omissionSignature = JSON.stringify([omitted, page.omitted_records, page.omitted_titles]);
   if (omitted && omissionSignature !== lastOmissionSignature) {
@@ -973,8 +1072,9 @@ function draw(page) {
   // A poll redraw must not strand keyboard focus on a removed button.
   const focusedID = document.activeElement?.memoryID;
   openButtons = new Map();
+  inlineActionRows = new Map();
   const fragment = document.createDocumentFragment();
-  for (const record of items) {
+  for (const record of items.slice(0, visibleLimit)) {
     const key = `${record.id}`;
     next.set(key, record.revision);
     const article = document.createElement('article');
@@ -1011,6 +1111,22 @@ function draw(page) {
     openButtons.set(record.id, open);
     open.addEventListener('click', () => openMemory(record));
     article.append(top, heading, state, content, open);
+    if (listView === 'review') {
+      const actions = document.createElement('div');
+      actions.className = 'actions inline-review';
+      inlineActionRows.set(record.id, actions);
+      for (const [name, archived] of [['Confirm', false], ['Archive', true]]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = name;
+        button.setAttribute('aria-label', `${name} memory: ${record.title || `#${record.id}`}`);
+        if (archived) button.className = 'quiet';
+        button.disabled = inlineBusy.has(record.id);
+        button.addEventListener('click', () => reviewInline(record, archived, actions));
+        actions.append(button);
+      }
+      article.append(actions);
+    }
     fragment.append(article);
   }
   if (!items.length) {
@@ -1129,6 +1245,8 @@ form.addEventListener('submit', async event => {
   tokenInput.value = '';
   loggingIn = true;
   connectButton.disabled = true;
+  tokenError.hidden = true;
+  tokenInput.setAttribute('aria-invalid', 'false');
   setStatus('Signing in');
   try {
     const response = await sessionRequest('POST', bearer);
@@ -1139,7 +1257,13 @@ form.addEventListener('submit', async event => {
     summary.textContent = 'Loading memories…';
     refresh();
   } catch (error) {
-    setStatus(error.name === 'AbortError' ? 'Request timed out' : error instanceof TypeError ? 'Service unavailable' : error.message, 'error');
+    const message = error.message === 'Access token rejected' ? 'That owner access token was rejected. Check it with the person who runs your server, then try again.' : error.name === 'AbortError' ? 'Sign-in timed out. Try again.' : 'Could not reach the server to sign in. Try again when it is available.';
+    tokenError.textContent = message;
+    tokenError.hidden = false;
+    tokenInput.setAttribute('aria-invalid', 'true');
+    tokenInput.focus();
+    summary.textContent = 'Sign-in failed. Check the token field above.';
+    setStatus('Sign-in failed', 'error');
   } finally {
     loggingIn = false;
     connectButton.disabled = false;

@@ -4,7 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-function view(hash = '', connected = true) {
+function view(hash = '', connected = true, sessionStatus = 200) {
   const elements = new Map();
   const element = () => ({
     value: '', textContent: '', open: false, children: [], listeners: {},
@@ -15,7 +15,7 @@ function view(hash = '', connected = true) {
     contains() { return false; },
     showModal() { this.open = true; }, close() { this.open = false; this.listeners.close?.(); },
     before(node) { node.placedBefore = this; },
-    focus() { this.focused = true; }, scrollIntoView() {}, setAttribute(name, value) { this.attributes = { ...this.attributes, [name]: value }; }, classList: { add() {} }
+    focus() { this.focused = true; }, scrollIntoView() {}, getAttribute(name) { return this.attributes?.[name]; }, setAttribute(name, value) { this.attributes = { ...this.attributes, [name]: value }; }, classList: { add() {}, toggle() {} }
   });
   const get = id => {
     if (!elements.has(id)) elements.set(id, element());
@@ -36,7 +36,7 @@ function view(hash = '', connected = true) {
     setTimeout(fn, delay) { timers.set(++timerID, fn); timerDelays.set(timerID, delay); return timerID; },
     clearTimeout(id) { timers.delete(id); timerDelays.delete(id); },
     fetch(url, options) {
-      if (url.endsWith('/session')) return Promise.resolve({ ok: true, json: async () => ({ connected: false }) });
+      if (url.endsWith('/session')) return Promise.resolve({ ok: sessionStatus < 400, status: sessionStatus, json: async () => ({ connected: false }) });
       return new Promise((resolve, reject) => requests.push({ url, options, reject, reply(data, status = 200) {
         resolve({ ok: status < 400, status, text: async () => typeof data === 'string' ? data : JSON.stringify(data), json: async () => data });
       } }));
@@ -747,4 +747,130 @@ test('signed-in connection section is hidden and dialog heading receives focus',
   assert.doesNotMatch(v.get('memory-detail-meta').children[2].textContent, /:\d{2}:\d{2}/);
   v.ui.stop();
   assert.equal(v.get('connection-section').hidden, false);
+});
+
+test('long lists show eight memories first and reveal more without a fetch', () => {
+  const v = view();
+  const page = { records: Array.from({ length: 32 }, (_, i) => memory(i + 1)) };
+  v.ui.draw(page);
+  assert.equal(v.get('records').children[0].children.length, 8);
+  assert.equal(v.get('show-more').hidden, false);
+  v.get('show-more').listeners.click();
+  assert.equal(v.get('records').children[0].children.length, 16);
+  assert.equal(v.requests.length, 0);
+  v.ui.draw(page);
+  assert.equal(v.get('records').children[0].children.length, 16);
+});
+
+test('masthead devices link opens the connection panel', () => {
+  const v = view();
+  v.get('device-panel').open = false;
+  v.get('devices-link').listeners.click({ preventDefault() {} });
+  assert.equal(v.get('device-panel').open, true);
+});
+
+test('wrong token reports at the field and returns focus without a contradictory summary', async () => {
+  const v = view('', false, 401);
+  await tick();
+  v.get('token').value = 'synthetic-wrong-token';
+  await v.get('connection-form').listeners.submit({ preventDefault() {} });
+  assert.match(v.get('token-error').textContent, /owner access token/);
+  assert.equal(v.get('token-error').hidden, false);
+  assert.equal(v.get('token').focused, true);
+  assert.equal(v.get('token').attributes['aria-invalid'], 'true');
+  assert.equal(v.get('summary').textContent, 'Sign-in failed. Check the token field above.');
+});
+
+
+function inlineActions(v, record) {
+  v.ui.chooseView('review');
+  v.requests.at(-1).reply({ records: [record] });
+  return tick().then(() => v.get('records').children[0].children[0].children.at(-1));
+}
+
+test('inline confirm reads full content, uses expected revision, and replays uncertain writes', async () => {
+  const v = view();
+  const reference = { ...memory(21, 4, 'Short preview…'), confirmed: false, content_truncated: true };
+  const actions = await inlineActions(v, reference);
+  actions.children[0].listeners.click();
+  const read = v.requests.at(-1);
+  assert.equal(read.url, '/visualizer/api/record');
+  const full = memory(21, 4, 'Full synthetic memory. '.repeat(800));
+  full.confirmed = false;
+  read.reply(full);
+  await tick();
+  const write = v.requests.at(-1);
+  const body = JSON.parse(write.options.body);
+  assert.equal(write.url, '/visualizer/api/update');
+  assert.equal(body.content, full.content);
+  assert.equal(body.expected_revision, 4);
+  write.reject(new TypeError('synthetic network failure'));
+  await tick();
+  actions.children[0].listeners.click();
+  const retry = v.requests.at(-1);
+  assert.equal(retry.url, '/visualizer/api/update');
+  assert.equal(retry.options.body, write.options.body);
+  retry.reply({ revision: 5 });
+  await tick();
+  assert.equal(v.requests.at(-1).url, '/visualizer/api/context');
+});
+
+test('inline review refuses a concurrently changed memory and refreshes the list', async () => {
+  const v = view();
+  const actions = await inlineActions(v, { ...memory(22), confirmed: false });
+  actions.children[0].listeners.click();
+  v.requests.at(-1).reply(memory(22, 2, 'Concurrent correction.'));
+  await tick();
+  assert.equal(v.requests.some(request => request.url.endsWith('/update')), false);
+  assert.match(v.get('status').textContent, /Review the latest text/);
+  assert.equal(v.requests.at(-1).url, '/visualizer/api/context');
+});
+
+test('inline archive posts the existing revision and conflict never overwrites', async () => {
+  const v = view();
+  const actions = await inlineActions(v, { ...memory(23), confirmed: false });
+  actions.children[1].listeners.click();
+  v.requests.at(-1).reply({ ...memory(23), confirmed: false });
+  await tick();
+  const write = v.requests.at(-1);
+  assert.equal(write.url, '/visualizer/api/archive');
+  assert.deepEqual(withoutRequestID(JSON.parse(write.options.body)), { id: 23, expected_revision: 1, archived: true });
+  write.reply({ current: memory(23, 2) }, 409);
+  await tick();
+  assert.match(v.get('status').textContent, /Review the latest text/);
+  assert.equal(v.requests.at(-1).url, '/visualizer/api/context');
+});
+
+
+test('a poll redraw during inline review enables the current row after failure', async () => {
+  const v = view();
+  const record = { ...memory(24), confirmed: false };
+  const actions = await inlineActions(v, record);
+  actions.children[0].listeners.click();
+  v.requests.at(-1).reply(record);
+  await tick();
+  const write = v.requests.at(-1);
+  v.ui.draw({ records: [{ ...record, title: 'Changed list title' }] });
+  const current = v.get('records').children[0].children[0].children.at(-1);
+  assert.notEqual(current, actions);
+  assert.equal(current.children[0].disabled, true);
+  write.reject(new TypeError('synthetic connection failure'));
+  await tick();
+  assert.equal(current.children[0].disabled, false);
+  assert.equal(current.children[1].disabled, false);
+});
+
+test('an inline read from a former session cannot write into a new sign-in', async () => {
+  const v = view();
+  const record = { ...memory(25), confirmed: false };
+  const actions = await inlineActions(v, record);
+  actions.children[0].listeners.click();
+  const read = v.requests.at(-1);
+  v.ui.stop(true);
+  v.ui.setConnected(true);
+  const count = v.requests.length;
+  read.reply(record);
+  await tick();
+  assert.equal(v.requests.length, count);
+  assert.equal(v.requests.some(request => request.url.endsWith('/update')), false);
 });
