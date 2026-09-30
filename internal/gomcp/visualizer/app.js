@@ -121,7 +121,8 @@ function updateFilterLabel() {
   filterToggle.textContent = `Filters ${expanded ? '▾' : '▸'}${!expanded && count ? ` (${count})` : ''}`;
 }
 function updateTabsHint() {
-  document.getElementById('tabs-hint').hidden = !active || viewTabs.scrollWidth <= viewTabs.clientWidth + 1 || viewTabs.scrollLeft >= viewTabs.scrollWidth - viewTabs.clientWidth - 1;
+  const more = active && viewTabs.scrollWidth > viewTabs.clientWidth + 1 && viewTabs.scrollLeft < viewTabs.scrollWidth - viewTabs.clientWidth - 1;
+  document.getElementById('tabs-wrap').setAttribute('data-overflow', String(more));
 }
 viewTabs.addEventListener('scroll', updateTabsHint);
 window.addEventListener('resize', updateTabsHint);
@@ -521,7 +522,18 @@ function scopeInput() {
   const view = [viewNames[listView], projectView, device || 'All devices', platforms[platform] || 'All platforms', scope.purpose && kindNames[scope.purpose]].filter(Boolean);
   scopeSummary.title = project || '';
   const description = view.join(' · ');
-  if (scopeSummary.textContent !== description) scopeSummary.textContent = description;
+  if (scopeSummary.textContent !== description) {
+    const segments = [];
+    view.forEach((text, index) => {
+      if (index) { const separator = document.createElement('span'); separator.className = 'scope-separator'; separator.textContent = ' · '; segments.push(separator); }
+      const segment = document.createElement('span');
+      segment.className = 'scope-segment';
+      segment.textContent = text;
+      segment.title = index === 1 && project ? project : text;
+      segments.push(segment);
+    });
+    scopeSummary.replaceChildren(...segments);
+  }
   if (projectSelect.value === manualChoice && !project) return null;
   if (deviceSelect.value === manualChoice && !device) return null;
   return scope;

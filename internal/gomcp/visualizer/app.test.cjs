@@ -21,7 +21,11 @@ function view(hash = '', connected = true, sessionStatus = 200, options = {}) {
     focus() { this.focused = true; }, scrollIntoView() {}, getAttribute(name) { return this.attributes?.[name]; }, setAttribute(name, value) { this.attributes = { ...this.attributes, [name]: value }; }, classList: { add() {}, toggle() {} }
   });
   const get = id => {
-    if (!elements.has(id)) elements.set(id, element());
+    if (!elements.has(id)) {
+      const node = element();
+      if (id === 'scope-summary') Object.defineProperty(node, 'textContent', { get() { return this.children.map(child => child.textContent).join(''); }, set(value) { this.children = [{textContent:value}]; } });
+      elements.set(id, node);
+    }
     return elements.get(id);
   };
   const requests = [];
@@ -1418,9 +1422,9 @@ test('token help and settings labels are concise and tabs have an overflow cue',
   assert.match(html, /Skip to settings/);
   assert.match(html, /hidden>Settings<\/a>/);
   assert.match(html, /Selected filters/);
-  assert.match(html, /Search words and startup-preview limits are not applied/);
+  assert.match(html, /Uses your filters, not your search or the startup preview/);
   assert.match(html, /Ends sign-in on every browser, including this one/);
-  assert.match(html, /Scroll sideways/);
+  assert.match(html, /scroll horizontally/);
   assert.match(css, /\.view-tabs \{ flex-wrap:nowrap; overflow-x:auto/);
   assert.match(css, /\.record-title \{ margin-top:0; min-height:44px/);
   assert.match(css, /\.masthead,main \{ max-width:78ch/);
@@ -1443,10 +1447,28 @@ test('tab overflow cue disappears when views fit or the end is visible', () => {
   const tabs=v.get('view-tabs');
   tabs.clientWidth=300; tabs.scrollWidth=500; tabs.scrollLeft=0;
   tabs.listeners.scroll();
-  assert.equal(v.get('tabs-hint').hidden,false);
+  assert.equal(v.get('tabs-wrap').attributes['data-overflow'],'true');
   tabs.scrollLeft=200; tabs.listeners.scroll();
-  assert.equal(v.get('tabs-hint').hidden,true);
+  assert.equal(v.get('tabs-wrap').attributes['data-overflow'],'false');
   tabs.scrollLeft=0; tabs.clientWidth=600;
   v.windowListeners.resize();
-  assert.equal(v.get('tabs-hint').hidden,true);
+  assert.equal(v.get('tabs-wrap').attributes['data-overflow'],'false');
+});
+
+
+test('scope labels stay whole with bounded raw identifiers and concise settings help', async () => {
+  const v=view();
+  v.get('project').value='id:'+'x'.repeat(400);
+  v.ui.restartMemoryView();
+  const segments=v.get('scope-summary').children;
+  assert.equal(segments[0].className,'scope-segment');
+  assert.equal(segments[1].className,'scope-separator');
+  assert.equal(segments[2].title,v.get('project').value);
+  const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+  const css=fs.readFileSync(path.join(__dirname,'style.css'),'utf8');
+  assert.doesNotMatch(html, /More views →|<h4>/);
+  assert.match(html, /aria-label="Waiting for approval"/);
+  assert.match(html, /Uses your filters, not your search or the startup preview/);
+  assert.match(css, /scrollbar-width:none/);
+  assert.match(css, /\.scope-segment .*white-space:nowrap/);
 });
