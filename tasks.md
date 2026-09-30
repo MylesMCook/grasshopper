@@ -11,8 +11,8 @@ eight published digests, packaged quickstart, restored-copy upgrade and 2.8.3
 rollback pass. Mac service and three installed Mac connectors run 2.8.4;
 live owner/session/data/assets and public browser checks pass. Pre/post encrypted
 off-host backup checks pass. [Delivery evidence and limits](docs/memory-acceptance.md#284-final-ui-release-and-rollout-september-30).
-Codex owns documentation-only delivery receipt on `codex/ui-final-receipt` in an
-isolated managed worktree; review/CI/merge remain. Primary checkout, prior
+Documentation-only delivery receipt: PR #27 on `codex/ui-final-receipt` in an
+isolated managed worktree; the PR records review and final CI. Primary checkout, prior
 packages, recovery files and unrelated evidence remain preserved. Existing chats
 may retain older bridges until reopened.
 
