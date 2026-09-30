@@ -15,9 +15,9 @@
   <a class="skip-link" href="#device-panel">Skip to settings</a>
     <header class="masthead"><span class="brand">GRASSHOPPER</span><nav class="masthead-actions" aria-label="Grasshopper"><a id="devices-link" href="#device-panel" hidden>Settings</a><a href="https://usegrasshopper.com/">How it works</a><button id="disconnect" type="button" class="quiet" disabled hidden>Sign out</button><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button></nav></header>
   <main>
-    <section class="intro" aria-labelledby="page-title">
+    <section id="page-intro" class="intro" aria-labelledby="page-title">
       <h1 id="page-title">Your memories.</h1>
-      <p>Preferences, decisions, and handoffs shared with your agents.</p>
+      <p id="intro-subtitle">Preferences, decisions, and handoffs shared with your agents.</p>
     </section>
 
     <section id="connection-section" class="connection" aria-labelledby="connect-title">
@@ -57,7 +57,7 @@
           <label>Platform <select id="platform" aria-describedby="scope-note"><option value="">All platforms</option><option value="macos">macOS</option><option value="windows">Windows</option><option value="linux">Linux</option></select></label>
           <label id="kind-filter">Kind <select id="purpose"><option value="">All kinds</option><option value="preference">Preference</option><option value="decision">Decision</option><option value="lesson">Lesson</option><option value="handoff">Handoff</option><option value="observation">Observation</option></select></label>
         </div>
-        <p id="scope-note" class="scope-note">Choosing a project also shows global memories. Device and platform filters keep shared memories visible. Filters change what you see, not who can access it.</p>
+        <details class="about-filters"><summary>About filters</summary><p id="scope-note" class="scope-note">Choosing a project also shows global memories. Device and platform filters keep shared memories visible. Filters change what you see, not who can access it.</p></details>
         </div>
       </div>
       <div id="startup-controls" class="startup-controls" hidden>

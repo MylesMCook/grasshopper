@@ -10,8 +10,7 @@ const copyStatus = document.getElementById('copy-status');
 const releaseVersion = '__GRASSHOPPER_RELEASE_VERSION__';
 const copyButtons = document.querySelectorAll('.copy-command');
 const copyTimers = new Map();
-const mobileCommands = window.matchMedia('(max-width:479px)');
-const copyLabels = new Map(Array.from(copyButtons, button => [button, mobileCommands.matches ? 'Copy' : 'Copy command']));
+const copyLabels = new Map(Array.from(copyButtons, button => [button, 'Copy']));
 let copyGeneration = 0;
 
 function resetCopy(button) {
@@ -26,11 +25,26 @@ function resetCopyFeedback() {
   copyStatus.textContent = '';
 }
 
-mobileCommands.addEventListener('change', () => {
-  for (const button of copyButtons) copyLabels.set(button, mobileCommands.matches ? 'Copy' : 'Copy command');
+const agentChoice = document.getElementById('connector-agent');
+const agentArticles = document.querySelectorAll('[data-agent]');
+const agentKey = 'grasshopper-setup-agent';
+const agentValues = ['all', 'codex', 'cursor', 'claude'];
+function chooseAgent() {
+  if (!agentValues.includes(agentChoice.value)) agentChoice.value = 'all';
   resetCopyFeedback();
+  for (const article of agentArticles) {
+    const hide = agentChoice.value !== 'all' && article.dataset.agent !== agentChoice.value;
+    if (hide && article.contains(document.activeElement)) agentChoice.focus();
+    article.hidden = hide;
+  }
+  try { localStorage.setItem(agentKey, agentChoice.value); } catch {}
   updateOverflow();
-});
+}
+try {
+  const saved = localStorage.getItem(agentKey);
+  if (agentValues.includes(saved)) agentChoice.value = saved;
+} catch {}
+agentChoice.addEventListener('change', chooseAgent);
 
 function chooseOS() {
   if (!['macos', 'windows', 'linux'].includes(osChoice.value)) return;
@@ -50,10 +64,12 @@ function chooseOS() {
 }
 const commandAreas = document.querySelectorAll('.command pre');
 for (const pre of commandAreas) pre.addEventListener('scroll', updateOverflow);
+for (const details of document.querySelectorAll('.claude-alternative')) details.addEventListener('toggle', updateOverflow);
 window.addEventListener('resize', updateOverflow);
 document.fonts?.ready.then(updateOverflow);
 osChoice.addEventListener('change', chooseOS);
 chooseOS();
+chooseAgent();
 
 for (const button of copyButtons) {
   const command = button.previousElementSibling;
