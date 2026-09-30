@@ -1,3 +1,10 @@
+const purposeSelect = document.getElementById('purpose');
+const disconnectAll = document.getElementById('disconnect-all');
+const exportControls = document.getElementById('export-controls');
+let pageETag = '';
+let moreInFlight = null;
+let undoState = null;
+let undoTimer = null;
 const connectionSection = document.getElementById('connection-section');
 const editTitleCount = document.getElementById('edit-title-count');
 const editContentCount = document.getElementById('edit-content-count');
@@ -111,7 +118,7 @@ filterToggle.addEventListener('click', () => {
 showMore.addEventListener('click', () => {
   visibleLimit += 8;
   lastSignature = '';
-  if (latestPage) draw(latestPage);
+  if (latestPage) { draw(latestPage); if (visibleLimit > latestPage.records.length && latestPage.next) loadMore(); }
 });
 devicesLink.addEventListener('click', event => {
   event.preventDefault();
@@ -171,7 +178,7 @@ updateProjectOptions([], false);
 updateDeviceOptions([], false);
 projectSelect.addEventListener('change', () => { showManualProject(); restartMemoryView(); });
 deviceSelect.addEventListener('change', () => { showManualDevice(); restartMemoryView(); });
-for (const input of [manualProjectInput, manualDeviceInput, document.getElementById('platform'), startupAgent]) input.addEventListener('change', restartMemoryView);
+for (const input of [manualProjectInput, manualDeviceInput, document.getElementById('platform'), startupAgent, purposeSelect]) input.addEventListener('change', restartMemoryView);
 
 function setStatus(message, kind = '') {
   if (status.textContent !== message) status.textContent = message;
@@ -193,6 +200,8 @@ function setConnected(value) {
   refreshButton.hidden = !value;
   disconnectButton.disabled = !value;
   disconnectButton.hidden = !value;
+  disconnectAll.hidden = !value;
+  exportControls.hidden = !value;
   browseControls.hidden = !value;
   scopeSummary.hidden = !value;
   devicePanel.hidden = !value;
@@ -210,6 +219,10 @@ function stop(clearRecords = false) {
   if (inFlight) inFlight.abort();
   inFlight = null;
   stopDeviceRefresh();
+  pageETag = "";
+  moreInFlight?.abort();
+  moreInFlight = null;
+  clearUndo();
   pollFailures = 0;
   resetDeviceRows();
   closeMemory(true);
@@ -468,6 +481,7 @@ function scopeInput() {
   if (project) scope.project = project;
   if (device) scope.device = device;
   if (platform) scope.platform = platform;
+  if (purposeSelect.value && listView !== "startup") scope.purpose = purposeSelect.value;
   const platforms = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
   const projectView = allProjects ? 'All projects' : project ? `${project} + global memories` : listView === 'startup' && projectSelect.value === '' ? 'No project chosen · global memories only' : 'Global memories only';
   const view = [projectView, device || 'All devices', platforms[platform] || 'All platforms'];
@@ -616,7 +630,9 @@ async function loadRecord(revision = null) {
     if (revision === null) { selected.maximumRevision = record.revision; selected.record = record; }
     detailTitle.textContent = record.title || `Memory #${record.id}`;
     detailContent.textContent = record.content;
+    detailContent.className = record.purpose === "handoff" ? "record-content handoff-content" : "record-content";
     detailMeta.replaceChildren(...recordMetadata(record).map(label));
+    if (record.revision > 1 && record.provenance?.harness === "memory-view") showOriginalSource(selected, record);
     revisionLabel.textContent = `Memory #${record.id} · Revision ${record.revision} of ${selected.maximumRevision}`;
     history.hidden = false;
     detailStatus.textContent = record.revision === selected.maximumRevision ? 'Latest saved revision' : 'Earlier revision · current memory is unchanged';
@@ -859,15 +875,16 @@ async function reviewInline(reference, archived, actions) {
       }
       pending = { path: archived ? '/visualizer/api/archive' : '/visualizer/api/update', body: {
         id: record.id, expected_revision: record.revision,
-        ...(archived ? { archived: true } : { title: record.title || '', content: record.content, purpose: record.purpose }),
+        ...(archived ? { archived: true } : { action: 'confirm' }),
         request_id: newRequestID()
       } };
       inlineWrites.set(key, pending);
     }
-    const { status: writeStatus } = await postOwner(pending.path, pending.body);
+    const { status: writeStatus, data: receipt } = await postOwner(pending.path, pending.body);
     if (!currentSession()) return;
     if (writeStatus === 200) {
       inlineWrites.delete(key);
+      if (archived) offerUndo(reference, receipt.revision);
       setStatus(archived ? 'Memory archived. Restore it from Archived.' : 'Memory confirmed.', 'live');
       refreshList();
     } else if (writeStatus === 401) { stop(true); setStatus('Session expired', 'error'); }
@@ -909,7 +926,7 @@ async function saveMemoryEdit(event) {
 async function confirmMemory() {
   const record = detailState?.record;
   if (!record) return;
-  await changeMemory('/visualizer/api/update', { title: record.title || '', content: record.content, purpose: record.purpose }, async receipt => {
+  await changeMemory('/visualizer/api/update', { action: 'confirm' }, async receipt => {
     await loadRecord();
     detailStatus.textContent = `Confirmed as revision ${receipt.revision}.`;
     refreshList();
@@ -919,7 +936,8 @@ async function confirmMemory() {
 async function setArchived(archived) {
   const record = detailState?.record;
   if (!record) return;
-  await changeMemory('/visualizer/api/archive', { archived }, async () => {
+  await changeMemory('/visualizer/api/archive', { archived }, async receipt => {
+    if (archived) offerUndo(record, receipt.revision);
     const name = record.title || `Memory #${record.id}`;
     closeMemory();
     setStatus(archived ? `Archived “${name}”. Restore it from Archived.` : `Restored “${name}”.`, 'live');
@@ -1002,6 +1020,7 @@ function restartMemoryView() {
     askToLeaveDraft(() => { setRouteFields(desired); restartMemoryView(); });
     return;
   }
+  clearUndo();
   linkedMemory = null;
   saveRoute();
   restartList();
@@ -1015,6 +1034,9 @@ function restartList() {
   records.replaceChildren();
   showMore.hidden = true;
   latestPage = null;
+  pageETag = "";
+  moreInFlight?.abort();
+  moreInFlight = null;
   visibleLimit = 8;
   omissions.hidden = true;
   lastSignature = '';
@@ -1043,19 +1065,19 @@ function routeFromHash() {
   const connect = params.get('connect') || '';
   return { view: Object.hasOwn(viewNames, view) ? view : '', project: bounded('project', 512),
     device: bounded('device', 256), platform: ['macos', 'windows', 'linux'].includes(params.get('platform')) ? params.get('platform') : '',
-    query: bounded('query', 4096), memory: Number.isSafeInteger(id) && id > 0 ? id : null,
+    purpose: ['preference', 'decision', 'lesson', 'handoff', 'observation'].includes(params.get('purpose')) ? params.get('purpose') : '', query: bounded('query', 4096), memory: Number.isSafeInteger(id) && id > 0 ? id : null,
     connect: /^[0-9a-f]{64}$/.test(connect) ? connect : '' };
 }
 
 function routeFromFields() {
   return { view: listView, project: projectSelect.value === manualChoice ? manualProjectInput.value.trim() : projectSelect.value,
     device: deviceSelect.value === manualChoice ? manualDeviceInput.value.trim() : deviceSelect.value,
-    platform: document.getElementById('platform').value, query: searchQuery, memory: linkedMemory, connect: approvalID };
+    purpose: purposeSelect.value, platform: document.getElementById('platform').value, query: searchQuery, memory: linkedMemory, connect: approvalID };
 }
 
 function routeHash(route) {
   const params = new URLSearchParams();
-  for (const key of ['connect', 'view', 'project', 'device', 'platform', 'query', 'memory']) {
+  for (const key of ['connect', 'view', 'project', 'device', 'platform', 'purpose', 'query', 'memory']) {
     if (route?.[key]) params.set(key, String(route[key]));
   }
   const hash = params.toString();
@@ -1073,6 +1095,7 @@ function saveRoute() {
 
 function setRouteFields(route) {
   if (!route) return;
+  purposeSelect.value = route.purpose || "";
   listView = route.view;
   searchQuery = route.query;
   searchInput.value = searchQuery;
@@ -1161,7 +1184,7 @@ let lastNotLoaded = '';
 function drawNotLoaded(page) {
   const items = page.not_loaded || [];
   const count = page.records?.length || 0;
-  summary.textContent = `${count} ${count === 1 ? 'memory loads' : 'memories load'} at startup within ${Number(page.budget).toLocaleString()} bytes${items.length ? ` · ${items.length} not loaded` : ''}`;
+  summary.textContent = `${count} ${count === 1 ? 'memory loads' : 'memories load'} at startup within ${Number(page.budget).toLocaleString()} bytes${items.length ? ` · ${page.not_loaded_total || items.length} not loaded` : ''}`;
   notLoaded.hidden = !items.length;
   // A memory's title and scope change only with its revision, so this identifies what is drawn.
   const signature = JSON.stringify(items.map(item => [item.id, item.revision, item.reason]));
@@ -1195,8 +1218,8 @@ function draw(page) {
   latestPage = page;
   const items = page.records || [];
   const omitted = page.omitted || 0;
-  showMore.hidden = items.length <= visibleLimit;
-  showMore.textContent = `Show more memories (${Math.max(0, items.length - visibleLimit)} remaining)`;
+  showMore.hidden = items.length <= visibleLimit && !page.next;
+  showMore.textContent = `Show more memories (${Math.max(0, (page.total || items.length) - visibleLimit)} remaining)`;
   omissions.hidden = !omitted;
   const omissionSignature = JSON.stringify([omitted, page.omitted_records, page.omitted_titles]);
   if (omitted && omissionSignature !== lastOmissionSignature) {
@@ -1252,7 +1275,7 @@ function draw(page) {
     const heading = document.createElement('h3');
     highlightMatches(heading, record.title || `Memory #${record.id}`);
     const content = document.createElement('p');
-    content.className = 'record-content';
+    content.className = record.purpose === 'handoff' ? 'record-content handoff-content' : 'record-content';
     const preview = Array.from(record.content || '');
     highlightMatches(content, record.content_truncated || preview.length > 240 ? preview.slice(0, 240).join('') + '…' : record.content);
     const state = document.createElement('p');
@@ -1301,7 +1324,7 @@ function draw(page) {
 }
 
 async function refresh() {
-  if (!active || inFlight || document.hidden) return;
+  if (!active || inFlight || moreInFlight || document.hidden) return;
   clearTimeout(timer);
   timer = null;
   const controller = new AbortController();
@@ -1317,17 +1340,39 @@ async function refresh() {
     const startup = listView === 'startup';
     const response = await fetch(startup ? '/visualizer/api/startup' : searchQuery ? '/visualizer/api/search' : '/visualizer/api/context', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(!searchQuery && pageETag ? { 'If-None-Match': pageETag } : {}) },
       body: JSON.stringify(startup ? { scope: startupScope(scope), budget: Number(startupAgent.value) || 12000 } : searchQuery ? { scope, query: searchQuery } : scope),
       cache: 'no-store',
       credentials: 'same-origin',
       signal: controller.signal
     });
+    if (response.status === 304) { pollFailures = 0; return; }
     if (!response.ok) throw new Error(response.status === 401 ? 'Session expired' : response.status === 400 ? 'Scope not recognized' : 'Service unavailable');
     const page = await response.json();
     // A disconnected or replaced request must not redraw an older session.
     if (!active || inFlight !== controller) return;
     pollFailures = 0;
+    const responseETag = response.headers?.get('ETag') || '';
+    // If the snapshot changed, rebuild the loaded range from its new cursor.
+    // Retaining old tail records would leave archived or edited memories stale.
+    if (!startup && !searchQuery && latestPage?.records.length > (page.records || []).length) {
+      const target = latestPage.records.length;
+      const seen = new Set();
+      while (page.next && page.records.length < target && !seen.has(page.next)) {
+        seen.add(page.next);
+        const nextResponse = await fetch('/visualizer/api/context', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...scope, after: page.next }), cache: 'no-store', credentials: 'same-origin', signal: controller.signal
+        });
+        if (!nextResponse.ok) throw new Error('Could not refresh loaded memories');
+        const nextPage = await nextResponse.json();
+        if (!active || inFlight !== controller) return;
+        const ids = new Set(page.records.map(record => record.id));
+        page.records.push(...(nextPage.records || []).filter(record => !ids.has(record.id)));
+        page.next = nextPage.next;
+      }
+    }
+    pageETag = responseETag;
     if (startup) {
       draw(page);
       drawNotLoaded(page);
@@ -1468,3 +1513,79 @@ applyRoute(routeFromHash(), false);
     if (!loggingIn && !active) setStatus('Service unavailable', 'error');
   }
 })();
+
+function clearUndo() {
+  clearTimeout(undoTimer);
+  undoState = null;
+  document.getElementById('archive-undo').hidden = true;
+}
+function offerUndo(record, revision) {
+  clearUndo();
+  undoState = { id: record.id, expected_revision: revision, archived: false, request_id: newRequestID() };
+  document.getElementById('archive-undo-label').textContent = `Archived “${record.title || `Memory #${record.id}`}”.`;
+  document.getElementById('archive-undo').hidden = false;
+  undoTimer = setTimeout(clearUndo, 10000);
+}
+document.getElementById('undo-archive').addEventListener('click', async () => {
+  const pending = undoState;
+  if (!pending) return;
+  try {
+    const { status } = await postOwner('/visualizer/api/archive', pending);
+    if (pending !== undoState) return;
+    if (status === 200) { clearUndo(); pageETag = ''; setStatus('Memory restored.', 'live'); refreshList(); }
+    else if (status === 409) { clearUndo(); setStatus('Memory changed. Open Archived to review it.', 'error'); }
+    else { clearTimeout(undoTimer); undoTimer = setTimeout(clearUndo, 10000); setStatus('Could not restore. Try Undo again.', 'error'); }
+  } catch { if (pending === undoState) { clearTimeout(undoTimer); undoTimer = setTimeout(clearUndo, 10000); setStatus('Could not restore. Try Undo again.', 'error'); } }
+});
+disconnectAll.addEventListener('click', () => {
+  askToLeaveDraft(signOutEverywhere);
+});
+async function signOutEverywhere() {
+  const generation = sessionGeneration;
+  try {
+    const { status } = await postOwner('/visualizer/api/session/revoke-all', {});
+    if (generation !== sessionGeneration) return;
+    if (status >= 200 && status < 300) { stop(true); setStatus('Signed out everywhere'); }
+    else setStatus('Could not sign out everywhere. Try again.', 'error');
+  } catch { if (generation === sessionGeneration) setStatus('Could not sign out everywhere. Try again.', 'error'); }
+}
+document.getElementById('export-memory').addEventListener('click', async () => {
+  const generation = sessionGeneration;
+  try {
+    const { status, data } = await postOwner('/visualizer/api/export', { scope: scopeInput(), all: document.getElementById('export-mode').value === 'all', include_archived: document.getElementById('export-archived').checked === true });
+    if (!active || generation !== sessionGeneration) return;
+    if (status !== 200) throw new Error();
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'grasshopper-memories.json'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatus('JSON downloaded.', 'live');
+  } catch { if (active && generation === sessionGeneration) setStatus('Could not export memories. Try again.', 'error'); }
+});
+async function loadMore() {
+  if (!active || moreInFlight || !latestPage?.next || searchQuery || listView === 'startup') return;
+  const selected = latestPage;
+  const generation = sessionGeneration;
+  const controller = new AbortController(); moreInFlight = controller;
+  showMore.disabled = true;
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch('/visualizer/api/context', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...scopeInput(), after: selected.next }), credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
+    if (response.status === 401) { stop(true); setStatus('Session expired', 'error'); return; }
+    if (!response.ok) throw new Error();
+    const page = await response.json();
+    if (!active || generation !== sessionGeneration || moreInFlight !== controller) return;
+    const existing = latestPage.records;
+    const ids = new Set(existing.map(record => record.id));
+    draw({ ...latestPage, records: [...existing, ...(page.records || []).filter(record => !ids.has(record.id))], next: page.next, total: page.total });
+  } catch { if (moreInFlight === controller) setStatus('Could not load more. Try again, or Refresh to reload an expired list.', 'error'); }
+  finally { clearTimeout(timeout); if (moreInFlight === controller) { moreInFlight = null; showMore.disabled = false; if (active && !document.hidden) { clearTimeout(timer); timer = setTimeout(refresh, 3000); } } }
+}
+
+async function showOriginalSource(selected, shown) {
+  try {
+    const { status, data } = await postOwner('/visualizer/api/record', { scope: selected.scope, id: selected.id, revision: 1 });
+    if (status === 200 && active && detailState === selected && selected.revision === shown.revision) {
+      detailMeta.append(label(`Originally saved by ${data.provenance?.harness || 'an unknown agent'} on ${data.provenance?.device || 'an unknown device'}.`));
+    }
+  } catch { /* Current provenance and revision history remain available. */ }
+}

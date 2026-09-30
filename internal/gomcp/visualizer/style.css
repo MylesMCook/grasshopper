@@ -140,3 +140,12 @@ dialog[open] { display:flex; flex-direction:column; }
   .detail-heading,.detail-footer { padding:12px 16px; }
   .detail-body { padding:0 16px 16px; }
 }
+
+.masthead { width:min(100% - 48px,960px); margin:20px auto 0; }
+.record h3,.record-state,.record-top,.record-meta,.device-label,.status,.summary,.scope-summary,.history,.omitted-links button { min-width:0; overflow-wrap:anywhere; }
+.record:focus-within { outline:2px solid var(--focus); outline-offset:3px; }
+.skip-link { position:absolute; top:0; left:16px; transform:translateY(-150%); background:var(--paper); padding:10px; z-index:3; }
+.skip-link:focus { transform:none; }
+.handoff-content { font:1rem/1.55 "Geist Mono",ui-monospace,monospace; }
+#archive-undo { margin:16px 0; overflow-wrap:anywhere; }
+@media(max-width:700px) { .masthead { width:calc(100% - 32px); } }

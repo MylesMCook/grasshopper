@@ -5,14 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="data:,">
+  <script src="/visualizer/theme-init.js"></script>
   <link rel="stylesheet" href="/visualizer/style.css">
   <script src="/visualizer/theme.js" defer></script>
   <script src="/visualizer/app.js" defer></script>
   <title>Grasshopper · Live memory</title>
 </head>
 <body>
+  <a class="skip-link" href="#device-panel">Skip to devices</a>
+    <header class="masthead"><span class="brand">GRASSHOPPER</span><nav class="masthead-actions" aria-label="Grasshopper"><a id="devices-link" href="#device-panel" hidden>Devices</a><a href="https://usegrasshopper.com/">How it works</a><button id="disconnect" type="button" class="quiet" disabled hidden>Sign out</button><button id="disconnect-all" type="button" class="quiet" hidden>Sign out everywhere</button><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button></nav></header>
   <main>
-    <header class="masthead"><span class="brand">GRASSHOPPER</span><div class="masthead-actions"><a id="devices-link" href="#device-panel" hidden>Devices</a><a href="https://usegrasshopper.com/">How it works</a><button id="disconnect" type="button" class="quiet" disabled hidden>Sign out</button><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button></div></header>
     <section class="intro" aria-labelledby="page-title">
       <h1 id="page-title">Your memories.</h1>
       <p>Preferences, decisions, and handoffs shared with your agents.</p>
@@ -24,7 +26,7 @@
       <form id="connection-form" autocomplete="off">
         <div id="token-field" class="token-field">
           <label>Owner access token <input id="token" type="password" autocomplete="off" required spellcheck="false" aria-describedby="token-error token-help"></label>
-          <p id="token-error" class="token-error" role="alert" hidden></p><p id="token-help">Ask the person who runs your Grasshopper server for its owner access token using a private channel. If you run it, use the owner token file named at server startup. A device token cannot sign in here. Never paste the token into an agent chat. This browser stays signed in for 30 days; Sign out forgets it.</p>
+          <p id="token-error" class="token-error" role="alert" hidden></p><p id="token-help">Ask the person who runs your Grasshopper server for its owner access token using a private channel. If you run it, use the owner token file named at server startup. A device token cannot sign in here. Never paste the token into an agent chat. This browser stays signed in for 7 days; Sign out forgets this browser. Sign out everywhere ends all owner browser sessions.</p>
         </div>
         <div class="actions"><button id="connect" type="submit">Sign in</button></div>
       </form>
@@ -52,6 +54,7 @@
           <div class="filter-field"><label>Device <select id="device" aria-describedby="scope-note"><option value="">All devices</option></select></label>
           <label id="manual-device-label" hidden>Device ID <input id="manual-device" type="text" placeholder="Exact device ID" spellcheck="false"></label></div>
           <label>Platform <select id="platform" aria-describedby="scope-note"><option value="">All platforms</option><option value="macos">macOS</option><option value="windows">Windows</option><option value="linux">Linux</option></select></label>
+          <label>Kind <select id="purpose"><option value="">All kinds</option><option value="preference">Preference</option><option value="decision">Decision</option><option value="lesson">Lesson</option><option value="handoff">Handoff</option><option value="observation">Observation</option></select></label>
         </div>
         <p id="scope-note" class="scope-note">A project view includes global memories, and device and platform filters keep shared memories visible. These filters organize what you see; they do not restrict access.</p>
         </div>
@@ -61,6 +64,8 @@
         <p class="scope-note">This is what the server would send an agent at startup for the project, device and platform chosen above. Agents always send all three, so choose them for an exact match. It does not prove a running session received these memories; a fresh agent session is the real check. Claude Code also skips every record if its whole startup message would be too long.</p>
       </div>
       <div class="results-heading"><div><p id="scope-summary" class="scope-summary" hidden></p><p id="summary" class="summary">Sign in to see what is saved.</p></div><div class="results-actions"><span id="status" class="status" role="status" aria-live="polite">Signed out</span><button id="refresh" type="submit" form="connection-form" class="quiet" hidden>Refresh</button></div></div>
+      <div id="export-controls" class="actions" hidden><label>Export <select id="export-mode"><option value="filtered">Current filters</option><option value="all">All memories</option></select></label><label><input id="export-archived" type="checkbox"> Include archived</label><button id="export-memory" type="button" class="quiet">Download JSON</button></div>
+      <p id="archive-undo" role="status" hidden><span id="archive-undo-label"></span> <button id="undo-archive" type="button" class="quiet">Undo archive</button></p>
       <div id="omissions" class="omissions" hidden></div>
       <div id="records" class="records" aria-live="off"></div>
       <button id="show-more" type="button" class="quiet show-more" hidden>Show more memories</button>

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <link rel="canonical" href="https://usegrasshopper.com/setup/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <meta name="description" content="Download Grasshopper and start a private memory server on your own machine.">
@@ -11,7 +12,8 @@
   <meta property="og:image:alt" content="Grasshopper memory view with invented example memories.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://usegrasshopper.com/setup/">
-  <link rel="icon" href="data:,">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <script src="/theme-init.js"></script>
   <link rel="stylesheet" href="/site.css">
   <script src="/theme.js" defer></script>
   <script src="/setup.js" defer></script>
@@ -19,7 +21,7 @@
 </head>
 <body>
   <div class="wrap">
-    <header class="top"><a class="brand" href="/">GRASSHOPPER</a><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button><nav aria-label="Page"><a href="/">Home</a><a href="/setup/" aria-current="page">Set up</a><a href="/view/">Memory view</a></nav></header>
+    <header class="top"><a class="brand" href="/">GRASSHOPPER</a><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button><nav aria-label="Grasshopper"><a href="/">Home</a><a href="/setup/" aria-current="page">Set up</a><a href="/view/">Memory view</a></nav></header>
     <main class="view-main">
       <h1>Connect your agents.</h1>
       <p class="lead">Start one private Grasshopper server first, then install a connector on each machine that uses it.</p>
@@ -41,7 +43,7 @@
       </section>
       <section aria-labelledby="connect-title">
         <div class="heading"><h2 id="connect-title">3. Connect once</h2></div>
-        <p class="intro">Ask the agent: <strong>Connect Grasshopper.</strong> On a new machine, give it your private server link when asked. Open its approval link in your already-connected memory view, match the device and code, then approve. No token goes through the agent.</p>
+        <p class="intro">Ask the agent: <strong>Connect Grasshopper.</strong> On a new machine, give it your private server link when asked. Open its approval link in your signed-in memory view, match the device and code, then approve. No token goes through the agent.</p>
         <p class="intro">A connection check shows the registered device and approval state. If the server is offline, your saved connection stays in place. Windows agents share one connection under your user profile.</p>
         <p class="note">Codex may ask you to trust its hook and allow network access to your private server; Cursor may ask you to enable Grasshopper MCP. Start a fresh session after that native step. The connection is reused by agents on this machine.</p>
       </section>

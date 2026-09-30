@@ -401,12 +401,12 @@ test('a conflicting save keeps the draft, shows the newer text, and saves agains
   assert.equal(JSON.parse(v.requests.at(-1).options.body).expected_revision, 2);
 });
 
-test('confirm as is resends the existing text, and archive and restore change visibility', async () => {
+test('confirm as is preserves existing provenance, and archive and restore change visibility', async () => {
   const v = view();
   await openLatest(v, { ...memory(10, 1), confirmed: false });
   v.get('confirm-memory').listeners.click();
   let request = v.requests.at(-1);
-  assert.deepEqual(withoutRequestID(JSON.parse(request.options.body)), { id: 10, expected_revision: 1, title: 'Synthetic decision', content: 'Synthetic saved decision.', purpose: 'decision' });
+  assert.deepEqual(withoutRequestID(JSON.parse(request.options.body)), { id: 10, expected_revision: 1, action: 'confirm' });
   request.reply({ id: 10, revision: 2, deduplicated: false });
   await tick();
   v.requests.at(-1).reply({ ...memory(10, 2), confirmed: true });
@@ -837,7 +837,8 @@ test('inline confirm reads full content, uses expected revision, and replays unc
   const write = v.requests.at(-1);
   const body = JSON.parse(write.options.body);
   assert.equal(write.url, '/visualizer/api/update');
-  assert.equal(body.content, full.content);
+  assert.equal(body.action, 'confirm');
+  assert.equal(body.content, undefined);
   assert.equal(body.expected_revision, 4);
   write.reject(new TypeError('synthetic network failure'));
   await tick();
@@ -1062,4 +1063,92 @@ test('restoring a stale revision shows the newer memory without overwriting it',
   assert.equal(v.get('memory-detail-content').textContent, 'Newest agent text.');
   assert.match(v.get('memory-detail-status').textContent, /changed while you were looking/);
   assert.equal(v.get('restore-revision').hidden, true);
+});
+
+test('kind filter survives reload and scopes both lists and searches', async () => {
+  const v = view('#purpose=handoff');
+  assert.equal(v.get('purpose').value, 'handoff');
+  const loading = v.ui.refresh();
+  assert.equal(JSON.parse(v.requests[0].options.body).purpose, 'handoff');
+  v.requests[0].reply({ records: [], omitted: 0 }); await loading;
+  v.get('search-query').value = 'owner'; v.get('search-form').listeners.submit({ preventDefault() {} });
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).scope.purpose, 'handoff');
+});
+
+test('server Show more appends records and a poll preserves loaded pages', async () => {
+  const v = view();
+  const first = v.ui.refresh();
+  v.requests[0].reply({ records: Array.from({length:8}, (_,i)=>memory(i+1)), next:'cursor', total:10 }); await first;
+  v.get('show-more').listeners.click();
+  const next = v.requests.at(-1);
+  assert.equal(JSON.parse(next.options.body).after, 'cursor');
+  next.reply({ records:[memory(9),memory(10)], next:'', total:10 }); await tick();
+  assert.equal(v.get('records').children[0].children.length,10);
+  const poll = v.ui.refresh();
+  v.requests.at(-1).reply({records:Array.from({length:8},(_,i)=>memory(i+1)),next:'fresh-cursor',total:10}); await tick();
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).after, 'fresh-cursor');
+  v.requests.at(-1).reply({records:[memory(9,2),memory(10)],next:'',total:10}); await poll;
+  assert.equal(v.get('records').children[0].children.length,10);
+});
+
+test('not modified polling preserves content and status', async () => {
+  const v = view(); const first = v.ui.refresh(); v.requests[0].reply({ records:[memory(1)] }); await first;
+  const content = v.get('records').children[0]; const status = v.get('status').textContent;
+  const poll = v.ui.refresh(); v.requests.at(-1).reply('',304); await poll;
+  assert.equal(v.get('records').children[0],content); assert.equal(v.get('status').textContent,status);
+});
+
+test('archive undo restores acknowledged revision and retries with the same request ID', async () => {
+  const v = view(); await openLatest(v,memory(90,2));
+  v.get('archive-memory').listeners.click(); v.requests.at(-1).reply({id:90,revision:3}); await tick();
+  assert.equal(v.get('archive-undo').hidden,false);
+  v.get('undo-archive').listeners.click(); const request=v.requests.at(-1); const body=JSON.parse(request.options.body);
+  assert.equal(body.expected_revision,3); assert.equal(body.archived,false);
+  request.reject(new TypeError()); await tick(); v.get('undo-archive').listeners.click();
+  assert.deepEqual(JSON.parse(v.requests.at(-1).options.body),body);
+  v.requests.at(-1).reply({id:90,revision:4}); await tick(); assert.equal(v.get('archive-undo').hidden,true);
+});
+
+test('owner-edited detail names the original agent and device from revision one', async () => {
+  const v=view(); v.ui.openMemory(memory(91,2));
+  v.requests[0].reply({...memory(91,2),provenance:{harness:'memory-view',device:'owner browser'}}); await tick();
+  const original=v.requests.at(-1); assert.equal(JSON.parse(original.options.body).revision,1);
+  original.reply({...memory(91),provenance:{harness:'cursor',device:'synthetic-mac'}}); await tick();
+  assert.equal(v.get('memory-detail-meta').children.some(item=>item.textContent==='Originally saved by cursor on synthetic-mac.'),true);
+});
+
+test('persisted theme applies before body DOM exists and its script precedes styles', () => {
+  for(const theme of ['light','dark']) {
+    const document={documentElement:{dataset:{}}};
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname,'theme-init.js'),'utf8'),{document,localStorage:{getItem:()=>theme}});
+    assert.equal(document.documentElement.dataset.theme,theme);
+  }
+  const pages=[path.join(__dirname,'index.html'), ...['index.html','setup/index.html','view/index.html','404.html'].map(file=>path.join(__dirname,'../../../web/public',file))];
+  for(const file of pages) { const html=fs.readFileSync(file,'utf8'); assert.ok(html.indexOf('theme-init.js')<html.indexOf('rel="stylesheet"')); assert.ok(!/<script[^>]*theme-init.js[^>]*defer/.test(html)); }
+});
+
+test('sign out everywhere accepts the server 204 and invalidates pending memory responses', async () => {
+  const v=view(); const loading=v.ui.refresh();
+  v.get('disconnect-all').listeners.click(); const revoke=v.requests.at(-1);
+  assert.equal(revoke.url,'/visualizer/api/session/revoke-all'); revoke.reply('',204); await tick();
+  v.requests[0].reply({records:[memory(1)]}); await loading;
+  assert.equal(v.get('status').textContent,'Signed out everywhere'); assert.equal(v.get('records').children.length,0);
+});
+
+test('export sends current filters and explicit all and archived choices', async () => {
+  const v=view('#project=id%3Aexport&purpose=decision');
+  v.get('export-mode').value='all'; v.get('export-archived').checked=true;
+  v.get('export-memory').listeners.click(); const request=v.requests.at(-1);
+  assert.equal(request.url,'/visualizer/api/export');
+  assert.deepEqual(JSON.parse(request.options.body),{scope:{project:'id:export',purpose:'decision'},all:true,include_archived:true});
+  request.reply({},500); await tick(); assert.match(v.get('status').textContent,/Could not export/);
+});
+
+test('scope changes abort a pending server page and ignore its response', async () => {
+  const v=view(); v.ui.draw({records:Array.from({length:8},(_,i)=>memory(i+1)),next:'cursor',total:10});
+  v.get('show-more').listeners.click(); const old=v.requests.at(-1);
+  v.get('purpose').value='lesson'; v.ui.restartMemoryView();
+  assert.equal(old.options.signal.aborted,true);
+  old.reply({records:[memory(9)],next:'',total:9}); await tick();
+  assert.equal(v.get('records').children.length,0);
 });
