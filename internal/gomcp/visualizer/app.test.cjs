@@ -1423,6 +1423,7 @@ test('token help and settings labels are concise and tabs have an overflow cue',
   assert.match(html, /Scroll sideways/);
   assert.match(css, /\.view-tabs \{ flex-wrap:nowrap; overflow-x:auto/);
   assert.match(css, /\.record-title \{ margin-top:0; min-height:44px/);
+  assert.match(css, /\.masthead,main \{ max-width:78ch/);
 });
 
 
