@@ -1,5 +1,15 @@
 # Grasshopper release state
 
+## Active UI audit: report 8
+
+[LAB-233](https://linear.app/mcook/issue/LAB-233): Codex on macOS owns
+`codex/ui-audit-report8` in an isolated managed worktree. Separate
+`gpt-6.1-sol` workers own memory-view and public-site changes. Accepted outcomes
+and verification are in [report 8](docs/ui-audit-report8-results.md).
+Implementation and browser verification are in progress; planned patch 2.8.2.
+Release/deployment follow final-head CI, Copilot review and verified recovery.
+Live remains 2.8.1. Primary checkout and existing local evidence are preserved.
+
 ## Released report 7: 2.8.1
 
 [LAB-232](https://linear.app/mcook/issue/LAB-232): [2.8.1](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.1)
