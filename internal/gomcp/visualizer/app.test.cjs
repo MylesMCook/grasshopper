@@ -76,7 +76,7 @@ test('newer device refresh wins and owns the only polling timer', async () => {
   await newer;
   replyPair(v, 0, [{ id: 1, device: 'revoked-device' }]);
   await older;
-  assert.deepEqual(deviceLabels(v), ['No other devices connected.']);
+  assert.deepEqual(deviceLabels(v), ['No devices connected yet.']);
   assert.equal(v.requests[0].options.signal.aborted, true);
   assert.equal(v.timers.size, 1);
 });
@@ -226,11 +226,11 @@ test('the default view asks for every project and other choices narrow it', () =
   const v = view();
   v.ui.refresh();
   assert.deepEqual(JSON.parse(v.requests[0].options.body), { all_projects: true });
-  assert.equal(v.get('scope-summary').textContent, 'All projects · All devices · All platforms');
+  assert.equal(v.get('scope-summary').textContent, 'Saved · All projects · All devices · All platforms');
   v.get('project').value = '\u0000global';
   v.ui.restartMemoryView();
   assert.deepEqual(JSON.parse(v.requests[1].options.body), {});
-  assert.equal(v.get('scope-summary').textContent, 'Global memories only · All devices · All platforms');
+  assert.equal(v.get('scope-summary').textContent, 'Saved · Global memories only · All devices · All platforms');
   v.get('project').value = 'git:github.com/example/orchard';
   v.ui.restartMemoryView();
   assert.deepEqual(JSON.parse(v.requests[2].options.body), { project: 'git:github.com/example/orchard' });
@@ -545,7 +545,7 @@ test('the server line reports version, search model and counts', () => {
     v.requests.at(-1).reply({ records: [], omitted: 0, devices: [], projects: [], server: { version: '2.7.0', model: '', memories: 1, archived: 0 } });
     return tick();
   }).then(() => {
-    assert.equal(v.get('server-status').textContent, 'Server 2.7.0 · wording search only · 1 memory, 0 archived');
+    assert.equal(v.get('server-status').textContent, 'Server 2.7.0 · matches words only · 1 memory, 0 archived');
     assert.equal(v.get('server-status').hidden, false);
   });
 });
@@ -582,7 +582,7 @@ test('the startup preview never widens an unchosen project to every project', ()
   const v = view();
   v.ui.chooseView('startup');
   assert.deepEqual(JSON.parse(v.requests.at(-1).options.body), { scope: {}, budget: 12000 });
-  assert.match(v.get('scope-summary').textContent, /^No project chosen · global memories only/);
+  assert.match(v.get('scope-summary').textContent, /^Startup preview · No project chosen · global memories only/);
 });
 
 test('scope labels keep Git projects and project IDs apart', () => {
@@ -1122,7 +1122,7 @@ test('owner-edited detail names the original agent and device from revision one'
   v.requests[0].reply({...memory(91,2),provenance:{harness:'memory-view',device:'owner browser'}}); await tick();
   const original=v.requests.at(-1); assert.equal(JSON.parse(original.options.body).revision,1);
   original.reply({...memory(91),provenance:{harness:'cursor',device:'synthetic-mac'}}); await tick();
-  assert.equal(v.get('memory-detail-meta').children.some(item=>item.textContent==='cursor on synthetic-mac.'),true);
+  assert.equal(v.get('memory-detail-meta').children.some(item=>item.textContent==='Cursor on synthetic-mac.'),true);
 });
 
 test('persisted theme applies before body DOM exists and its script precedes styles', () => {
@@ -1339,4 +1339,88 @@ test('shared visual roles and settings tasks preserve native controls', () => {
   assert.match(html, /<summary>Settings<\/summary>/);
   for (const task of ['Devices', 'Export', 'Sessions']) assert.ok(html.includes('<h3>' + task + '</h3>'));
   assert.match(html, /<dl id="memory-detail-meta"/);
+});
+
+
+test('collapsed filters count only effective dimensions and startup explains exact scope', async () => {
+  const v = view();
+  v.get('project').value = 'id:orchard';
+  v.get('device').value = 'sample-device';
+  v.get('platform').value = 'macos';
+  v.get('purpose').value = 'lesson';
+  v.ui.restartMemoryView();
+  assert.equal(v.get('toggle-filters').textContent, 'Filters ▸ (4)');
+  assert.match(v.get('scope-summary').textContent, /^Saved · Project ID orchard/);
+  assert.match(v.get('scope-summary').textContent, /Lessons$/);
+  v.ui.chooseView('startup');
+  assert.equal(v.get('toggle-filters').textContent, 'Filters ▸ (3)');
+  assert.equal(v.get('kind-filter').hidden, true);
+  assert.equal(v.get('startup-match-hint').hidden, true);
+  v.get('device').value = '';
+  v.ui.restartMemoryView();
+  assert.equal(v.get('startup-match-hint').hidden, false);
+  v.get('toggle-filters').listeners.click();
+  assert.equal(v.get('toggle-filters').textContent, 'Filters ▾');
+});
+
+test('detail names known harnesses, preserves identity, and safely restores document title', async () => {
+  const v = view();
+  assert.equal(v.document.title, 'Memory view · Grasshopper');
+  await openLatest(v, {...memory(1), scope:{project:'git:example.com/team/orchard'}, provenance:{harness:'codex-desktop',device:'sample-machine',source:'invented'}});
+  assert.equal(v.document.title, 'Synthetic decision · Grasshopper');
+  const pairs = v.get('memory-detail-meta').children;
+  assert.equal(pairs[1].textContent, 'Git project example.com/team/orchard');
+  assert.doesNotMatch(pairs[3].textContent, /Active/);
+  assert.equal(pairs[7].textContent, 'Codex desktop on sample-machine');
+  v.ui.closeMemory();
+  assert.equal(v.document.title, 'Memory view · Grasshopper');
+  v.ui.openMemory(memory(2));
+  const late = v.requests.at(-1);
+  v.ui.closeMemory();
+  late.reply({...memory(2),title:'Late response'});
+  await tick();
+  assert.equal(v.document.title, 'Memory view · Grasshopper');
+  await openLatest(v, {...memory(3),provenance:{harness:'unknown-harness',device:'sample-machine'}});
+  assert.equal(v.get('memory-detail-meta').children[7].textContent, 'unknown-harness on sample-machine');
+  v.ui.stop(true);
+  assert.equal(v.document.title, 'Memory view · Grasshopper');
+});
+
+test('previews trim whitespace before one ellipsis while full text remains unchanged', async () => {
+  const v = view();
+  const full = 'x'.repeat(235) + '     ' + 'remaining full text';
+  const first = v.ui.refresh();
+  v.requests[0].reply({records:[memory(1,1,full)]});
+  await first;
+  const article = v.get('records').children[0].children[0];
+  assert.equal(article.children[3].textContent, 'x'.repeat(235) + '…');
+  assert.equal(article.children[0].children[0].textContent, 'Decision');
+  await openLatest(v,memory(1,1,full));
+  assert.equal(v.get('memory-detail-content').textContent,full);
+});
+
+test('signed out results stay hidden and search emptiness is a numeric count', async () => {
+  const signedOut = view('', false);
+  signedOut.ui.setConnected(false);
+  assert.equal(signedOut.get('results-heading').hidden, true);
+  const v = view();
+  v.get('search-query').value='missing';
+  v.get('search-form').listeners.submit({preventDefault(){}});
+  v.requests.at(-1).reply({records:[],total:0});
+  await tick();
+  assert.equal(v.get('summary').textContent,'0 memories in search results');
+});
+
+test('token help and settings labels are concise and tabs have an overflow cue', () => {
+  const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+  const css=fs.readFileSync(path.join(__dirname,'style.css'),'utf8');
+  assert.match(html, /Where is my token\?/);
+  assert.match(html, /Skip to settings/);
+  assert.match(html, /hidden>Settings<\/a>/);
+  assert.match(html, /What you’re viewing now/);
+  assert.match(html, /Search words are not applied/);
+  assert.match(html, /Ends sign-in on every browser, including this one/);
+  assert.match(html, /Scroll sideways/);
+  assert.match(css, /\.view-tabs \{ flex-wrap:nowrap; overflow-x:auto/);
+  assert.match(css, /\.record-title \{ margin-top:0; min-height:44px/);
 });

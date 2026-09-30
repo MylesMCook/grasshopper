@@ -111,10 +111,18 @@ const inlineBusy = new Map();
 let inlineActionRows = new Map();
 
 const filterToggle = document.getElementById('toggle-filters');
+const baseTitle = 'Memory view · Grasshopper';
+document.title = baseTitle;
+function updateFilterLabel() {
+  const count = Number(Boolean(projectSelect.value)) + Number(Boolean(deviceSelect.value)) + Number(Boolean(document.getElementById('platform').value)) + Number(listView !== 'startup' && Boolean(purposeSelect.value));
+  const expanded = filterToggle.getAttribute('aria-expanded') === 'true';
+  filterToggle.textContent = `Filters ${expanded ? '▾' : '▸'}${!expanded && count ? ` (${count})` : ''}`;
+}
 filterToggle.addEventListener('click', () => {
   const expanded = filterToggle.getAttribute('aria-expanded') !== 'true';
   filterToggle.setAttribute('aria-expanded', String(expanded));
   browseControls.classList.toggle('filters-expanded', expanded);
+  updateFilterLabel();
 });
 showMore.addEventListener('click', () => {
   visibleLimit += 8;
@@ -143,8 +151,8 @@ function updateOptions(select, values, known, emptyLabel, manualLabel, preserveS
   if (preserveSelection && JSON.stringify(names) === JSON.stringify(known)) return known;
   const selected = preserveSelection ? select.value : '';
   const choices = [option('', emptyLabel), ...extra];
-  for (const name of names) choices.push(option(name, name));
-  if (selected && selected !== manualChoice && selected !== globalChoice && !names.includes(selected)) choices.push(option(selected, `Selected: ${selected}`));
+  for (const name of names) { const choice = option(name, select === projectSelect ? projectLabel(name) : name); choice.title = name; choices.push(choice); }
+  if (selected && selected !== manualChoice && selected !== globalChoice && !names.includes(selected)) choices.push(option(selected, `Selected: ${select === projectSelect ? projectLabel(selected) : selected}`));
   choices.push(option(manualChoice, manualLabel));
   select.replaceChildren(...choices);
   select.value = selected;
@@ -205,6 +213,8 @@ function setConnected(value) {
   exportControls.hidden = !value;
   browseControls.hidden = !value;
   scopeSummary.hidden = !value;
+  document.getElementById('results-heading').hidden = !value;
+  document.getElementById('tabs-hint').hidden = !value;
   devicePanel.hidden = !value;
   searchForm.hidden = !value || listView !== '';
   startupControls.hidden = !value || listView !== 'startup';
@@ -438,7 +448,7 @@ async function refreshDevices() {
       }));
       connectedDevices.replaceChildren(...connected.map(connectedRow));
       if (!pending.length) pendingDevices.replaceChildren(deviceRow('No connection requests waiting.'));
-      if (!connected.length) connectedDevices.replaceChildren(deviceRow('No other devices connected.'));
+      if (!connected.length) connectedDevices.replaceChildren(deviceRow('No devices connected yet.'));
     }
     for (const request of pending) {
       const node = expiryNodes.get(request.request_id);
@@ -490,8 +500,13 @@ function scopeInput() {
   if (platform) scope.platform = platform;
   if (purposeSelect.value && listView !== "startup") scope.purpose = purposeSelect.value;
   const platforms = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
-  const projectView = allProjects ? 'All projects' : project ? `${project} + global memories` : listView === 'startup' && projectSelect.value === '' ? 'No project chosen · global memories only' : 'Global memories only';
-  const view = [projectView, device || 'All devices', platforms[platform] || 'All platforms'];
+  updateFilterLabel();
+  document.getElementById('kind-filter').hidden = listView === 'startup';
+  document.getElementById('startup-match-hint').hidden = listView !== 'startup' || Boolean(device && platform);
+  const projectView = allProjects ? 'All projects' : project ? `${projectLabel(project)} + global memories` : listView === 'startup' && projectSelect.value === '' ? 'No project chosen · global memories only' : 'Global memories only';
+  const kindNames = { preference: 'Preferences', decision: 'Decisions', lesson: 'Lessons', handoff: 'Handoffs', observation: 'Observations' };
+  const view = [viewNames[listView], projectView, device || 'All devices', platforms[platform] || 'All platforms', scope.purpose && kindNames[scope.purpose]].filter(Boolean);
+  scopeSummary.title = project || '';
   const description = view.join(' · ');
   if (scopeSummary.textContent !== description) scopeSummary.textContent = description;
   if (projectSelect.value === manualChoice && !project) return null;
@@ -532,6 +547,10 @@ function startupNote(record) {
   return record.purpose === 'handoff' ? 'Unconfirmed handoff · loads at startup' : 'Unconfirmed · not loaded at agent startup';
 }
 
+function harnessLabel(harness) {
+  return { 'codex-desktop': 'Codex desktop', claude: 'Claude Code', cursor: 'Cursor', 'memory-view': 'You, in the memory view' }[harness] || harness || 'Unknown';
+}
+
 function metadataPair(name, value) {
   const term = document.createElement('dt');
   term.textContent = name;
@@ -542,12 +561,12 @@ function metadataPair(name, value) {
 
 function recordMetadata(record) {
   const scope = record.scope || {};
-  const dimensions = [scope.project && `Project ${scope.project}`, scope.device && `Device ${scope.device}`, scope.platform && `Platform ${scope.platform}`].filter(Boolean);
+  const dimensions = [scope.project && projectLabel(scope.project), scope.device && `Device ${scope.device}`, scope.platform && `Platform ${scope.platform}`].filter(Boolean);
   return [
     ['Scope', dimensions.length ? dimensions.join(' · ') : 'Global'],
-    ['State', `${startupNote(record)} · ${record.archived ? 'Archived' : 'Active'}`],
+    ['State', `${startupNote(record)}${record.archived ? ' · Archived' : ''}`],
     ['Updated', updatedLabel(record).replace(/^Updated /, '')],
-    ['Saved by', `${record.provenance?.harness || 'Unknown'} on ${record.provenance?.device || 'Unknown'}`],
+    ['Saved by', `${harnessLabel(record.provenance?.harness)} on ${record.provenance?.device || 'Unknown'}`],
     ['Source', record.provenance?.source || 'Unknown']
   ].flatMap(([name, value]) => metadataPair(name, value));
 }
@@ -578,6 +597,7 @@ discardDraft.addEventListener('click', () => {
 });
 
 function cancelDetail() {
+  document.title = baseTitle;
   if (detailInFlight) detailInFlight.abort();
   detailInFlight = null;
   detailState = null;
@@ -644,6 +664,8 @@ async function loadRecord(revision = null) {
     selected.revision = record.revision;
     if (revision === null) { selected.maximumRevision = record.revision; selected.record = record; }
     detailTitle.textContent = record.title || `Memory #${record.id}`;
+    document.title = `${detailTitle.textContent} · Grasshopper`;
+    detailMeta.title = record.scope?.project || '';
     detailContent.textContent = record.content;
     detailContent.className = record.purpose === "handoff" ? "record-content handoff-content" : "record-content";
     detailMeta.replaceChildren(...recordMetadata(record));
@@ -1002,7 +1024,9 @@ function showViewTabs() {
     const count = viewCounts[name];
     // An unknown count shows no number; zero is a real count.
     tab.textContent = count === undefined ? viewNames[name] : `${viewNames[name]} (${count})`;
+    const previouslySelected = tab.getAttribute?.('aria-pressed') === 'true';
     tab.setAttribute('aria-pressed', String(name === listView));
+    if (name === listView && !previouslySelected && active) tab.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }
 }
 
@@ -1022,7 +1046,7 @@ function chooseView(name) {
 
 function updateServerStatus(info) {
   if (!info) return;
-  const search = info.model ? `meaning search ${info.model}` : 'wording search only';
+  const search = info.model ? `meaning search ${info.model}` : 'matches words only';
   const text = `Server ${info.version} · ${search} · ${info.memories} ${info.memories === 1 ? 'memory' : 'memories'}, ${info.archived} archived`;
   if (serverStatus.textContent !== text) serverStatus.textContent = text;
   serverStatus.hidden = !active;
@@ -1047,6 +1071,7 @@ function restartMemoryView() {
   clearUndo();
   linkedMemory = null;
   saveRoute();
+  updateFilterLabel();
   restartList();
 }
 
@@ -1158,7 +1183,8 @@ function applyRoute(route, push) {
   if (push) saveRoute();
   else replaceRouteURL(route);
   if (active) {
-    restartList();
+    updateFilterLabel();
+  restartList();
     if (route.memory) openMemory({ id: route.memory }, false);
     if (approvalID) openDevicePanel();
     else placeDevicePanel();
@@ -1275,7 +1301,7 @@ function draw(page) {
   lastOmissionSignature = omissionSignature;
   const signature = JSON.stringify(items.map(record => [record.id, record.revision, record.title, record.content, record.scope, record.provenance, record.confirmed, record.purpose, record.updated_at]));
   const total = !searchQuery && Number.isSafeInteger(page.total) ? page.total : items.length;
-  summary.textContent = searchQuery && !items.length ? 'No matching memories' : `${total} ${total === 1 ? 'memory' : 'memories'}${searchQuery ? ' in search results' : ''}`;
+  summary.textContent = `${total} ${total === 1 ? 'memory' : 'memories'}${searchQuery ? ' in search results' : ''}`;
   const selection = window.getSelection();
   const selectingRecord = selection && !selection.isCollapsed && (records.contains(selection.anchorNode) || records.contains(selection.focusNode));
   // Defer replacement while someone is selecting text; the next poll can draw it.
@@ -1299,7 +1325,7 @@ function draw(page) {
     // Memory fields stay text nodes, so stored content is never interpreted as HTML.
     const kind = document.createElement('p');
     kind.className = 'record-kind';
-    kind.textContent = record.purpose || 'Memory';
+    kind.textContent = (record.purpose || 'Memory').replace(/^./, character => character.toUpperCase());
     const scope = record.scope || {};
     const scopeLabel = document.createElement('p');
     scopeLabel.className = 'record-scope';
@@ -1312,7 +1338,7 @@ function draw(page) {
     const content = document.createElement('p');
     content.className = record.purpose === 'handoff' ? 'record-content handoff-content' : 'record-content';
     const preview = Array.from(record.content || '');
-    highlightMatches(content, record.content_truncated || preview.length > 240 ? preview.slice(0, 240).join('') + '…' : record.content);
+    highlightMatches(content, record.content_truncated || preview.length > 240 ? preview.slice(0, 240).join('').trimEnd().replace(/…$/, '') + '…' : record.content);
     const state = document.createElement('p');
     state.className = 'record-state';
     const stateLabel = document.createElement('span');
@@ -1320,7 +1346,7 @@ function draw(page) {
     stateLabel.textContent = startupNote(record);
     const stateMetadata = document.createElement('span');
     stateMetadata.textContent = ` · ${updatedLabel(record)}`;
-    if (listView === 'review') stateMetadata.textContent += ` · Saved by ${record.provenance?.harness || 'an agent'} on ${record.provenance?.device || 'an unknown device'}${record.provenance?.source ? `: ${record.provenance.source}` : ''}`;
+    if (listView === 'review') stateMetadata.textContent += ` · Saved by ${harnessLabel(record.provenance?.harness)} on ${record.provenance?.device || 'an unknown device'}${record.provenance?.source ? `: ${record.provenance.source}` : ''}`;
     state.append(stateLabel, stateMetadata);
     const open = document.createElement('button');
     open.type = 'button'; open.className = 'record-title record-open';
@@ -1345,7 +1371,7 @@ function draw(page) {
         button.memoryID = record.id;
         button.memoryAction = archived ? 'archive' : 'confirm';
         button.setAttribute('aria-label', `${name} memory: ${record.title || `#${record.id}`}`);
-        button.className = 'quiet';
+        button.className = archived ? 'quiet' : 'inline-confirm';
         button.disabled = inlineBusy.has(record.id);
         if (inlineBusy.get(record.id) === button.memoryAction) button.textContent = archived ? 'Archiving…' : 'Confirming…';
         button.addEventListener('click', () => reviewInline(record, archived, actions));
@@ -1647,7 +1673,7 @@ async function showOriginalSource(selected, shown) {
   try {
     const { status, data } = await postOwner('/visualizer/api/record', { scope: selected.scope, id: selected.id, revision: 1 });
     if (status === 200 && active && detailState === selected && selected.revision === shown.revision) {
-      detailMeta.append(...metadataPair('Originally saved by', `${data.provenance?.harness || 'an unknown agent'} on ${data.provenance?.device || 'an unknown device'}.`));
+      detailMeta.append(...metadataPair('Originally saved by', `${harnessLabel(data.provenance?.harness)} on ${data.provenance?.device || 'an unknown device'}.`));
     }
   } catch { /* Current provenance and revision history remain available. */ }
 }
