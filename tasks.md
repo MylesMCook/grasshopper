@@ -1,18 +1,20 @@
 # Grasshopper release state
 
-## Active final UI audit
+## Released final UI audit: 2.8.4
 
-[LAB-235](https://linear.app/mcook/issue/LAB-235): Codex on macOS owns
-`codex/ui-final-batch` in an isolated managed worktree. Separate `gpt-6.1-sol`
-workers own memory-view and public-site F1–F11 changes. Parent owns shared
-DESIGN tokens, review-policy reconciliation, integration and delivery. Prepared
-patch 2.8.4; live remains 2.8.3 until review, CI, recovery and rollout pass.
-The verified 2.8.3 receipt from PR #25 is included in this reviewed batch.
-Implemented F1–F11 and reconciled review policy. All 121 Node tests, Go suite,
-vet and targeted race tests pass; separate worker browser checks pass. Independent non-author Sol review found no defects; a combined-browser text-size
-cue gap was fixed and explicitly re-reviewed. Final CI and delivery remain.
-No dependencies, framework, API, authentication or data changes. Primary
-checkout and unrelated evidence remain preserved.
+[LAB-235](https://linear.app/mcook/issue/LAB-235): [2.8.4](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.4)
+ships F1–F11 and reconciled review policy via PR #26/code `765f677`, marketplace
+`35bf501`, public deployment `5f4c74bf`. Isolated Sol implementation, independent
+review and targeted re-review completed before merge. All 121 Node tests,
+Go tests/vet/race, native three-platform CI, seven archives/287 embedded hashes,
+eight published digests, packaged quickstart, restored-copy upgrade and 2.8.3
+rollback pass. Mac service and three installed Mac connectors run 2.8.4;
+live owner/session/data/assets and public browser checks pass. Pre/post encrypted
+off-host backup checks pass. [Delivery evidence and limits](docs/memory-acceptance.md#284-final-ui-release-and-rollout-september-30).
+Documentation-only delivery receipt: PR #27 on `codex/ui-final-receipt` in an
+isolated managed worktree; the PR records review and final CI. Primary checkout, prior
+packages, recovery files and unrelated evidence remain preserved. Existing chats
+may retain older bridges until reopened.
 
 ## Released UI audit: report 9, 2.8.3
 
