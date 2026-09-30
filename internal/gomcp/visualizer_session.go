@@ -110,6 +110,7 @@ func (sessions *ownerSessions) serve(w http.ResponseWriter, r *http.Request, key
 			http.Error(w, "session unavailable", http.StatusInternalServerError)
 			return
 		}
+		sessions.audit.event("owner_session_created", r, auditFields{})
 		http.SetCookie(w, visualizerCookie(value, secure, int(visualizerSessionLifetime.Seconds())))
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodDelete:
@@ -125,6 +126,7 @@ func (sessions *ownerSessions) serve(w http.ResponseWriter, r *http.Request, key
 			http.Error(w, "session unavailable", 503)
 			return
 		}
+		sessions.audit.event("owner_session_ended", r, auditFields{})
 		http.SetCookie(w, visualizerCookie("", secure, -1))
 		w.WriteHeader(http.StatusNoContent)
 	default:
@@ -140,6 +142,7 @@ type loginWindow struct {
 }
 type ownerSessions struct {
 	store    *gomemory.Writer
+	audit    *auditLog
 	mu       sync.Mutex
 	attempts map[string]loginWindow
 }
@@ -187,6 +190,7 @@ func (sessions *ownerSessions) revokeAll(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "session unavailable", 503)
 		return
 	}
+	sessions.audit.event("owner_session_ended", r, auditFields{everywhere: true})
 	http.SetCookie(w, visualizerCookie("", r.TLS != nil || strings.HasPrefix(r.Header.Get("Origin"), "https://"), -1))
 	w.WriteHeader(http.StatusNoContent)
 }

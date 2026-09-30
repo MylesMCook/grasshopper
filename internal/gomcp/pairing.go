@@ -33,6 +33,7 @@ type pairingManager struct {
 	mu       sync.Mutex
 	requests map[string]*pairingRequest
 	store    *gomemory.Writer
+	audit    *auditLog
 }
 
 func newPairingManager(store *gomemory.Writer) *pairingManager {
@@ -65,6 +66,7 @@ func (p *pairingManager) expire(now time.Time) {
 			delete(p.requests, id)
 		} else if !now.Before(request.Expires) && request.Status == "pending" {
 			request.Status = "expired"
+			p.audit.event("pairing_expired", nil, auditFields{})
 		}
 	}
 }
@@ -119,6 +121,7 @@ func (p *pairingManager) start(w http.ResponseWriter, r *http.Request, origin st
 	copy(request.Hash[:], hash)
 	p.requests[request.ID] = request
 	p.mu.Unlock()
+	p.audit.event("pairing_started", r, auditFields{})
 	pairingJSON(w, map[string]any{"request_id": request.ID, "code": request.Code, "expires_in": int(pairingLifetime.Seconds())}, http.StatusCreated)
 }
 
@@ -214,8 +217,10 @@ func (p *pairingManager) adminPairings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			request.Status = "approved"
+			p.audit.event("pairing_approved", r, auditFields{})
 		} else {
 			request.Status = "denied"
+			p.audit.event("pairing_denied", r, auditFields{})
 		}
 		p.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
@@ -250,6 +255,7 @@ func (p *pairingManager) adminDevices(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "device not found", http.StatusNotFound)
 			return
 		}
+		p.audit.event("device_revoked", r, auditFields{id: input.ID})
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -37,6 +38,8 @@ type Backend struct {
 	Visualizer            bool
 	VisualizerStyleHashes []string
 	AllowedProxyHost      string
+	// Logger optionally receives secret-free structured operational events.
+	Logger *slog.Logger
 }
 
 type contextInput struct {
@@ -212,7 +215,8 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		providedHash := sha256.Sum256([]byte(provided))
 		return subtle.ConstantTimeCompare(providedHash[:], tokenHash[:]) == 1
 	}
-	sessions := &ownerSessions{store: backend.Store, attempts: make(map[string]loginWindow)}
+	audit := newAuditLog(backend.Logger)
+	sessions := &ownerSessions{audit: audit, store: backend.Store, attempts: make(map[string]loginWindow)}
 	ownerValid := func(r *http.Request) bool {
 		if masterBearerValid(r) {
 			return true
@@ -234,6 +238,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	var pairings *pairingManager
 	if backend.Visualizer {
 		pairings = newPairingManager(backend.Store)
+		pairings.audit = audit
 	}
 	version := backend.Version
 	if version == "" {
@@ -322,8 +327,8 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		ownerReads = map[string]http.HandlerFunc{
 			"/visualizer/api/search":             visualizerSearch(backend, embedQuery),
 			"/visualizer/api/record":             visualizerRecord(backend.Store),
-			"/visualizer/api/update":             visualizerUpdate(backend.Store, saveMemory),
-			"/visualizer/api/archive":            visualizerArchive(backend.Store),
+			"/visualizer/api/update":             visualizerUpdate(backend.Store, saveMemory, audit),
+			"/visualizer/api/archive":            visualizerArchive(backend.Store, audit),
 			"/visualizer/api/startup":            visualizerStartup(backend.Store),
 			"/visualizer/api/export":             visualizerExport(backend.Store),
 			"/visualizer/api/session/revoke-all": sessions.revokeAll,
@@ -333,7 +338,8 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok\n"))
 	})
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	audit.event("startup", nil, auditFields{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Browser owner APIs and MCP accept only local access or the explicitly
 		// configured private proxy. Never reflect the supplied Host in errors.
 		if r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/visualizer/api/") {
@@ -469,7 +475,8 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
 		mux.ServeHTTP(w, r.WithContext(ctx))
-	}), nil
+	})
+	return audit.wrap(handler), nil
 }
 
 // agentReadError keeps missing and out-of-scope records indistinguishable while

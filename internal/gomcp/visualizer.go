@@ -266,7 +266,7 @@ type ownerSave func(context.Context, gomemory.WriteInput) (gomemory.Receipt, boo
 // The exact stored scope, tags, type and key come from the record itself, so
 // a client cannot redirect a write to another scope. A historical restore
 // accepts only its revision ID; the writer restores the snapshot atomically.
-func visualizerUpdate(store *gomemory.Writer, save ownerSave) http.HandlerFunc {
+func visualizerUpdate(store *gomemory.Writer, save ownerSave, audit *auditLog) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
 			Action           string `json:"action"`
@@ -320,6 +320,9 @@ func visualizerUpdate(store *gomemory.Writer, save ownerSave) http.HandlerFunc {
 				RequestID: input.RequestID, Key: current.Key, ID: &input.ID,
 				ExpectedRevision: &input.ExpectedRevision, RestoreRevision: input.RestoreRevision,
 			})
+			if err == nil {
+				audit.event("owner_write", r, auditFields{action: "restore_revision", id: receipt.ID, revision: receipt.Revision, requestID: input.RequestID})
+			}
 			ownerWriteResult(w, r, store, input.ID, receipt, err)
 			return
 		}
@@ -353,12 +356,19 @@ func visualizerUpdate(store *gomemory.Writer, save ownerSave) http.HandlerFunc {
 			Purpose: input.Purpose, Confirmed: true, Provenance: provenance, RequestID: input.RequestID,
 			Key: current.Key, ID: &input.ID, ExpectedRevision: &input.ExpectedRevision,
 		})
+		if err == nil {
+			action := "edit"
+			if input.Action == "confirm" {
+				action = "confirm"
+			}
+			audit.event("owner_write", r, auditFields{action: action, id: receipt.ID, revision: receipt.Revision, requestID: input.RequestID})
+		}
 		ownerWriteResult(w, r, store, input.ID, receipt, err)
 	}
 }
 
 // visualizerArchive hides or restores a memory at an expected revision.
-func visualizerArchive(store *gomemory.Writer) http.HandlerFunc {
+func visualizerArchive(store *gomemory.Writer, audit *auditLog) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
 			ID               int64  `json:"id"`
@@ -383,6 +393,13 @@ func visualizerArchive(store *gomemory.Writer) http.HandlerFunc {
 			return
 		}
 		receipt, err := store.Archive(r.Context(), gomemory.ArchiveInput{Scope: current.Scope, ID: input.ID, ExpectedRevision: input.ExpectedRevision, Archived: input.Archived, RequestID: input.RequestID, Provenance: ownerProvenance})
+		if err == nil {
+			action := "archive"
+			if !input.Archived {
+				action = "unarchive"
+			}
+			audit.event("owner_write", r, auditFields{action: action, id: receipt.ID, revision: receipt.Revision, requestID: input.RequestID})
+		}
 		ownerWriteResult(w, r, store, input.ID, receipt, err)
 	}
 }

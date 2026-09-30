@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -252,7 +253,7 @@ func run() error {
 	if visualizerStyleHashes != "" {
 		styleHashes = strings.Split(visualizerStyleHashes, ",")
 	}
-	handler, err := gomcp.NewHandler(gomcp.Backend{Store: store, Version: serverVersion, Embedder: embedder, Model: goembed.ModelName, Visualizer: visualizer, VisualizerStyleHashes: styleHashes, AllowedProxyHost: allowedProxyHost}, token)
+	handler, err := gomcp.NewHandler(gomcp.Backend{Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil)), Store: store, Version: serverVersion, Embedder: embedder, Model: goembed.ModelName, Visualizer: visualizer, VisualizerStyleHashes: styleHashes, AllowedProxyHost: allowedProxyHost}, token)
 	if err != nil {
 		return err
 	}
