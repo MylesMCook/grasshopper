@@ -107,7 +107,7 @@ let saving = false;
 let visibleLimit = 8;
 let latestPage = null;
 const inlineWrites = new Map();
-const inlineBusy = new Set();
+const inlineBusy = new Map();
 let inlineActionRows = new Map();
 
 const filterToggle = document.getElementById('toggle-filters');
@@ -355,10 +355,11 @@ let expiryNodes = new Map();
 function pendingRow(request) {
   const isPending = request.status === 'pending';
   const code = document.createElement('code');
-  code.className = 'pairing-code';
+  code.className = isPending && request.expires_in < 60 ? 'pairing-code expiring' : 'pairing-code';
   code.textContent = request.code;
   const expiry = document.createElement('span');
   expiry.textContent = isPending ? ` · ${timeLeft(request.expires_in)}` : ` · ${request.status}`;
+  expiry.pairingCode = code;
   expiryNodes.set(request.request_id, expiry);
   return deviceRow(isPending ? `${request.device} wants to connect` : request.device,
     isPending ? [['Approve', () => decidePairing(request, 'approve'), true], ['Deny', () => decidePairing(request, 'deny')]] : [],
@@ -441,7 +442,11 @@ async function refreshDevices() {
     }
     for (const request of pending) {
       const node = expiryNodes.get(request.request_id);
-      if (node && request.status === 'pending') node.textContent = ` · ${timeLeft(request.expires_in)}`;
+      if (node && request.status === 'pending') {
+        node.textContent = ` · ${timeLeft(request.expires_in)}`;
+        const code = node.pairingCode;
+        if (code) code.className = request.expires_in < 60 ? 'pairing-code expiring' : 'pairing-code';
+      }
       if (request.request_id === approvalID) {
         deviceStatus.textContent = request.status === 'pending' ? `Check ${request.device} and code ${request.code} before approving.` : `${request.device} · ${request.status}.`;
       }
@@ -527,18 +532,24 @@ function startupNote(record) {
   return record.purpose === 'handoff' ? 'Unconfirmed handoff · loads at startup' : 'Unconfirmed · not loaded at agent startup';
 }
 
+function metadataPair(name, value) {
+  const term = document.createElement('dt');
+  term.textContent = name;
+  const description = document.createElement('dd');
+  description.textContent = value;
+  return [term, description];
+}
+
 function recordMetadata(record) {
   const scope = record.scope || {};
   const dimensions = [scope.project && `Project ${scope.project}`, scope.device && `Device ${scope.device}`, scope.platform && `Platform ${scope.platform}`].filter(Boolean);
   return [
-    dimensions.length ? dimensions.join(' · ') : 'Global',
-    startupNote(record),
-    updatedLabel(record),
-    record.archived ? 'Archived' : 'Active',
-    `Source: ${record.provenance?.source || 'Unknown'}`,
-    `Agent: ${record.provenance?.harness || 'Unknown'}`,
-    `Source device: ${record.provenance?.device || 'Unknown'}`
-  ];
+    ['Scope', dimensions.length ? dimensions.join(' · ') : 'Global'],
+    ['State', `${startupNote(record)} · ${record.archived ? 'Archived' : 'Active'}`],
+    ['Updated', updatedLabel(record).replace(/^Updated /, '')],
+    ['Saved by', `${record.provenance?.harness || 'Unknown'} on ${record.provenance?.device || 'Unknown'}`],
+    ['Source', record.provenance?.source || 'Unknown']
+  ].flatMap(([name, value]) => metadataPair(name, value));
 }
 
 function dirtyDraft() {
@@ -589,8 +600,10 @@ function cancelDetail() {
 
 function closeMemory(force = false) {
   const close = () => {
+    const returnButton = openButtons.get(detailState?.id) || openButtons.values().next().value || refreshButton;
     cancelDetail();
     if (memoryDialog.open) memoryDialog.close();
+    returnButton?.focus();
     if (!force) { linkedMemory = null; saveRoute(); }
   };
   if (force) close();
@@ -633,10 +646,10 @@ async function loadRecord(revision = null) {
     detailTitle.textContent = record.title || `Memory #${record.id}`;
     detailContent.textContent = record.content;
     detailContent.className = record.purpose === "handoff" ? "record-content handoff-content" : "record-content";
-    detailMeta.replaceChildren(...recordMetadata(record).map(label));
+    detailMeta.replaceChildren(...recordMetadata(record));
     if (record.revision > 1 && record.provenance?.harness === "memory-view") showOriginalSource(selected, record);
     revisionLabel.textContent = `Memory #${record.id} · Revision ${record.revision} of ${selected.maximumRevision}`;
-    history.hidden = false;
+    history.hidden = selected.maximumRevision <= 1;
     detailStatus.textContent = record.revision === selected.maximumRevision ? 'Latest saved revision' : 'Earlier revision · current memory is unchanged';
     showActions();
   } catch (error) {
@@ -699,12 +712,16 @@ function requestIDFor(body) {
 }
 
 function showActions() {
+  if (!saving) {
+    for (const [button, text] of [[saveEdit, 'Save and confirm'], [editButton, 'Edit'], [confirmButton, 'Confirm as is'], [archiveButton, 'Archive'], [restoreButton, 'Restore'], [restoreRevisionButton, 'Restore this revision']]) button.textContent = text;
+  }
   const state = detailState;
   const record = state?.record;
   const latest = Boolean(record) && state.revision === state.maximumRevision && record.revision === state.maximumRevision;
   const earlier = Boolean(record) && state.revision > 0 && state.revision < state.maximumRevision && !record.archived;
   memoryActions.hidden = (!latest && !earlier) || Boolean(state?.editing);
-  if (record) history.hidden = Boolean(state.editing);
+  if (record) history.hidden = Boolean(state.editing) || state.maximumRevision <= 1;
+  editButton.className = record?.confirmed ? '' : 'quiet';
   const archived = Boolean(record?.archived);
   editButton.hidden = !latest || archived;
   confirmButton.hidden = !latest || archived || Boolean(record.confirmed);
@@ -815,6 +832,8 @@ async function changeMemory(path, fields, done) {
   const body = { id: state.id, expected_revision: state.record.revision, ...fields };
   body.request_id = requestIDFor(body);
   saving = true;
+  const pressed = state.editing ? saveEdit : fields.action === 'confirm' ? confirmButton : fields.archived === true ? archiveButton : fields.restore_revision ? restoreRevisionButton : restoreButton;
+  pressed.textContent = fields.action === 'confirm' ? 'Confirming…' : fields.archived === true ? 'Archiving…' : 'Saving…';
   saveEdit.disabled = true;
   for (const button of [editButton, confirmButton, archiveButton, restoreButton, restoreRevisionButton]) button.disabled = true;
   detailStatus.textContent = 'Saving…';
@@ -859,8 +878,11 @@ async function reviewInline(reference, archived, actions) {
   if (!active || inlineBusy.has(reference.id)) return;
   const generation = sessionGeneration;
   const currentSession = () => active && sessionGeneration === generation;
-  inlineBusy.add(reference.id);
-  for (const button of actions.children) button.disabled = true;
+  inlineBusy.set(reference.id, archived ? 'archive' : 'confirm');
+  for (const button of actions.children) {
+    button.disabled = true;
+    if (button.memoryAction === (archived ? 'archive' : 'confirm')) button.textContent = archived ? 'Archiving…' : 'Confirming…';
+  }
   const key = `${reference.id}:${archived}`;
   setStatus(archived ? 'Archiving…' : 'Confirming…');
   try {
@@ -901,7 +923,7 @@ async function reviewInline(reference, archived, actions) {
     if (currentSession()) {
       inlineBusy.delete(reference.id);
       for (const row of [actions, inlineActionRows.get(reference.id)]) {
-        for (const button of row?.children || []) button.disabled = false;
+        for (const button of row?.children || []) { button.disabled = false; button.textContent = button.memoryAction === 'archive' ? 'Archive' : 'Confirm'; }
       }
     }
   }
@@ -1286,23 +1308,32 @@ function draw(page) {
     number.textContent = `#${record.id}`;
     top.append(kind, scopeLabel, number);
     const heading = document.createElement('h3');
-    highlightMatches(heading, record.title || `Memory #${record.id}`);
+
     const content = document.createElement('p');
     content.className = record.purpose === 'handoff' ? 'record-content handoff-content' : 'record-content';
     const preview = Array.from(record.content || '');
     highlightMatches(content, record.content_truncated || preview.length > 240 ? preview.slice(0, 240).join('') + '…' : record.content);
     const state = document.createElement('p');
     state.className = 'record-state';
-    state.textContent = `${startupNote(record)} · ${updatedLabel(record)}`;
-    if (listView === 'review') state.textContent += ` · Saved by ${record.provenance?.harness || 'an agent'} on ${record.provenance?.device || 'an unknown device'}${record.provenance?.source ? `: ${record.provenance.source}` : ''}`;
+    const stateLabel = document.createElement('span');
+    stateLabel.className = record.confirmed ? '' : 'unconfirmed';
+    stateLabel.textContent = startupNote(record);
+    const stateMetadata = document.createElement('span');
+    stateMetadata.textContent = ` · ${updatedLabel(record)}`;
+    if (listView === 'review') stateMetadata.textContent += ` · Saved by ${record.provenance?.harness || 'an agent'} on ${record.provenance?.device || 'an unknown device'}${record.provenance?.source ? `: ${record.provenance.source}` : ''}`;
+    state.append(stateLabel, stateMetadata);
     const open = document.createElement('button');
-    open.type = 'button'; open.className = 'quiet record-open';
-    open.textContent = 'Open memory';
+    open.type = 'button'; open.className = 'record-title record-open';
+    highlightMatches(open, record.title || `Memory #${record.id}`);
+    heading.append(open);
     open.setAttribute('aria-label', `Open memory: ${record.title || `#${record.id}`}`);
     open.memoryID = record.id;
     openButtons.set(record.id, open);
     open.addEventListener('click', () => openMemory(record));
-    article.append(top, heading, state, content, open);
+    const stateLine = document.createElement('div');
+    stateLine.className = 'record-state-line';
+    stateLine.append(state);
+    article.append(top, heading, stateLine, content);
     if (listView === 'review') {
       const actions = document.createElement('div');
       actions.className = 'actions inline-review';
@@ -1314,12 +1345,13 @@ function draw(page) {
         button.memoryID = record.id;
         button.memoryAction = archived ? 'archive' : 'confirm';
         button.setAttribute('aria-label', `${name} memory: ${record.title || `#${record.id}`}`);
-        if (archived) button.className = 'quiet';
+        button.className = 'quiet';
         button.disabled = inlineBusy.has(record.id);
+        if (inlineBusy.get(record.id) === button.memoryAction) button.textContent = archived ? 'Archiving…' : 'Confirming…';
         button.addEventListener('click', () => reviewInline(record, archived, actions));
         actions.append(button);
       }
-      article.append(actions);
+      stateLine.append(actions);
     }
     fragment.append(article);
   }
@@ -1615,7 +1647,7 @@ async function showOriginalSource(selected, shown) {
   try {
     const { status, data } = await postOwner('/visualizer/api/record', { scope: selected.scope, id: selected.id, revision: 1 });
     if (status === 200 && active && detailState === selected && selected.revision === shown.revision) {
-      detailMeta.append(label(`Originally saved by ${data.provenance?.harness || 'an unknown agent'} on ${data.provenance?.device || 'an unknown device'}.`));
+      detailMeta.append(...metadataPair('Originally saved by', `${data.provenance?.harness || 'an unknown agent'} on ${data.provenance?.device || 'an unknown device'}.`));
     }
   } catch { /* Current provenance and revision history remain available. */ }
 }

@@ -73,16 +73,18 @@
     </section>
 
     <details id="device-panel" class="device-panel" hidden>
-      <summary>Devices &amp; connections</summary>
+      <summary>Settings</summary>
       <div class="device-panel-content">
+        <h3>Devices</h3>
         <p>Connect a device by giving its agent this prompt. Approve the matching device and code below.</p>
         <div class="address-row"><code id="connection-prompt"></code><button id="copy-connection-prompt" type="button" class="quiet">Copy prompt</button></div>
         <p id="device-status" class="device-status" role="status" aria-live="polite"></p>
-        <div><h3>Waiting for approval</h3><div id="pending-devices" class="device-list"></div></div>
-        <h3>Connected devices</h3>
+        <div><h4>Waiting for approval</h4><div id="pending-devices" class="device-list"></div></div>
+        <h4>Connected devices</h4>
         <div id="connected-devices" class="device-list"></div>
-        <h3>Manage memories and browser sessions</h3>
-      <div id="export-controls" class="actions" hidden><label>Export <select id="export-mode"><option value="filtered">Current scope and kind</option><option value="all">All memories</option></select></label><label><input id="export-archived" type="checkbox"> Include archived</label><button id="export-memory" type="button" class="quiet">Download JSON</button><p class="summary">Export includes full text. Search words are not applied.</p></div>
+        <h3>Export</h3>
+      <div id="export-controls" class="actions" hidden><label>Export <select id="export-mode"><option value="filtered">Current scope and kind</option><option value="all">All memories</option></select></label><label class="checkbox-field"><input id="export-archived" type="checkbox"> Include archived</label><button id="export-memory" type="button" class="quiet">Download JSON</button><p class="summary">Export includes full text. Search words are not applied.</p></div>
+        <h3>Sessions</h3>
         <div class="actions"><button id="disconnect-all" type="button" class="quiet" hidden>Sign out everywhere</button></div>
       </div>
     </details>
@@ -104,7 +106,7 @@
       <p id="edit-note" class="summary">Saving stores a new revision and marks this memory confirmed. Earlier revisions stay in history.</p>
 
     </form>
-    <div id="memory-detail-meta" class="record-meta"></div>
+    <dl id="memory-detail-meta" class="record-meta"></dl>
     <div id="memory-history" class="history" hidden>
       <span id="memory-revision"></span>
       <div class="actions"><button id="previous-revision" type="button" class="quiet">Previous revision</button><button id="next-revision" type="button" class="quiet">Next revision</button><button id="latest-revision" type="button" class="quiet">Latest revision</button></div>
