@@ -1,7 +1,6 @@
 # Grasshopper UX audit: hosting and recovery
 
-Owner: Codex (gpt-6.1-sol), Mac mini. Isolated checkout
-`/Users/mylescook/.codex/worktrees/ux-audit-report3-server/grasshopper`, branch
+Owner: Codex (gpt-6.1-sol), macOS. Isolated Codex worktree on branch
 `codex/ux-audit-hosting`, base `b3a4f46`. Local changes only. Root owns integration,
 Linear, release and final verification. No live service, credential, route or
 supervisor changed.

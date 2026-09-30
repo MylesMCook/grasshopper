@@ -8,9 +8,8 @@ and a 32,768-byte memory. Browser: Playwright CLI's Chromium on macOS,
 reader or physical device was used. These checks do not establish deployed
 behavior or release completion.
 
-Reproduction: task-local harness at
-`~/Documents/Codex/2026-09-29-ux-audit-report1/harness/main.go`; its `go.mod`
-points to this worktree. Build with `GOWORK=off go build -o synthetic-view .`,
+Reproduction: a task-local harness (`harness/main.go`); its `go.mod`
+points to the isolated worktree. Build with `GOWORK=off go build -o synthetic-view .`,
 then run `./synthetic-view` to serve `127.0.0.1:8198`. It uses invented
 `id:workshop`, `id:orchard`, `test-desktop`, and `studio-laptop` identities.
 The test token is the report's synthetic token; no production credential was

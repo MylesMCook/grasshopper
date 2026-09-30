@@ -83,6 +83,12 @@ Keep personal infrastructure addresses, supervisor names, credential locations
 and recovery references out of public documentation as well as code comments.
 Use generic self-hosting examples; keep machine-specific operator notes private.
 
+## Pull request delivery
+
+Before merging, wait for CI and the Copilot review of the final pushed head.
+Address findings and resolve conversations before merging; a late review cannot
+protect an already merged PR. Do not infer review completion from passing CI.
+
 ## Linear tracking
 
 Repository: https://github.com/MylesMCook/grasshopper

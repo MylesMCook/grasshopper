@@ -590,9 +590,19 @@ func (r *Reader) StartupPreview(ctx context.Context, scope Scope, budget int) (S
 	if err != nil {
 		return Startup{}, err
 	}
-	eligible, err := r.scopedRecords(ctx, keys, agentContextFilter, false)
+	active, err := r.scopedRecords(ctx, keys, "", false)
 	if err != nil {
 		return Startup{}, err
+	}
+	// Partition one read snapshot so a concurrent confirmation cannot make a
+	// memory appear in both groups or disappear between separate queries.
+	var eligible, unconfirmed []Record
+	for _, record := range active {
+		if record.Confirmed || record.Purpose == "handoff" {
+			eligible = append(eligible, record)
+		} else {
+			unconfirmed = append(unconfirmed, record)
+		}
 	}
 	selected, skipped := chooseHandoff(eligible)
 	page, err := boundRecords(selected, budget, 0)
@@ -619,10 +629,6 @@ func (r *Reader) StartupPreview(ctx context.Context, scope Scope, budget int) (S
 	}
 	for _, record := range skipped {
 		add(record, NotLoadedOlderHandoff)
-	}
-	unconfirmed, err := r.scopedRecords(ctx, keys, " AND confirmed=0 AND purpose<>'handoff'", false)
-	if err != nil {
-		return Startup{}, err
 	}
 	for _, record := range unconfirmed {
 		add(record, NotLoadedUnconfirmed)
