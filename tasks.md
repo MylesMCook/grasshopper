@@ -1,36 +1,34 @@
 # Grasshopper release state
 
-## Active UX audit follow-up
+## UX audits 1–6: verified, preparing PR
 
 Codex · Mac mini · `/Users/mylescook/.codex/worktrees/ux-audit-integration/grasshopper`
-· `codex/ux-audit-integration`. Release evidence through `origin/main` `2031446`
-is integrated. The primary checkout and released 2.7.0 service remain untouched.
+· `codex/ux-audit-integration`. Integrated released 2.7.0 evidence `2031446` and
+all audit worker slices through `9d681aa`. Primary checkout and live service were
+not edited. Explicit `gpt-6.1-sol` workers owned owner data, hosting, frontend and
+technical review in isolated checkouts; primary owned integration and browser
+verification. All workers have finished.
 
-Accepted owner audit outcomes authorize concise scenarios followed by fixes and
-tests without another scenario approval gate. No new dependencies or framework.
-Global autonomy guidance is canonical in the owner's AGENTS.md, with a local
-rollback copy outside Git. [Acceptance examples](docs/ux-audit-followup-scenarios.md).
+[Reports 1–6 and evidence](docs/ux-audit-integration-results.md) map the accepted
+findings to implementation, checks and limitations. Tracking: LAB-224 through
+LAB-229. The canonical global AGENTS.md now accepts concrete requested audit
+outcomes without a separate scenario-approval loop while preserving protected
+external, host, data and security boundaries. A private rollback copy is retained.
 
-| Scope | State and owner |
-| --- | --- |
-| [Report 1 / LAB-224](https://linear.app/mcook/issue/LAB-224) | Local mobile layout, review controls, token help and setup changes integrated; final pagination depends on backend follow-up. |
-| [Report 2 / LAB-225](https://linear.app/mcook/issue/LAB-225) | Local polling recovery, limits, drafts, URL state, revision restore and site fixes integrated; combined browser verification pending. |
-| [Report 3 / LAB-226](https://linear.app/mcook/issue/LAB-226) | Server entry/help and generic public operations docs integrated; frontend follow-ups active. |
-| [Report 4 / LAB-227](https://linear.app/mcook/issue/LAB-227) | Owner data/session backend and frontend integration active. |
-| [Report 5 / LAB-228](https://linear.app/mcook/issue/LAB-228) | Credential binding `8a6b1a0` and scoped error guidance integrated; pagination/ETags, backup verification and structured audit logging remain active. |
-| [Report 6 / LAB-229](https://linear.app/mcook/issue/LAB-229) | Hosting/recovery/templates active. Tool-neutral policy and numerical handoff rule integrated. Startup regression confirms decisions precede handoffs; see agent-surface report. |
+Final checks passed: full Go suite with pinned Granite model/runtime assets,
+`go vet ./...`, race tests for client/server/backup/memory/MCP/client packages,
+and all 90 Node tests. Synthetic Chromium 375×812/1280×960 checks prove first
+preview at743px, pinned maximum-text dialog,103 unique paginated records, dirty
+protection, URL reload, attribution, archive Undo, revision restoration, complete
+JSON download, sign-out everywhere and automatic failure recovery. Local public
+build passes wrapping, selected-OS clipboard, metadata/favicon/theme/screenshot.
+Review defects were fixed and retested. No new dependencies/framework.
 
-Active delegated workers explicitly use `gpt-6.1-sol`, each sole editor of an
-isolated managed worktree: `ux-audit-owner-data` (owner backend),
-`ux-audit-report3-server` branch `codex/ux-audit-hosting` (hosting/recovery), and
-`ux-audit-frontend-followup` (UI). Primary owns integration, review and evidence.
-Completed earlier workers stopped; their commits are integrated.
-
-Evidence is in `docs/ux-audit-*-results.md`; task-local browser output stays out
-of Git. Focused Go tests/vet/race and native Node regressions passed for completed
-slices; release, real-device and deployed acceptance are separate. No audit
-fixes have been pushed, published or deployed. Next: finish workers, integrate,
-review security and run combined synthetic/browser/full-suite checks.
+Next: push the verified branch, create the single PR from the owner's accepted
+plan, verify CI and merge. Release/public-site deployment/live-host changes are
+separate and have not occurred. Physical devices, screen readers, native
+Windows/Linux, Tailscale Serve/reboot and fresh deployed agent turns remain
+untested. Task-local evidence is outside Git or under untracked `output/`.
 
 Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
 

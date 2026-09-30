@@ -216,3 +216,19 @@ Mac Codex/Cursor/Claude installed 2.6.0 bridges and startup adapters pass scoped
 On Work HP, explicit Connect reused the previously approved HPLT2MQ5360JD8 credential from the known packaged Codex legacy location into `%USERPROFILE%\.grasshopper`. The old configuration and credential hashes are preserved; no new approval/token row was created. Normal native Windows then resolves the same shared connection. Cursor user wiring is updated through the supported setup transaction. Windows Codex plugin installation emitted the pre-existing cache-backup Access Denied warning; subsequent supported plugin-list readback reports 2.6.0 installed/enabled, and its actual cached executable reports 2.6.0 and passes live checks. No ACL changes or forced process termination were used to work around that warning. Both installed Windows Codex and Cursor bridges/adapters report the host's actual HPLT2MQ5360JD8 identity and pass the five-tool list, #8 revision 1 and startup-context checks. The paired token rejects owner controls with 401; the shared token ACL grants no broad read access.
 
 The owner then requested a fresh Codex turn over SSH. Native Windows Codex CLI 0.155.1 loaded HPLT2MQ5360JD8 in startup context and successfully called the installed Grasshopper `get` tool for global #8 revision 1. The CLI API rejected the configured desktop model alias gpt-6.1-sol before the first turn could run; the successful probe used advertised gpt-5.5 for this invocation only. Its read-only shell runner timed out after 15 seconds connecting runner pipe-in, so the AI could not launch `check --json`; registered identity and host version remain separately verified by the installed connector over SSH. No saved model setting, sandbox permission, hook trust or credential was changed for the probe. This is a fresh native Windows AI/MCP check, not a standalone adapter assertion. LAB-221 and LAB-219 close with that owner-requested verification. The desktop GUI was not separately exercised; existing chats can retain an old bridge and should be reopened to pick up the upgrade. Other machines and reboot persistence were not retested. Evidence is local under `/Users/mylescook/Documents/Codex/2026-09-29-grasshopper-2.6.0-release`, including sanitized `native-codex-verification.json`.
+
+
+## UX audits 1–6 local integration (September 29)
+
+Codex on macOS arm64 integrated explicit gpt-6.1-sol worker slices in
+`codex/ux-audit-integration`, without changing the released private service.
+[Audit report](ux-audit-integration-results.md) records finding-level evidence,
+corrections and delivery limits. Full Go tests with pinned Granite assets, vet,
+race checks and 90 native Node tests pass. Synthetic Playwright CLI Chromium
+375×812/1280×960 checks cover pagination across103 records, visible mobile
+preview/pinned dialog controls, draft guard, linked memory and kind reload,
+confirmation attribution, owner edits, Undo, historical restore, full JSON
+export, sign-out everywhere and automatic outage recovery. Public build checks
+cover mobile wrapping, selected-OS clipboard, theme and preview metadata.
+No physical device, screen reader, native Windows/Linux, live service/deployment,
+Tailscale Serve instance, reboot or fresh deployed harness turn was tested.
