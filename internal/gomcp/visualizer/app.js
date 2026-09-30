@@ -1,3 +1,7 @@
+const connectionSection = document.getElementById('connection-section');
+const editTitleCount = document.getElementById('edit-title-count');
+const editContentCount = document.getElementById('edit-content-count');
+const searchHint = document.getElementById('search-hint');
 const form = document.getElementById('connection-form');
 const tokenInput = document.getElementById('token');
 const tokenField = document.getElementById('token-field');
@@ -65,6 +69,8 @@ let approvalFocused = false;
 let active = false;
 let loggingIn = false;
 let timer = null;
+let pollFailures = 0;
+let wasHidden = Boolean(document.hidden);
 let inFlight = null;
 let revisions = new Map();
 let hasLoaded = false;
@@ -143,6 +149,7 @@ function setConnected(value) {
   tokenInput.required = !value;
   tokenField.hidden = value;
   form.hidden = value;
+  connectionSection.hidden = value;
   refreshButton.hidden = !value;
   disconnectButton.disabled = !value;
   disconnectButton.hidden = !value;
@@ -163,6 +170,7 @@ function stop(clearRecords = false) {
   if (inFlight) inFlight.abort();
   inFlight = null;
   stopDeviceRefresh();
+  pollFailures = 0;
   resetDeviceRows();
   closeMemory();
   devicePanel.hidden = true;
@@ -345,7 +353,7 @@ async function revokeDevice(device) {
 
 async function refreshDevices() {
   stopDeviceRefresh();
-  if (!active || !devicePanel.open) return;
+  if (!active || !devicePanel.open || document.hidden) return;
   const controller = new AbortController();
   deviceInFlight = controller;
   try {
@@ -398,7 +406,7 @@ async function refreshDevices() {
     controller.abort();
     if (deviceInFlight === controller) {
       deviceInFlight = null;
-      if (active && devicePanel.open) deviceTimer = setTimeout(refreshDevices, 5000);
+      if (active && devicePanel.open && !document.hidden) deviceTimer = setTimeout(refreshDevices, 5000);
     }
   }
 }
@@ -433,7 +441,7 @@ function label(text) {
 
 function updatedLabel(record) {
   const date = new Date(record.updated_at);
-  return Number.isNaN(date.getTime()) ? 'Update date unavailable' : `Updated ${date.toLocaleString()}`;
+  return Number.isNaN(date.getTime()) ? 'Update date unavailable' : `Updated ${date.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}`;
 }
 
 const platformNames = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
@@ -500,6 +508,7 @@ function openMemory(record) {
   detailState = { id: record.id, scope: scopeInput(), revision: 0, maximumRevision: 0, record: null, editing: false };
   if (!detailState.scope || !active) { cancelDetail(); return; }
   if (!memoryDialog.open) memoryDialog.showModal();
+  detailTitle.focus();
   loadRecord();
 }
 
@@ -566,8 +575,9 @@ async function postOwner(path, body) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       cache: 'no-store', credentials: 'same-origin', signal: controller.signal
     });
-    let data = null;
-    try { data = await response.json(); } catch { data = null; }
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { error: text.trim() }; }
     return { status: response.status, data };
   } finally {
     clearTimeout(timeout);
@@ -595,6 +605,50 @@ function showActions() {
   for (const button of [editButton, confirmButton, archiveButton, restoreButton]) button.disabled = saving;
 }
 
+function updateEditLimits() {
+  const titleBytes = new TextEncoder().encode(editTitle.value.trim()).length;
+  const contentBytes = new TextEncoder().encode(editContent.value).length;
+  editTitleCount.textContent = `${titleBytes.toLocaleString()} / 512 bytes`;
+  editContentCount.textContent = `${contentBytes.toLocaleString()} / 32,768 bytes`;
+  const valid = titleBytes <= 512 && contentBytes <= 32768 && Boolean(editContent.value.trim());
+  editTitle.setAttribute('aria-invalid', String(titleBytes > 512));
+  editContent.setAttribute('aria-invalid', String(contentBytes > 32768));
+  saveEdit.disabled = saving || !valid;
+  return valid;
+}
+
+function invalidChangeMessage(reason) {
+  if (reason === 'content must be 1-32768 bytes') return 'Text must contain 1 to 32,768 bytes. Shorten it and try again.';
+  if (reason === 'metadata too large') return 'Title or tags are too long. Keep the title within 512 bytes.';
+  if (reason === 'invalid purpose') return 'Choose a valid memory kind and try again.';
+  return 'This change is not valid. Check the text and try again.';
+}
+
+editTitle.addEventListener('input', updateEditLimits);
+editContent.addEventListener('input', updateEditLimits);
+
+// Highlight only literal query terms; memory text never becomes HTML.
+function highlightMatches(node, text) {
+  node.textContent = text;
+  if (!searchQuery || !text) return;
+  const terms = [...new Set(searchQuery.split(/\s+/).filter(Boolean))].sort((a, b) => b.length - a.length);
+  const pattern = terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  if (!pattern) return;
+  const matcher = new RegExp(pattern, 'giu');
+  let start = 0;
+  const parts = [];
+  for (const match of text.matchAll(matcher)) {
+    parts.push(text.slice(start, match.index));
+    const strong = document.createElement('strong');
+    strong.textContent = match[0];
+    parts.push(strong);
+    start = match.index + match[0].length;
+  }
+  if (!parts.length) return;
+  parts.push(text.slice(start));
+  node.replaceChildren(...parts);
+}
+
 function startEdit() {
   const state = detailState;
   if (!state?.record || state.record.archived) return;
@@ -606,6 +660,7 @@ function startEdit() {
   editForm.hidden = false;
   detailContent.hidden = true;
   showActions();
+  updateEditLimits();
   editContent.focus();
 }
 
@@ -674,14 +729,14 @@ async function changeMemory(path, fields, done) {
       }
       return false;
     }
-    detailStatus.textContent = status === 400 ? 'This change is not valid. Check the text and try again.' : 'Could not save. Your text is still here; try again.';
+    detailStatus.textContent = status === 400 ? invalidChangeMessage(data?.error) : 'Could not save. Your text is still here; try again.';
     return false;
   } catch (error) {
     if (detailState === state) detailStatus.textContent = error.name === 'AbortError' ? 'The save timed out. Try again; a repeat cannot save twice.' : 'Could not save. Your text is still here; try again.';
     return false;
   } finally {
     saving = false;
-    saveEdit.disabled = false;
+    updateEditLimits();
     showActions();
   }
 }
@@ -695,6 +750,7 @@ async function saveMemoryEdit(event) {
   event.preventDefault();
   const content = editContent.value;
   if (!content.trim()) { detailStatus.textContent = 'Write some text before saving.'; return; }
+  if (!updateEditLimits()) { detailStatus.textContent = 'Keep the title within 512 bytes and text within 32,768 bytes.'; return; }
   await changeMemory('/visualizer/api/update', { title: editTitle.value.trim(), content, purpose: editPurpose.value }, async receipt => {
     endEdit();
     await loadRecord();
@@ -816,7 +872,7 @@ function emptyState(omitted) {
     return empty;
   }
   if (listView === 'archived') { message.textContent = 'No archived memories in this view. Archived memories no longer load for agents and can be restored.'; return empty; }
-  if (searchQuery) { message.textContent = 'No matching memories. Try fewer words, or search all projects.'; return empty; }
+  if (searchQuery) { message.textContent = `No matching memories. Try fewer words${projectSelect.value ? ', or search all projects' : ''}.`; return empty; }
   if (projectSelect.value !== '' || deviceSelect.value !== '' || document.getElementById('platform').value !== '') {
     message.textContent = 'Nothing saved in this view. Choose All projects, All devices and All platforms to see everything.';
     return empty;
@@ -907,7 +963,7 @@ function draw(page) {
   }
   lastOmissionSignature = omissionSignature;
   const signature = JSON.stringify(items.map(record => [record.id, record.revision, record.title, record.content, record.scope, record.provenance, record.confirmed, record.purpose, record.updated_at]));
-  summary.textContent = `${items.length} ${items.length === 1 ? 'memory' : 'memories'}${searchQuery ? ' in search results' : ''}`;
+  summary.textContent = searchQuery && !items.length ? 'No matching memories' : `${items.length} ${items.length === 1 ? 'memory' : 'memories'}${searchQuery ? ' in search results' : ''}`;
   const selection = window.getSelection();
   const selectingRecord = selection && !selection.isCollapsed && (records.contains(selection.anchorNode) || records.contains(selection.focusNode));
   // Defer replacement while someone is selecting text; the next poll can draw it.
@@ -938,11 +994,11 @@ function draw(page) {
     number.textContent = `#${record.id}`;
     top.append(kind, scopeLabel, number);
     const heading = document.createElement('h3');
-    heading.textContent = record.title || `Memory #${record.id}`;
+    highlightMatches(heading, record.title || `Memory #${record.id}`);
     const content = document.createElement('p');
     content.className = 'record-content';
     const preview = Array.from(record.content || '');
-    content.textContent = record.content_truncated || preview.length > 240 ? preview.slice(0, 240).join('') + '…' : record.content;
+    highlightMatches(content, record.content_truncated || preview.length > 240 ? preview.slice(0, 240).join('') + '…' : record.content);
     const state = document.createElement('p');
     state.className = 'record-state';
     state.textContent = `${startupNote(record)} · ${updatedLabel(record)}`;
@@ -968,7 +1024,9 @@ function draw(page) {
 }
 
 async function refresh() {
-  if (!active || inFlight) return;
+  if (!active || inFlight || document.hidden) return;
+  clearTimeout(timer);
+  timer = null;
   const controller = new AbortController();
   inFlight = controller;
   // Search can wait for the server's bounded inference and wording fallback.
@@ -992,11 +1050,11 @@ async function refresh() {
     const page = await response.json();
     // A disconnected or replaced request must not redraw an older session.
     if (!active || inFlight !== controller) return;
+    pollFailures = 0;
     if (startup) {
       draw(page);
       drawNotLoaded(page);
       setStatus('Live', 'live');
-      timer = setTimeout(refresh, 3000);
       return;
     }
     updateProjectOptions(page.projects);
@@ -1006,20 +1064,42 @@ async function refresh() {
     notLoaded.hidden = true;
     draw(page);
     setStatus(searchQuery ? page.semantic_ready ? 'Search results' : 'Wording matches only · meaning search unavailable' : 'Live', 'live');
-    // Browsing follows live writes. Search runs on submission or explicit refresh,
-    // rather than repeating query inference while someone reads the results.
-    if (!searchQuery) timer = setTimeout(refresh, 3000);
+    searchHint.textContent = page.semantic_ready ? 'Meaning search can match related wording. Bold text marks exact words from your query.' : 'Wording search matches any query word. Bold text marks exact words from your query.';
   } catch (error) {
     if (inFlight !== controller) return;
     const message = error.name === 'AbortError' ? 'Request timed out' : error instanceof TypeError ? 'Service unavailable' : error.message;
+    pollFailures++;
     if (message === 'Session expired') stop(true);
     setStatus(message, 'error');
-    summary.textContent = message === 'Session expired' ? 'Sign in again to see your memories.' : hasLoaded ? 'Showing the last results. Use Refresh to try again.' : 'No memories loaded. Use Refresh to try again.';
+    summary.textContent = message === 'Session expired' ? 'Sign in again to see your memories.' : hasLoaded ? `Showing the last results. ${searchQuery ? 'Use Refresh to try again.' : 'Trying again automatically.'}` : `No memories loaded. ${searchQuery ? 'Use Refresh to try again.' : 'Trying again automatically.'}`;
   } finally {
     clearTimeout(timeout);
-    if (inFlight === controller) inFlight = null;
+    if (inFlight === controller) {
+      inFlight = null;
+      // Retry live views after failures too. Search remains explicit to avoid
+      // repeating inference while someone reads the results.
+      if (active && !searchQuery && !document.hidden && scopeInput()) {
+        timer = setTimeout(refresh, pollFailures < 2 ? 3000 : pollFailures === 2 ? 10000 : 30000);
+      }
+    }
   }
 }
+
+document.addEventListener('visibilitychange', () => {
+  const hidden = Boolean(document.hidden);
+  if (hidden === wasHidden) return;
+  wasHidden = hidden;
+  if (hidden) {
+    clearTimeout(timer);
+    timer = null;
+    if (inFlight) inFlight.abort();
+    inFlight = null;
+    stopDeviceRefresh();
+  } else if (active) {
+    refresh();
+    refreshDevices();
+  }
+});
 
 async function sessionRequest(method, bearer) {
   const controller = new AbortController();

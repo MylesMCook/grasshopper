@@ -23,11 +23,13 @@ function view(hash = '', connected = true) {
   };
   const requests = [];
   const windowListeners = {};
+  const documentListeners = {};
   const timers = new Map();
   const timerDelays = new Map();
   let timerID = 0;
   const sandbox = {
-    document: { getElementById: get, querySelector: get, createElement: element, createDocumentFragment: element },
+    TextEncoder,
+    document: { hidden: false, addEventListener(name, action) { documentListeners[name] = action; }, getElementById: get, querySelector: get, createElement: element, createDocumentFragment: element },
     window: { addEventListener(name, action) { windowListeners[name] = action; }, confirm: () => true, getSelection: () => null },
     location: { origin: 'http://127.0.0.1', hash },
     AbortController,
@@ -36,7 +38,7 @@ function view(hash = '', connected = true) {
     fetch(url, options) {
       if (url.endsWith('/session')) return Promise.resolve({ ok: true, json: async () => ({ connected: false }) });
       return new Promise((resolve, reject) => requests.push({ url, options, reject, reply(data, status = 200) {
-        resolve({ ok: status < 400, status, json: async () => data });
+        resolve({ ok: status < 400, status, text: async () => typeof data === 'string' ? data : JSON.stringify(data), json: async () => data });
       } }));
     }
   };
@@ -47,7 +49,7 @@ function view(hash = '', connected = true) {
     ui.setConnected(true);
     get('device-panel').open = true;
   }
-  return { ui, get, requests, timers, timerDelays, document: sandbox.document, location: sandbox.location, windowListeners };
+  return { ui, get, requests, timers, timerDelays, document: sandbox.document, location: sandbox.location, windowListeners, documentListeners };
 }
 
 function replyPair(v, start, devices = []) {
@@ -638,4 +640,111 @@ test('the device panel returns to its place when the approval fragment is cleare
   v.location.hash = '';
   v.windowListeners.hashchange();
   assert.equal(v.get('device-panel').placedBefore, v.get('server-status'));
+});
+
+
+test('failed live polls recover automatically with one backed-off polling loop', async () => {
+  const v = view();
+  await tick();
+  const first = v.ui.refresh();
+  v.requests.at(-1).reply({ records: [memory(1)], omitted: 0 });
+  await first;
+  for (const delay of [3000, 10000, 30000]) {
+    const failed = v.ui.refresh();
+    v.requests.at(-1).reply(null, 503);
+    await failed;
+    assert.equal(v.get('status').textContent, 'Service unavailable');
+    assert.deepEqual([...v.timerDelays.values()], [delay]);
+  }
+  const callback = [...v.timers.values()][0];
+  const recovered = callback();
+  v.requests.at(-1).reply({ records: [memory(1)], omitted: 0 });
+  await recovered;
+  assert.equal(v.get('status').textContent, 'Live');
+  assert.deepEqual([...v.timerDelays.values()], [3000]);
+});
+
+test('hidden pages pause memory and device polling and refresh once on return', async () => {
+  const v = view();
+  await tick();
+  const first = v.ui.refresh();
+  v.requests.at(-1).reply({ records: [], omitted: 0 });
+  await first;
+  v.document.hidden = true;
+  v.documentListeners.visibilitychange();
+  assert.equal(v.timers.size, 0);
+  const count = v.requests.length;
+  await v.ui.refresh();
+  await v.ui.refreshDevices();
+  assert.equal(v.requests.length, count);
+  v.document.hidden = false;
+  v.documentListeners.visibilitychange();
+  assert.equal(v.requests.length, count + 3);
+  v.documentListeners.visibilitychange();
+  assert.equal(v.requests.length, count + 3);
+});
+
+test('edit limits count UTF-8 bytes and prevent oversized saves', async () => {
+  const v = view();
+  await openLatest(v, memory(41));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'é'.repeat(16385);
+  v.get('edit-content').listeners.input();
+  assert.equal(v.get('edit-content-count').textContent, '32,770 / 32,768 bytes');
+  assert.equal(v.get('save-edit').disabled, true);
+  const count = v.requests.length;
+  await submitEdit(v);
+  assert.equal(v.requests.length, count);
+  v.get('edit-content').value = 'Valid text.';
+  v.get('edit-title').value = 'é'.repeat(257);
+  v.get('edit-title').listeners.input();
+  assert.equal(v.get('edit-title-count').textContent, '514 / 512 bytes');
+  assert.equal(v.get('save-edit').disabled, true);
+  v.get('edit-title').value = 'é'.repeat(256);
+  v.get('edit-title').listeners.input();
+  assert.equal(v.get('save-edit').disabled, false);
+});
+
+for (const [reason, text] of [
+  ['content must be 1-32768 bytes', /Text must contain 1 to 32,768 bytes/],
+  ['metadata too large', /Title or tags are too long/],
+  ['invalid purpose', /Choose a valid memory kind/]
+]) test(`save explains ${reason}`, async () => {
+  const v = view();
+  await openLatest(v, memory(42));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'Draft.';
+  const saved = submitEdit(v);
+  v.requests.at(-1).reply(reason + '\n', 400);
+  await saved;
+  assert.match(v.get('memory-detail-status').textContent, text);
+});
+
+test('search highlights literal text safely and suggests all projects only when filtered', async () => {
+  const v = view();
+  v.get('search-query').value = 'orchard <script>';
+  v.get('search-form').listeners.submit({ preventDefault() {} });
+  v.requests.at(-1).reply({ records: [memory(44, 1, 'Orchard <script> trees.')], omitted: 0, semantic_ready: false });
+  await tick();
+  const content = v.get('records').children[0].children[0].children[3];
+  assert.deepEqual(content.children.filter(part => typeof part !== 'string').map(part => part.textContent), ['Orchard', '<script>']);
+  v.ui.draw({ records: [], omitted: 0 });
+  let text = v.get('records').children[0].children[0].children[0].textContent;
+  assert.doesNotMatch(text, /search all projects/);
+  v.get('project').value = 'id:filtered';
+  v.ui.restartMemoryView();
+  v.requests.at(-1).reply({ records: [], omitted: 0 });
+  await tick();
+  text = v.get('records').children[0].children[0].children[0].textContent;
+  assert.match(text, /search all projects/);
+});
+
+test('signed-in connection section is hidden and dialog heading receives focus', async () => {
+  const v = view();
+  assert.equal(v.get('connection-section').hidden, true);
+  await openLatest(v, memory(45));
+  assert.equal(v.get('memory-detail-title').focused, true);
+  assert.doesNotMatch(v.get('memory-detail-meta').children[2].textContent, /:\d{2}:\d{2}/);
+  v.ui.stop();
+  assert.equal(v.get('connection-section').hidden, false);
 });
