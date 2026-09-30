@@ -254,8 +254,8 @@ type ownerSave func(context.Context, gomemory.WriteInput) (gomemory.Receipt, boo
 
 // visualizerUpdate saves the owner's text as a new revision and confirms it.
 // The exact stored scope, tags, type and key come from the record itself, so
-// a client cannot redirect a write to another scope. All editable fields are
-// required, which keeps a retry with the same request ID byte-identical.
+// a client cannot redirect a write to another scope. A historical restore
+// accepts only its revision ID; the writer restores the snapshot atomically.
 func visualizerUpdate(store *gomemory.Writer, save ownerSave) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
@@ -265,6 +265,7 @@ func visualizerUpdate(store *gomemory.Writer, save ownerSave) http.HandlerFunc {
 			Content          string `json:"content"`
 			Purpose          string `json:"purpose"`
 			RequestID        string `json:"request_id"`
+			RestoreRevision  *int64 `json:"restore_revision"`
 		}
 		if !decodeVisualizerRead(w, r, &input, 65536) {
 			return
@@ -284,6 +285,31 @@ func visualizerUpdate(store *gomemory.Writer, save ownerSave) http.HandlerFunc {
 		}
 		if current.Archived {
 			ownerConflict(w, r, store, input.ID, "archived")
+			return
+		}
+		if input.RestoreRevision != nil {
+			if *input.RestoreRevision < 1 || *input.RestoreRevision >= input.ExpectedRevision || input.Title != "" || input.Content != "" || input.Purpose != "" {
+				http.Error(w, "invalid revision restore", http.StatusBadRequest)
+				return
+			}
+			prior, err := store.RecordByID(r.Context(), input.ID, input.RestoreRevision)
+			if err != nil {
+				http.Error(w, "memory unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if prior == nil {
+				http.Error(w, "revision not found", http.StatusNotFound)
+				return
+			}
+			// Scope and key are immutable. Taking purpose from the requested
+			// snapshot keeps an identical retry stable after restoration changes
+			// the current title, tags, type or purpose. The writer restores them.
+			receipt, _, err := save(r.Context(), gomemory.WriteInput{
+				Scope: current.Scope, Purpose: prior.Purpose, Confirmed: true, Provenance: ownerProvenance,
+				RequestID: input.RequestID, Key: current.Key, ID: &input.ID,
+				ExpectedRevision: &input.ExpectedRevision, RestoreRevision: input.RestoreRevision,
+			})
+			ownerWriteResult(w, r, store, input.ID, receipt, err)
 			return
 		}
 		var title *string
@@ -338,6 +364,8 @@ func ownerWriteResult(w http.ResponseWriter, r *http.Request, store *gomemory.Wr
 		ownerConflict(w, r, store, id, "revision_conflict")
 	case strings.HasPrefix(err.Error(), "idempotency_conflict"):
 		ownerConflict(w, r, store, id, "idempotency_conflict")
+	case strings.HasPrefix(err.Error(), "revision_not_found"):
+		http.Error(w, "revision not found", http.StatusNotFound)
 	case strings.HasPrefix(err.Error(), "memory_not_found"):
 		http.Error(w, "memory not found", http.StatusNotFound)
 	case strings.HasPrefix(err.Error(), "content must be"), strings.HasPrefix(err.Error(), "invalid purpose"),

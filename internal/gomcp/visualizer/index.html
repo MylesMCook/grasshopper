@@ -85,6 +85,7 @@
     <div class="detail-body">
     <p id="memory-detail-status" class="summary" role="status" aria-live="polite"></p>
     <p id="memory-detail-content" class="record-content"></p>
+    <div id="discard-changes" class="conflict" role="alert" hidden><p>Discard changes? Your unsaved text will be lost.</p><div class="actions"><button id="keep-editing" type="button">Keep editing</button><button id="discard-draft" type="button" class="quiet">Discard</button></div></div>
     <form id="edit-form" class="edit-form" autocomplete="off" hidden>
       <div id="conflict" class="conflict" role="alert" hidden><p id="conflict-note"></p><p id="conflict-text" class="record-content"></p></div>
       <label>Title <input id="edit-title" type="text" aria-describedby="edit-title-count"></label>
@@ -107,6 +108,7 @@
       <button id="edit-memory" type="button">Edit</button>
       <button id="confirm-memory" type="button" hidden>Confirm as is</button>
       <button id="archive-memory" type="button" class="quiet" hidden>Archive</button>
+      <button id="restore-revision" type="button" hidden>Restore this revision</button>
       <button id="restore-memory" type="button" hidden>Restore</button>
     </div>
     </div>

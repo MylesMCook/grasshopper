@@ -28,7 +28,8 @@ function view(hash = '', connected = true, sessionStatus = 200) {
   const timerDelays = new Map();
   let timerID = 0;
   const sandbox = {
-    TextEncoder,
+    TextEncoder, URLSearchParams,
+    history: { pushState(_state, _title, hash) { sandbox.location.hash = hash.startsWith('#') ? hash : ''; }, replaceState(_state, _title, hash) { sandbox.location.hash = hash.startsWith('#') ? hash : ''; } },
     document: { hidden: false, addEventListener(name, action) { documentListeners[name] = action; }, getElementById: get, querySelector: get, createElement: element, createDocumentFragment: element },
     window: { addEventListener(name, action) { windowListeners[name] = action; }, confirm: () => true, getSelection: () => null },
     location: { origin: 'http://127.0.0.1', hash },
@@ -42,6 +43,7 @@ function view(hash = '', connected = true, sessionStatus = 200) {
       } }));
     }
   };
+  sandbox.window.history = sandbox.history;
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8'), sandbox);
   const ui = vm.runInContext('({ refreshDevices, stop, setConnected, revokeDevice, refresh, draw, openMemory, loadRecord, closeMemory, restartMemoryView, chooseView, showViewTabs, updateViewCounts })', sandbox);
@@ -313,7 +315,7 @@ async function openLatest(v, record) {
 const withoutRequestID = ({ request_id, ...rest }) => rest;
 const submitEdit = v => v.get('edit-form').listeners.submit({ preventDefault() {} });
 
-test('actions appear only on the latest revision and follow the memory state', async () => {
+test('latest actions and earlier revision restore follow the memory state', async () => {
   const v = view();
   await openLatest(v, { ...memory(1, 2), confirmed: false });
   assert.equal(v.get('memory-actions').hidden, false);
@@ -323,7 +325,11 @@ test('actions appear only on the latest revision and follow the memory state', a
   v.get('previous-revision').listeners.click();
   v.requests.at(-1).reply(memory(1, 1));
   await tick();
-  assert.equal(v.get('memory-actions').hidden, true);
+  assert.equal(v.get('memory-actions').hidden, false);
+  assert.equal(v.get('edit-memory').hidden, true);
+  assert.equal(v.get('confirm-memory').hidden, true);
+  assert.equal(v.get('archive-memory').hidden, true);
+  assert.equal(v.get('restore-revision').hidden, false);
   v.get('latest-revision').listeners.click();
   v.requests.at(-1).reply({ ...memory(1, 2), confirmed: true });
   await tick();
@@ -601,7 +607,7 @@ test('closing the dialog mid-save keeps the write lock until that request ends',
   v.get('edit-content').value = 'First memory edit.';
   submitEdit(v);
   const first = v.requests.at(-1);
-  v.ui.closeMemory();
+  v.ui.closeMemory(true);
   await openLatest(v, memory(31, 1));
   assert.equal(v.get('edit-memory').disabled, true);
   v.get('edit-memory').listeners.click();
@@ -644,6 +650,7 @@ test('cancelling after a conflict shows the newer text, not the stale page', asy
   v.requests.at(-1).reply({ error: 'revision_conflict', current: memory(33, 2, 'Agent text.') }, 409);
   await tick();
   v.get('cancel-edit').listeners.click();
+  v.get('discard-draft').listeners.click();
   const reload = v.requests.at(-1);
   assert.equal(reload.url, '/visualizer/api/record');
   reload.reply(memory(33, 2, 'Agent text.'));
@@ -901,4 +908,158 @@ test('an inline read from a former session cannot write into a new sign-in', asy
   await tick();
   assert.equal(v.requests.length, count);
   assert.equal(v.requests.some(request => request.url.endsWith('/update')), false);
+});
+
+
+for (const action of ['Close', 'Escape', 'backdrop', 'Cancel', 'another memory', 'tab', 'filter']) test(`dirty edits survive ${action} until Discard`, async () => {
+  const v = view();
+  await openLatest(v, memory(51));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'Unsaved correction.';
+  const leave = () => {
+    if (action === 'Close') v.get('close-memory').listeners.click();
+    if (action === 'Escape') v.get('memory-dialog').listeners.cancel({ preventDefault() {} });
+    if (action === 'backdrop') v.get('memory-dialog').listeners.click({ target: v.get('memory-dialog'), clientX: -1, clientY: -1 });
+    if (action === 'Cancel') v.get('cancel-edit').listeners.click();
+    if (action === 'another memory') v.ui.openMemory(memory(52));
+    if (action === 'tab') v.ui.chooseView('review');
+    if (action === 'filter') { v.get('project').value = 'id:next'; v.get('project').listeners.change(); }
+  };
+  leave();
+  assert.equal(v.get('discard-changes').hidden, false);
+  assert.equal(v.get('memory-dialog').open, true);
+  assert.equal(v.get('edit-content').value, 'Unsaved correction.');
+  v.get('keep-editing').listeners.click();
+  assert.equal(v.get('discard-changes').hidden, true);
+  assert.equal(v.get('edit-content').value, 'Unsaved correction.');
+  leave();
+  v.get('discard-draft').listeners.click();
+  assert.equal(v.get('discard-changes').hidden, true);
+  if (action === 'another memory') assert.equal(JSON.parse(v.requests.at(-1).options.body).id, 52);
+  else if (action === 'tab') assert.equal(JSON.parse(v.requests.at(-1).options.body).view, 'review');
+  else if (action === 'filter') assert.equal(JSON.parse(v.requests.at(-1).options.body).project, 'id:next');
+  else if (action === 'Cancel') assert.equal(v.get('edit-form').hidden, true);
+  else assert.equal(v.get('memory-dialog').open, false);
+});
+
+test('URL restores tab filters query and safe memory links before sign-in', async () => {
+  const hash = '#view=review&project=id%3Aorchard&device=laptop&platform=windows&memory=56&token=never-keep';
+  const v = view(hash, false);
+  await tick();
+  assert.equal(v.get('project').value, 'id:orchard');
+  assert.equal(v.get('device').value, 'laptop');
+  assert.equal(v.get('platform').value, 'windows');
+  v.get('token').value = 'synthetic-owner-token-0123456789-abcdef';
+  await v.get('connection-form').listeners.submit({ preventDefault() {} });
+  assert.equal(v.requests.some(request => request.url === '/visualizer/api/record' && JSON.parse(request.options.body).id === 56), true);
+  assert.equal(JSON.parse(v.requests.find(request => request.url === '/visualizer/api/context').options.body).view, 'review');
+  assert.doesNotMatch(v.location.hash, /token|never-keep/);
+  v.ui.closeMemory();
+  v.location.hash = '#query=orchard&project=id%3Aorchard';
+  v.windowListeners.hashchange();
+  assert.equal(v.get('search-query').value, 'orchard');
+  assert.equal(v.requests.at(-1).url, '/visualizer/api/search');
+  v.location.hash = '#view=archived';
+  v.windowListeners.hashchange();
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).view, 'archived');
+});
+
+test('restoring a revision posts its ID against the latest revision and retries safely', async () => {
+  const v = view();
+  await openLatest(v, memory(61, 2, 'New text.'));
+  v.get('previous-revision').listeners.click();
+  v.requests.at(-1).reply(memory(61, 1, 'Earlier text.'));
+  await tick();
+  assert.equal(v.get('restore-revision').hidden, false);
+  v.get('restore-revision').listeners.click();
+  const first = v.requests.at(-1);
+  const body = JSON.parse(first.options.body);
+  assert.deepEqual(withoutRequestID(body), { id: 61, expected_revision: 2, restore_revision: 1 });
+  first.reply(null, 503);
+  await tick();
+  v.get('restore-revision').listeners.click();
+  assert.deepEqual(JSON.parse(v.requests.at(-1).options.body), body);
+  v.requests.at(-1).reply({ id: 61, revision: 3 });
+  await tick();
+  v.requests.at(-1).reply(memory(61, 3, 'Earlier text.'));
+  await tick();
+  assert.match(v.get('memory-detail-status').textContent, /Restored revision 1 as revision 3 and confirmed/);
+});
+
+test('reload keeps review scope and approval links can coexist with memory state', async () => {
+  const v = view();
+  v.get('project').value = 'id:orchard';
+  v.get('device').value = 'laptop';
+  v.get('platform').value = 'macos';
+  v.ui.chooseView('review');
+  const reloaded = view(v.location.hash);
+  reloaded.ui.refresh();
+  assert.deepEqual(JSON.parse(reloaded.requests.at(-1).options.body), { project: 'id:orchard', device: 'laptop', platform: 'macos', view: 'review' });
+  const linked = view('#connect=' + request64 + '&view=review&memory=72');
+  assert.equal(linked.get('device-panel').placedBefore, linked.get('memory-section'));
+  linked.ui.openMemory(memory(72));
+  assert.match(linked.location.hash, /connect=/);
+  assert.match(linked.location.hash, /memory=72/);
+});
+
+test('hash navigation asks before discarding and Keep editing restores the old URL', async () => {
+  const v = view();
+  await openLatest(v, memory(73));
+  const old = v.location.hash;
+  v.get('edit-memory').listeners.click();
+  v.get('edit-title').value = 'New title';
+  v.location.hash = '#view=archived';
+  v.windowListeners.hashchange();
+  assert.equal(v.location.hash, old);
+  assert.equal(v.get('discard-changes').hidden, false);
+  v.get('keep-editing').listeners.click();
+  assert.equal(v.get('edit-title').value, 'New title');
+  v.location.hash = '#view=archived';
+  v.windowListeners.hashchange();
+  v.get('discard-draft').listeners.click();
+  assert.match(v.location.hash, /view=archived/);
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).view, 'archived');
+});
+
+test('unchanged edit closes without a discard prompt', async () => {
+  const v = view();
+  await openLatest(v, memory(74));
+  v.get('edit-memory').listeners.click();
+  v.get('close-memory').listeners.click();
+  assert.equal(v.get('discard-changes').hidden, true);
+  assert.equal(v.get('memory-dialog').open, false);
+});
+
+test('explicit signout guards a draft and keeps the memory link for sign-in', async () => {
+  const v = view();
+  await openLatest(v, memory(75));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-purpose').value = 'lesson';
+  v.get('disconnect').listeners.click();
+  assert.equal(v.get('discard-changes').hidden, false);
+  v.get('discard-draft').listeners.click();
+  await tick();
+  assert.equal(v.get('memory-dialog').open, false);
+  assert.match(v.location.hash, /memory=75/);
+  v.get('token').value = 'synthetic-owner-token-0123456789-abcdef';
+  await v.get('connection-form').listeners.submit({ preventDefault() {} });
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).id, 75);
+});
+
+test('restoring a stale revision shows the newer memory without overwriting it', async () => {
+  const v = view();
+  await openLatest(v, memory(76, 2));
+  v.get('previous-revision').listeners.click();
+  v.requests.at(-1).reply(memory(76, 1, 'Earlier.'));
+  await tick();
+  v.get('restore-revision').listeners.click();
+  v.requests.at(-1).reply({ error: 'revision_conflict', current: memory(76, 3, 'Newest agent text.') }, 409);
+  await tick();
+  const latest = v.requests.at(-1);
+  assert.equal(latest.url, '/visualizer/api/record');
+  latest.reply(memory(76, 3, 'Newest agent text.'));
+  await tick();
+  assert.equal(v.get('memory-detail-content').textContent, 'Newest agent text.');
+  assert.match(v.get('memory-detail-status').textContent, /changed while you were looking/);
+  assert.equal(v.get('restore-revision').hidden, true);
 });

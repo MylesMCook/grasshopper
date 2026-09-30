@@ -1,8 +1,8 @@
 # Grasshopper UX audit, report 2: memory regression fixes
 
-Audited: `4fea645` (2.7.0 prep), with changes on `codex/ux-audit-report2`. Synthetic records and mocked HTTP responses in the existing dependency-free Node harness. No live service or authoritative store was changed. This report covers the non-gated memory items only; it does not claim browser, deployment, or real-model verification.
+Audited: `4fea645` (2.7.0 prep), with changes on `codex/ux-audit-report2`. Synthetic records and mocked HTTP responses in the existing dependency-free Node harness. No live service or authoritative store was changed. This report covers the memory items in report 2; it does not claim browser, deployment, or real-model verification.
 
-Reproduction: `node --test internal/gomcp/visualizer/app.test.cjs`. Eight new regression checks failed on the unmodified implementation; all 44 checks pass with the fixes. `go test ./internal/gomcp` also passes. `git diff --check` passes.
+Reproduction: `node --test internal/gomcp/visualizer/app.test.cjs`. Eight initial regression checks failed on `4fea645`; nine additional behavior checks and two Go restore tests failed before the second implementation. All 58 Node checks now pass without skips. `go test ./internal/gomcp`, `go vet ./internal/gomcp`, `git diff --check`, and the Laws of Software changed-code heuristic gate pass. Acceptance examples are recorded in `docs/ux-audit-followup-scenarios.md` in the integration worktree; the owner's replacement AGENTS instructions accept the supplied audit outcomes without a separate approval gate.
 
 ## High
 
@@ -15,7 +15,10 @@ Reproduction: `node --test internal/gomcp/visualizer/app.test.cjs`. Eight new re
 
 ### R2-2. Unsaved draft dismissal
 
-Pending owner approval of the proposed Gherkin. No implementation changed. The required paths include Close, Escape, backdrop, Cancel, and opening another memory; Keep editing must retain the text.
+- Seen: the edit form lost its text on Close, Escape, Cancel, or another memory. New checks reproduced the unguarded dismissal paths.
+- Impact: a stray dismissal could erase a long correction.
+- Fix: compare the current title, kind, and text with the loaded edit snapshot. A dirty dismissal offers Keep editing / Discard inside the dialog. Only Discard executes the requested action. Tab, filter, URL navigation, and explicit sign-out use the same guard. Unchanged forms close directly; expired sessions still clear private displayed state. Revision navigation is hidden while editing.
+- Check: seven dismissal paths retain the draft, Keep editing preserves it, and Discard completes the intended action. Additional checks cover title changes during hash navigation, kind changes during sign-out, clean cancellation, and cancellation after a save conflict.
 
 ## Medium
 
@@ -28,7 +31,10 @@ Pending owner approval of the proposed Gherkin. No implementation changed. The r
 
 ### R2-4. URL state and memory links
 
-Pending owner approval of proposed Gherkin for reload, Back/Forward, and opening a link before or after sign-in. No implementation changed. Approval links must continue to work and secrets must stay out of URLs.
+- Seen: tab, filters, search, and selected memory were absent from the URL.
+- Impact: reload discarded the current view and there was no link to a memory.
+- Fix: the hash holds a bounded view, project, device, platform, query, memory ID, and optional connection-request ID. Browser history follows explicit selections; hash navigation restores them. Unknown parameters are dropped, including token parameters. Memory links wait through sign-in and survive sign-out. Existing `#connect=` links can coexist with view state.
+- Check: selected review scope survives a simulated reload; hash navigation restores search and Archived; a signed-out memory link opens after sign-in; approval IDs remain in combined links; unknown token parameters are removed. A dirty draft guards hash navigation. Real browser Back/Forward awaits integrated browser verification.
 
 ### R2-5. Hidden tabs stop polling
 
@@ -55,14 +61,19 @@ Pending owner approval of proposed Gherkin for reload, Back/Forward, and opening
 
 ### R2-10. Restore an earlier revision
 
-Pending owner approval of proposed Gherkin. No implementation changed. Any future restore must create a new confirmed revision, retain history and exact stored scope, preserve embedding/idempotency, and reject a stale expected revision without overwriting newer work.
+- Seen: earlier revisions could be read but had no owner restore action. Two Go tests reproduced the unsupported update payload.
+- Impact: owners had to copy historical text into a new edit manually.
+- Fix: Restore this revision appears on earlier revisions of active records. It posts the historical revision ID through the existing authenticated update route with the latest expected revision and a stable request ID. The existing writer restores title, text, tags, type, and purpose from that snapshot, with immutable scope/key and new confirmed owner provenance. No client-supplied scope or mixed edit fields are accepted. The existing shared save path embeds restored text before committing.
+- Check: Node checks enforce payload, same-request retries, successful receipt, and conflict reload. Go checks enforce historical metadata, exact project/device/platform/key, confirmation, preserved history, startup retrieval, immediate wording and synthetic semantic search, identical replay, conflicting payload/stale expected revision, malformed fields, owner/session/origin restrictions, and whole-save refusal when embedding fails. These tests use synthetic embeddings, not the real model.
 
 ## Verified OK this pass
 
-All 44 Node checks executed without skips, including existing owner save retry, conflict, archive, session expiration, startup preview, approval-link, exact-scope, and device polling contracts. Go gomcp tests pass. No dependencies or framework were added.
+All 58 Node checks executed without skips, including existing owner save retry, conflict, archive, session expiration, startup preview, approval-link, exact-scope, and device polling contracts. Go gomcp tests and vet pass. The LOS changed-code gate reports no heuristic violations. No dependencies or framework were added.
+
+Tradeoff: drafts remain local to the open page and are not autosaved. URL state uses explicit hash fields rather than adding a router. Restore reuses the transactional writer rather than copying snapshot fields in browser code. Hyrum's Law guided compatibility with approval links and existing owner updates; Gall's Law guided these local extensions; Murphy's Law guided replay, conflict, and model-failure checks.
 
 Interaction lenses: Doherty Threshold informed the explicit pending/error/recovery feedback; Working Memory informed keeping byte constraints beside the input and distinguishing literal match cues from meaning search.
 
 ## Not tested
 
-Browser rendering at 375×812 or desktop, light/dark screenshots, physical devices, real screen readers, Windows/Linux browsers, live Mac service, model inference, cross-harness startup, public deployment, and the approval-dependent R2-2/R2-4/R2-10 behavior. This work does not block or complete the 2.7.0 release.
+Browser rendering at 375×812 or desktop, light/dark screenshots, physical devices, real screen readers, Windows/Linux browsers, live Mac service, model inference, cross-harness startup, public deployment, and native browser history/draft interactions beyond the deterministic harness checks. This work does not block or complete the 2.7.0 release.

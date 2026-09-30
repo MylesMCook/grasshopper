@@ -219,8 +219,9 @@ func TestOwnerWritesNeedAnOwnerSessionAndExactOrigin(t *testing.T) {
 	key := sha256.Sum256([]byte(testToken))
 	expired, _ := newVisualizerSession(key[:], time.Now().Add(-time.Second))
 	update, _ := json.Marshal(map[string]any{"id": receipt.ID, "expected_revision": 1, "title": "Guarded", "content": "Changed.", "purpose": "decision", "request_id": "auth-attempt"})
+	restore, _ := json.Marshal(map[string]any{"id": receipt.ID, "expected_revision": 2, "restore_revision": 1, "request_id": "auth-restore"})
 	archive, _ := json.Marshal(map[string]any{"id": receipt.ID, "expected_revision": 1, "archived": true, "request_id": "auth-archive"})
-	for _, route := range []struct{ path, body string }{{"/visualizer/api/update", string(update)}, {"/visualizer/api/archive", string(archive)}} {
+	for _, route := range []struct{ path, body string }{{"/visualizer/api/update", string(update)}, {"/visualizer/api/update", string(restore)}, {"/visualizer/api/archive", string(archive)}} {
 		for _, tc := range []struct {
 			name, token, origin, cookie string
 			status                      int
@@ -300,5 +301,115 @@ func TestOwnerEditIsEmbeddedForSearchOrRefusedWholeWhenTheModelFails(t *testing.
 	page, err := store.Search(context.Background(), gomemory.Scope{Project: &project}, "unrelated words", []float32{0, 1}, "owner-test", 5, 16384)
 	if err != nil || len(page.Records) != 1 || page.Records[0].Content != "Rewritten wording." {
 		t.Fatalf("the corrected memory is not semantically searchable at once: %+v err=%v", page, err)
+	}
+}
+
+func TestOwnerRestoresHistoricalRevisionAsConfirmedAndSearchable(t *testing.T) {
+	server, store := testServer(t, true)
+	ctx := context.Background()
+	project, device, platform := "id:restore", "laptop", "macos"
+	title, tags, kind, key := "Earlier title", "original", "procedure", "stable-key"
+	scope := gomemory.Scope{Project: &project, Device: &device, Platform: &platform}
+	first, err := store.Write(ctx, gomemory.WriteInput{Scope: scope, Title: &title, Tags: &tags, MemoryType: &kind, Key: &key,
+		Content: "Earlier orchard instructions.", Purpose: "lesson", Confirmed: false,
+		Provenance: ownerProvenance, RequestID: "restore-first"}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	title, tags, kind = "Agent title", "changed", "knowledge"
+	_, err = store.Write(ctx, gomemory.WriteInput{Scope: scope, ID: &first.ID, ExpectedRevision: &first.Revision,
+		Title: &title, Tags: &tags, MemoryType: &kind, Key: &key, Content: "Agent correction.", Purpose: "decision", Confirmed: true,
+		Provenance: ownerProvenance, RequestID: "restore-second"}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{"id": first.ID, "expected_revision": 2, "restore_revision": 1, "request_id": "owner-revision-restore"}
+	status, data := ownerJSON(t, server, "/visualizer/api/update", body)
+	if status != http.StatusOK {
+		t.Fatalf("restore status=%d body=%s", status, data)
+	}
+	now, err := store.RecordByID(ctx, first.ID, nil)
+	if err != nil || now.Revision != 3 || now.Content != "Earlier orchard instructions." || !now.Confirmed || now.Title != "Earlier title" || now.Tags != "original" || now.MemoryType != "procedure" || now.Purpose != "lesson" || now.Provenance.Harness != "memory-view" {
+		t.Fatalf("restored snapshot or confirmation incorrect: %+v err=%v", now, err)
+	}
+	if now.Scope.Project == nil || *now.Scope.Project != project || now.Scope.Device == nil || *now.Scope.Device != device || now.Scope.Platform == nil || *now.Scope.Platform != platform || now.Key == nil || *now.Key != key {
+		t.Fatalf("restore changed identity: %+v", now)
+	}
+	for revision := int64(1); revision <= 2; revision++ {
+		old, err := store.RecordByID(ctx, first.ID, &revision)
+		if err != nil || old == nil || old.Revision != revision {
+			t.Fatalf("lost history %d: %+v %v", revision, old, err)
+		}
+	}
+	page, err := store.Context(ctx, scope, 16384)
+	loaded := false
+	for _, record := range page.Records {
+		loaded = loaded || (record.ID == first.ID && record.Revision == 3 && record.Content == now.Content)
+	}
+	if err != nil || !loaded {
+		t.Fatalf("startup did not retrieve restored text: %+v %v", page, err)
+	}
+	search, err := store.Search(ctx, scope, "orchard", nil, "", 5, 16384)
+	if err != nil || len(search.Records) != 1 || search.Records[0].Revision != 3 {
+		t.Fatalf("restore not searchable: %+v %v", search, err)
+	}
+	if status, _ := ownerJSON(t, server, "/visualizer/api/update", body); status != http.StatusOK {
+		t.Fatalf("identical retry did not replay: %d", status)
+	}
+	body["request_id"] = "stale-restore"
+	if status, _ := ownerJSON(t, server, "/visualizer/api/update", body); status != http.StatusConflict {
+		t.Fatalf("stale restore accepted: %d", status)
+	}
+	body["request_id"] = "owner-revision-restore"
+	body["restore_revision"] = 2
+	body["expected_revision"] = 3
+	if status, _ := ownerJSON(t, server, "/visualizer/api/update", body); status != http.StatusConflict {
+		t.Fatalf("changed replay accepted: %d", status)
+	}
+	if current, _ := store.RecordByID(ctx, first.ID, nil); current.Revision != 3 || current.Content != now.Content {
+		t.Fatalf("replay/conflict changed data: %+v", current)
+	}
+	for _, input := range []map[string]any{
+		{"id": first.ID, "expected_revision": 3, "restore_revision": 0, "request_id": "zero"},
+		{"id": first.ID, "expected_revision": 3, "restore_revision": 3, "request_id": "latest"},
+		{"id": first.ID, "expected_revision": 3, "restore_revision": 1, "content": "inject", "request_id": "mixed"},
+		{"id": first.ID, "expected_revision": 3, "restore_revision": 1, "scope": map[string]any{"project": "id:other"}, "request_id": "scope"},
+	} {
+		if status, _ := ownerJSON(t, server, "/visualizer/api/update", input); status != http.StatusBadRequest {
+			t.Fatalf("invalid restore accepted: %v -> %d", input, status)
+		}
+	}
+}
+
+func TestOwnerRevisionRestoreSharesEmbeddingFailureAndSearchContract(t *testing.T) {
+	_, store := testServer(t)
+	ctx := context.Background()
+	first := agentSave(t, store, "restore-embed-first", "Original", "Earlier text.", "decision", true)
+	_, err := store.Write(ctx, gomemory.WriteInput{Scope: gomemory.Scope{Project: observation2project()}, ID: &first.ID, ExpectedRevision: &first.Revision, Content: "New text.", Purpose: "decision", Confirmed: true, Provenance: ownerProvenance, RequestID: "restore-embed-second"}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore := func(embedder Embedder, request string) int {
+		h, err := NewHandler(Backend{Store: store, Visualizer: true, Embedder: embedder, Model: "owner-test"}, testToken)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := httptest.NewServer(h)
+		defer s.Close()
+		status, _ := ownerJSON(t, s, "/visualizer/api/update", map[string]any{"id": first.ID, "expected_revision": 2, "restore_revision": 1, "request_id": request})
+		return status
+	}
+	if status := restore(failedEmbedder{}, "restore-embed-fail"); status != http.StatusServiceUnavailable {
+		t.Fatalf("failed model restore status=%d", status)
+	}
+	if now, _ := store.RecordByID(ctx, first.ID, nil); now.Revision != 2 || now.Content != "New text." {
+		t.Fatalf("failed restore changed data: %+v", now)
+	}
+	if status := restore(constantEmbedder{}, "restore-embed-good"); status != http.StatusOK {
+		t.Fatalf("restore status=%d", status)
+	}
+	page, err := store.Search(ctx, gomemory.Scope{Project: observation2project()}, "unrelated", []float32{0, 1}, "owner-test", 5, 16384)
+	if err != nil || len(page.Records) != 1 || page.Records[0].Content != "Earlier text." {
+		t.Fatalf("restored embedding unavailable: %+v %v", page, err)
 	}
 }

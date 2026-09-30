@@ -2,6 +2,10 @@ const connectionSection = document.getElementById('connection-section');
 const editTitleCount = document.getElementById('edit-title-count');
 const editContentCount = document.getElementById('edit-content-count');
 const searchHint = document.getElementById('search-hint');
+const discardChanges = document.getElementById('discard-changes');
+const keepEditing = document.getElementById('keep-editing');
+const discardDraft = document.getElementById('discard-draft');
+const restoreRevisionButton = document.getElementById('restore-revision');
 const form = document.getElementById('connection-form');
 const tokenInput = document.getElementById('token');
 const tokenError = document.getElementById('token-error');
@@ -66,7 +70,7 @@ const startupControls = document.getElementById('startup-controls');
 const startupAgent = document.getElementById('startup-agent');
 const notLoaded = document.getElementById('not-loaded');
 connectionPrompt.textContent = `Connect Grasshopper to ${location.origin}/visualizer/`;
-function requestFromHash() { return /^#connect=([0-9a-f]{64})$/.exec(location.hash)?.[1] || ''; }
+function requestFromHash() { const id = new URLSearchParams(location.hash.slice(1)).get('connect') || ''; return /^[0-9a-f]{64}$/.test(id) ? id : ''; }
 let approvalID = requestFromHash();
 let approvalFocused = false;
 
@@ -115,6 +119,9 @@ devicesLink.addEventListener('click', event => {
   devicePanel.scrollIntoView({ block: 'start' });
   devicePanel.querySelector('summary')?.focus();
 });
+let leaveDraft = null;
+let appliedRoute = null;
+let linkedMemory = null;
 
 function option(value, text) {
   const item = document.createElement('option');
@@ -205,7 +212,7 @@ function stop(clearRecords = false) {
   stopDeviceRefresh();
   pollFailures = 0;
   resetDeviceRows();
-  closeMemory();
+  closeMemory(true);
   devicePanel.hidden = true;
   serverStatus.hidden = true;
   if (clearRecords) {
@@ -261,10 +268,11 @@ copyConnectionPrompt.addEventListener('click', async () => {
 });
 
 window.addEventListener('hashchange', () => {
-  approvalID = requestFromHash();
-  approvalFocused = false;
-  if (approvalID && active) openDevicePanel();
-  else placeDevicePanel();
+  const route = routeFromHash();
+  if (dirtyDraft()) {
+    replaceRouteURL(appliedRoute);
+    askToLeaveDraft(() => applyRoute(route, true));
+  } else applyRoute(route, false);
 });
 
 devicePanel.addEventListener('toggle', () => { if (!devicePanel.open) resetDeviceRows(); refreshDevices(); });
@@ -517,10 +525,37 @@ function recordMetadata(record) {
   ];
 }
 
+function dirtyDraft() {
+  return Boolean(detailState?.editing && detailState.draftBase !== JSON.stringify([editTitle.value, editPurpose.value, editContent.value]));
+}
+
+function askToLeaveDraft(action) {
+  if (!dirtyDraft()) { action(); return; }
+  leaveDraft = action;
+  discardChanges.hidden = false;
+  keepEditing.focus();
+  discardChanges.scrollIntoView({ block: 'nearest' });
+}
+
+keepEditing.addEventListener('click', () => {
+  leaveDraft = null;
+  discardChanges.hidden = true;
+  editContent.focus();
+});
+discardDraft.addEventListener('click', () => {
+  const action = leaveDraft;
+  leaveDraft = null;
+  discardChanges.hidden = true;
+  if (detailState) detailState.editing = false;
+  action?.();
+});
+
 function cancelDetail() {
   if (detailInFlight) detailInFlight.abort();
   detailInFlight = null;
   detailState = null;
+  leaveDraft = null;
+  discardChanges.hidden = true;
   pendingWrite = null;
   // `saving` belongs to the request in flight, not to the dialog: it stays set
   // until that request ends, so closing the dialog cannot allow a second write.
@@ -536,18 +571,27 @@ function cancelDetail() {
   history.hidden = true;
 }
 
-function closeMemory() {
-  cancelDetail();
-  if (memoryDialog.open) memoryDialog.close();
+function closeMemory(force = false) {
+  const close = () => {
+    cancelDetail();
+    if (memoryDialog.open) memoryDialog.close();
+    if (!force) { linkedMemory = null; saveRoute(); }
+  };
+  if (force) close();
+  else askToLeaveDraft(close);
 }
 
-function openMemory(record) {
-  cancelDetail();
-  detailState = { id: record.id, scope: scopeInput(), revision: 0, maximumRevision: 0, record: null, editing: false };
-  if (!detailState.scope || !active) { cancelDetail(); return; }
-  if (!memoryDialog.open) memoryDialog.showModal();
-  detailTitle.focus();
-  loadRecord();
+function openMemory(record, updateURL = true) {
+  askToLeaveDraft(() => {
+    cancelDetail();
+    detailState = { id: record.id, scope: scopeInput(), revision: 0, maximumRevision: 0, record: null, editing: false };
+    if (!detailState.scope || !active) { cancelDetail(); return; }
+    linkedMemory = record.id;
+    if (updateURL) saveRoute();
+    if (!memoryDialog.open) memoryDialog.showModal();
+    detailTitle.focus();
+    loadRecord();
+  });
 }
 
 async function loadRecord(revision = null) {
@@ -592,7 +636,13 @@ async function loadRecord(revision = null) {
   }
 }
 
-document.getElementById('close-memory').addEventListener('click', closeMemory);
+document.getElementById('close-memory').addEventListener('click', () => closeMemory());
+memoryDialog.addEventListener('cancel', event => { event.preventDefault(); closeMemory(); });
+memoryDialog.addEventListener('click', event => {
+  if (event.target !== memoryDialog) return;
+  const box = memoryDialog.getBoundingClientRect?.();
+  if (!box || event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) closeMemory();
+});
 memoryDialog.addEventListener('close', () => { if (!memoryDialog.open) cancelDetail(); });
 previousRevision.addEventListener('click', () => { if (detailState?.revision > 1) loadRecord(detailState.revision - 1); });
 nextRevision.addEventListener('click', () => { if (detailState?.revision < detailState?.maximumRevision) loadRecord(detailState.revision + 1); });
@@ -634,13 +684,16 @@ function showActions() {
   const state = detailState;
   const record = state?.record;
   const latest = Boolean(record) && state.revision === state.maximumRevision && record.revision === state.maximumRevision;
-  memoryActions.hidden = !latest || state.editing;
+  const earlier = Boolean(record) && state.revision > 0 && state.revision < state.maximumRevision && !record.archived;
+  memoryActions.hidden = (!latest && !earlier) || Boolean(state?.editing);
+  if (record) history.hidden = Boolean(state.editing);
   const archived = Boolean(record?.archived);
-  editButton.hidden = !record || archived;
-  confirmButton.hidden = !record || archived || Boolean(record.confirmed);
-  archiveButton.hidden = !record || archived;
-  restoreButton.hidden = !record || !archived;
-  for (const button of [editButton, confirmButton, archiveButton, restoreButton]) button.disabled = saving;
+  editButton.hidden = !latest || archived;
+  confirmButton.hidden = !latest || archived || Boolean(record.confirmed);
+  archiveButton.hidden = !latest || archived;
+  restoreButton.hidden = !latest || !archived;
+  restoreRevisionButton.hidden = !earlier;
+  for (const button of [editButton, confirmButton, archiveButton, restoreButton, restoreRevisionButton]) button.disabled = saving;
 }
 
 function updateEditLimits() {
@@ -694,6 +747,7 @@ function startEdit() {
   editTitle.value = state.record.title || '';
   editPurpose.value = state.record.purpose || 'observation';
   editContent.value = state.record.content;
+  state.draftBase = JSON.stringify([editTitle.value, editPurpose.value, editContent.value]);
   conflictPanel.hidden = true;
   editForm.hidden = false;
   editActions.hidden = false;
@@ -744,7 +798,7 @@ async function changeMemory(path, fields, done) {
   body.request_id = requestIDFor(body);
   saving = true;
   saveEdit.disabled = true;
-  for (const button of [editButton, confirmButton, archiveButton, restoreButton]) button.disabled = true;
+  for (const button of [editButton, confirmButton, archiveButton, restoreButton, restoreRevisionButton]) button.disabled = true;
   detailStatus.textContent = 'Saving…';
   try {
     const { status, data } = await postOwner(path, body);
@@ -873,18 +927,29 @@ async function setArchived(archived) {
   });
 }
 
+async function restoreEarlierRevision() {
+  const revision = detailState?.revision;
+  if (!revision || revision >= detailState.maximumRevision) return;
+  await changeMemory('/visualizer/api/update', { restore_revision: revision }, async receipt => {
+    await loadRecord();
+    detailStatus.textContent = `Restored revision ${revision} as revision ${receipt.revision} and confirmed. Agents read this text from their next session.`;
+    refreshList();
+  });
+}
+restoreRevisionButton.addEventListener('click', restoreEarlierRevision);
+
 editButton.addEventListener('click', startEdit);
 confirmButton.addEventListener('click', confirmMemory);
 archiveButton.addEventListener('click', () => setArchived(true));
 restoreButton.addEventListener('click', () => setArchived(false));
 editForm.addEventListener('submit', saveMemoryEdit);
-document.getElementById('cancel-edit').addEventListener('click', () => {
+document.getElementById('cancel-edit').addEventListener('click', () => askToLeaveDraft(() => {
   // After a conflict the page still shows the text from before it; reload the latest.
   const stale = detailState?.conflicted;
   endEdit();
   if (stale) loadRecord();
   else detailStatus.textContent = '';
-});
+}));
 
 const viewNames = { '': 'Saved', review: 'Needs review', archived: 'Archived', startup: 'Startup preview' };
 const viewCounts = {};
@@ -901,6 +966,7 @@ function showViewTabs() {
 
 function chooseView(name) {
   if (name === listView) return;
+  askToLeaveDraft(() => {
   listView = name;
   searchQuery = '';
   searchInput.value = '';
@@ -909,6 +975,7 @@ function chooseView(name) {
   notLoaded.hidden = true;
   showViewTabs();
   restartMemoryView();
+  });
 }
 
 function updateServerStatus(info) {
@@ -929,10 +996,22 @@ function updateViewCounts(page) {
 for (const tab of viewTabs.children || []) tab.addEventListener('click', () => chooseView(tab.dataset?.view ?? ''));
 
 function restartMemoryView() {
+  const desired = routeFromFields();
+  if (dirtyDraft()) {
+    setRouteFields(appliedRoute);
+    askToLeaveDraft(() => { setRouteFields(desired); restartMemoryView(); });
+    return;
+  }
+  linkedMemory = null;
+  saveRoute();
+  restartList();
+}
+
+function restartList() {
   clearTimeout(timer);
   if (inFlight) inFlight.abort();
   inFlight = null;
-  closeMemory();
+  closeMemory(true);
   records.replaceChildren();
   showMore.hidden = true;
   latestPage = null;
@@ -952,6 +1031,82 @@ searchForm.addEventListener('submit', event => {
   restartMemoryView();
 });
 clearSearch.addEventListener('click', () => { searchQuery = ''; searchInput.value = ''; restartMemoryView(); });
+
+function routeFromHash() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const bounded = (key, size) => {
+    const text = params.get(key) || '';
+    return text.length <= size && !/[\r\n]/.test(text) ? text : '';
+  };
+  const id = Number(params.get('memory'));
+  const view = params.get('view') || '';
+  const connect = params.get('connect') || '';
+  return { view: Object.hasOwn(viewNames, view) ? view : '', project: bounded('project', 512),
+    device: bounded('device', 256), platform: ['macos', 'windows', 'linux'].includes(params.get('platform')) ? params.get('platform') : '',
+    query: bounded('query', 4096), memory: Number.isSafeInteger(id) && id > 0 ? id : null,
+    connect: /^[0-9a-f]{64}$/.test(connect) ? connect : '' };
+}
+
+function routeFromFields() {
+  return { view: listView, project: projectSelect.value === manualChoice ? manualProjectInput.value.trim() : projectSelect.value,
+    device: deviceSelect.value === manualChoice ? manualDeviceInput.value.trim() : deviceSelect.value,
+    platform: document.getElementById('platform').value, query: searchQuery, memory: linkedMemory, connect: approvalID };
+}
+
+function routeHash(route) {
+  const params = new URLSearchParams();
+  for (const key of ['connect', 'view', 'project', 'device', 'platform', 'query', 'memory']) {
+    if (route?.[key]) params.set(key, String(route[key]));
+  }
+  const hash = params.toString();
+  return hash ? `#${hash}` : '';
+}
+
+function replaceRouteURL(route) { window.history.replaceState(null, '', routeHash(route) || location.pathname || '/visualizer/'); }
+
+function saveRoute() {
+  const route = routeFromFields();
+  const hash = routeHash(route);
+  if (location.hash !== hash) window.history.pushState(null, '', hash || location.pathname || '/visualizer/');
+  appliedRoute = route;
+}
+
+function setRouteFields(route) {
+  if (!route) return;
+  listView = route.view;
+  searchQuery = route.query;
+  searchInput.value = searchQuery;
+  for (const [select, value] of [[projectSelect, route.project], [deviceSelect, route.device]]) {
+    if (value && ![...(select.options || [])].some(item => item.value === value)) select.append(option(value, value));
+    select.value = value;
+  }
+  manualProjectInput.value = '';
+  manualDeviceInput.value = '';
+  manualProjectLabel.hidden = true;
+  manualDeviceLabel.hidden = true;
+  manualProjectInput.required = false;
+  manualDeviceInput.required = false;
+  document.getElementById('platform').value = route.platform;
+  searchForm.hidden = !active || Boolean(listView);
+  startupControls.hidden = !active || listView !== 'startup';
+  showViewTabs();
+}
+
+function applyRoute(route, push) {
+  setRouteFields(route);
+  linkedMemory = route.memory;
+  approvalID = route.connect;
+  approvalFocused = false;
+  appliedRoute = route;
+  if (push) saveRoute();
+  else replaceRouteURL(route);
+  if (active) {
+    restartList();
+    if (route.memory) openMemory({ id: route.memory }, false);
+    if (approvalID) openDevicePanel();
+    else placeDevicePanel();
+  }
+}
 
 function emptyState(omitted) {
   const empty = document.createElement('div');
@@ -1258,11 +1413,12 @@ form.addEventListener('submit', async event => {
   try {
     const response = await sessionRequest('POST', bearer);
     if (!response.ok) throw new Error(response.status === 401 ? 'Access token rejected' : 'Could not sign in');
+    const route = routeFromHash();
     stop(true);
     approvalNotice.hidden = true;
     setConnected(true);
     summary.textContent = 'Loading memories…';
-    refresh();
+    applyRoute(route, false);
   } catch (error) {
     const message = error.message === 'Access token rejected' ? 'That owner access token was rejected. Check it with the person who runs your server, then try again.' : error.name === 'AbortError' ? 'Sign-in timed out. Try again.' : 'Could not reach the server to sign in. Try again when it is available.';
     tokenError.textContent = message;
@@ -1277,7 +1433,7 @@ form.addEventListener('submit', async event => {
   }
 });
 
-disconnectButton.addEventListener('click', async () => {
+disconnectButton.addEventListener('click', () => askToLeaveDraft(async () => {
   disconnectButton.disabled = true;
   try {
     const response = await sessionRequest('DELETE');
@@ -1288,7 +1444,9 @@ disconnectButton.addEventListener('click', async () => {
     disconnectButton.disabled = false;
     setStatus('Could not sign out. Try again when the service is available.', 'error');
   }
-});
+}));
+
+applyRoute(routeFromHash(), false);
 
 (async () => {
   try {
@@ -1300,7 +1458,7 @@ disconnectButton.addEventListener('click', async () => {
       setConnected(true);
       setStatus('Signing in');
       summary.textContent = 'Loading memories…';
-      refresh();
+      applyRoute(routeFromHash(), false);
     } else if (approvalID && !session.connected) {
       approvalNotice.hidden = false;
       approvalNotice.textContent = 'An agent is asking to connect. Sign in as the owner to review the device and code, then approve or deny. Never give the agent your access token.';
