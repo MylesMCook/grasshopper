@@ -102,5 +102,8 @@ browser verification then found a stale tab fade after text-only enlargement;
 a narrow layout observer fixes it. A failing-before regression passes, and
 explicit targeted review of `385f43d` found no defects or observer feedback loop.
 Copilot remains quota-blocked; no external review is claimed.
-Release 2.8.4 is prepared; merge, native CI and deployment remain pending.
+Released [2.8.4](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.4)
+from PR #26/code `765f677`, marketplace `35bf501`. Final PR and merged native
+CI pass all three platforms; recovery, service, installed Mac connectors and
+public-site deployment are complete. [Delivery evidence and limits](memory-acceptance.md#284-final-ui-release-and-rollout-september-30).
 Physical phones, screen readers and non-Chromium browsers remain untested.

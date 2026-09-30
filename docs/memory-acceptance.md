@@ -455,3 +455,77 @@ export, sign-out everywhere and automatic outage recovery. Public build checks
 cover mobile wrapping, selected-OS clipboard, theme and preview metadata.
 No physical device, screen reader, native Windows/Linux, live service/deployment,
 Tailscale Serve instance, reboot or fresh deployed harness turn was tested.
+
+## 2.8.4 final UI release and rollout, September 30
+
+Released [2.8.4](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.4)
+from PR #26, code `765f677`, marketplace `35bf501`. Codex coordinated isolated
+`gpt-6.1-sol` memory-view, public-site, packaging and independent-review workers.
+The owner supplied the accepted final audit F1–F11 and authorized release and
+deployment when ready. No dependencies, framework, API, authentication or data
+changes were introduced.
+
+The review-policy conflict is resolved: one explicitly requested completed
+independent review precedes merge; external review is preferred, with a non-author
+Codex fallback when unavailable. Required GitHub gates remain intact. Copilot
+was quota-blocked and Gemini had not acknowledged its single earlier request;
+no external technical review is claimed. Sol review of `fb2f171` found no defects.
+Integrated browser verification found a stale tab fade after text-only enlargement;
+a narrow layout observer fixed it, with a failing-before regression and explicit
+no-defect targeted review of `385f43d`. Final `f4a3d35` changed only evidence docs;
+its inspected code tree matches the merged release.
+
+Verified checks:
+
+- All 121 Node tests, local Go suite, vet and targeted race checks pass. New
+  scope, responsive Copy, shared contrast and text-layout regressions failed
+  their earlier baselines before passing. Final PR CI `36734492879` and exact-main
+  CI `36734993249` pass all three native jobs, including pinned real-model checks.
+- Combined synthetic Chromium checks cover 12 memory layout/theme/text-scaling
+  combinations, 24 public layouts and 48 public navigation/scaling combinations.
+  All seven commands copy exactly for all three OS choices. Native keyboard
+  scrolling, conditional fades, 44px targets, scope phrases, long identities,
+  Settings hierarchy and concise copy pass. Dynamic text-only enlargement is
+  verified independently of a window resize. Light borders measure 3.465:1 on
+  white and 3.230:1 on the grey surface, with DESIGN/token parity enforced.
+- Seven archives verify 287 embedded hashes, plugin versions, executable modes,
+  exact-main CI server binaries and pinned model/runtime assets. Eight published
+  digests and download responses pass. Packaged synthetic quickstart creates
+  private state and verifies sign-in guidance and its own session lifecycle.
+- A fresh consistent live backup is restored to a task-local copy. The packaged
+  2.8.4 server passes real Granite owner search, current and historical reads,
+  authentication and database integrity. The retained 2.8.3 server passes on a
+  separate checked copy. Owned rehearsal processes were stopped.
+- The guarded live cutover retains the previous binaries and verified snapshot,
+  stops the sole writer before replacement and returns ready in 2.9 seconds.
+  Exact fingerprints preserve 31 memory rows, 72 revisions, 72 receipts, four
+  device credentials and the one owned test session. Owner token, supervisor,
+  shared client configuration, policy and private routing hashes remain intact.
+  The same browser session survives; signing it out rejects only that session.
+- Loopback and private HTTPS verify all 17 active records paged once, startup
+  parity for 3,000/12,000-byte budgets, conditional 304 responses, anonymous and
+  originless-write denial, exact embedded assets and seven-day browser-session
+  attributes/sign-in/sign-out. Current and historical known records remain intact.
+- Installed Mac Codex, Cursor and Claude binaries report 2.8.4. Each startup
+  adapter resolves the project; bridges expose exactly five tools and read the
+  known confirmed memory. Package parity passes for 10/5/5 files. Cursor/Claude
+  use the existing durable versioned package location; prior packages remain.
+  A fresh isolated Claude configuration installs 2.8.4 from the public marketplace.
+- Cloudflare deployment `5f4c74bf` updates the configured public site. All 14 served
+  assets match exact bytes, statuses and four security headers. Live Chromium
+  verifies 24 layouts, all OS command sets and 48 navigation/scaling combinations,
+  including 200% text, both themes, full-width phone strips and Copy below.
+- Pre/post encrypted off-host uploads and backup-repository checks pass. The
+  post-cutover backup includes the acknowledged handoff update after the cutover;
+  cutover row counts above describe the preserved baseline, not later writes.
+
+The verified 2.8.3 receipt from draft PR #25 was incorporated unchanged in PR #26;
+#25 was closed as superseded. The primary checkout and unrelated local evidence
+remain preserved. Task-local evidence and recovery files stay private. Owned
+browser and development processes are closed; the persistent service remains up.
+
+These checks do not establish physical-phone, screen-reader, Safari/Firefox,
+persistent Windows/Linux service, fresh native AI-turn, reboot or complete
+machine-loss recovery success. Existing chats may retain previous bridges until
+reopened. Native CI and direct installed adapter/bridge probes are separate from
+an actual agent model turn.
