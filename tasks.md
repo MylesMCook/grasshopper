@@ -14,8 +14,7 @@ installed Mac connectors and the public site run 2.8.2. Data, credentials and
 routing were preserved. [Delivery evidence and limits](docs/memory-acceptance.md#282-report-8-ui-release-and-rollout-september-30).
 
 Primary checkout and unrelated local evidence remain preserved. Existing chats
-may retain an earlier bridge until reopened. Release evidence is being landed
-through the normal final-head CI/Copilot gate.
+may retain an earlier bridge until reopened.
 
 ## Released report 7: 2.8.1
 
