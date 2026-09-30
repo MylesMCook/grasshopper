@@ -1188,7 +1188,7 @@ function emptyState(omitted) {
   message.textContent = 'Nothing is saved yet. To try it:';
   const steps = document.createElement('ol');
   for (const text of [
-    'Connect an agent: open Devices & connections below and give the agent the prompt.',
+    'Connect an agent: open Settings below, then use the prompt under Devices.',
     'Ask it to save a preference, such as “Remember that I prefer short commit messages.”',
     'Start a fresh session and ask what it remembers about your preferences.',
     'Check that the memory appears here. Memories that are not confirmed yet are not loaded at startup.'

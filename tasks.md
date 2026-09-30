@@ -6,7 +6,7 @@
 `codex/ui-audit-report8` in an isolated managed worktree. Separate
 `gpt-6.1-sol` workers own memory-view and public-site changes. Accepted outcomes
 and verification are in [report 8](docs/ui-audit-report8-results.md).
-Implementation and browser verification are in progress; planned patch 2.8.2.
+Implementation and synthetic browser verification pass; planned patch 2.8.2.
 Release/deployment follow final-head CI, Copilot review and verified recovery.
 Live remains 2.8.1. Primary checkout and existing local evidence are preserved.
 
