@@ -56,11 +56,13 @@ Playwright CLI Chromium checks pass:
   or page overflow. Worker checks separately cover all four public skip links,
   visual/keyboard header order and 200% text reflow.
 
-Planned patch: 2.8.3. Final-head CI and an actual Copilot review must arrive
-before merge; a quota-limit response is not a completed technical review.
+Planned patch: 2.8.3. The owner explicitly approved completed independent Sol
+review and passing final-head CI as the scoped exception for PRs #23/#24.
+Copilot was quota-blocked and Gemini did not acknowledge its single request;
+no external technical review is claimed. Required gates remain for other PRs.
 Release and deployment are authorized when ready, through the existing archive,
 verified-backup, recovery and rollout process.
 
 Physical devices, real screen readers, Safari/Firefox and native agent turns
 are outside this synthetic browser pass. Report 8's documentation-only PR #23
-remains separately open for its missing Copilot review.
+merged as `109669c` under the same owner-approved exception.

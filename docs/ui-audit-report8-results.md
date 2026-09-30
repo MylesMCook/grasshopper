@@ -75,5 +75,5 @@ records; its alt text still describes the visible content.
   200% text at 320px pass.
 
 Physical devices, real screen readers, other browser engines and fresh native
-agent turns were not tested. Release, deployment and final-head CI/Copilot gates
-remain pending; live remains 2.8.1.
+agent turns were not tested. Release 2.8.2 is deployed after final-head CI/Copilot review and recovery checks.
+See the [rollout evidence](memory-acceptance.md#282-report-8-ui-release-and-rollout-september-30).
