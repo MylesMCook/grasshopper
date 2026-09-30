@@ -529,3 +529,83 @@ persistent Windows/Linux service, fresh native AI-turn, reboot or complete
 machine-loss recovery success. Existing chats may retain previous bridges until
 reopened. Native CI and direct installed adapter/bridge probes are separate from
 an actual agent model turn.
+
+
+## 2.8.5 report 11 scannability release and rollout, September 30
+
+Released [2.8.5](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.5)
+from [PR #28](https://github.com/MylesMCook/grasshopper/pull/28), code `79dc7a9`;
+marketplace `8bf87ad`, public deployment `5dfb956d`. Codex coordinated isolated
+`gpt-6.1-sol` setup, home, memory, packaging, public-verification and independent
+review work. The accepted report 11 S1–S9, H1–H4, M1–M4 and address-page wording
+are implemented. No dependencies, API, authentication or data changes.
+
+Setup now gives numbered hosting and approval actions, a remembered agent
+selector, ordered commands, a copyable connect prompt and a success check.
+Home explains ownership and the returning-user path with actual invented-data
+crops. Compact memory browsing has collapsed filters, relative dates and project
+groups; global identity, review attribution, pagination, search ranking and
+startup priority remain intact. Six card starts fit the synthetic laptop project
+list, first at 296px versus the original unfiltered baseline's 717px; all-project
+group headings use additional space. Full text stays in the dialog.
+
+Explicit independent non-author Sol review of `25c485f` identified two P2s:
+recalculate a newly opened command disclosure's fade and allow full-timestamp
+hover. Failing-before/native checks and narrow fixes address both. Explicit
+re-review of final `961d4ca` completed with no remaining blockers before merge.
+Copilot was quota-blocked and Gemini had not acknowledged its single earlier
+request; the documented Codex fallback was used. No external review is
+claimed and GitHub-required gates were preserved.
+
+Verified checks:
+
+- All 132 Node tests, local Go tests, vet and targeted race tests pass. Relevant
+  agent-storage, grouping/filter, disclosure and tooltip regressions enforce
+  the outcomes. Final PR CI `36777980459` and exact-main CI `36778347758` pass all
+  three native jobs, including the pinned real-model checks.
+- Synthetic Chromium setup checks cover 12 width/theme/text combinations;
+  Home/address/404 checks cover 48. All eight commands copy exactly across three
+  OS choices; remembered/default agent selection, keyboard overview anchors,
+  compact memory views and all 29 project-filtered records through pagination
+  pass. Global memories stay labelled, IDs do not duplicate and paging retains
+  focus while further pages remain. Search/startup source order has native tests.
+- Fresh direct browser crops show three invented records: desktop 749×662 with
+  expanded filters and phone 343×615 with collapsed filters. Both previews use
+  the correct responsive source, load fully and contain all three cards. No
+  real memories or credentials are pictured.
+- Seven archives pass 287 embedded hashes, executable modes, versions, pinned
+  model/runtime inputs and exact-main native-binary provenance. All eight
+  published digests and download responses match; 2.8.5 is the latest release.
+  Packaged quickstart, a restored live copy under 2.8.5 and a separate retained
+  2.8.4 rollback copy pass integrity, current/historical reads, authentication
+  and real Granite owner search. Owned rehearsal processes are stopped.
+- Guarded Mac cutover returns ready in 3.6 seconds. Immediate fingerprints
+  preserve 31 records, 74 revisions, 74 receipts, four paired credentials and
+  two browser-session rows, including the owned test session. Supervisor,
+  owner credential and private routing remain unchanged. The same owned
+  session survives cutover and only its own sign-out revokes it.
+- Loopback and private HTTPS checks page all 17 active records exactly once,
+  match both startup budgets to agent context, return conditional 304, deny
+  anonymous/originless writes and serve all five exact embedded assets. Seven-day
+  cookies and their HttpOnly/SameSite/Secure boundaries pass.
+- Installed Mac Codex, Cursor and Claude connectors run 2.8.5; direct scoped
+  startup adapters, five-tool bridges and a known-record read pass. Exact archive
+  parity checks cover 10/5/5 files; shared policy and credentials are preserved.
+  A fresh isolated Claude marketplace install enables published 2.8.5 without
+  borrowing sign-in state. Existing chats may retain earlier bridge processes.
+- The public site serves all 15 exact assets/statuses and four expected security
+  headers. Bounded live Chromium checks pass navigation/skip links, mobile themes,
+  all agent choices, eight commands across three OS choices, copy reset,
+  disclosure fade, responsive crops and 2.8.5 archive links. An initial old setup
+  edge response cleared during a bounded recheck without a second deployment.
+- Pre/post encrypted off-host backups pass consistent-backup verification and
+  repository checks. Previous binaries, checked snapshots, primary checkout
+  `9963e4b` and unrelated evidence remain preserved. Task-local processes stop.
+
+[LAB-236](https://linear.app/mcook/issue/LAB-236) is the single outcome issue.
+The documentation receipt records its independent review and CI in the PR.
+Private release evidence retains full hashes and machine-specific recovery
+references; public documentation contains generic operational evidence only.
+Physical phones, real screen readers, non-Chromium browsers, fresh AI model
+turns, reboot persistence and persistent Windows/Linux deployments were not
+verified. Native CI/package checks do not prove those outcomes.
