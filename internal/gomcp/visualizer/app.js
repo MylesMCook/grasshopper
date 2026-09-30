@@ -1365,7 +1365,7 @@ async function refresh() {
       pollFailures = 0;
       // A changed snapshot may have deferred its redraw during text selection.
       if (latestPage) { draw(latestPage); if (startup) drawNotLoaded(latestPage); }
-      if (recovered) setStatus('Live', 'live');
+      if (recovered || status.textContent === 'Refreshing') setStatus('Live', 'live');
       return;
     }
     if (!response.ok) throw new Error(response.status === 401 ? 'Session expired' : response.status === 400 ? 'Scope not recognized' : 'Service unavailable');

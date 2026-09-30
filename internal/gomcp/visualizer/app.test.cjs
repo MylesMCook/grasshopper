@@ -1265,3 +1265,26 @@ test('sign-in help names quickstart owner token defaults and custom paths', () =
   assert.match(html, /--data-dir/);
   assert.match(html, /--token-file/);
 });
+
+test('foreground cached refresh returns to Live after a not-modified response', async () => {
+  const v = view();
+  const first = v.ui.refresh();
+  v.requests[0].reply({ records: [memory(1)] });
+  await first;
+  const content = v.get('records').children[0];
+  v.document.hidden = true;
+  v.documentListeners.visibilitychange();
+  assert.equal(v.get('status').textContent, 'Paused in background');
+  v.document.hidden = false;
+  v.documentListeners.visibilitychange();
+  assert.equal(v.get('status').textContent, 'Refreshing');
+  v.requests.find((request, index) => index > 0 && request.url === '/visualizer/api/context').reply('', 304);
+  await tick();
+  assert.equal(v.get('status').textContent, 'Live');
+  assert.equal(v.get('records').children[0], content);
+  const poll = v.ui.refresh();
+  v.get('status').textContent = 'Memory confirmed.';
+  v.requests.at(-1).reply('', 304);
+  await poll;
+  assert.equal(v.get('status').textContent, 'Memory confirmed.');
+});
