@@ -39,7 +39,7 @@ function view(hash = '', connected = true, sessionStatus = 200, options = {}) {
     Blob: class { constructor(parts, options) { blobs.push({parts, options}); } },
     URL: { createObjectURL: () => 'blob:synthetic', revokeObjectURL() {} },
     history: { pushState(_state, _title, hash) { sandbox.location.hash = hash.startsWith('#') ? hash : ''; }, replaceState(_state, _title, hash) { sandbox.location.hash = hash.startsWith('#') ? hash : ''; } },
-    document: { hidden: Boolean(options.hidden), addEventListener(name, action) { documentListeners[name] = action; }, getElementById: get, querySelector: get, createElement: element, createDocumentFragment: element },
+    document: { hidden: Boolean(options.hidden), addEventListener(name, action) { documentListeners[name] = action; }, getElementById: get, querySelector: get, createElement: tag => ({...element(),tagName:tag.toUpperCase()}), createDocumentFragment: element },
     window: { addEventListener(name, action) { windowListeners[name] = action; }, confirm: () => true, getSelection: () => null },
     location: { origin: 'http://127.0.0.1', hash },
     AbortController,
@@ -60,7 +60,7 @@ function view(hash = '', connected = true, sessionStatus = 200, options = {}) {
   sandbox.window.history = sandbox.history;
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8'), sandbox);
-  const ui = vm.runInContext('({ refreshDevices, stop, setConnected, revokeDevice, refresh, draw, openMemory, loadRecord, closeMemory, restartMemoryView, chooseView, showViewTabs, updateViewCounts })', sandbox);
+  const ui = vm.runInContext('({ refreshDevices, stop, setConnected, revokeDevice, refresh, draw, openMemory, loadRecord, closeMemory, restartMemoryView, chooseView, showViewTabs, updateViewCounts, relativeUpdatedLabel: typeof relativeUpdatedLabel === "function" ? relativeUpdatedLabel : null })', sandbox);
   if (connected) {
     ui.setConnected(true);
     get('device-panel').open = true;
@@ -89,6 +89,8 @@ test('newer device refresh wins and owns the only polling timer', async () => {
   assert.equal(v.requests[0].options.signal.aborted, true);
   assert.equal(v.timers.size, 1);
 });
+
+function memoryRows(v) { return (v.get('records').children[0]?.children || []).filter(node => node.tagName !== 'H2'); }
 
 function memory(id, revision = 1, content = 'Synthetic saved decision.') {
   return { id, revision, content, title: 'Synthetic decision', scope: {}, purpose: 'decision', confirmed: true, updated_at: '2026-09-29T10:00:00Z', provenance: { source: 'synthetic test', harness: 'test', device: 'test-device' } };
@@ -248,13 +250,13 @@ test('the default view asks for every project and other choices narrow it', () =
 test('an empty store guides first use, and an empty filter says how to widen it', () => {
   const v = view();
   v.ui.draw({ records: [], omitted: 0 });
-  const empty = v.get('records').children[0].children[0];
+  const empty = memoryRows(v)[0];
   assert.match(empty.children[0].textContent, /Nothing is saved yet/);
   assert.equal(empty.children[1].children.length, 4);
   v.get('project').value = 'id:quiet';
   v.ui.restartMemoryView();
   v.ui.draw({ records: [], omitted: 0 });
-  assert.match(v.get('records').children[0].children[0].children[0].textContent, /Choose All projects/);
+  assert.match(memoryRows(v)[0].children[0].textContent, /Choose All projects/);
 });
 
 test('cards name their exact scope and say what an agent will load', () => {
@@ -262,11 +264,11 @@ test('cards name their exact scope and say what an agent will load', () => {
   const scoped = { ...memory(3), confirmed: false, scope: { project: 'git:github.com/example/orchard', device: 'mac-mini', platform: 'macos' } };
   const handoff = { ...memory(4), confirmed: false, purpose: 'handoff' };
   v.ui.draw({ records: [scoped, handoff], omitted: 0 });
-  const [first, second] = v.get('records').children[0].children;
-  assert.equal(first.children[0].children[1].textContent, 'Git project github.com/example/orchard · device mac-mini · macOS');
+  const [first, second] = memoryRows(v);
+  assert.equal(first.children[0].children[1].textContent, 'device mac-mini · macOS');
   assert.equal(first.children[0].children[2].textContent, '#3');
-  assert.match(first.children[2].children[0].children[0].textContent, /^Unconfirmed · not loaded at agent startup/);
-  assert.match(second.children[2].children[0].children[0].textContent, /^Unconfirmed handoff · loads at startup/);
+  assert.match(first.children[2].children[0].children[0].textContent, /^Unconfirmed/);
+  assert.match(second.children[2].children[0].children[0].textContent, /^Unconfirmed/);
   assert.equal(first.children[1].children[0].attributes['aria-label'], 'Open memory: Synthetic decision');
 });
 
@@ -274,10 +276,10 @@ test('omitted records are named and a poll redraw keeps keyboard focus', () => {
   const v = view();
   v.ui.draw({ records: [memory(5)], omitted: 1, omitted_ids: [9], omitted_records: [{ id: 9, revision: 1, scope: {} }], omitted_titles: { 9: 'Large lesson' } });
   assert.equal(v.get('omissions').children[1].children[0].textContent, 'Open “Large lesson” (#9)');
-  v.document.activeElement = v.get('records').children[0].children[0].children[1].children[0];
+  v.document.activeElement = memoryRows(v)[0].children[1].children[0];
   const before = v.document.activeElement;
   v.ui.draw({ records: [memory(5, 2)], omitted: 0 });
-  const after = v.get('records').children[0].children[0].children[1].children[0];
+  const after = memoryRows(v)[0].children[1].children[0];
   assert.notEqual(after, before);
   assert.equal(after.focused, true);
 });
@@ -285,7 +287,7 @@ test('omitted records are named and a poll redraw keeps keyboard focus', () => {
 test('a truncated list preview ends with an ellipsis and short text does not', () => {
   const v = view();
   v.ui.draw({ records: [{ ...memory(6), content: 'x'.repeat(240), content_truncated: true }, memory(7)], omitted: 0 });
-  const [long, short] = v.get('records').children[0].children;
+  const [long, short] = memoryRows(v);
   assert.equal(long.children[3].textContent, 'x'.repeat(240) + '…');
   assert.equal(short.children[3].textContent, 'Synthetic saved decision.');
 });
@@ -295,14 +297,14 @@ test('a changed review poll retains the focused inline action and removal finds 
   v.ui.chooseView('review');
   v.requests.at(-1).reply({ records: [memory(1), memory(2)] });
   await tick();
-  const first = v.get('records').children[0].children[0];
+  const first = memoryRows(v)[0];
   v.document.activeElement = first.children[2].children[1].children[0];
   v.ui.draw({ records: [memory(1, 2), memory(2)] });
-  const replacement = v.get('records').children[0].children[0].children[2].children[1].children[0];
+  const replacement = memoryRows(v)[0].children[2].children[1].children[0];
   assert.equal(replacement.focused, true);
   v.document.activeElement = replacement;
   v.ui.draw({ records: [memory(2)] });
-  assert.equal(v.get('records').children[0].children[0].children[1].children[0].focused, true);
+  assert.equal(memoryRows(v)[0].children[1].children[0].focused, true);
 });
 
 test('search explanation consumes space only when there is a query', async () => {
@@ -455,7 +457,7 @@ test('choosing a list view asks the server for it and hides search', async () =>
   assert.equal(v.get('search-form').hidden, true);
   v.requests.at(-1).reply({ records: [], omitted: 0, devices: [], projects: [], review_count: 0, archived_count: 2 });
   await tick();
-  assert.match(v.get('records').children[0].children[0].children[0].textContent, /Nothing needs review/);
+  assert.match(memoryRows(v)[0].children[0].textContent, /Nothing needs review/);
   v.ui.chooseView('');
   assert.equal(v.get('search-form').hidden, false);
   assert.deepEqual(JSON.parse(v.requests.at(-1).options.body), { all_projects: true });
@@ -600,9 +602,9 @@ test('scope labels keep Git projects and project IDs apart', () => {
     { ...memory(20), scope: { project: 'git:github.com/example/orchard' } },
     { ...memory(21), scope: { project: 'id:github.com/example/orchard' } }
   ], omitted: 0 });
-  const [git, id] = v.get('records').children[0].children;
-  assert.equal(git.children[0].children[1].textContent, 'Git project github.com/example/orchard');
-  assert.equal(id.children[0].children[1].textContent, 'Project ID github.com/example/orchard');
+  const [git, id] = memoryRows(v);
+  assert.equal(git.children[0].children[1].textContent, '');
+  assert.equal(id.children[0].children[1].textContent, '');
 });
 
 test('an omission list capped at 100 says how many memories it does not name', () => {
@@ -775,16 +777,16 @@ test('search highlights literal text safely and suggests all projects only when 
   v.get('search-form').listeners.submit({ preventDefault() {} });
   v.requests.at(-1).reply({ records: [memory(44, 1, 'Orchard <script> trees.')], omitted: 0, semantic_ready: false });
   await tick();
-  const content = v.get('records').children[0].children[0].children[3];
+  const content = memoryRows(v)[0].children[3];
   assert.deepEqual(content.children.filter(part => typeof part !== 'string').map(part => part.textContent), ['Orchard', '<script>']);
   v.ui.draw({ records: [], omitted: 0 });
-  let text = v.get('records').children[0].children[0].children[0].textContent;
+  let text = memoryRows(v)[0].children[0].textContent;
   assert.doesNotMatch(text, /search all projects/);
   v.get('project').value = 'id:filtered';
   v.ui.restartMemoryView();
   v.requests.at(-1).reply({ records: [], omitted: 0 });
   await tick();
-  text = v.get('records').children[0].children[0].children[0].textContent;
+  text = memoryRows(v)[0].children[0].textContent;
   assert.match(text, /search all projects/);
 });
 
@@ -802,13 +804,13 @@ test('long lists show eight memories first and reveal more without a fetch', () 
   const v = view();
   const page = { records: Array.from({ length: 32 }, (_, i) => memory(i + 1)) };
   v.ui.draw(page);
-  assert.equal(v.get('records').children[0].children.length, 8);
+  assert.equal(memoryRows(v).length, 8);
   assert.equal(v.get('show-more').hidden, false);
   v.get('show-more').listeners.click();
-  assert.equal(v.get('records').children[0].children.length, 16);
+  assert.equal(memoryRows(v).length, 16);
   assert.equal(v.requests.length, 0);
   v.ui.draw(page);
-  assert.equal(v.get('records').children[0].children.length, 16);
+  assert.equal(memoryRows(v).length, 16);
 });
 
 test('masthead devices link opens the connection panel', () => {
@@ -834,7 +836,7 @@ test('wrong token reports at the field and returns focus without a contradictory
 function inlineActions(v, record) {
   v.ui.chooseView('review');
   v.requests.at(-1).reply({ records: [record] });
-  return tick().then(() => v.get('records').children[0].children[0].children[2].children[1]);
+  return tick().then(() => memoryRows(v)[0].children[2].children[1]);
 }
 
 test('inline confirm reads full content, uses expected revision, and replays uncertain writes', async () => {
@@ -901,7 +903,7 @@ test('a poll redraw during inline review enables the current row after failure',
   await tick();
   const write = v.requests.at(-1);
   v.ui.draw({ records: [{ ...record, title: 'Changed list title' }] });
-  const current = v.get('records').children[0].children[0].children[2].children[1];
+  const current = memoryRows(v)[0].children[2].children[1];
   assert.notEqual(current, actions);
   assert.equal(current.children[0].disabled, true);
   assert.equal(current.children[0].textContent, 'Confirming…');
@@ -1100,12 +1102,12 @@ test('server Show more appends records and a poll preserves loaded pages', async
   const next = v.requests.at(-1);
   assert.equal(JSON.parse(next.options.body).after, 'cursor');
   next.reply({ records:[memory(9),memory(10)], next:'', total:10 }); await tick();
-  assert.equal(v.get('records').children[0].children.length,10);
+  assert.equal(memoryRows(v).length,10);
   const poll = v.ui.refresh();
   v.requests.at(-1).reply({records:Array.from({length:8},(_,i)=>memory(i+1)),next:'fresh-cursor',total:10}); await tick();
   assert.equal(JSON.parse(v.requests.at(-1).options.body).after, 'fresh-cursor');
   v.requests.at(-1).reply({records:[memory(9,2),memory(10)],next:'',total:10}); await poll;
-  assert.equal(v.get('records').children[0].children.length,10);
+  assert.equal(memoryRows(v).length,10);
 });
 
 test('not modified polling preserves content and status', async () => {
@@ -1203,9 +1205,9 @@ test('Show more waits for polling and uses the newly installed snapshot cursor',
   const more = v.requests.at(-1);
   assert.equal(JSON.parse(more.options.body).after, 'snapshot-b');
   more.reply({ records: [memory(9, 2), memory(10, 2)], next: '', total: 10 }); await tick();
-  const cards = v.get('records').children[0].children;
+  const cards = memoryRows(v);
   assert.equal(cards.length, 10);
-  assert.match(cards[8].children[2].children[0].children[0].textContent, /Confirmed/);
+  assert.equal(cards[8].children[2].children[0].children[0].textContent, '');
   assert.equal(v.timers.size, 1);
 });
 
@@ -1234,7 +1236,7 @@ test('a not-modified poll draws a changed snapshot after text selection ends', a
   v.window.getSelection = () => null;
   const unchanged = v.ui.refresh(); v.requests.at(-1).reply('',304); await unchanged;
   assert.notEqual(v.get('records').children[0],old);
-  assert.equal(v.get('records').children[0].children[0].children[3].textContent,'Updated while selecting.');
+  assert.equal(memoryRows(v)[0].children[3].textContent,'Updated while selecting.');
   assert.equal(v.timers.size,1);
 });
 
@@ -1307,7 +1309,7 @@ test('memory title is the open action and close returns focus to it', async () =
   const first = v.ui.refresh();
   v.requests[0].reply({ records: [memory(1)] });
   await first;
-  const title = v.get('records').children[0].children[0].children[1].children[0];
+  const title = memoryRows(v)[0].children[1].children[0];
   assert.equal(title.textContent, 'Synthetic decision');
   assert.match(title.className, /record-title/);
   title.listeners.click();
@@ -1401,7 +1403,7 @@ test('previews trim whitespace before one ellipsis while full text remains uncha
   const first = v.ui.refresh();
   v.requests[0].reply({records:[memory(1,1,full)]});
   await first;
-  const article = v.get('records').children[0].children[0];
+  const article = memoryRows(v)[0];
   assert.equal(article.children[3].textContent, 'x'.repeat(235) + '…');
   assert.equal(article.children[0].children[0].textContent, 'Decision');
   await openLatest(v,memory(1,1,full));
@@ -1492,4 +1494,56 @@ test('tab overflow cue follows text layout changes without a window resize', () 
   tabs.scrollLeft=18;
   v.layoutObservers[0].callback();
   assert.equal(v.get('tabs-wrap').attributes['data-overflow'],'false');
+});
+
+
+test('browse groups first-seen projects without losing appended records or source order', () => {
+  const v=view();
+  const rows=[{...memory(1),scope:{project:'id:a'}},{...memory(2),scope:{}},{...memory(3),scope:{project:'id:b'}},{...memory(4),scope:{project:'id:a'}}];
+  v.ui.draw({records:rows});
+  assert.deepEqual(memoryRows(v).map(row=>row.children[1].children[0].memoryID),[1,4,2,3]);
+  assert.deepEqual(v.get('records').children[0].children.filter(row=>row.tagName==='H2').map(row=>row.textContent),['Project ID a','Global','Project ID b']);
+  v.ui.draw({records:[...rows,{...memory(5),scope:{project:'id:a'}}]});
+  assert.deepEqual(memoryRows(v).map(row=>row.children[1].children[0].memoryID),[1,4,5,2,3]);
+  v.get('project').value='id:a'; v.ui.restartMemoryView();
+  v.ui.draw({records:[rows[0],rows[1]]});
+  assert.equal(memoryRows(v)[0].children[0].children[1].textContent,'');
+  assert.equal(memoryRows(v)[1].children[0].children[1].textContent,'Global');
+});
+
+test('search and startup retain exact record ranking while browsing groups', async () => {
+  const v=view();
+  const rows=[{...memory(1),scope:{project:'id:a'}},{...memory(2),scope:{project:'id:b'}},{...memory(3),scope:{project:'id:a'}}];
+  v.get('search-query').value='sample'; v.get('search-form').listeners.submit({preventDefault(){}});
+  v.ui.draw({records:rows});
+  assert.deepEqual(memoryRows(v).map(row=>row.children[1].children[0].memoryID),[1,2,3]);
+  assert.equal(v.get('records').children[0].children.filter(row=>row.tagName==='H2').length,0);
+  v.ui.chooseView('startup'); v.ui.draw({records:rows});
+  assert.deepEqual(memoryRows(v).map(row=>row.children[1].children[0].memoryID),[1,2,3]);
+});
+
+test('relative dates have calendar-day labels and attention-only list status', () => {
+  const v=view();
+  const now=new Date(2026,8,30,12);
+  const record=days=>({...memory(1),updated_at:new Date(2026,8,30-days,9).toISOString()});
+  assert.equal(v.ui.relativeUpdatedLabel(record(0),now),'Today');
+  assert.equal(v.ui.relativeUpdatedLabel(record(1),now),'Yesterday');
+  assert.equal(v.ui.relativeUpdatedLabel(record(3),now),'3 days ago');
+  assert.equal(v.ui.relativeUpdatedLabel({...memory(1),updated_at:'invalid'},now),'Update date unavailable');
+  v.ui.draw({records:[record(0)]});
+  const state=memoryRows(v)[0].children[2].children[0];
+  assert.equal(state.children[0].textContent,'');
+  assert.match(state.children[1].title,/Updated/);
+});
+
+test('filters default collapsed everywhere and subtitle follows authentication', () => {
+  const v=view();
+  assert.equal(v.get('intro-subtitle').hidden,true);
+  v.ui.setConnected(false);
+  assert.equal(v.get('intro-subtitle').hidden,false);
+  const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+  const css=fs.readFileSync(path.join(__dirname,'style.css'),'utf8');
+  assert.match(html, /About filters/);
+  assert.match(css, /\.filter-controls \{ display:none; \}/);
+  assert.match(css, /\.records \{ gap:var\(--space-4\)/);
 });

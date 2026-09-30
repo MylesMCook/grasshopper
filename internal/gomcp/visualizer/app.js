@@ -224,6 +224,8 @@ function setConnected(value) {
   tokenField.hidden = value;
   form.hidden = value;
   connectionSection.hidden = value;
+  document.getElementById('intro-subtitle').hidden = value;
+  document.getElementById('page-intro').classList.toggle('signed-in', value);
   refreshButton.hidden = !value;
   disconnectButton.disabled = !value;
   disconnectButton.hidden = !value;
@@ -550,7 +552,7 @@ function label(text) {
 }
 
 function updatedLabel(record) {
-  const date = new Date(record.updated_at);
+  const date = new Date(record.updated_at || NaN);
   return Number.isNaN(date.getTime()) ? 'Update date unavailable' : `Updated ${date.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}`;
 }
 
@@ -558,6 +560,15 @@ const platformNames = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
 
 // Cards name the exact scope in words. A Git project and a project ID are
 // different scopes even when the rest of their text matches, so the label says which.
+function relativeUpdatedLabel(record, now = new Date()) {
+  const date = new Date(record.updated_at || NaN);
+  if (Number.isNaN(date.getTime())) return 'Update date unavailable';
+  // Calendar-day difference uses UTC arithmetic on local dates, avoiding DST hours.
+  const day = value => Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
+  const days = Math.floor((day(now) - day(date)) / 86400000);
+  return days === 0 ? 'Today' : days === 1 ? 'Yesterday' : days > 1 ? `${days} days ago` : updatedLabel(record);
+}
+
 function projectLabel(project) {
   if (project.startsWith('git:')) return `Git project ${project.slice(4)}`;
   if (project.startsWith('id:')) return `Project ID ${project.slice(3)}`;
@@ -1330,7 +1341,7 @@ function draw(page) {
     omissions.replaceChildren(text, links);
   }
   lastOmissionSignature = omissionSignature;
-  const signature = JSON.stringify(items.map(record => [record.id, record.revision, record.title, record.content, record.scope, record.provenance, record.confirmed, record.purpose, record.updated_at]));
+  const signature = JSON.stringify([new Date().toDateString(), items.map(record => [record.id, record.revision, record.title, record.content, record.scope, record.provenance, record.confirmed, record.purpose, record.updated_at])]);
   const total = !searchQuery && Number.isSafeInteger(page.total) ? page.total : items.length;
   summary.textContent = `${total} ${total === 1 ? 'memory' : 'memories'}${searchQuery ? ' in search results' : ''}`;
   const selection = window.getSelection();
@@ -1345,11 +1356,32 @@ function draw(page) {
   openButtons = new Map();
   inlineActionRows = new Map();
   const fragment = document.createDocumentFragment();
-  for (const record of items.slice(0, visibleLimit)) {
+  const visible = items.slice(0, visibleLimit);
+  const groupedBrowse = !searchQuery && listView !== 'startup' && projectSelect.value === '';
+  const groups = new Map();
+  if (groupedBrowse) for (const record of visible) {
+    const project = record.scope?.project || '';
+    if (!groups.has(project)) groups.set(project, []);
+    groups.get(project).push(record);
+  }
+  // Only owner browsing groups projects. Search ranking and startup priority stay exact.
+  const ordered = groupedBrowse ? [...groups.values()].flat() : visible;
+  const showGroupHeadings = groupedBrowse && (groups.size > 1 || !groups.has(''));
+  let lastProject = null;
+  for (const record of ordered) {
+    const project = record.scope?.project || '';
+    if (showGroupHeadings && project !== lastProject) {
+      const groupHeading = document.createElement('h2');
+      groupHeading.className = 'project-group-heading';
+      groupHeading.textContent = project ? projectLabel(project) : 'Global';
+      groupHeading.title = project || 'Global';
+      fragment.append(groupHeading);
+      lastProject = project;
+    }
     const key = `${record.id}`;
     next.set(key, record.revision);
     const article = document.createElement('article');
-    article.className = 'record';
+    article.className = listView === 'review' ? 'record review-record' : 'record';
     if (hasLoaded && revisions.get(key) !== record.revision) article.classList.add('changed');
     const top = document.createElement('div');
     top.className = 'record-top';
@@ -1360,7 +1392,10 @@ function draw(page) {
     const scope = record.scope || {};
     const scopeLabel = document.createElement('p');
     scopeLabel.className = 'record-scope';
-    scopeLabel.textContent = scopeLabelText(scope);
+    const selectedProject = projectSelect.value === manualChoice ? manualProjectInput.value.trim() : projectSelect.value;
+    const omitProject = showGroupHeadings || (scope.project && scope.project === selectedProject);
+    scopeLabel.textContent = omitProject ? [scope.device && `device ${scope.device}`, scope.platform && (platformNames[scope.platform] || scope.platform)].filter(Boolean).join(' · ') : scopeLabelText(scope);
+    scopeLabel.hidden = !scopeLabel.textContent;
     const number = document.createElement('p');
     number.textContent = `#${record.id}`;
     top.append(kind, scopeLabel, number);
@@ -1374,10 +1409,12 @@ function draw(page) {
     state.className = 'record-state';
     const stateLabel = document.createElement('span');
     stateLabel.className = record.confirmed ? '' : 'unconfirmed';
-    stateLabel.textContent = startupNote(record);
+    stateLabel.textContent = record.archived ? 'Archived' : !record.confirmed ? 'Unconfirmed' : '';
+    stateLabel.hidden = !stateLabel.textContent;
     const stateMetadata = document.createElement('span');
-    stateMetadata.textContent = ` · ${updatedLabel(record)}`;
-    if (listView === 'review') stateMetadata.textContent += ` · Saved by ${harnessLabel(record.provenance?.harness)} on ${record.provenance?.device || 'an unknown device'}${record.provenance?.source ? `: ${record.provenance.source}` : ''}`;
+    stateMetadata.textContent = `${stateLabel.textContent ? ' · ' : ''}${relativeUpdatedLabel(record)}`;
+    stateMetadata.title = updatedLabel(record);
+
     state.append(stateLabel, stateMetadata);
     const open = document.createElement('button');
     open.type = 'button'; open.className = 'record-title record-open';

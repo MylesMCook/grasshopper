@@ -208,3 +208,57 @@ p { text-wrap:pretty; }
 h1,h2,h3 { text-wrap:balance; }
 @media(max-width:700px) { .masthead { margin-top:var(--space-3); } }
 .results-heading > div:first-child { min-width:0; flex:1; max-width:100%; }
+
+/* Default compact browsing keeps full reading in the detail dialog. */
+.filter-toggle { display:block; padding-inline:0; margin-top:var(--space-2); }
+.filter-controls { display:none; }
+.filters-expanded .filter-controls { display:block; }
+.about-filters { margin-top:var(--space-3); font-size:var(--text-label); }
+.about-filters > summary { min-height:44px; display:flex; align-items:center; cursor:pointer; }
+.intro.signed-in { padding:var(--space-2) 0 var(--space-3); }
+.browse-controls { padding:var(--space-3); }
+.results-heading { margin-top:var(--space-3); }
+.records { gap:var(--space-4); margin-top:var(--space-3); }
+.record { position:relative; }
+.record-top { position:absolute; top:0; left:0; font-size:var(--text-meta); line-height:1.2; gap:var(--space-2); pointer-events:none; }
+.record-top p { max-width:40ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.record h3 { margin:0; }
+.record-title { align-items:flex-end; padding:var(--space-3) 0 0; min-height:44px; line-height:1.15; }
+.record > .record-content { margin-top:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+.record-state-line { position:absolute; top:0; right:0; min-height:44px; }
+.record-state { margin:0; font-size:var(--text-meta); }
+.record:not(.review-record) .record-state-line { pointer-events:none; }
+.record:not(.review-record) h3 { padding-right:var(--space-6); }
+.review-record h3 { padding-right:260px; }
+.project-group-heading { font:500 var(--text-label)/1.35 'Geist Mono',ui-monospace,monospace; overflow-wrap:anywhere; margin-top:var(--space-2); }
+@media(max-width:700px) {
+  .record > .record-content { white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .record-state-line { min-height:0; }
+  .record-state { max-width:18ch; }
+  .review-record h3 { padding-right:0; }
+  .review-record .record-state-line { position:static; min-height:44px; }
+}
+.record-top { max-width:calc(100% - 8ch); flex-wrap:nowrap; overflow:hidden; }
+.record-top p { max-width:100%; min-width:0; }
+.record-top > p:last-child { display:none; }
+/* One toolbar leaves the reading area available on laptop-height screens. */
+main { padding-top:0; }
+.masthead { padding-block:0; margin-top:var(--space-3); }
+.intro.signed-in { padding:var(--space-2) 0; }
+.browse-controls { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:var(--space-3); padding:0; background:transparent; }
+.search-form > label { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+.search-row { margin-top:0; }
+.filter-toggle { margin:0; }
+.filter-controls { grid-column:1 / -1; }
+.results-heading { margin-top:var(--space-2); min-height:44px; }
+.view-tabs { padding-block:0; margin-bottom:var(--space-2); }
+.records { margin-top:var(--space-2); }
+@media(max-width:700px) {
+  .masthead-actions { flex-wrap:wrap; gap:var(--space-2); }
+  .masthead-actions a,.masthead-actions button.quiet { font-size:var(--text-meta); }
+  .masthead-actions .theme-toggle { flex:none; }
+  .search-row input { flex-basis:120px; }
+  .results-heading { flex-direction:row; align-items:center; }
+  .results-actions { gap:var(--space-2); }
+  .scope-summary { font-size:var(--text-meta); }
+}
