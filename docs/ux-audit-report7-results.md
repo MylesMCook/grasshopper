@@ -69,7 +69,7 @@ records, and its alternative text matches the image.
 Independent review found a foreground-refresh 304 status edge case; it is fixed
 and covered by a failing-before/passing-after regression. All 103 Node tests
 pass. Copilot findings about overlapping copy feedback and version-matched
-checksums are corrected and covered by regressions. Final-head review and
-2.8.1 delivery remain.
+checksums are corrected and covered by regressions. Final-head CI and Copilot review passed before PR #20 merged as `7f9d98f`.
+[2.8.1 delivery is verified](memory-acceptance.md#281-report-7-release-and-rollout-september-29).
 Physical devices, screen readers, Safari/Firefox and fresh native agent turns
 are not established by these checks.

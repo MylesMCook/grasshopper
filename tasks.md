@@ -1,18 +1,19 @@
 # Grasshopper release state
 
-## UX audit report 7: implementation and 2.8.1 rollout
+## Released report 7: 2.8.1
 
-[LAB-232](https://linear.app/mcook/issue/LAB-232): Codex owns the isolated `codex/ux-audit-report7` worktree based on `faa7118`.
-[Accepted outcomes](docs/ux-audit-report7-results.md) cover all ten findings.
-Three `gpt-6.1-sol` workers own site, README/server guidance and memory/screenshot
-changes. The owner supplied R7-1–10 as concrete accepted fixes and authorized
-release and deployment when checks establish readiness, without another routine
-approval gate. No dependencies or framework are added.
+[LAB-232](https://linear.app/mcook/issue/LAB-232): [2.8.1](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.1)
+ships all ten findings via PR #20, release `7f9d98f`, marketplace `1356f3e`.
+Codex coordinated isolated `gpt-6.1-sol` workers; final-head CI and Copilot review
+preceded merge. Local Go tests/vet/race, 103 Node tests, native three-platform CI,
+seven archives/287 embedded hashes and eight published digests pass. Packaged
+quickstart and restored-copy upgrade/2.8.0 rollback pass. The Mac service and
+installed Codex/Cursor/Claude clients run 2.8.1; the public site is deployed and
+verified. Data, credentials, sessions and routing survived; pre/post encrypted
+off-host backups pass. [Delivery evidence and limits](docs/memory-acceptance.md#281-report-7-release-and-rollout-september-29).
 
-Next: integrate focused regressions and synthetic mobile/desktop checks, wait
-for CI and Copilot review of the final PR head, then publish 2.8.1 and deploy
-with verified backup/recovery, archive digests and client-facing checks.
-Preserve records, credentials, private routing and unrelated work.
+Primary checkout and unrelated local evidence remain preserved. Existing chats
+may retain their previous bridge until reopened.
 
 ## Released UX audits: 2.8.0
 
