@@ -11,9 +11,10 @@ checkout and LAB-223 release belong to the separate release task.
 [LAB-224](https://linear.app/mcook/issue/LAB-224) covers report 1;
 [LAB-225](https://linear.app/mcook/issue/LAB-225) covers report 2. No new
 dependencies, framework or live-service changes. Fixes are being reproduced
-and checked on synthetic/local surfaces. The unsaved-draft guard, URL view
-state and earlier-revision restoration await owner approval of
-[proposed scenarios](docs/ux-audit-followup-scenarios.md). Existing approved
+and checked on synthetic/local surfaces. The owner's autonomy instruction removes
+the separate approval round for the supplied unsaved-draft, URL view-state and
+earlier-revision restoration outcomes; [acceptance examples](docs/ux-audit-followup-scenarios.md)
+record them. Existing approved
 review/correction outcomes remain in `docs/memory-view-review.md`.
 
 Next: integrate the verified worker commits, review overlap and run combined

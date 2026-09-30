@@ -6,6 +6,19 @@ If startup has not supplied memory context, call the connected Grasshopper
 `context` tool once when available. Read nested AGENTS.md before editing files
 in its scope.
 
+## Execution autonomy
+
+Own implementation, integration, technical review and verification through the
+requested outcome. Owner-supplied audit fixes and concrete examples settle their
+acceptance behavior; record scenarios and proceed without another approval
+round. Ask only about unresolved product behavior, material risk or an external
+action lacking authorization. Use bounded workers in separate worktrees when
+that helps; the primary assistant owns their integration and evidence.
+
+Apply Laws of Software judgment: prefer small reversible changes, preserve
+contracts and memory invariants, test failure and recovery, and report only
+verified outcomes. Keep existing host-safety, data and external-action rules.
+
 ## Product boundary
 
 Grasshopper is one authenticated, self-hosted SQLite memory service. Codex

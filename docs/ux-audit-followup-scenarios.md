@@ -1,9 +1,10 @@
 # UX audit follow-up behavior
 
-Owner review requested September 29, 2026. These scenarios are **proposed,
-not approved or implemented**. The supplied audit fixes outside these new
-behaviors can proceed. Existing review, correction, conflict and archive
-outcomes remain in [memory-view-review.md](memory-view-review.md).
+Acceptance examples derived from the owner's September 29, 2026 audit and
+subsequent instruction to own routine decisions without another approval round.
+Implementation and verification are tracked in `tasks.md` and the audit reports.
+Existing review, correction, conflict and archive outcomes remain in
+[memory-view-review.md](memory-view-review.md).
 
 ```gherkin
 Feature: Preserve owner work and make memory views recoverable
