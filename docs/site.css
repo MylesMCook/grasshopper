@@ -27,6 +27,15 @@ nav a { display:inline-flex; align-items:center; min-width:24px; min-height:32px
 .theme-toggle { grid-column:3; grid-row:1; display:grid; place-items:center; width:44px; height:44px; padding:0; border:1px solid var(--border); border-radius:var(--radius-control); background:transparent; color:var(--foreground); cursor:pointer; }
 .theme-toggle svg { width:21px; height:21px; }
 .hero { padding:var(--space-6) 0; }
+.home-copy { width:100%; max-width:60ch; }
+.hero .lead { max-width:none; font-size:var(--text-title); }
+.hero .intro { max-width:none; }
+.home-facts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--space-4); margin:var(--space-4) 0 0; }
+.home-facts div { min-width:0; }
+.home-facts dt { font-weight:600; }
+.home-facts dd { margin:var(--space-2) 0 0; color:var(--muted); }
+.hero .home-secondary { display:inline-flex; align-items:center; min-height:44px; padding:var(--space-2) 0; }
+@media (max-width:700px) { .home-facts { grid-template-columns:1fr; } }
 .view-main { padding:var(--space-5) 0 var(--space-6); }
 h1,h2,h3,p { margin:0; }
 p { text-wrap:pretty; }
