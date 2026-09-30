@@ -1,18 +1,27 @@
 # Grasshopper release state
 
-## 2.8.0 rollout in progress
+## Released UX audits: 2.8.0
 
-Codex owns an isolated macOS worktree on `codex/release-2.8.0`, based on
-`9ecbc11`. The owner authorized release, marketplace/client archives, public
-site deployment, a verified-backup private-service upgrade and stale branch
-cleanup after preservation checks. Three `gpt-6.1-sol` workers prepare archive,
-recovery and site/branch evidence; Codex owns integration and external actions.
+[LAB-231](https://linear.app/mcook/issue/LAB-231): [2.8.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.0)
+ships PRs #16–#17, release commit `b772736` (PR #18), marketplace `2159643`.
+Codex owned delivery in an isolated macOS worktree with `gpt-6.1-sol` packaging,
+recovery and site reviewers. Final-head CI and Copilot review preceded the
+release-preparation merge. Three-platform native CI, seven archives/287 embedded
+hashes, eight published digests, real-model restored-copy upgrade and 2.7.0
+recovery checks pass. The private service and installed Mac connectors run 2.8.0;
+the public site is deployed and verified. Cutover preserved all 27 memory rows,
+65 revisions/receipts and four device-token rows, credentials, supervisor and
+routing. Readiness took 3.12 seconds. Pre/post encrypted off-host backups pass.
 
-Next: final-head CI and Copilot review, native release archives and checksums,
-restored-copy and old-binary rollback checks, publication, site deployment,
-private-service cutover and client-facing verification. Preserve credentials,
-records/history, model inputs, supervisor and private routing. Track actual
-checks and untested platform/live-client boundaries in the release receipt.
+Live loopback/private HTTPS owner-session, pagination, conditional-response,
+startup parity, authorization and exact asset checks pass. Installed Mac
+Codex/Cursor/Claude startup adapters and bridges pass; a fresh isolated Claude
+marketplace install passes. Public mobile/desktop browser checks pass. Eight
+requested stale remote branches were deleted only after merged-head preservation
+checks. [Detailed evidence and limits](docs/memory-acceptance.md#280-ux-audits-release-and-rollout-september-29).
+Existing browser sessions require sign-in again; later downgrade to 2.7.0 does
+not preserve session revocation. Physical devices, screen readers, persistent
+Windows/Linux installations, reboot and fresh native AI turns remain untested.
 
 ## PR #16 post-merge review follow-up
 
