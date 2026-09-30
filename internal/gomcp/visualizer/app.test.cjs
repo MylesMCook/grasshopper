@@ -6,6 +6,8 @@ const vm = require('node:vm');
 
 function view(hash = '', connected = true, sessionStatus = 200) {
   const elements = new Map();
+  const blobs = [];
+  const downloads = [];
   const element = () => ({
     value: '', textContent: '', open: false, children: [], listeners: {},
     addEventListener(name, action) { this.listeners[name] = action; },
@@ -15,6 +17,7 @@ function view(hash = '', connected = true, sessionStatus = 200) {
     contains() { return false; },
     showModal() { this.open = true; }, close() { this.open = false; this.listeners.close?.(); },
     before(node) { node.placedBefore = this; },
+    click() { downloads.push(this.download); },
     focus() { this.focused = true; }, scrollIntoView() {}, getAttribute(name) { return this.attributes?.[name]; }, setAttribute(name, value) { this.attributes = { ...this.attributes, [name]: value }; }, classList: { add() {}, toggle() {} }
   });
   const get = id => {
@@ -29,6 +32,8 @@ function view(hash = '', connected = true, sessionStatus = 200) {
   let timerID = 0;
   const sandbox = {
     TextEncoder, URLSearchParams,
+    Blob: class { constructor(parts, options) { blobs.push({parts, options}); } },
+    URL: { createObjectURL: () => 'blob:synthetic', revokeObjectURL() {} },
     history: { pushState(_state, _title, hash) { sandbox.location.hash = hash.startsWith('#') ? hash : ''; }, replaceState(_state, _title, hash) { sandbox.location.hash = hash.startsWith('#') ? hash : ''; } },
     document: { hidden: false, addEventListener(name, action) { documentListeners[name] = action; }, getElementById: get, querySelector: get, createElement: element, createDocumentFragment: element },
     window: { addEventListener(name, action) { windowListeners[name] = action; }, confirm: () => true, getSelection: () => null },
@@ -51,7 +56,7 @@ function view(hash = '', connected = true, sessionStatus = 200) {
     ui.setConnected(true);
     get('device-panel').open = true;
   }
-  return { ui, get, requests, timers, timerDelays, document: sandbox.document, location: sandbox.location, windowListeners, documentListeners };
+  return { ui, get, requests, timers, timerDelays, document: sandbox.document, location: sandbox.location, windowListeners, documentListeners, blobs, downloads, window: sandbox.window };
 }
 
 function replyPair(v, start, devices = []) {
@@ -1151,4 +1156,83 @@ test('scope changes abort a pending server page and ignore its response', async 
   assert.equal(old.options.signal.aborted,true);
   old.reply({records:[memory(9)],next:'',total:9}); await tick();
   assert.equal(v.get('records').children.length,0);
+});
+
+test('a not-modified recovery clears poll failure feedback without replacing memories or adding loops', async () => {
+  for (const hash of ['', '#view=startup']) {
+    const v = view(hash);
+    const first = v.ui.refresh();
+    v.requests[0].reply({ records: [memory(1)], budget: 12000, not_loaded: [{ id: 2, revision: 1, reason: 'unconfirmed' }] });
+    await first;
+    const content = v.get('records').children[0];
+    const summary = v.get('summary').textContent;
+    const failed = v.ui.refresh(); v.requests.at(-1).reply('', 503); await failed;
+    assert.equal(v.get('status').textContent, 'Service unavailable');
+    assert.match(v.get('summary').textContent, /Showing the last results/);
+    const recovery = v.ui.refresh(); v.requests.at(-1).reply('', 304); await recovery;
+    assert.equal(v.get('status').textContent, 'Live');
+    assert.equal(v.get('summary').textContent, summary);
+    assert.equal(v.get('records').children[0], content);
+    assert.equal(v.timers.size, 1);
+  }
+});
+
+test('Show more waits for polling and uses the newly installed snapshot cursor', async () => {
+  const v = view();
+  const first = v.ui.refresh();
+  v.requests[0].reply({ records: Array.from({ length: 8 }, (_, i) => memory(i + 1)), next: 'snapshot-a', total: 10 }); await first;
+  const refresh = v.ui.refresh();
+  const pollRequest = v.requests.at(-1);
+  const count = v.requests.length;
+  v.get('show-more').listeners.click();
+  assert.equal(v.requests.length, count, 'Show more must not overlap the polling request');
+  pollRequest.reply({ records: Array.from({ length: 8 }, (_, i) => memory(i + 1, 2)), next: 'snapshot-b', total: 10 });
+  await refresh;
+  const more = v.requests.at(-1);
+  assert.equal(JSON.parse(more.options.body).after, 'snapshot-b');
+  more.reply({ records: [memory(9, 2), memory(10, 2)], next: '', total: 10 }); await tick();
+  const cards = v.get('records').children[0].children;
+  assert.equal(cards.length, 10);
+  assert.match(cards[8].children[2].textContent, /Confirmed/);
+  assert.equal(v.timers.size, 1);
+});
+
+test('a truncated successful export reports failure and creates no download', async () => {
+  const v = view(); v.get('export-memory').listeners.click();
+  v.requests.at(-1).reply('{"records":[', 200); await tick();
+  assert.match(v.get('status').textContent, /Could not export memories/);
+  assert.equal(v.blobs.length, 0); assert.equal(v.downloads.length, 0);
+});
+
+test('a valid export creates a JSON download', async () => {
+  const v = view(); v.get('export-memory').listeners.click();
+  v.requests.at(-1).reply({ records: [memory(1)] }); await tick();
+  assert.equal(v.blobs.length, 1);
+  assert.equal(JSON.parse(v.blobs[0].parts[0]).records[0].id, 1);
+  assert.deepEqual(v.downloads, ['grasshopper-memories.json']);
+});
+
+test('a not-modified poll draws a changed snapshot after text selection ends', async () => {
+  const v = view(); const first = v.ui.refresh(); v.requests[0].reply({records:[memory(1)]}); await first;
+  const old = v.get('records').children[0];
+  v.window.getSelection = () => ({isCollapsed:false, anchorNode:old});
+  v.get('records').contains = node => node === old;
+  const changed = v.ui.refresh(); v.requests.at(-1).reply({records:[memory(1,2,'Updated while selecting.')]}); await changed;
+  assert.equal(v.get('records').children[0], old);
+  v.window.getSelection = () => null;
+  const unchanged = v.ui.refresh(); v.requests.at(-1).reply('',304); await unchanged;
+  assert.notEqual(v.get('records').children[0],old);
+  assert.equal(v.get('records').children[0].children[0].children[3].textContent,'Updated while selecting.');
+  assert.equal(v.timers.size,1);
+});
+
+test('browse summary reports the exact server total beyond the first byte-limited page', () => {
+  const v = view(); v.ui.draw({ records: [memory(1), memory(2)], next: 'more', total: 103 });
+  assert.equal(v.get('summary').textContent, '103 memories');
+});
+
+test('export and global sign-out management controls follow the first memory list', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  assert.ok(html.indexOf('id="export-controls"') > html.indexOf('id="device-panel"'));
+  assert.ok(html.indexOf('id="disconnect-all"') > html.indexOf('id="device-panel"'));
 });

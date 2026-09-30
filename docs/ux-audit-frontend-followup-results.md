@@ -20,3 +20,9 @@ Implemented in an isolated checkout, without dependencies, live changes, or push
 Verification: `node --test internal/gomcp/visualizer/app.test.cjs web/*.test.cjs` passes 83 tests. Running the new viewer assertions against the preceding app source demonstrates ten expected failures (67 pass). `sh web/build.sh` passes; `git diff --check` passes. Red and green logs are task-local `/tmp/grasshopper-frontend-{red,tests}.log`.
 
 Limits: Node uses synthetic browser/API objects. Parent integration owns actual browser checks, backend behavior, theme-init asset routing, release and deployment. No real download, live session revocation, browser screenshot, or deployed result is claimed by this slice.
+
+## Integrated review follow-up
+
+Confirmed failures now have regression coverage: a recovered 304 restores Live and its browse/startup summary; redraw deferred during text selection resumes on the next 304; Show more waits for a poll to install its new snapshot cursor; a truncated JSON export with HTTP 200 creates no Blob or download. Both poll recovery and pagination retain one polling timer. Browse counts use the exact server total. Export and Sign out everywhere now live inside Devices & connections, below the memory list, preserving the compact initial mobile view.
+
+All seven new regressions were demonstrated failing before their fix. `node --test internal/gomcp/visualizer/app.test.cjs web/*.test.cjs` passes 90 tests; `git diff --check` passes. Parent owns the repeated integrated mobile browser measurement. Red logs: `/tmp/grasshopper-frontend-recovery-red.log`, `/tmp/grasshopper-frontend-export-red.log`, `/tmp/grasshopper-frontend-layout-red.log`; green log: `/tmp/grasshopper-frontend-followup-green.log`.

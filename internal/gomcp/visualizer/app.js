@@ -3,6 +3,7 @@ const disconnectAll = document.getElementById('disconnect-all');
 const exportControls = document.getElementById('export-controls');
 let pageETag = '';
 let moreInFlight = null;
+let moreRequested = false;
 let undoState = null;
 let undoTimer = null;
 const connectionSection = document.getElementById('connection-section');
@@ -222,6 +223,7 @@ function stop(clearRecords = false) {
   pageETag = "";
   moreInFlight?.abort();
   moreInFlight = null;
+  moreRequested = false;
   clearUndo();
   pollFailures = 0;
   resetDeviceRows();
@@ -1037,6 +1039,8 @@ function restartList() {
   pageETag = "";
   moreInFlight?.abort();
   moreInFlight = null;
+  moreRequested = false;
+  showMore.disabled = false;
   visibleLimit = 8;
   omissions.hidden = true;
   lastSignature = '';
@@ -1240,7 +1244,8 @@ function draw(page) {
   }
   lastOmissionSignature = omissionSignature;
   const signature = JSON.stringify(items.map(record => [record.id, record.revision, record.title, record.content, record.scope, record.provenance, record.confirmed, record.purpose, record.updated_at]));
-  summary.textContent = searchQuery && !items.length ? 'No matching memories' : `${items.length} ${items.length === 1 ? 'memory' : 'memories'}${searchQuery ? ' in search results' : ''}`;
+  const total = !searchQuery && Number.isSafeInteger(page.total) ? page.total : items.length;
+  summary.textContent = searchQuery && !items.length ? 'No matching memories' : `${total} ${total === 1 ? 'memory' : 'memories'}${searchQuery ? ' in search results' : ''}`;
   const selection = window.getSelection();
   const selectingRecord = selection && !selection.isCollapsed && (records.contains(selection.anchorNode) || records.contains(selection.focusNode));
   // Defer replacement while someone is selecting text; the next poll can draw it.
@@ -1346,7 +1351,15 @@ async function refresh() {
       credentials: 'same-origin',
       signal: controller.signal
     });
-    if (response.status === 304) { pollFailures = 0; return; }
+    if (response.status === 304) {
+      if (!active || inFlight !== controller) return;
+      const recovered = pollFailures > 0;
+      pollFailures = 0;
+      // A changed snapshot may have deferred its redraw during text selection.
+      if (latestPage) { draw(latestPage); if (startup) drawNotLoaded(latestPage); }
+      if (recovered) setStatus('Live', 'live');
+      return;
+    }
     if (!response.ok) throw new Error(response.status === 401 ? 'Session expired' : response.status === 400 ? 'Scope not recognized' : 'Service unavailable');
     const page = await response.json();
     // A disconnected or replaced request must not redraw an older session.
@@ -1404,6 +1417,7 @@ async function refresh() {
       if (active && !searchQuery && !document.hidden && scopeInput()) {
         timer = setTimeout(refresh, pollFailures < 2 ? 3000 : pollFailures === 2 ? 10000 : 30000);
       }
+      if (moreRequested) loadMore();
     }
   }
 }
@@ -1554,7 +1568,7 @@ document.getElementById('export-memory').addEventListener('click', async () => {
   try {
     const { status, data } = await postOwner('/visualizer/api/export', { scope: scopeInput(), all: document.getElementById('export-mode').value === 'all', include_archived: document.getElementById('export-archived').checked === true });
     if (!active || generation !== sessionGeneration) return;
-    if (status !== 200) throw new Error();
+    if (status !== 200 || !Array.isArray(data?.records) || data.error) throw new Error();
     const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url; link.download = 'grasshopper-memories.json'; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -1562,7 +1576,12 @@ document.getElementById('export-memory').addEventListener('click', async () => {
   } catch { if (active && generation === sessionGeneration) setStatus('Could not export memories. Try again.', 'error'); }
 });
 async function loadMore() {
-  if (!active || moreInFlight || !latestPage?.next || searchQuery || listView === 'startup') return;
+  if (!active || document.hidden || moreInFlight || !latestPage?.next || searchQuery || listView === 'startup') { moreRequested = false; return; }
+  // Polling can replace the cursor snapshot; finish it before starting a page.
+  if (inFlight) { moreRequested = true; return; }
+  moreRequested = false;
+  clearTimeout(timer);
+  timer = null;
   const selected = latestPage;
   const generation = sessionGeneration;
   const controller = new AbortController(); moreInFlight = controller;

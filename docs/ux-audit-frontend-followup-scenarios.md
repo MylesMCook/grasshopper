@@ -13,3 +13,11 @@ The existing Node viewer harness uses synthetic data and asserts the following a
 - Export sends the selected scope, explicit all-memories choice, and archived choice.
 
 Existing assertions for initial eight records, inline review, dirty drafts, revision restore, search emphasis, polling visibility/backoff, and byte limits remain intact.
+
+Integrated review regressions add these cases:
+
+- After a failed poll, an unchanged successful response restores Live and the correct browse/startup count without replacing memory content or duplicating timers.
+- A snapshot redraw deferred while selecting text occurs on the next unchanged poll after selection ends.
+- Show more pressed during polling waits and uses the new snapshot cursor.
+- A malformed 200 export fails without creating a download; a valid records export succeeds.
+- Browse counts show the server total beyond the first byte-limited page; nonessential management controls follow the memory list in Devices & connections.
