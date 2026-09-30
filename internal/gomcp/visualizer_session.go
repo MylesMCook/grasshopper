@@ -122,11 +122,14 @@ func (sessions *ownerSessions) serve(w http.ResponseWriter, r *http.Request, key
 		if cookie, err := r.Cookie(visualizerCookieName); err == nil {
 			value = cookie.Value
 		}
+		wasValid := sessions.valid(r, value, key)
 		if err := sessions.store.RevokeOwnerSession(r.Context(), value, false); err != nil {
 			http.Error(w, "session unavailable", 503)
 			return
 		}
-		sessions.audit.event("owner_session_ended", r, auditFields{})
+		if wasValid {
+			sessions.audit.event("owner_session_ended", r, auditFields{})
+		}
 		http.SetCookie(w, visualizerCookie("", secure, -1))
 		w.WriteHeader(http.StatusNoContent)
 	default:
