@@ -1,5 +1,19 @@
 # Grasshopper release state
 
+## 2.8.0 rollout in progress
+
+Codex owns an isolated macOS worktree on `codex/release-2.8.0`, based on
+`9ecbc11`. The owner authorized release, marketplace/client archives, public
+site deployment, a verified-backup private-service upgrade and stale branch
+cleanup after preservation checks. Three `gpt-6.1-sol` workers prepare archive,
+recovery and site/branch evidence; Codex owns integration and external actions.
+
+Next: final-head CI and Copilot review, native release archives and checksums,
+restored-copy and old-binary rollback checks, publication, site deployment,
+private-service cutover and client-facing verification. Preserve credentials,
+records/history, model inputs, supervisor and private routing. Track actual
+checks and untested platform/live-client boundaries in the release receipt.
+
 ## PR #16 post-merge review follow-up
 
 [LAB-230](https://linear.app/mcook/issue/LAB-230): Codex owns an isolated macOS
