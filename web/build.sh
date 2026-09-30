@@ -6,6 +6,8 @@ output="$root/web/dist"
 rm -rf -- "$output"
 mkdir -p "$output/fonts" "$output/view" "$output/setup"
 cp "$root/web/public/index.html" "$root/web/public/connect.js" "$root/web/public/setup.js" "$root/web/public/memory-view.png" "$root/web/public/_headers" "$root/web/public/404.html" "$output/"
+release_version=$(cat "$root/VERSION")
+sed "s/__GRASSHOPPER_RELEASE_VERSION__/$release_version/g" "$root/web/public/setup.js" > "$output/setup.js"
 cp "$root/web/public/view/index.html" "$output/view/"
 cp "$root/web/public/setup/index.html" "$output/setup/"
 cp "$root/docs/site.css" "$output/"

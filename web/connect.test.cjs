@@ -3,19 +3,21 @@ const { readFileSync } = require('node:fs');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-function submit(value) {
-  const address = { value };
+function submit(value, saved = null, send = true, blockedStorage = false) {
+  const address = { value, focus() { this.focused = true; } };
+  let forget;
+  let removed;
   const error = { hidden: true, textContent: '' };
   let handler;
   let destination;
   vm.runInNewContext(readFileSync(`${__dirname}/public/connect.js`, 'utf8'), {
     URL,
-    document: { getElementById: id => ({ 'server-address': address, 'server-error': error, 'server-form': { addEventListener: (_, fn) => { handler = fn; } } })[id] },
-    localStorage: { getItem: () => null, setItem() {} },
+    document: { getElementById: id => ({ 'server-address': address, 'server-error': error, 'server-form': { addEventListener: (_, fn) => { handler = fn; } }, 'forget-address': { addEventListener: (_, fn) => { forget = fn; } } })[id] },
+    localStorage: { getItem: () => saved, setItem() {}, removeItem(key) { if(blockedStorage) throw new Error('blocked'); removed=key; } },
     window: { location: { assign: url => { destination = url; } } },
   });
-  handler({ preventDefault() {} });
-  return { error, destination };
+  if (send) handler({ preventDefault() {} });
+  return { error, destination, address, forget: () => forget(), removed: () => removed };
 }
 
 test('nonsense addresses explain the expected server address without navigation', () => {
@@ -48,4 +50,15 @@ test('unsafe or unrelated links remain rejected', () => {
     assert.equal(submit(value).destination, undefined, value);
     assert.equal(submit(value).error.hidden, false, value);
   }
+});
+
+
+test('Forget this address removes remembered state, clears errors and focuses the empty field', () => {
+  const ui=submit('', 'https://synthetic.example.com', false);
+  assert.equal(ui.address.value,'https://synthetic.example.com'); ui.error.hidden=false;ui.error.textContent='Old error';ui.forget();
+  assert.equal(ui.removed(),'grasshopper-server-url');assert.equal(ui.address.value,'');assert.equal(ui.error.hidden,true);assert.equal(ui.error.textContent,'');assert.equal(ui.address.focused,true);assert.equal(ui.destination,undefined);
+});
+
+test('Forget this address still clears the visible field when storage is blocked', () => {
+  const ui=submit('', 'https://synthetic.example.com', false, true);ui.forget();assert.equal(ui.address.value,'');assert.equal(ui.error.hidden,true);assert.equal(ui.address.focused,true);
 });
