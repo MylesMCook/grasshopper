@@ -553,8 +553,8 @@ Explicit independent non-author Sol review of `25c485f` identified two P2s:
 recalculate a newly opened command disclosure's fade and allow full-timestamp
 hover. Failing-before/native checks and narrow fixes address both. Explicit
 re-review of final `961d4ca` completed with no remaining blockers before merge.
-Copilot was quota-blocked and its earlier Gemini alternative remained
-unacknowledged; the documented Codex fallback was used. No external review is
+Copilot was quota-blocked and Gemini had not acknowledged its single earlier
+request; the documented Codex fallback was used. No external review is
 claimed and GitHub-required gates were preserved.
 
 Verified checks:
