@@ -2,11 +2,9 @@
 
 Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
 
-## Merged, unreleased: memory view review and correction
+## Active release: memory review and Claude marketplace
 
-[LAB-222](https://linear.app/mcook/issue/LAB-222/let-the-owner-review-correct-and-understand-memories-in-the-memory): Claude Code · Mac mini · worktree `../grasshopper-worktrees/ux`. PRs #9 to #14 are squash-merged to `main` (`1a71eb1` to `5090880`) after Copilot review (every comment fixed or answered) and three-OS CI. They implement the owner-approved [scenarios](docs/memory-view-review.md): all-projects landing and complete previews, review/correct/confirm/archive/restore (the first browser write path), approval and status, startup preview, README order and sign-in wording, and Claude Code marketplace plugins in the bundler. Evidence: [acceptance entry](docs/memory-acceptance.md#memory-view-review-and-claude-code-marketplace-september-29-unreleased). Not released, not deployed to the Mac service, and not run against the live database or native agents.
-
-Next actions, each needing the owner's go-ahead: cut a release (bump `VERSION`, build archives, rehearse a restored copy and rollback before any cutover); publish the marketplace branch with the Claude Code entries; redeploy the setup page after that. Until then the published site and `marketplace` branch are unchanged. The primary checkout's `main` is behind `origin/main`; its owner should pull.
+Codex · Mac mini · primary checkout `main`. Owner authorized release and deployment of merged PRs #9–#15. Target 2.7.0; approved behavior remains [docs/memory-view-review.md](docs/memory-view-review.md). Plan: three-OS real-model CI, seven verified archives, restored-copy mutation and rollback rehearsal, GitHub release and marketplace publication, private Mac service cutover, public setup deployment, live read/asset verification. Preserve credentials, database history, model, plist and private routing. Evidence: `/Users/mylescook/Documents/Codex/2026-09-29-grasshopper-2.7.0-release`. Next action: validate and publish release candidate. Not yet released or deployed.
 
 ## Released connection reliability
 
