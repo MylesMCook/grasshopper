@@ -91,11 +91,16 @@ No dependencies, framework, API, authentication or data changes.
   review can satisfy the repository requirement when they are unavailable.
   Required GitHub approvals and gates still apply. A quota failure is not review.
 
-Integrated local checks pass: 120 Node tests, full Go tests, vet and targeted
+Integrated local checks pass: 121 Node tests, full Go tests, vet and targeted
 race tests. New scope, responsive Copy and contrast regressions failed their
 baseline before passing the fixes. Worker Chromium checks cover 320–1024px,
 light/dark, 200% text, native keyboard scrolling, exact clipboard commands
 across all three OS choices and long project identities without page overflow.
 A long-project layout defect found during browser verification was corrected.
+Independent non-author Sol review found no defects at `fb2f171`. Combined
+browser verification then found a stale tab fade after text-only enlargement;
+a narrow layout observer fixes it. A failing-before regression passes, and
+explicit targeted review of `385f43d` found no defects or observer feedback loop.
+Copilot remains quota-blocked; no external review is claimed.
 Release 2.8.4 is prepared; merge, native CI and deployment remain pending.
 Physical phones, screen readers and non-Chromium browsers remain untested.
