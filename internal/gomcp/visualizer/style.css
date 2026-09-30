@@ -1,8 +1,8 @@
 @font-face { font-family:Newsreader; src:url('/visualizer/newsreader-latin.woff2') format('woff2'); font-style:normal; font-weight:400; font-display:swap; }
 @font-face { font-family:'Geist Mono'; src:url('/visualizer/geist-mono-latin.woff2') format('woff2'); font-style:normal; font-weight:400 600; font-display:swap; }
-:root { color-scheme:light dark; --foreground:#282828; --background:#ffffff; --surface:#f7f7f5; --muted:#595955; --border:#90908c; --link:#125ab8; --success:#087d60; --danger:#a7282a; --focus:#125ab8; --selection:#d8e9ff; --primary:#282828; --on-primary:#ffffff; --divider:#e1e1de; --warning:#8a5100; }
+:root { color-scheme:light dark; --foreground:#282828; --background:#ffffff; --surface:#f7f7f5; --muted:#595955; --border:#8a8a86; --link:#125ab8; --success:#087d60; --danger:#a7282a; --focus:#125ab8; --selection:#d8e9ff; --primary:#282828; --on-primary:#ffffff; --divider:#e1e1de; --warning:#8a5100; }
 @media (prefers-color-scheme:dark) { :root { --foreground:#f5f5f2; --background:#171717; --surface:#222222; --muted:#b8b8b4; --border:#777773; --link:#9cc8ff; --success:#89d8b8; --danger:#ff9e9e; --focus:#9cc8ff; --selection:#315777; --primary:#f5f5f2; --on-primary:#171717; --divider:#454545; --warning:#ffd08a; } }
-:root[data-theme="light"] { color-scheme:light; --foreground:#282828; --background:#ffffff; --surface:#f7f7f5; --muted:#595955; --border:#90908c; --link:#125ab8; --success:#087d60; --danger:#a7282a; --focus:#125ab8; --selection:#d8e9ff; --primary:#282828; --on-primary:#ffffff; --divider:#e1e1de; --warning:#8a5100; }
+:root[data-theme="light"] { color-scheme:light; --foreground:#282828; --background:#ffffff; --surface:#f7f7f5; --muted:#595955; --border:#8a8a86; --link:#125ab8; --success:#087d60; --danger:#a7282a; --focus:#125ab8; --selection:#d8e9ff; --primary:#282828; --on-primary:#ffffff; --divider:#e1e1de; --warning:#8a5100; }
 :root[data-theme="dark"] { color-scheme:dark; --foreground:#f5f5f2; --background:#171717; --surface:#222222; --muted:#b8b8b4; --border:#777773; --link:#9cc8ff; --success:#89d8b8; --danger:#ff9e9e; --focus:#9cc8ff; --selection:#315777; --primary:#f5f5f2; --on-primary:#171717; --divider:#454545; --warning:#ffd08a; }
 :root { --space-1:4px; --space-2:8px; --space-3:16px; --space-4:24px; --space-5:40px; --space-6:64px; --text-meta:.75rem; --text-label:.875rem; --text-body:1rem; --text-reading:1.125rem; --text-title:1.5rem; --text-heading:2.25rem; --text-display:4rem; --radius-content:2px; --radius-control:2px; }
 * { box-sizing:border-box; }
@@ -191,9 +191,20 @@ input[type="checkbox"] { width:20px; height:20px; min-height:0; padding:0; accen
 .record-title { margin-top:0; min-height:44px; padding-bottom:var(--space-1); display:flex; align-items:center; font-size:var(--text-title); line-height:1.2; }
 .view-tabs { flex-wrap:nowrap; overflow-x:auto; padding:var(--space-1); scroll-padding:var(--space-1); }
 .view-tabs button { flex:none; white-space:nowrap; }
-.tabs-hint { display:none; max-width:78ch; color:var(--muted); font-size:var(--text-meta); margin-bottom:var(--space-3); }
 .inline-confirm { padding:var(--space-2); font-size:var(--text-label); }
 @media(max-width:700px) {
-  .tabs-hint { display:block; }
-  .record > .record-content { display:block; overflow:visible; -webkit-line-clamp:unset; }
+    .record > .record-content { display:block; overflow:visible; -webkit-line-clamp:unset; }
 }
+
+.tabs-wrap { position:relative; max-width:78ch; }
+.tabs-wrap[data-overflow="true"]::after { content:""; position:absolute; right:0; top:0; bottom:0; width:var(--space-4); background:linear-gradient(to right,transparent,var(--background)); pointer-events:none; }
+.view-tabs { padding-inline:0; scrollbar-width:none; }
+.view-tabs::-webkit-scrollbar { display:none; }
+.scope-segment { display:inline-block; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; vertical-align:bottom; }
+.scope-separator { white-space:normal; }
+.device-panel > summary { font:var(--text-title)/1.2 Newsreader,Georgia,serif; }
+.device-panel-content h3 { font:500 var(--text-body)/1.35 'Geist Mono',ui-monospace,monospace; }
+p { text-wrap:pretty; }
+h1,h2,h3 { text-wrap:balance; }
+@media(max-width:700px) { .masthead { margin-top:var(--space-3); } }
+.results-heading > div:first-child { min-width:0; flex:1; max-width:100%; }

@@ -121,11 +121,16 @@ function updateFilterLabel() {
   filterToggle.textContent = `Filters ${expanded ? '▾' : '▸'}${!expanded && count ? ` (${count})` : ''}`;
 }
 function updateTabsHint() {
-  document.getElementById('tabs-hint').hidden = !active || viewTabs.scrollWidth <= viewTabs.clientWidth + 1 || viewTabs.scrollLeft >= viewTabs.scrollWidth - viewTabs.clientWidth - 1;
+  const more = active && viewTabs.scrollWidth > viewTabs.clientWidth + 1 && viewTabs.scrollLeft < viewTabs.scrollWidth - viewTabs.clientWidth - 1;
+  document.getElementById('tabs-wrap').setAttribute('data-overflow', String(more));
 }
 viewTabs.addEventListener('scroll', updateTabsHint);
 window.addEventListener('resize', updateTabsHint);
 document.fonts?.ready.then(updateTabsHint);
+if (window.ResizeObserver) {
+  const tabLayout = new window.ResizeObserver(updateTabsHint);
+  for (const target of [viewTabs, ...viewTabs.children]) tabLayout.observe(target);
+}
 
 filterToggle.addEventListener('click', () => {
   const expanded = filterToggle.getAttribute('aria-expanded') !== 'true';
@@ -521,7 +526,18 @@ function scopeInput() {
   const view = [viewNames[listView], projectView, device || 'All devices', platforms[platform] || 'All platforms', scope.purpose && kindNames[scope.purpose]].filter(Boolean);
   scopeSummary.title = project || '';
   const description = view.join(' · ');
-  if (scopeSummary.textContent !== description) scopeSummary.textContent = description;
+  if (scopeSummary.textContent !== description) {
+    const segments = [];
+    view.forEach((text, index) => {
+      if (index) { const separator = document.createElement('span'); separator.className = 'scope-separator'; separator.textContent = ' · '; segments.push(separator); }
+      const segment = document.createElement('span');
+      segment.className = 'scope-segment';
+      segment.textContent = text;
+      segment.title = index === 1 && project ? project : text;
+      segments.push(segment);
+    });
+    scopeSummary.replaceChildren(...segments);
+  }
   if (projectSelect.value === manualChoice && !project) return null;
   if (deviceSelect.value === manualChoice && !device) return null;
   return scope;
