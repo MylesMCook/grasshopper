@@ -73,15 +73,7 @@ func clientPackageRoot(executable string) (string, error) {
 }
 
 func setupClient(args []string) error {
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	root, err := clientPackageRoot(executable)
-	if err != nil {
-		return err
-	}
-	return setupClientWithRoot(args, root, runAgentCommand)
+	return setupClientWithRoot(args, "", runAgentCommand)
 }
 
 type agentInstall struct {
@@ -304,6 +296,16 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	}
 	if flags.NArg() != 0 {
 		return errors.New("unexpected setup arguments")
+	}
+	if root == "" {
+		executable, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		root, err = clientPackageRoot(executable)
+		if err != nil {
+			return err
+		}
 	}
 	selected, err := selectAgents(*agents, *cursorCLI, *cursorDir)
 	if err != nil {

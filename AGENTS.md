@@ -79,6 +79,10 @@ changes and remove stale or speculative claims. Do not add line-by-line
 narration, comment quotas, vague TODOs, secrets, or private infrastructure
 details.
 
+Keep personal infrastructure addresses, supervisor names, credential locations
+and recovery references out of public documentation as well as code comments.
+Use generic self-hosting examples; keep machine-specific operator notes private.
+
 ## Linear tracking
 
 Repository: https://github.com/MylesMCook/grasshopper

@@ -92,6 +92,10 @@ func claudePermissions(path string, install, dryRun bool) error {
 }
 
 func claudeCommand(args []string) error {
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(os.Stdout, "Use claude remove to remove local connector wiring. Add --help for options. For marketplace plugins, use the Claude Code plugin manager.")
+		return nil
+	}
 	if len(args) == 0 || args[0] != "remove" {
 		return errors.New("use claude remove")
 	}

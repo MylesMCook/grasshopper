@@ -151,7 +151,7 @@ func run() error {
 	flag.BoolVar(&quickstart, "quickstart", false, "start a private server from an extracted bundle")
 	flag.StringVar(&dataDir, "data-dir", "", "quickstart state directory (default: user config directory/Grasshopper)")
 	flag.BoolVar(&createDB, "create-db", false, "create an empty memory database if missing")
-	flag.BoolVar(&visualizer, "visualizer", false, "serve optional read-only live memory view at /visualizer/")
+	flag.BoolVar(&visualizer, "visualizer", false, "serve the memory view at /visualizer/ with owner-only review, editing and device controls")
 	flag.StringVar(&visualizerStyleHashes, "visualizer-style-hashes", "", "comma-separated SHA-256 hashes for optional browser annotation styles")
 	flag.StringVar(&library, "onnx-library", "", "local ONNX Runtime shared library")
 	flag.StringVar(&model, "model", "", "pinned Granite ONNX model")

@@ -15,6 +15,10 @@ import (
 )
 
 func cursorCommand(args []string) (resultErr error) {
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(os.Stdout, "Use cursor install to install local connector wiring, or cursor remove to remove it. Add --help to either command for options.")
+		return nil
+	}
 	if len(args) == 0 || (args[0] != "install" && args[0] != "remove") {
 		return errors.New("use cursor install or cursor remove")
 	}

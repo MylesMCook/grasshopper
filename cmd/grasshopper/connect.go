@@ -29,15 +29,7 @@ const connectedNextStep = "Review your agent's Grasshopper permission prompt, th
 const approvalPendingNextStep = "Open the link in your connected memory view, approve the matching device and code within five minutes, then run connect --json again."
 
 func connectClient(args []string) error {
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	root, err := clientPackageRoot(executable)
-	if err != nil {
-		return err
-	}
-	return connectWithRoot(context.Background(), args, root, runAgentCommand)
+	return connectWithRoot(context.Background(), args, "", runAgentCommand)
 }
 
 func connectWithRoot(parent context.Context, args []string, root string, run commandRunner) (resultErr error) {
@@ -61,6 +53,16 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 	}
 	if flags.NArg() != 0 {
 		return errors.New("unexpected connect arguments")
+	}
+	if root == "" {
+		executable, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		root, err = clientPackageRoot(executable)
+		if err != nil {
+			return err
+		}
 	}
 	provided := map[string]bool{}
 	flags.Visit(func(item *flag.Flag) { provided[item.Name] = true })

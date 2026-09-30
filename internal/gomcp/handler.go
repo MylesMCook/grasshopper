@@ -326,6 +326,14 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" || (r.URL.Path == "/mcp" && r.Method == http.MethodGet && acceptsBrowserHTML(r.Header.Get("Accept"))) {
+			serverNavigation(w, r, backend.Visualizer)
+			return
+		}
+		if r.URL.Path == "/favicon.ico" {
+			http.NotFound(w, r)
+			return
+		}
 		// Connection identity is bearer-only and reports only this credential.
 		// It neither grants owner controls nor changes the five-tool MCP surface.
 		if r.URL.Path == "/connection" {
@@ -361,6 +369,10 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			return
 		}
 		if backend.Visualizer && visualizerAsset(w, r, backend.VisualizerStyleHashes) {
+			return
+		}
+		if (r.URL.Path == "/visualizer" || strings.HasPrefix(r.URL.Path, "/visualizer/")) && !strings.HasPrefix(r.URL.Path, "/visualizer/api/") {
+			http.NotFound(w, r)
 			return
 		}
 		if pairings != nil {
