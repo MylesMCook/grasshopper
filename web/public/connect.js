@@ -42,7 +42,7 @@ form.addEventListener('submit', event => {
     return;
   }
   if (!['/', '/mcp', '/visualizer', '/visualizer/'].includes(url.pathname)) {
-    error.textContent = 'Use the server, memory-view, or MCP link.';
+    error.textContent = 'Use the server, memory view, or MCP link.';
     error.hidden = false;
     return;
   }
