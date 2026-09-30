@@ -67,3 +67,35 @@ backup, recovery and rollout process. [Delivery evidence and limits](memory-acce
 Physical devices, real screen readers, Safari/Firefox and native agent turns
 are outside this synthetic browser pass. Report 8's documentation-only PR #23
 merged as `109669c` under the same owner-approved exception.
+
+## Final UI batch after 2.8.3
+
+Accepted scope: [LAB-235](https://linear.app/mcook/issue/LAB-235), F1–F11
+from the owner's final audit. Separate Sol workers implemented the site and
+memory-view slices; Codex owns integration, independent review and delivery.
+No dependencies, framework, API, authentication or data changes.
+
+- F1–F5: below 480px, commands take the full column and Copy sits below;
+  native scrolling keeps a conditional fade with no scrollbar. Memory tabs
+  use the same cue without an instruction line. Scope phrases stay together,
+  long identities truncate with the full value available, the masthead has
+  16px top spacing and the first tab aligns with the column edge.
+- F6–F10: Settings uses a section-size summary and smaller task headings;
+  redundant device headings are removed while accessible groups remain.
+  Startup, export and sign-in wording is shorter. Setup says “Set up
+  Grasshopper.” Paragraphs use pretty wrapping; headings use balanced wrapping.
+- F11: both light stylesheets and DESIGN share the darker border token;
+  native tests enforce at least 3:1 contrast against background and surface.
+- Process: one explicitly requested, completed independent review precedes
+  merge. External reviewers are preferred; an independent non-author Codex
+  review can satisfy the repository requirement when they are unavailable.
+  Required GitHub approvals and gates still apply. A quota failure is not review.
+
+Integrated local checks pass: 120 Node tests, full Go tests, vet and targeted
+race tests. New scope, responsive Copy and contrast regressions failed their
+baseline before passing the fixes. Worker Chromium checks cover 320–1024px,
+light/dark, 200% text, native keyboard scrolling, exact clipboard commands
+across all three OS choices and long project identities without page overflow.
+A long-project layout defect found during browser verification was corrected.
+Release 2.8.4 is prepared; merge, native CI and deployment remain pending.
+Physical phones, screen readers and non-Chromium browsers remain untested.

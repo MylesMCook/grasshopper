@@ -207,9 +207,19 @@ test('mobile Copy label survives feedback reset and OS changes', async () => {
   ui.osChoice.value='windows';ui.osChoice.change();assert.equal(ui.secondButton.textContent,'Copy');
 });
 
-test('public light control border has at least 3 to 1 contrast on its surfaces', () => {
-  const css=readFileSync(`${__dirname}/../docs/site.css`,'utf8');
-  assert.equal([...css.matchAll(/--border:#8a8a86/g)].length,2);
+test('shared light control borders meet 3 to 1 contrast against their surfaces', () => {
+  const design=readFileSync(`${__dirname}/../DESIGN.md`,'utf8');
+  const token=design.match(/^  border: "#([a-f0-9]{6})"$/m)[1];
   const luminance=hex=>{const rgb=hex.match(/../g).map(v=>parseInt(v,16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;};
-  for(const surface of ['ffffff','f7f7f5'])assert.ok((luminance(surface)+.05)/(luminance('8a8a86')+.05)>=3);
+  for(const path of ['docs/site.css','internal/gomcp/visualizer/style.css']) {
+    const css=readFileSync(`${__dirname}/../${path}`,'utf8');
+    for(const light of [css.match(/:root \{([^}]+)\}/)[1],css.match(/:root\[data-theme="light"\] \{([^}]+)\}/)[1]]) {
+      const border=light.match(/--border:#([a-f0-9]{6})/)[1];
+      assert.equal(border,token,`${path} matches DESIGN`);
+      for(const name of ['background','surface']) {
+        const surface=light.match(new RegExp(`--${name}:#([a-f0-9]{6})`))[1];
+        assert.ok((luminance(surface)+.05)/(luminance(border)+.05)>=3,`${path} ${name} contrast`);
+      }
+    }
+  }
 });

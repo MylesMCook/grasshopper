@@ -5,9 +5,12 @@
 [LAB-235](https://linear.app/mcook/issue/LAB-235): Codex on macOS owns
 `codex/ui-final-batch` in an isolated managed worktree. Separate `gpt-6.1-sol`
 workers own memory-view and public-site F1–F11 changes. Parent owns shared
-DESIGN tokens, review-policy reconciliation, integration and delivery. Planned
+DESIGN tokens, review-policy reconciliation, integration and delivery. Prepared
 patch 2.8.4; live remains 2.8.3 until review, CI, recovery and rollout pass.
 The verified 2.8.3 receipt from PR #25 is included in this reviewed batch.
+Implemented F1–F11 and reconciled review policy. All 120 Node tests, Go suite,
+vet and targeted race tests pass; separate worker browser checks pass. Integrated
+browser verification and independent review are next.
 No dependencies, framework, API, authentication or data changes. Primary
 checkout and unrelated evidence remain preserved.
 
