@@ -4,7 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-function view(hash = '', connected = true, sessionStatus = 200) {
+function view(hash = '', connected = true, sessionStatus = 200, options = {}) {
   const elements = new Map();
   const blobs = [];
   const downloads = [];
@@ -35,15 +35,15 @@ function view(hash = '', connected = true, sessionStatus = 200) {
     Blob: class { constructor(parts, options) { blobs.push({parts, options}); } },
     URL: { createObjectURL: () => 'blob:synthetic', revokeObjectURL() {} },
     history: { pushState(_state, _title, hash) { sandbox.location.hash = hash.startsWith('#') ? hash : ''; }, replaceState(_state, _title, hash) { sandbox.location.hash = hash.startsWith('#') ? hash : ''; } },
-    document: { hidden: false, addEventListener(name, action) { documentListeners[name] = action; }, getElementById: get, querySelector: get, createElement: element, createDocumentFragment: element },
+    document: { hidden: Boolean(options.hidden), addEventListener(name, action) { documentListeners[name] = action; }, getElementById: get, querySelector: get, createElement: element, createDocumentFragment: element },
     window: { addEventListener(name, action) { windowListeners[name] = action; }, confirm: () => true, getSelection: () => null },
     location: { origin: 'http://127.0.0.1', hash },
     AbortController,
     setTimeout(fn, delay) { timers.set(++timerID, fn); timerDelays.set(timerID, delay); return timerID; },
     clearTimeout(id) { timers.delete(id); timerDelays.delete(id); },
-    fetch(url, options) {
-      if (url.endsWith('/session')) return Promise.resolve({ ok: sessionStatus < 400, status: sessionStatus, json: async () => ({ connected: false }) });
-      return new Promise((resolve, reject) => requests.push({ url, options, reject, reply(data, status = 200) {
+    fetch(url, fetchOptions) {
+      if (url.endsWith('/session')) return Promise.resolve({ ok: sessionStatus < 400, status: sessionStatus, json: async () => ({ connected: Boolean(options.sessionConnected) }) });
+      return new Promise((resolve, reject) => requests.push({ url, options: fetchOptions, reject, reply(data, status = 200) {
         resolve({ ok: status < 400, status, text: async () => typeof data === 'string' ? data : JSON.stringify(data), json: async () => data });
       } }));
     }
@@ -1235,4 +1235,56 @@ test('export and global sign-out management controls follow the first memory lis
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   assert.ok(html.indexOf('id="export-controls"') > html.indexOf('id="device-panel"'));
   assert.ok(html.indexOf('id="disconnect-all"') > html.indexOf('id="device-panel"'));
+});
+
+
+test('restored session initially hidden reports paused until one visible refresh', async () => {
+  const v = view('', false, 200, { hidden: true, sessionConnected: true });
+  await tick();
+  assert.equal(v.requests.length, 0);
+  assert.equal(v.get('status').textContent, 'Paused in background');
+  assert.match(v.get('summary').textContent, /when this tab is visible/);
+  v.document.hidden = false;
+  v.documentListeners.visibilitychange();
+  v.documentListeners.visibilitychange();
+  assert.equal(v.requests.length, 1);
+  assert.equal(v.requests[0].url, '/visualizer/api/context');
+  assert.equal(v.get('status').textContent, 'Loading memories');
+  v.requests[0].reply({ records: [memory(1)], omitted: 0 });
+  await tick();
+  assert.equal(v.get('status').textContent, 'Live');
+  assert.deepEqual([...v.timerDelays.values()], [3000]);
+});
+
+test('sign-in help names quickstart owner token defaults and custom paths', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  assert.match(html, /Library\/Application Support\/Grasshopper\/access-token/);
+  assert.match(html, /%APPDATA%\\Grasshopper\\access-token/);
+  assert.match(html, /~\/.config\/Grasshopper\/access-token/);
+  assert.match(html, /XDG_CONFIG_HOME/);
+  assert.match(html, /--data-dir/);
+  assert.match(html, /--token-file/);
+});
+
+test('foreground cached refresh returns to Live after a not-modified response', async () => {
+  const v = view();
+  const first = v.ui.refresh();
+  v.requests[0].reply({ records: [memory(1)] });
+  await first;
+  const content = v.get('records').children[0];
+  v.document.hidden = true;
+  v.documentListeners.visibilitychange();
+  assert.equal(v.get('status').textContent, 'Paused in background');
+  v.document.hidden = false;
+  v.documentListeners.visibilitychange();
+  assert.equal(v.get('status').textContent, 'Refreshing');
+  v.requests.find((request, index) => index > 0 && request.url === '/visualizer/api/context').reply('', 304);
+  await tick();
+  assert.equal(v.get('status').textContent, 'Live');
+  assert.equal(v.get('records').children[0], content);
+  const poll = v.ui.refresh();
+  v.get('status').textContent = 'Memory confirmed.';
+  v.requests.at(-1).reply('', 304);
+  await poll;
+  assert.equal(v.get('status').textContent, 'Memory confirmed.');
 });

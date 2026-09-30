@@ -1,5 +1,19 @@
 # Grasshopper release state
 
+## UX audit report 7: implementation and 2.8.1 rollout
+
+[LAB-232](https://linear.app/mcook/issue/LAB-232): Codex owns the isolated `codex/ux-audit-report7` worktree based on `faa7118`.
+[Accepted outcomes](docs/ux-audit-report7-results.md) cover all ten findings.
+Three `gpt-6.1-sol` workers own site, README/server guidance and memory/screenshot
+changes. The owner supplied R7-1–10 as concrete accepted fixes and authorized
+release and deployment when checks establish readiness, without another routine
+approval gate. No dependencies or framework are added.
+
+Next: integrate focused regressions and synthetic mobile/desktop checks, wait
+for CI and Copilot review of the final PR head, then publish 2.8.1 and deploy
+with verified backup/recovery, archive digests and client-facing checks.
+Preserve records, credentials, private routing and unrelated work.
+
 ## Released UX audits: 2.8.0
 
 [LAB-231](https://linear.app/mcook/issue/LAB-231): [2.8.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.0)

@@ -49,3 +49,12 @@ form.addEventListener('submit', event => {
   try { localStorage.setItem(storageKey, url.origin); } catch {}
   window.location.assign(`${url.origin}/visualizer/`);
 });
+
+
+document.getElementById('forget-address').addEventListener('click', () => {
+  try { localStorage.removeItem(storageKey); } catch {}
+  address.value = '';
+  error.textContent = '';
+  error.hidden = true;
+  address.focus();
+});

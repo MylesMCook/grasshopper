@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -144,6 +145,25 @@ func quickstartState(dir string) (database, tokenFile string, err error) {
 	return database, tokenFile, nil
 }
 
+// writeStartup keeps owner sign-in guidance beside the actual configured paths.
+func writeStartup(w io.Writer, platform, address, database, tokenFile string, visualizer bool) {
+	fmt.Fprintf(w, "Grasshopper listening on http://%s/mcp\n", address)
+	if visualizer {
+		fmt.Fprintf(w, "Memory view: http://%s/visualizer/\nMemory database: %s\nAccess token file: %s\n", address, database, tokenFile)
+		quotedPath := "'" + strings.ReplaceAll(tokenFile, "'", "'\"'\"'") + "'"
+		command := "cat -- " + quotedPath
+		switch platform {
+		case "darwin":
+			command = "pbcopy < " + quotedPath
+		case "windows":
+			command = "Get-Content -LiteralPath '" + strings.ReplaceAll(tokenFile, "'", "''") + "' -Raw | Set-Clipboard"
+		}
+		fmt.Fprintln(w, "Sign in: Open the memory view. Copy or read the owner token with this command, then paste it into Access token and choose Sign in:")
+		fmt.Fprintln(w, command)
+		fmt.Fprintln(w, "Never paste the token into an agent chat.")
+	}
+}
+
 func run() error {
 	var database, library, model, tokenizer, tokenFile, listen, allowedProxyHost, visualizerStyleHashes, dataDir string
 	var createDB, visualizer, quickstart, showVersion, rotateToken, serverStopped bool
@@ -267,10 +287,7 @@ func run() error {
 	defer stop()
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.Serve(listener) }()
-	fmt.Fprintf(os.Stderr, "Grasshopper listening on http://%s/mcp\n", listener.Addr())
-	if quickstart {
-		fmt.Fprintf(os.Stderr, "Memory view: http://%s/visualizer/\nMemory database: %s\nAccess token file: %s\n", listener.Addr(), database, tokenFile)
-	}
+	writeStartup(os.Stderr, runtime.GOOS, listener.Addr().String(), database, tokenFile, visualizer)
 	select {
 	case <-ctx.Done():
 	case err := <-errCh:

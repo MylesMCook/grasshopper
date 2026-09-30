@@ -1048,7 +1048,15 @@ function restartList() {
   hasLoaded = false;
   revisions = new Map();
   clearSearch.hidden = !searchQuery;
-  if (active) { summary.textContent = searchQuery ? 'Searching…' : 'Loading memories…'; refresh(); }
+  if (active) {
+    if (document.hidden) {
+      setStatus('Paused in background');
+      summary.textContent = 'Memories will load when this tab is visible.';
+    } else {
+      summary.textContent = searchQuery ? 'Searching…' : 'Loading memories…';
+    }
+    refresh();
+  }
 }
 
 searchForm.addEventListener('submit', event => {
@@ -1357,7 +1365,7 @@ async function refresh() {
       pollFailures = 0;
       // A changed snapshot may have deferred its redraw during text selection.
       if (latestPage) { draw(latestPage); if (startup) drawNotLoaded(latestPage); }
-      if (recovered) setStatus('Live', 'live');
+      if (recovered || status.textContent === 'Refreshing') setStatus('Live', 'live');
       return;
     }
     if (!response.ok) throw new Error(response.status === 401 ? 'Session expired' : response.status === 400 ? 'Scope not recognized' : 'Service unavailable');
@@ -1432,7 +1440,10 @@ document.addEventListener('visibilitychange', () => {
     if (inFlight) inFlight.abort();
     inFlight = null;
     stopDeviceRefresh();
+    if (active) setStatus('Paused in background');
   } else if (active) {
+    setStatus(hasLoaded ? 'Refreshing' : 'Loading memories');
+    if (!hasLoaded) summary.textContent = 'Loading memories…';
     refresh();
     refreshDevices();
   }
@@ -1515,8 +1526,8 @@ applyRoute(routeFromHash(), false);
     if (session.connected && !loggingIn && !active) {
       approvalNotice.hidden = true;
       setConnected(true);
-      setStatus('Signing in');
-      summary.textContent = 'Loading memories…';
+      setStatus(document.hidden ? 'Paused in background' : 'Loading memories');
+      summary.textContent = document.hidden ? 'Memories will load when this tab is visible.' : 'Loading memories…';
       applyRoute(routeFromHash(), false);
     } else if (approvalID && !session.connected) {
       approvalNotice.hidden = false;
