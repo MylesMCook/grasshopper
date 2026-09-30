@@ -88,4 +88,5 @@ suite, vet, native Node tests, race checks and pinned real-model checks are run
 from the integration checkout; the final task record records their status.
 No real screen reader, physical phone, Safari/Firefox, native Windows/Linux,
 Tailscale Serve deployment, supervisor restart/reboot, or live agent turn was
-performed for these changes. No push, PR, merge, release or deployment occurred.
+performed for these changes. The verified branch is published as [PR #16](https://github.com/MylesMCook/grasshopper/pull/16).
+CI and merge status are tracked in tasks.md. No release or deployment occurred.

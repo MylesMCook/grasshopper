@@ -1,6 +1,6 @@
 # Grasshopper release state
 
-## UX audits 1–6: verified, preparing PR
+## UX audits 1–6: PR 16, CI verification
 
 Codex · Mac mini · `/Users/mylescook/.codex/worktrees/ux-audit-integration/grasshopper`
 · `codex/ux-audit-integration`. Integrated released 2.7.0 evidence `2031446` and
@@ -24,8 +24,8 @@ JSON download, sign-out everywhere and automatic failure recovery. Local public
 build passes wrapping, selected-OS clipboard, metadata/favicon/theme/screenshot.
 Review defects were fixed and retested. No new dependencies/framework.
 
-Next: push the verified branch, create the single PR from the owner's accepted
-plan, verify CI and merge. Release/public-site deployment/live-host changes are
+[PR #16](https://github.com/MylesMCook/grasshopper/pull/16) is pushed and open.
+Next: verify three-OS CI on its final head and merge under the accepted plan. Release/public-site deployment/live-host changes are
 separate and have not occurred. Physical devices, screen readers, native
 Windows/Linux, Tailscale Serve/reboot and fresh deployed agent turns remain
 untested. Task-local evidence is outside Git or under untracked `output/`.
