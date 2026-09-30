@@ -23,9 +23,9 @@ separate states; these fixes do not block 2.7.0.
 
 Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
 
-## Active release: memory review and Claude marketplace
+## Released memory review and Claude marketplace
 
-Codex · Mac mini · primary checkout `main`. Owner authorized release and deployment of merged PRs #9–#15. Target 2.7.0; approved behavior remains [docs/memory-view-review.md](docs/memory-view-review.md). Plan: three-OS real-model CI, seven verified archives, restored-copy mutation and rollback rehearsal, GitHub release and marketplace publication, private Mac service cutover, public setup deployment, live read/asset verification. Preserve credentials, database history, model, plist and private routing. Evidence: `/Users/mylescook/Documents/Codex/2026-09-29-grasshopper-2.7.0-release`. Next action: validate and publish release candidate. Not yet released or deployed.
+[LAB-223](https://linear.app/mcook/issue/LAB-223/release-and-deploy-the-merged-memory-review-and-claude-marketplace): [2.7.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.7.0) ships LAB-222/PRs #9–#15, code `4fea645`, marketplace `d272aa3`. Three-OS real-model CI, local tests/vet/race, 36 Node tests, seven archives/311 embedded hashes, eight published digests, synthetic browser owner workflows and restored-copy/2.6.0 rollback rehearsals pass. The Mac service runs 2.7.0 and preserves 24 chunks, 62 revisions/receipts, four token rows, credentials, model, plist and routing. Live loopback/private HTTPS reads, semantic search, device choices, exact UI assets, all-projects listing, startup-preview equality and owner permission boundaries pass. Installed Mac Codex/Cursor/Claude 2.7.0 adapters/bridges pass; the published Claude marketplace also installs in an isolated configuration. Public setup is deployed and exact bytes verified. Off-host backup and repository check pass; saved binaries/plist/snapshot retain the rollback path. [Evidence](docs/memory-acceptance.md#270-memory-review-and-claude-marketplace-september-29). No release or deployment work remains. Other machines, fresh native AI turns, desktop GUI refresh, reboot persistence and full machine-loss recovery were not retested. Existing chats can retain loaded bridges; new sessions pick up 2.7.0.
 
 ## Released connection reliability
 
