@@ -3,7 +3,7 @@ const { readFileSync } = require('node:fs');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-function setup(writeText, script = readFileSync(`${__dirname}/public/setup.js`, 'utf8'), areas = []) {
+function setup(writeText, script = readFileSync(`${__dirname}/public/setup.js`, 'utf8'), areas = [], mobile = false) {
   const osChoice = { value: 'macos', addEventListener(_, fn) { this.change = fn; } };
   const commands = [
     { textContent: 'codex plugin add grasshopper-macos@grasshopper-marketplace' },
@@ -24,7 +24,7 @@ function setup(writeText, script = readFileSync(`${__dirname}/public/setup.js`, 
     setTimeout(fn, delay) { timers.set(++timerID, {fn, delay}); return timerID; },
     clearTimeout(id) { timers.delete(id); },
     navigator: { clipboard: { writeText } },
-    window: { addEventListener() {}, getSelection: () => ({ removeAllRanges() {}, addRange() {} }) },
+    window: { matchMedia: () => ({matches:mobile,addEventListener(_,fn){this.change=fn;}}), addEventListener() {}, getSelection: () => ({ removeAllRanges() {}, addRange() {} }) },
     document: {
       getElementById: id => ({ 'connector-os': osChoice, 'cursor-plugin': cursorPlugin, 'archive-connect-command': archiveCommand, 'copy-status': copyStatus, 'server-quickstart-command': serverCommand, 'server-archive': serverArchive, 'server-checksums': serverChecksums })[id],
       querySelectorAll: selector => selector === '[data-plugin-command]' ? commands : selector === '.command pre' ? areas : [button, secondButton],
@@ -197,4 +197,19 @@ test('command overflow cue disappears at the end and for a fitting command', () 
   pre.scrollLeft=300;scroll();assert.equal(cue,false);
   pre.scrollLeft=100;scroll();assert.equal(cue,true);
   pre.scrollLeft=0;pre.scrollWidth=200;scroll();assert.equal(cue,false);
+});
+
+
+test('mobile Copy label survives feedback reset and OS changes', async () => {
+  const ui=setup(async()=>{},readFileSync(`${__dirname}/public/setup.js`,'utf8'),[],true);
+  assert.equal(ui.button.textContent,'Copy');await ui.button.click();
+  [...ui.timers.values()][0].fn();assert.equal(ui.button.textContent,'Copy');
+  ui.osChoice.value='windows';ui.osChoice.change();assert.equal(ui.secondButton.textContent,'Copy');
+});
+
+test('public light control border has at least 3 to 1 contrast on its surfaces', () => {
+  const css=readFileSync(`${__dirname}/../docs/site.css`,'utf8');
+  assert.equal([...css.matchAll(/--border:#8a8a86/g)].length,2);
+  const luminance=hex=>{const rgb=hex.match(/../g).map(v=>parseInt(v,16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;};
+  for(const surface of ['ffffff','f7f7f5'])assert.ok((luminance(surface)+.05)/(luminance('8a8a86')+.05)>=3);
 });

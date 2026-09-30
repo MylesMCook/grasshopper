@@ -10,7 +10,8 @@ const copyStatus = document.getElementById('copy-status');
 const releaseVersion = '__GRASSHOPPER_RELEASE_VERSION__';
 const copyButtons = document.querySelectorAll('.copy-command');
 const copyTimers = new Map();
-const copyLabels = new Map(Array.from(copyButtons, button => [button, button.textContent]));
+const mobileCommands = window.matchMedia('(max-width:479px)');
+const copyLabels = new Map(Array.from(copyButtons, button => [button, mobileCommands.matches ? 'Copy' : 'Copy command']));
 let copyGeneration = 0;
 
 function resetCopy(button) {
@@ -24,6 +25,12 @@ function resetCopyFeedback() {
   for (const button of copyButtons) resetCopy(button);
   copyStatus.textContent = '';
 }
+
+mobileCommands.addEventListener('change', () => {
+  for (const button of copyButtons) copyLabels.set(button, mobileCommands.matches ? 'Copy' : 'Copy command');
+  resetCopyFeedback();
+  updateOverflow();
+});
 
 function chooseOS() {
   if (!['macos', 'windows', 'linux'].includes(osChoice.value)) return;
