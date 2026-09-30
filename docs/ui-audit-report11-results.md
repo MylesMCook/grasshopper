@@ -73,7 +73,7 @@ Scenario: Reveal filters intentionally
 
 S1–S9, H1–H4, M1–M4 and the public address wording are implemented in
 existing files. Native regressions demonstrated agent-selection, grouped-page
-and signed-in/filter failures before the fixes. All 130 Node tests, Go tests,
+and signed-in/filter failures before the fixes. All 132 Node tests, Go tests,
 vet and targeted race tests pass. Local model tests that lack the pinned runtime
 are not counted as real-model verification; native release CI follows.
 
@@ -97,7 +97,12 @@ The screenshots are direct browser crops of three invented example records:
 Both public previews select the phone image below 600px, and the build copies
 both assets. No real memories or credentials appear in either image.
 
-Patch 2.8.5 awaits one explicitly requested independent review and successful
+The first explicitly requested independent Sol review identified two P2s: the
+new command disclosure must refresh its overflow cue, and relative timestamp
+text must receive hover for its full-date tooltip. Both have targeted failing-
+before/native checks and fixes. A targeted final-revision review follows.
+
+Patch 2.8.5 awaits one completed independent review and successful
 final-head CI before merge, then verified packaging, recovery and rollout.
 No physical-device, real-screen-reader, non-Chromium or native-AI result is
 claimed. Delivery receipts will record actual release/deployment evidence.
