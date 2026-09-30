@@ -1,0 +1,24 @@
+{
+  "description": "Shared, self-hosted agent memory. Install the entry for your operating system.",
+  "name": "grasshopper-marketplace",
+  "owner": {
+    "name": "Myles Cook"
+  },
+  "plugins": [
+    {
+      "description": "Connect to your private Grasshopper memory server",
+      "name": "grasshopper-macos",
+      "source": "./plugins/claude-grasshopper-macos"
+    },
+    {
+      "description": "Connect to your private Grasshopper memory server",
+      "name": "grasshopper-windows",
+      "source": "./plugins/claude-grasshopper-windows"
+    },
+    {
+      "description": "Connect to your private Grasshopper memory server",
+      "name": "grasshopper-linux",
+      "source": "./plugins/claude-grasshopper-linux"
+    }
+  ]
+}
