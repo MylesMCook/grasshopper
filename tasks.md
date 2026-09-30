@@ -10,8 +10,9 @@ independent review and delivery. Proposed patch 2.8.5; live remains 2.8.4.
 [Accepted outcomes and examples](docs/ui-audit-report11-results.md).
 No dependencies, framework, API, authentication or data changes. Preserve
 pagination, global-memory identity and search/startup ordering. Primary checkout
-and unrelated private evidence remain preserved. Implementation and verification
-are in progress; review, CI, recovery and rollout follow when ready.
+and unrelated private evidence remain preserved. Implementation is complete; 130 Node tests, Go/vet/race and synthetic browser
+checks pass. Actual desktop/phone crops are bundled. One independent ready-PR
+review, final-head CI, recovery, packaging and rollout remain before closeout.
 
 ## Released final UI audit: 2.8.4
 

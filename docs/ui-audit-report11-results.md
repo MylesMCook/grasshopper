@@ -71,8 +71,33 @@ Scenario: Reveal filters intentionally
 
 ## Verification and delivery
 
-Implementation and relevant failing-before checks are in progress in isolated
-worktrees. Browser verification uses synthetic data, both themes, mobile/desktop
-and enlarged text. Required review, CI, packaging, recovery and deployment are
-pending. No physical-device, real-screen-reader, non-Chromium or native-AI result
-is claimed.
+S1–S9, H1–H4, M1–M4 and the public address wording are implemented in
+existing files. Native regressions demonstrated agent-selection, grouped-page
+and signed-in/filter failures before the fixes. All 130 Node tests, Go tests,
+vet and targeted race tests pass. Local model tests that lack the pinned runtime
+are not counted as real-model verification; native release CI follows.
+
+Playwright CLI with invented records checked setup at 320/375/1024px in both
+themes and normal/enlarged text (12 cases), all eight copied commands across
+three OS choices, remembered agent selection and keyboard overview anchors.
+Home/address/404 checks cover 48 viewport/theme/text combinations. Parent checks
+cover compact memory layout, view overflow, exact project/global identity and all
+29 project-filtered records through pagination without duplication; focus stays
+on the pagination button while more records remain. Search/startup ordering and
+review attribution are enforced by the native Node suite.
+
+On a 1024×768 synthetic project list, six card starts fit and the first is at
+296px; an all-project list adds group headings and shows five. The original
+unfiltered baseline first card was at 717px. Titles retain 44px targets and
+complete text remains in the dialog. Phone previews use two lines. Expanded
+filters and longer review titles naturally use more space.
+
+The screenshots are direct browser crops of three invented example records:
+749×662 desktop with expanded filters and 343×615 phone with collapsed filters.
+Both public previews select the phone image below 600px, and the build copies
+both assets. No real memories or credentials appear in either image.
+
+Patch 2.8.5 awaits one explicitly requested independent review and successful
+final-head CI before merge, then verified packaging, recovery and rollout.
+No physical-device, real-screen-reader, non-Chromium or native-AI result is
+claimed. Delivery receipts will record actual release/deployment evidence.
