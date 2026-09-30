@@ -3,7 +3,7 @@ const { readFileSync } = require('node:fs');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-function setup(writeText, script = readFileSync(`${__dirname}/public/setup.js`, 'utf8'), areas = [], mobile = false, savedAgent = null, storageBlocked = false) {
+function setup(writeText, script = readFileSync(`${__dirname}/public/setup.js`, 'utf8'), areas = [], mobile = false, savedAgent = null, storageBlocked = false, disclosures = []) {
   const agentChoice = {value:'all',addEventListener(_,fn){this.change=fn;},focus(){}};
   const articles=['codex','cursor','claude'].map(agent=>({hidden:false,dataset:{agent},contains(){return false;}}));
   const storage={value:savedAgent,getItem(){if(storageBlocked)throw Error('blocked');return this.value;},setItem(_,value){if(storageBlocked)throw Error('blocked');this.value=value;}};
@@ -31,7 +31,7 @@ function setup(writeText, script = readFileSync(`${__dirname}/public/setup.js`, 
     window: { matchMedia: () => ({matches:mobile,addEventListener(_,fn){this.change=fn;}}), addEventListener() {}, getSelection: () => ({ removeAllRanges() {}, addRange() {} }) },
     document: {
       getElementById: id => ({ 'connector-agent':agentChoice, 'connector-os': osChoice, 'cursor-plugin': cursorPlugin, 'archive-connect-command': archiveCommand, 'copy-status': copyStatus, 'server-quickstart-command': serverCommand, 'server-archive': serverArchive, 'server-checksums': serverChecksums })[id],
-      querySelectorAll: selector => selector === '[data-agent]' ? articles : selector === '[data-plugin-command]' ? commands : selector === '.command pre' ? areas : [button, secondButton],
+      querySelectorAll: selector => selector === '[data-agent]' ? articles : selector === '[data-plugin-command]' ? commands : selector === '.claude-alternative' ? disclosures : selector === '.command pre' ? areas : [button, secondButton],
       createRange: () => ({ selectNodeContents: node => { selected = node.textContent; } }),
     },
   });
@@ -265,4 +265,16 @@ test('setup keeps four overview anchors and a collapsed native Claude alternativ
   assert.match(html,/<details class="claude-alternative"><summary>/);
   assert.match(html,/<code>Connect Grasshopper<\/code>/);
   assert.match(html,/<h1>Set up Grasshopper\.<\/h1>/);
+});
+
+
+test('opening the Claude alternative updates the scroll cue before any user scrolling', () => {
+  let cue=false,toggle;
+  const pre={scrollWidth:0,clientWidth:0,scrollLeft:0,parentElement:{toggleAttribute(_,value){cue=value;}},addEventListener(){}};
+  const details={addEventListener(name,fn){assert.equal(name,'toggle');toggle=fn;}};
+  setup(async()=>{},undefined,[pre],false,null,false,[details]);
+  assert.equal(cue,false);assert.equal(typeof toggle,'function');
+  pre.scrollWidth=900;pre.clientWidth=300;toggle();assert.equal(cue,true);
+  pre.scrollLeft=600;toggle();assert.equal(cue,false);
+  pre.scrollWidth=0;pre.clientWidth=0;pre.scrollLeft=0;toggle();assert.equal(cue,false);
 });

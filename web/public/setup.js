@@ -64,6 +64,7 @@ function chooseOS() {
 }
 const commandAreas = document.querySelectorAll('.command pre');
 for (const pre of commandAreas) pre.addEventListener('scroll', updateOverflow);
+for (const details of document.querySelectorAll('.claude-alternative')) details.addEventListener('toggle', updateOverflow);
 window.addEventListener('resize', updateOverflow);
 document.fonts?.ready.then(updateOverflow);
 osChoice.addEventListener('change', chooseOS);
