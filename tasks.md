@@ -1,10 +1,11 @@
 # Grasshopper release state
 
-## UX audits 1–6: PR 16, CI verification
+## UX audits 1–6: merged and verified
 
 Codex · Mac mini · `/Users/mylescook/.codex/worktrees/ux-audit-integration/grasshopper`
-· `codex/ux-audit-integration`. Integrated released 2.7.0 evidence `2031446` and
-all audit worker slices through `9d681aa`. Primary checkout and live service were
+· audit branch `codex/ux-audit-integration`; delivery receipt follows merged
+`origin/main` in the same isolated checkout. Integrated released 2.7.0 evidence
+`2031446` and all audit worker slices through `9d681aa`. Primary checkout and live service were
 not edited. Explicit `gpt-6.1-sol` workers owned owner data, hosting, frontend and
 technical review in isolated checkouts; primary owned integration and browser
 verification. All workers have finished.
@@ -18,14 +19,16 @@ external, host, data and security boundaries. A private rollback copy is retaine
 Final checks passed: full Go suite with pinned Granite model/runtime assets,
 `go vet ./...`, race tests for client/server/backup/memory/MCP/client packages,
 and all 90 Node tests. Synthetic Chromium 375×812/1280×960 checks prove first
-preview at743px, pinned maximum-text dialog,103 unique paginated records, dirty
+preview at 743px, pinned maximum-text dialog,103 unique paginated records, dirty
 protection, URL reload, attribution, archive Undo, revision restoration, complete
 JSON download, sign-out everywhere and automatic failure recovery. Local public
 build passes wrapping, selected-OS clipboard, metadata/favicon/theme/screenshot.
 Review defects were fixed and retested. No new dependencies/framework.
 
-[PR #16](https://github.com/MylesMCook/grasshopper/pull/16) is pushed and open.
-Next: verify three-OS CI on its final head and merge under the accepted plan. Release/public-site deployment/live-host changes are
+[PR #16](https://github.com/MylesMCook/grasshopper/pull/16) merged as `6321229`.
+macOS, Ubuntu and Windows CI all passed final PR head `9922260`. Its merged tree
+was verified identical to that tested head. Implementation and merge are complete.
+Next possible action is a separately authorized release and deployment. Release/public-site deployment/live-host changes are
 separate and have not occurred. Physical devices, screen readers, native
 Windows/Linux, Tailscale Serve/reboot and fresh deployed agent turns remain
 untested. Task-local evidence is outside Git or under untracked `output/`.

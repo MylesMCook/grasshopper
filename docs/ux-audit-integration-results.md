@@ -89,4 +89,6 @@ from the integration checkout; the final task record records their status.
 No real screen reader, physical phone, Safari/Firefox, native Windows/Linux,
 Tailscale Serve deployment, supervisor restart/reboot, or live agent turn was
 performed for these changes. The verified branch is published as [PR #16](https://github.com/MylesMCook/grasshopper/pull/16).
-CI and merge status are tracked in tasks.md. No release or deployment occurred.
+PR #16 merged as `6321229` after macOS, Ubuntu and Windows CI passed
+head `9922260`; the merged tree matches that tested head. No release or
+deployment occurred.
