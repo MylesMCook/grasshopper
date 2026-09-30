@@ -1,14 +1,26 @@
 # Grasshopper release state
 
-## Active UI audit: report 8
+## Active UI audit: report 9
+
+[LAB-234](https://linear.app/mcook/issue/LAB-234): Codex on macOS owns
+`codex/ui-report9-integration` in an isolated managed worktree. Separate
+`gpt-6.1-sol` workers own the memory-view and public-site details. Accepted
+outcomes and verification are in [report 9](docs/ui-audit-report9-results.md).
+Implementation, independent review and synthetic browser checks pass; planned
+patch 2.8.3. Local 117 Node tests, Go tests/vet/race pass. Final-head CI, actual
+Copilot review and verified recovery precede release/deployment. Primary
+checkout's unrelated edits, release artifacts and local evidence are preserved.
+
+## Released UI audit: report 8, 2.8.2
 
 [LAB-233](https://linear.app/mcook/issue/LAB-233): Codex on macOS owns
 `codex/ui-audit-report8` in an isolated managed worktree. Separate
 `gpt-6.1-sol` workers own memory-view and public-site changes. Accepted outcomes
 and verification are in [report 8](docs/ui-audit-report8-results.md).
-Implementation and synthetic browser verification pass; planned patch 2.8.2.
-Release/deployment follow final-head CI, Copilot review and verified recovery.
-Live remains 2.8.1. Primary checkout and existing local evidence are preserved.
+Implementation shipped as 2.8.2 via PR #22 (`df877ec`); service, installed Mac
+connectors and public site were verified. Documentation receipt PR #23 has CI
+and independent review, but Copilot quota prevents its required review. No
+exception has been granted. LAB-233 remains In Review for that receipt alone.
 
 ## Released report 7: 2.8.1
 
