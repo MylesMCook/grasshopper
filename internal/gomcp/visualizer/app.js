@@ -1071,6 +1071,7 @@ function draw(page) {
   const next = new Map();
   // A poll redraw must not strand keyboard focus on a removed button.
   const focusedID = document.activeElement?.memoryID;
+  const focusedAction = document.activeElement?.memoryAction;
   openButtons = new Map();
   inlineActionRows = new Map();
   const fragment = document.createDocumentFragment();
@@ -1119,6 +1120,8 @@ function draw(page) {
         const button = document.createElement('button');
         button.type = 'button';
         button.textContent = name;
+        button.memoryID = record.id;
+        button.memoryAction = archived ? 'archive' : 'confirm';
         button.setAttribute('aria-label', `${name} memory: ${record.title || `#${record.id}`}`);
         if (archived) button.className = 'quiet';
         button.disabled = inlineBusy.has(record.id);
@@ -1133,7 +1136,10 @@ function draw(page) {
     fragment.append(emptyState(omitted));
   }
   records.replaceChildren(fragment);
-  if (focusedID !== undefined) openButtons.get(focusedID)?.focus();
+  if (focusedID !== undefined) {
+    const action = Array.from(inlineActionRows.get(focusedID)?.children || []).find(button => button.memoryAction === focusedAction && !button.disabled);
+    (action || openButtons.get(focusedID) || openButtons.values().next().value || refreshButton).focus();
+  }
   revisions = next;
   lastSignature = signature;
   hasLoaded = true;
@@ -1181,6 +1187,7 @@ async function refresh() {
     draw(page);
     setStatus(searchQuery ? page.semantic_ready ? 'Search results' : 'Wording matches only · meaning search unavailable' : 'Live', 'live');
     searchHint.textContent = page.semantic_ready ? 'Meaning search can match related wording. Bold text marks exact words from your query.' : 'Wording search matches any query word. Bold text marks exact words from your query.';
+    searchHint.hidden = !searchQuery;
   } catch (error) {
     if (inFlight !== controller) return;
     const message = error.name === 'AbortError' ? 'Request timed out' : error instanceof TypeError ? 'Service unavailable' : error.message;

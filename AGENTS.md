@@ -35,7 +35,7 @@ go test -race ./internal/gomemory ./internal/gomcp ./internal/goclient
 go build ./cmd/grasshopper             # Stateless client bridge and hooks
 go build ./cmd/grasshopper-go-server   # Fresh or converted database
 node --test internal/gomcp/visualizer/app.test.cjs # Device polling regressions; no npm dependencies
-node --test web/connect.test.cjs # Public server-address regressions; no npm dependencies
+node --test web/*.test.cjs # Public address and setup regressions; no npm dependencies
 go run ./cmd/grasshopper-go-backup --help
 go run ./cmd/grasshopper-go-migrate --help
 go run ./cmd/grasshopper-go-bundle --help

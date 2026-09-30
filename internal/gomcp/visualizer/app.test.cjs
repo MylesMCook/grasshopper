@@ -274,6 +274,34 @@ test('a truncated list preview ends with an ellipsis and short text does not', (
   assert.equal(short.children[3].textContent, 'Synthetic saved decision.');
 });
 
+test('a changed review poll retains the focused inline action and removal finds a surviving memory', async () => {
+  const v = view();
+  v.ui.chooseView('review');
+  v.requests.at(-1).reply({ records: [memory(1), memory(2)] });
+  await tick();
+  const first = v.get('records').children[0].children[0];
+  v.document.activeElement = first.children.at(-1).children[0];
+  v.ui.draw({ records: [memory(1, 2), memory(2)] });
+  const replacement = v.get('records').children[0].children[0].children.at(-1).children[0];
+  assert.equal(replacement.focused, true);
+  v.document.activeElement = replacement;
+  v.ui.draw({ records: [memory(2)] });
+  assert.equal(v.get('records').children[0].children[0].children[4].focused, true);
+});
+
+test('search explanation consumes space only when there is a query', async () => {
+  const v = view();
+  const refresh = v.ui.refresh();
+  v.requests.at(-1).reply({ records: [memory(1)] });
+  await refresh;
+  assert.equal(v.get('search-hint').hidden, true);
+  v.get('search-query').value = 'decision';
+  v.get('search-form').listeners.submit({ preventDefault() {} });
+  v.requests.at(-1).reply({ records: [memory(1)], semantic_ready: false });
+  await tick();
+  assert.equal(v.get('search-hint').hidden, false);
+});
+
 const tick = () => new Promise(setImmediate);
 
 async function openLatest(v, record) {
