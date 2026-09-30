@@ -17,6 +17,14 @@ In Cursor Agent CLI, add `--cursor-cli` to it.
 bin/grasshopper connect --json
 ```
 
+Quote the returned `next_step` when explaining any status. It is the single
+source of plain-language guidance, including `approval_pending`,
+`owner_credential`, `unreachable_server`, `device_mismatch`,
+`network_permission_required`, and `invalid_address`. Do not paraphrase the
+status code or invent a remedy. Relay the returned link, device, and code
+separately when present. For `invalid_address`, ask for a corrected server link;
+do not treat it as a saved-configuration conflict.
+
 If status is `missing_address`, ask once for the private server link. A base,
 memory-view, or `/mcp` link works. Then run `connect --json --url ADDRESS`.
 Relay the `approval_url`, device, and code as soon as `approval_pending` appears.
