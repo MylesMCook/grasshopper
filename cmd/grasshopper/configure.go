@@ -102,7 +102,7 @@ func connectionReport(path string) map[string]string {
 			return report("approval_ready", "Approval succeeded. Run connect --json to finish using this approval.")
 		case status == 202 && polled.Status == "pending":
 			result["approval_url"], result["code"] = pending.ApprovalURL, pending.Code
-			return report("approval_pending", "Approve the matching code in the private memory view, then run connect --json again.")
+			return report("approval_pending", approvalPendingNextStep)
 		case status == 403:
 			return report("approval_denied", "Access was denied. Ask the owner before trying again.")
 		case status == 404 || status == 410:
@@ -151,13 +151,13 @@ func connectionReport(path string) map[string]string {
 	result["credential_role"], result["host_version"], result["registered_device"] = identity.Role, identity.Version, identity.Device
 	if identity.Role == "owner" {
 		result["registration"] = "unregistered"
-		return report("owner_credential", "Memory access uses the owner credential. Run connect --reconnect to request a dedicated device approval; current access is retained until setup succeeds.")
+		return report("owner_credential", "This machine uses the server owner's access. Run connect --reconnect to request its own device approval; current access is kept until setup succeeds.")
 	}
 	result["registration"] = "verified"
 	if identity.Device != config.Device {
 		return report("device_mismatch", "The host's registered device differs from this configuration. Inspect the device identity before changing it; saved access was kept.")
 	}
-	return report("connected", "Open a fresh agent session after approving any native hook or MCP prompt.")
+	return report("connected", connectedNextStep)
 }
 
 // privateFile writes beside the target and renames after closing, so a

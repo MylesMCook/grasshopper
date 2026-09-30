@@ -5,9 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <meta name="description" content="Download Grasshopper and start a private memory server on your own machine.">
+  <meta property="og:title" content="Set up · Grasshopper">
+  <meta property="og:description" content="Download Grasshopper and start a private memory server on your own machine.">
+  <meta property="og:image" content="https://usegrasshopper.com/memory-view.png">
+  <meta property="og:image:alt" content="Grasshopper memory view with invented example memories.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://usegrasshopper.com/setup/">
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/site.css">
   <script src="/theme.js" defer></script>
+  <script src="/setup.js" defer></script>
   <title>Set up · Grasshopper</title>
 </head>
 <body>
@@ -15,25 +22,28 @@
     <header class="top"><a class="brand" href="/">GRASSHOPPER</a><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button><nav aria-label="Page"><a href="/">Home</a><a href="/setup/" aria-current="page">Set up</a><a href="/view/">Memory view</a></nav></header>
     <main class="view-main">
       <h1>Connect your agents.</h1>
-      <p class="lead">Install Grasshopper on each machine. One private server keeps the memories.</p>
+      <p class="lead">Start one private Grasshopper server first, then install a connector on each machine that uses it.</p>
+      <section aria-labelledby="server-title">
+        <div class="heading"><h2 id="server-title">1. Start your server</h2></div>
+        <p class="intro">Download a <a href="https://github.com/MylesMCook/grasshopper/releases/latest">server archive</a> and follow the <a href="https://github.com/MylesMCook/grasshopper#need-a-server">short hosting guide</a>. Keep it private; other machines need private HTTPS. Check the release's SHA-256 sums before running it.</p>
+        <p class="note"><a href="/view/">Open your memory view</a> · <a href="https://github.com/MylesMCook/grasshopper#update-or-remove-a-connector">Update or remove a connector</a> · <a href="https://github.com/MylesMCook/grasshopper#back-up-and-update-the-server">Backup and recovery</a></p>
+        <details><summary>Preview the memory view</summary><figure class="memory-preview"><img src="/memory-view.png" width="1280" height="960" alt="Grasshopper memory view with Saved, Needs review, Archived and Startup preview tabs, scope filters, a Devices link, and an example memory titled Short answers." loading="lazy"><figcaption>The memory view on your private server. These are invented example memories.</figcaption></figure></details>
+      </section>
       <section aria-labelledby="install-title">
-        <div class="heading"><h2 id="install-title">1. Install a connector</h2></div>
+        <div class="heading"><h2 id="install-title">2. Install a connector</h2></div>
+        <label class="os-choice" for="connector-os">Your operating system <select id="connector-os"><option value="macos">macOS</option><option value="windows">Windows</option><option value="linux">Linux</option></select></label>
         <div class="grid downloads agent-options">
-          <article><h3>Codex</h3><pre><code>codex plugin marketplace add MylesMCook/grasshopper --ref marketplace</code></pre><pre><code>codex plugin add grasshopper-macos@grasshopper-marketplace</code></pre><p>On Windows or Linux, use its matching plugin entry.</p></article>
-          <article><h3>Cursor</h3><pre><code>agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace</code></pre><p>Install your OS entry in the Plugins menu, or in the IDE under <strong>Customize → Plugins</strong>.</p></article>
-          <article class="wide"><h3>Claude Code</h3><pre><code>claude plugin marketplace add MylesMCook/grasshopper#marketplace</code></pre><pre><code>claude plugin install grasshopper-macos@grasshopper-marketplace</code></pre><p>On Windows or Linux, install <code>grasshopper-windows</code> or <code>grasshopper-linux</code>. Approve the three read tools when Claude Code asks. To pre-approve them instead, skip the two commands above: extract the <a href="https://github.com/MylesMCook/grasshopper/releases/latest">client archive</a> and run <code>./bin/grasshopper connect --agents claude --url https://your-private-server</code>. That installs a separate local plugin, so use one route or the other.</p></article>
+          <article><h3>Codex</h3><pre><code>codex plugin marketplace add MylesMCook/grasshopper --ref marketplace</code></pre><button type="button" class="copy-command" aria-label="Copy Codex marketplace command">Copy command</button><pre><code data-plugin-command>codex plugin add grasshopper-macos@grasshopper-marketplace</code></pre><button type="button" class="copy-command" aria-label="Copy Codex install command">Copy command</button></article>
+          <article><h3>Cursor</h3><pre><code>agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace</code></pre><button type="button" class="copy-command" aria-label="Copy Cursor marketplace command">Copy command</button><p>Install <code id="cursor-plugin">grasshopper-macos</code> in the Plugins menu, or in the IDE under <strong>Customize → Plugins</strong>.</p></article>
+          <article class="wide"><h3>Claude Code</h3><pre><code>claude plugin marketplace add MylesMCook/grasshopper#marketplace</code></pre><button type="button" class="copy-command" aria-label="Copy Claude Code marketplace command">Copy command</button><pre><code data-plugin-command>claude plugin install grasshopper-macos@grasshopper-marketplace</code></pre><button type="button" class="copy-command" aria-label="Copy Claude Code install command">Copy command</button><p>Approve the three read tools when Claude Code asks. To pre-approve them instead, skip the two commands above: extract the <a href="https://github.com/MylesMCook/grasshopper/releases/latest">client archive</a> and run <code id="archive-connect-command">./bin/grasshopper connect --agents claude --url https://your-private-server</code>. That installs a separate local plugin, so use one route or the other.</p></article>
         </div>
+        <p id="copy-status" class="note" role="status" aria-live="polite"></p>
       </section>
       <section aria-labelledby="connect-title">
-        <div class="heading"><h2 id="connect-title">2. Connect once</h2></div>
+        <div class="heading"><h2 id="connect-title">3. Connect once</h2></div>
         <p class="intro">Ask the agent: <strong>Connect Grasshopper.</strong> On a new machine, give it your private server link when asked. Open its approval link in your already-connected memory view, match the device and code, then approve. No token goes through the agent.</p>
         <p class="intro">A connection check shows the registered device and approval state. If the server is offline, your saved connection stays in place. Windows agents share one connection under your user profile.</p>
         <p class="note">Codex may ask you to trust its hook and allow network access to your private server; Cursor may ask you to enable Grasshopper MCP. Start a fresh session after that native step. The connection is reused by agents on this machine.</p>
-      </section>
-      <section aria-labelledby="server-title">
-        <div class="heading"><h2 id="server-title">Need a server?</h2></div>
-        <p class="intro">Download a <a href="https://github.com/MylesMCook/grasshopper/releases/latest">server archive</a> and follow the <a href="https://github.com/MylesMCook/grasshopper#need-a-server">short hosting guide</a>. Keep it private; other machines need private HTTPS. Check the release's SHA-256 sums before running it.</p>
-        <p class="note"><a href="/view/">Open your memory view</a> · <a href="https://github.com/MylesMCook/grasshopper#update-or-remove-a-connector">Update or remove a connector</a> · <a href="https://github.com/MylesMCook/grasshopper#back-up-and-update-the-server">Backup and recovery</a></p>
       </section>
     </main>
     <footer><span>Grasshopper</span><span>This site never reads your memories or token.</span></footer>

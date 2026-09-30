@@ -16,6 +16,30 @@ import (
 	"time"
 )
 
+func TestConnectInvalidAddressStatus(t *testing.T) {
+	for _, address := range []string{"not a url", "http://memory.example.com", "https://memory.example.com/other", "https://user:pass@memory.example.com"} {
+		t.Run(address, func(t *testing.T) {
+			root, _, config, _ := setupFixture(t)
+			// No saved configuration should mask the entered address's error.
+			if err := os.Remove(config); err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			var err error
+			result := captureConnectJSON(t, func() error {
+				err = connectWithRoot(context.Background(), []string{"--json", "--url", address, "--config", config}, root, nil)
+				return nil // Invalid input is expected; inspect its JSON below.
+			})
+			if err == nil {
+				t.Fatal("invalid address accepted")
+			}
+			status, next := connectErrorStatus(err)
+			if status != "invalid_address" || !strings.Contains(next, "server") || result["status"] != status || result["next_step"] != next {
+				t.Fatalf("status=%s next=%s", status, next)
+			}
+		})
+	}
+}
+
 func TestPairConnectsMarketplaceWithoutMasterToken(t *testing.T) {
 	root, _, config, _ := setupFixture(t)
 	tokenPath := filepath.Join(t.TempDir(), "device-token")

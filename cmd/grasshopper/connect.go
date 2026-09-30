@@ -23,6 +23,10 @@ import (
 	"github.com/MylesMCook/grasshopper/internal/goclient"
 )
 
+// Returned next_step text is the user-facing explanation for these states.
+const connectedNextStep = "Review your agent's Grasshopper permission prompt, then open a fresh session."
+const approvalPendingNextStep = "Open the link in your connected memory view, approve the matching device and code within five minutes, then run connect --json again."
+
 func connectClient(args []string) error {
 	executable, err := os.Executable()
 	if err != nil {
@@ -71,7 +75,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 			_ = json.NewEncoder(os.Stdout).Encode(jsonPhase)
 			return
 		}
-		state, next := "connected", "Open a fresh agent session after native hook or MCP approval."
+		state, next := "connected", connectedNextStep
 		if resultErr != nil {
 			state, next = connectErrorStatus(resultErr)
 		}
@@ -100,7 +104,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		if *address != "" {
 			wanted, _, err := goclient.NormalizeServerAddress(*address)
 			if err != nil {
-				return err
+				return connectProblem("invalid_address", "Enter your private server, memory-view, or /mcp address. "+err.Error())
 			}
 			if wanted != pending.Address {
 				return connectProblem("conflicting_configuration", "Another server already has a pending connection. Finish or let it expire before switching.")
@@ -144,7 +148,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 	}
 	mcpURL, base, err := goclient.NormalizeServerAddress(*address)
 	if err != nil {
-		return err
+		return connectProblem("invalid_address", "Enter your private server, memory-view, or /mcp address. "+err.Error())
 	}
 	*address = mcpURL
 	if *tokenPath == "" {
@@ -282,7 +286,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 			return connectProblem("device_mismatch", "This credential belongs to a different registered device. Inspect it before changing the connection.")
 		}
 		if *jsonOutput {
-			jsonPhase = map[string]string{"status": "connected", "server": *address, "device": *device, "registration": "unverified", "next_step": "Open a fresh agent session after native hook or MCP approval."}
+			jsonPhase = map[string]string{"status": "connected", "server": *address, "device": *device, "registration": "unverified", "next_step": connectedNextStep}
 			if identityErr == nil {
 				jsonPhase["registration"], jsonPhase["registered_device"], jsonPhase["credential_role"], jsonPhase["host_version"] = "verified", identity.Device, identity.Role, identity.Version
 			}
@@ -411,13 +415,13 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		_ = os.Remove(pendingPath(configPath))
 	}
 	if *jsonOutput {
-		jsonPhase = map[string]string{"status": "connected", "server": *address, "device": *device, "registered_device": *device, "credential_role": "device", "registration": "verified", "next_step": "Open a fresh agent session after native hook or MCP approval."}
+		jsonPhase = map[string]string{"status": "connected", "server": *address, "device": *device, "registered_device": *device, "credential_role": "device", "registration": "verified", "next_step": connectedNextStep}
 	}
 	return nil
 }
 
 func pendingStatus(pending pendingConnection) map[string]string {
-	return map[string]string{"status": "approval_pending", "approval_url": pending.ApprovalURL, "device": pending.Device, "code": pending.Code, "next_step": "Open the link in an already connected memory view and approve the matching code within five minutes. Then run connect --json again to finish."}
+	return map[string]string{"status": "approval_pending", "approval_url": pending.ApprovalURL, "device": pending.Device, "code": pending.Code, "next_step": approvalPendingNextStep}
 }
 
 type connectStatusError struct{ status, next string }

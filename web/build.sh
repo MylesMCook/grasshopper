@@ -5,7 +5,7 @@ root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 output="$root/web/dist"
 rm -rf -- "$output"
 mkdir -p "$output/fonts" "$output/view" "$output/setup"
-cp "$root/web/public/index.html" "$root/web/public/connect.js" "$root/web/public/_headers" "$root/web/public/404.html" "$output/"
+cp "$root/web/public/index.html" "$root/web/public/connect.js" "$root/web/public/setup.js" "$root/web/public/memory-view.png" "$root/web/public/_headers" "$root/web/public/404.html" "$output/"
 cp "$root/web/public/view/index.html" "$output/view/"
 cp "$root/web/public/setup/index.html" "$output/setup/"
 cp "$root/docs/site.css" "$output/"
