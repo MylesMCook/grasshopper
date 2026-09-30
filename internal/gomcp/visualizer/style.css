@@ -264,3 +264,4 @@ main { padding-top:0; }
 }
 
 .review-attribution { margin-top:var(--space-1); color:var(--muted); font-size:var(--text-meta); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.record-state { pointer-events:auto; }

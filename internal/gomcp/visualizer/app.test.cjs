@@ -1559,3 +1559,9 @@ test('review keeps truthful attribution with the full source available', () => {
   assert.equal(attribution.textContent,`Saved by Cursor on sample-device: ${record.provenance.source}`);
   assert.equal(attribution.title,attribution.textContent);
 });
+
+test('nonreview timestamps remain hoverable inside the transparent title overlay', () => {
+  const css=fs.readFileSync(path.join(__dirname,'style.css'),'utf8');
+  assert.match(css,/\.record:not\(\.review-record\) \.record-state-line \{ pointer-events:none; \}/);
+  assert.match(css,/\.record-state \{ pointer-events:auto; \}/);
+});
