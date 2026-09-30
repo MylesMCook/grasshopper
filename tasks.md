@@ -1,5 +1,25 @@
 # Grasshopper release state
 
+## Active UX audit follow-up
+
+Codex · Mac mini · `/Users/mylescook/.codex/worktrees/ux-audit-integration/grasshopper`
+· `codex/ux-audit-integration` · baseline `4fea645`. Separate workers own
+`codex/ux-audit-report1`, `codex/ux-audit-report2` and
+`codex/ux-audit-site-connector` in their named managed worktrees. The primary
+checkout and LAB-223 release belong to the separate release task.
+
+[LAB-224](https://linear.app/mcook/issue/LAB-224) covers report 1;
+[LAB-225](https://linear.app/mcook/issue/LAB-225) covers report 2. No new
+dependencies, framework or live-service changes. Fixes are being reproduced
+and checked on synthetic/local surfaces. The unsaved-draft guard, URL view
+state and earlier-revision restoration await owner approval of
+[proposed scenarios](docs/ux-audit-followup-scenarios.md). Existing approved
+review/correction outcomes remain in `docs/memory-view-review.md`.
+
+Next: integrate the verified worker commits, review overlap and run combined
+checks. Local implementation, browser evidence, merge and deployment are
+separate states; these fixes do not block 2.7.0.
+
 Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
 
 ## Active release: memory review and Claude marketplace
