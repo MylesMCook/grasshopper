@@ -123,7 +123,7 @@ test('full memory and earlier revision preserve complete text and source', async
   v.requests[0].reply(memory(2, 2, full));
   await new Promise(setImmediate);
   assert.equal(v.get('memory-detail-content').textContent, full);
-  assert.equal(v.get('memory-detail-meta').children.some(item => item.textContent === 'Source: synthetic test'), true);
+  assert.equal(v.get('memory-detail-meta').children.some(item => item.textContent === 'synthetic test'), true);
   assert.equal(v.get('previous-revision').disabled, false);
   v.get('previous-revision').listeners.click();
   assert.equal(JSON.parse(v.requests[1].options.body).revision, 1);
@@ -256,19 +256,19 @@ test('cards name their exact scope and say what an agent will load', () => {
   const [first, second] = v.get('records').children[0].children;
   assert.equal(first.children[0].children[1].textContent, 'Git project github.com/example/orchard · device mac-mini · macOS');
   assert.equal(first.children[0].children[2].textContent, '#3');
-  assert.match(first.children[2].textContent, /^Unconfirmed · not loaded at agent startup/);
-  assert.match(second.children[2].textContent, /^Unconfirmed handoff · loads at startup/);
-  assert.equal(first.children[4].attributes['aria-label'], 'Open memory: Synthetic decision');
+  assert.match(first.children[2].children[0].children[0].textContent, /^Unconfirmed · not loaded at agent startup/);
+  assert.match(second.children[2].children[0].children[0].textContent, /^Unconfirmed handoff · loads at startup/);
+  assert.equal(first.children[1].children[0].attributes['aria-label'], 'Open memory: Synthetic decision');
 });
 
 test('omitted records are named and a poll redraw keeps keyboard focus', () => {
   const v = view();
   v.ui.draw({ records: [memory(5)], omitted: 1, omitted_ids: [9], omitted_records: [{ id: 9, revision: 1, scope: {} }], omitted_titles: { 9: 'Large lesson' } });
   assert.equal(v.get('omissions').children[1].children[0].textContent, 'Open “Large lesson” (#9)');
-  v.document.activeElement = v.get('records').children[0].children[0].children[4];
+  v.document.activeElement = v.get('records').children[0].children[0].children[1].children[0];
   const before = v.document.activeElement;
   v.ui.draw({ records: [memory(5, 2)], omitted: 0 });
-  const after = v.get('records').children[0].children[0].children[4];
+  const after = v.get('records').children[0].children[0].children[1].children[0];
   assert.notEqual(after, before);
   assert.equal(after.focused, true);
 });
@@ -287,13 +287,13 @@ test('a changed review poll retains the focused inline action and removal finds 
   v.requests.at(-1).reply({ records: [memory(1), memory(2)] });
   await tick();
   const first = v.get('records').children[0].children[0];
-  v.document.activeElement = first.children.at(-1).children[0];
+  v.document.activeElement = first.children[2].children[1].children[0];
   v.ui.draw({ records: [memory(1, 2), memory(2)] });
-  const replacement = v.get('records').children[0].children[0].children.at(-1).children[0];
+  const replacement = v.get('records').children[0].children[0].children[2].children[1].children[0];
   assert.equal(replacement.focused, true);
   v.document.activeElement = replacement;
   v.ui.draw({ records: [memory(2)] });
-  assert.equal(v.get('records').children[0].children[0].children[4].focused, true);
+  assert.equal(v.get('records').children[0].children[0].children[1].children[0].focused, true);
 });
 
 test('search explanation consumes space only when there is a query', async () => {
@@ -784,7 +784,7 @@ test('signed-in connection section is hidden and dialog heading receives focus',
   assert.equal(v.get('connection-section').hidden, true);
   await openLatest(v, memory(45));
   assert.equal(v.get('memory-detail-title').focused, true);
-  assert.doesNotMatch(v.get('memory-detail-meta').children[2].textContent, /:\d{2}:\d{2}/);
+  assert.doesNotMatch(v.get('memory-detail-meta').children[5].textContent, /:\d{2}:\d{2}/);
   v.ui.stop();
   assert.equal(v.get('connection-section').hidden, false);
 });
@@ -825,7 +825,7 @@ test('wrong token reports at the field and returns focus without a contradictory
 function inlineActions(v, record) {
   v.ui.chooseView('review');
   v.requests.at(-1).reply({ records: [record] });
-  return tick().then(() => v.get('records').children[0].children[0].children.at(-1));
+  return tick().then(() => v.get('records').children[0].children[0].children[2].children[1]);
 }
 
 test('inline confirm reads full content, uses expected revision, and replays uncertain writes', async () => {
@@ -892,13 +892,16 @@ test('a poll redraw during inline review enables the current row after failure',
   await tick();
   const write = v.requests.at(-1);
   v.ui.draw({ records: [{ ...record, title: 'Changed list title' }] });
-  const current = v.get('records').children[0].children[0].children.at(-1);
+  const current = v.get('records').children[0].children[0].children[2].children[1];
   assert.notEqual(current, actions);
   assert.equal(current.children[0].disabled, true);
+  assert.equal(current.children[0].textContent, 'Confirming…');
   write.reject(new TypeError('synthetic connection failure'));
   await tick();
   assert.equal(current.children[0].disabled, false);
   assert.equal(current.children[1].disabled, false);
+  assert.equal(current.children[0].textContent, 'Confirm');
+  assert.equal(current.children[1].textContent, 'Archive');
 });
 
 test('an inline read from a former session cannot write into a new sign-in', async () => {
@@ -1119,7 +1122,7 @@ test('owner-edited detail names the original agent and device from revision one'
   v.requests[0].reply({...memory(91,2),provenance:{harness:'memory-view',device:'owner browser'}}); await tick();
   const original=v.requests.at(-1); assert.equal(JSON.parse(original.options.body).revision,1);
   original.reply({...memory(91),provenance:{harness:'cursor',device:'synthetic-mac'}}); await tick();
-  assert.equal(v.get('memory-detail-meta').children.some(item=>item.textContent==='Originally saved by cursor on synthetic-mac.'),true);
+  assert.equal(v.get('memory-detail-meta').children.some(item=>item.textContent==='cursor on synthetic-mac.'),true);
 });
 
 test('persisted theme applies before body DOM exists and its script precedes styles', () => {
@@ -1193,7 +1196,7 @@ test('Show more waits for polling and uses the newly installed snapshot cursor',
   more.reply({ records: [memory(9, 2), memory(10, 2)], next: '', total: 10 }); await tick();
   const cards = v.get('records').children[0].children;
   assert.equal(cards.length, 10);
-  assert.match(cards[8].children[2].textContent, /Confirmed/);
+  assert.match(cards[8].children[2].children[0].children[0].textContent, /Confirmed/);
   assert.equal(v.timers.size, 1);
 });
 
@@ -1287,4 +1290,53 @@ test('foreground cached refresh returns to Live after a not-modified response', 
   v.requests.at(-1).reply('', 304);
   await poll;
   assert.equal(v.get('status').textContent, 'Memory confirmed.');
+});
+
+
+test('memory title is the open action and close returns focus to it', async () => {
+  const v = view();
+  const first = v.ui.refresh();
+  v.requests[0].reply({ records: [memory(1)] });
+  await first;
+  const title = v.get('records').children[0].children[0].children[1].children[0];
+  assert.equal(title.textContent, 'Synthetic decision');
+  assert.match(title.className, /record-title/);
+  title.listeners.click();
+  v.requests.at(-1).reply(memory(1));
+  await tick();
+  v.ui.closeMemory();
+  assert.equal(title.focused, true);
+});
+
+test('detail has labelled metadata, one primary action, and no one-revision navigation', async () => {
+  const v = view();
+  await openLatest(v, { ...memory(1), confirmed: false });
+  const metadata = v.get('memory-detail-meta').children;
+  assert.deepEqual(metadata.filter((_, index) => index % 2 === 0).map(item => item.textContent), ['Scope', 'State', 'Updated', 'Saved by', 'Source']);
+  assert.equal(metadata[7].textContent, 'test on test-device');
+  assert.equal(v.get('memory-history').hidden, true);
+  assert.equal(v.get('edit-memory').className, 'quiet');
+  assert.equal(v.get('confirm-memory').hidden, false);
+  const pending = v.get('confirm-memory').listeners.click();
+  assert.equal(v.get('confirm-memory').textContent, 'Confirming…');
+  v.requests.at(-1).reply({}, 500);
+  await pending;
+  assert.notEqual(v.get('confirm-memory').textContent, 'Confirming…');
+  assert.equal(v.get('confirm-memory').disabled, false);
+  await openLatest(v, memory(2));
+  assert.equal(v.get('edit-memory').className, '');
+  assert.equal(v.get('confirm-memory').hidden, true);
+});
+
+test('shared visual roles and settings tasks preserve native controls', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  assert.match(css, /input:not\(\[type="checkbox"\]\)/);
+  assert.match(css, /input\[type="checkbox"\].*width:20px; height:20px/);
+  assert.match(css, /#memory-detail-title:focus \{ outline:none/);
+  assert.doesNotMatch(css, /\.record \{[^}]*border-bottom/);
+  for (const token of ['foreground', 'background', 'surface', 'muted', 'border', 'divider', 'link', 'focus', 'success', 'warning', 'danger', 'primary', 'on-primary']) assert.ok(css.includes('--' + token + ':'));
+  assert.match(html, /<summary>Settings<\/summary>/);
+  for (const task of ['Devices', 'Export', 'Sessions']) assert.ok(html.includes('<h3>' + task + '</h3>'));
+  assert.match(html, /<dl id="memory-detail-meta"/);
 });

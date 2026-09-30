@@ -157,3 +157,15 @@ test('checksum download is pinned to the same build release as every selected se
   const html=readFileSync(`${__dirname}/public/setup/index.html`,'utf8');
   assert.match(html,/<a id="server-checksums"/);
 });
+
+test('setup commands expose a named keyboard scroll area and retain their adjacent exact-copy control', () => {
+  const html = readFileSync(`${__dirname}/public/setup/index.html`, 'utf8');
+  const commands = [...html.matchAll(/<div class="command">(<pre[^>]*>.*?<\/pre>)(<button[^>]*class="copy-command"[^>]*>.*?<\/button>)<\/div>/gs)];
+  assert.equal(commands.length, 6);
+  for(const [,pre,button] of commands) {
+    assert.match(pre,/tabindex="0"/);
+    assert.match(pre,/aria-label="[^"]+ command"/);
+    assert.match(button,/aria-label="Copy [^"]+ command"/);
+    assert.equal(pre.match(/<code[^>]*>(.*?)<\/code>/s)[1].includes('\n'),false);
+  }
+});
