@@ -56,12 +56,13 @@ Playwright CLI Chromium checks pass:
   or page overflow. Worker checks separately cover all four public skip links,
   visual/keyboard header order and 200% text reflow.
 
-Planned patch: 2.8.3. The owner explicitly approved completed independent Sol
+Released patch: [2.8.3](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.3),
+code `335b8e3`, marketplace `96106e5`. The owner explicitly approved completed independent Sol
 review and passing final-head CI as the scoped exception for PRs #23/#24.
 Copilot was quota-blocked and Gemini did not acknowledge its single request;
 no external technical review is claimed. Required gates remain for other PRs.
-Release and deployment are authorized when ready, through the existing archive,
-verified-backup, recovery and rollout process.
+Release and deployment are complete through the existing verified archive,
+backup, recovery and rollout process. [Delivery evidence and limits](memory-acceptance.md#283-report-9-release-and-rollout-september-30).
 
 Physical devices, real screen readers, Safari/Firefox and native agent turns
 are outside this synthetic browser pass. Report 8's documentation-only PR #23

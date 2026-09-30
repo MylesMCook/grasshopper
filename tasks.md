@@ -1,16 +1,20 @@
 # Grasshopper release state
 
-## Active UI audit: report 9
+## Released UI audit: report 9, 2.8.3
 
-[LAB-234](https://linear.app/mcook/issue/LAB-234): Codex on macOS owns
-`codex/ui-report9-integration` in an isolated managed worktree. Separate
-`gpt-6.1-sol` workers own the memory-view and public-site details. Accepted
-outcomes and verification are in [report 9](docs/ui-audit-report9-results.md).
-Implementation, independent review and synthetic browser checks pass; planned
-patch 2.8.3. Local 117 Node tests, Go tests/vet/race pass. The owner approved completed Sol review and passing CI in place of the
-unavailable external reviewers for PRs #23/#24. Final-head CI and verified
-recovery precede release/deployment. Primary
-checkout's unrelated edits, release artifacts and local evidence are preserved.
+[LAB-234](https://linear.app/mcook/issue/LAB-234): [2.8.3](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.3)
+ships all report 9 outcomes via PR #24, release `335b8e3`, marketplace `96106e5`.
+Codex coordinated isolated `gpt-6.1-sol` implementation, review, packaging and
+live-site workers. The owner approved the completed Sol reviews and passing
+final-head CI as the scoped external-review exception for PRs #23/#24.
+117 Node tests, Go tests/vet/race, native three-platform CI, seven archives/287
+embedded hashes, eight published digests, quickstart, restored-copy upgrade and
+2.8.2 rollback pass. The Mac service, installed Mac connectors and public site
+run 2.8.3. Sessions/data/credentials/routing survived; pre/post encrypted backups
+pass. [Delivery evidence and limits](docs/memory-acceptance.md#283-report-9-release-and-rollout-september-30).
+Documentation receipt awaits its own required review; product delivery is complete.
+Primary checkout and unrelated evidence remain preserved. Existing chats may
+retain previous bridges until reopened.
 
 ## Released UI audit: report 8, 2.8.2
 
