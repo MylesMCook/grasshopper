@@ -48,5 +48,26 @@ records, and its alternative text matches the image.
 
 ## Verification and delivery
 
-Implementation and checks are in progress. Record actual results here before
-release; do not infer live or physical-device behavior from unit tests.
+- Go tests and vet across the repository pass; memory, MCP and client race
+  checks pass. Local model tests without configured assets are not counted as
+  real-model evidence; release CI supplies the pinned assets.
+- Native Node regressions cover OS-specific archives and commands, copy feedback
+  including delayed clipboard results, forgetting stored addresses, token-path
+  help and hidden-tab loading. Relevant missing-behavior tests failed before
+  implementation. Accepted scenarios are mapped to these native tests rather
+  than a new test framework.
+- Playwright CLI checked all three public pages at 375 and 1280 pixels, in light
+  and dark themes: consistent navigation/privacy, targets at least 24 pixels,
+  no horizontal overflow, all three OS archive URLs and actual quickstart
+  clipboard contents, feedback reset, forget/focus/reload and screenshot loading.
+  Twelve page/theme/size combinations passed without page-script errors.
+- The 1280 by 960 screenshot is a natural browser capture of the current embedded
+  view against a synthetic server. It shows Devices, tabs, filters, Live status
+  and an invented preference. Pagination is below the frame and is not claimed
+  in the alternative text.
+
+Independent review found a foreground-refresh 304 status edge case; it is fixed
+and covered by a failing-before/passing-after regression. All 100 Node tests
+pass. Final CI, Copilot review and 2.8.1 delivery remain.
+Physical devices, screen readers, Safari/Firefox and fresh native agent turns
+are not established by these checks.
