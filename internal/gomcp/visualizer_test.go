@@ -275,7 +275,7 @@ func TestVisualizerListsPreviewsAndDisclosesOverflow(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	load := func() (gomemory.Page, map[string]string) {
+	load := func() (gomemory.Page, string, int) {
 		t.Helper()
 		resp, body := visualizerRequest(t, http.MethodPost, server.URL+"/visualizer/api/context", testToken, "{}")
 		if resp.StatusCode != http.StatusOK {
@@ -283,17 +283,21 @@ func TestVisualizerListsPreviewsAndDisclosesOverflow(t *testing.T) {
 		}
 		var page struct {
 			gomemory.Page
-			OmittedTitles map[string]string `json:"omitted_titles"`
+			Next  string `json:"next"`
+			Total int    `json:"total"`
 		}
 		if err := json.Unmarshal(body, &page); err != nil {
 			t.Fatal(err)
 		}
-		return page.Page, page.OmittedTitles
+		if page.Total > len(page.Records) && page.Next == "" {
+			t.Fatal("overflow has no next page")
+		}
+		return page.Page, page.Next, page.Total
 	}
 	full := strings.Repeat("alpha ", 4000)
 	write("visualizer-bound-large", "Large alpha", full)
-	page, _ := load()
-	if page.Omitted != 0 {
+	page, _, total := load()
+	if total != len(page.Records) {
 		t.Fatalf("a large record must not push others out of the list: %+v", page)
 	}
 	found := false
@@ -313,13 +317,8 @@ func TestVisualizerListsPreviewsAndDisclosesOverflow(t *testing.T) {
 	for index := 0; index < 120; index++ {
 		write("visualizer-bound-many-"+jsonNumber(int64(index)), "Overflow "+jsonNumber(int64(index)), strings.Repeat("beta ", 60))
 	}
-	page, titles := load()
-	if page.Omitted == 0 || len(page.OmittedIDs) == 0 || len(page.Records) == 0 {
-		t.Fatalf("overflow not disclosed: omitted=%d records=%d", page.Omitted, len(page.Records))
-	}
-	for _, reference := range page.OmittedRecords {
-		if titles[jsonNumber(reference.ID)] == "" {
-			t.Fatalf("omitted record %d is unnamed: %v", reference.ID, titles)
-		}
+	page, next, total := load()
+	if total <= len(page.Records) || next == "" || len(page.Records) == 0 {
+		t.Fatalf("overflow not disclosed: total=%d next=%q records=%d", total, next, len(page.Records))
 	}
 }

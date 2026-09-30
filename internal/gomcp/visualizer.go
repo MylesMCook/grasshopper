@@ -16,7 +16,7 @@ import (
 // The page is public so a browser can open it without putting a bearer token
 // in a URL or cookie. It contains no memory data; the API still requires auth.
 //
-//go:embed visualizer/index.html visualizer/app.js visualizer/theme.js visualizer/style.css visualizer/*.woff2
+//go:embed visualizer/index.html visualizer/*.js visualizer/style.css visualizer/*.woff2
 var visualizerFiles embed.FS
 
 func visualizerAsset(w http.ResponseWriter, r *http.Request, styleHashes []string) bool {
@@ -26,6 +26,8 @@ func visualizerAsset(w http.ResponseWriter, r *http.Request, styleHashes []strin
 		filename, contentType = "index.html", "text/html; charset=utf-8"
 	case "/visualizer/app.js":
 		filename, contentType = "app.js", "text/javascript; charset=utf-8"
+	case "/visualizer/theme-init.js":
+		filename, contentType = "theme-init.js", "text/javascript; charset=utf-8"
 	case "/visualizer/theme.js":
 		filename, contentType = "theme.js", "text/javascript; charset=utf-8"
 	case "/visualizer/style.css":
@@ -185,6 +187,7 @@ type serverInfo struct {
 }
 
 func visualizerContext(store *gomemory.Writer, version, model string) http.HandlerFunc {
+	pager := &ownerPager{snapshots: make(map[string]ownerSnapshot)}
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -192,10 +195,10 @@ func visualizerContext(store *gomemory.Writer, version, model string) http.Handl
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		scope := gomemory.BrowseScope{}
+		input := ownerListInput{}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&scope); err != nil {
+		if err := decoder.Decode(&input); err != nil {
 			http.Error(w, "invalid scope", http.StatusBadRequest)
 			return
 		}
@@ -203,11 +206,12 @@ func visualizerContext(store *gomemory.Writer, version, model string) http.Handl
 			http.Error(w, "invalid scope", http.StatusBadRequest)
 			return
 		}
+		scope := input.BrowseScope
 		if _, err := scope.Key(); err != nil || scope.Legacy {
 			http.Error(w, "invalid scope", http.StatusBadRequest)
 			return
 		}
-		page, devices, projects, err := store.BrowseContext(r.Context(), scope, 32768)
+		page, devices, projects, next, total, err := pager.page(r.Context(), store, input)
 		var titles map[int64]string
 		var review, archived int
 		if err == nil {
@@ -224,11 +228,15 @@ func visualizerContext(store *gomemory.Writer, version, model string) http.Handl
 			info.Active, info.Archived, err = store.Totals(r.Context())
 		}
 		if err != nil {
+			if strings.Contains(err.Error(), "cursor") || strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "snapshot limit") {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			http.Error(w, "context unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(struct {
+		writeOwnerJSON(w, r, store, struct {
 			gomemory.Page
 			Devices       []string         `json:"devices"`
 			Projects      []string         `json:"projects"`
@@ -236,7 +244,9 @@ func visualizerContext(store *gomemory.Writer, version, model string) http.Handl
 			Review        int              `json:"review_count"`
 			Archived      int              `json:"archived_count"`
 			Server        serverInfo       `json:"server"`
-		}{page, devices, projects, titles, review, archived, info})
+			Next          string           `json:"next"`
+			Total         int              `json:"total"`
+		}{page, devices, projects, titles, review, archived, info, next, total})
 	}
 }
 
@@ -259,6 +269,7 @@ type ownerSave func(context.Context, gomemory.WriteInput) (gomemory.Receipt, boo
 func visualizerUpdate(store *gomemory.Writer, save ownerSave) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
+			Action           string `json:"action"`
 			ID               int64  `json:"id"`
 			ExpectedRevision int64  `json:"expected_revision"`
 			Title            string `json:"title"`
@@ -312,13 +323,34 @@ func visualizerUpdate(store *gomemory.Writer, save ownerSave) http.HandlerFunc {
 			ownerWriteResult(w, r, store, input.ID, receipt, err)
 			return
 		}
+		provenance := ownerProvenance
+		if input.Action != "" && input.Action != "edit" && input.Action != "confirm" {
+			http.Error(w, "invalid update action", http.StatusBadRequest)
+			return
+		}
+		if input.Action == "confirm" {
+			if input.Title != "" || input.Content != "" || input.Purpose != "" {
+				http.Error(w, "confirm accepts no edited fields", http.StatusBadRequest)
+				return
+			}
+			// Use the requested revision, not the mutable current record: an
+			// identical retry must generate the same writer fingerprint.
+			prior, err := store.RecordByID(r.Context(), input.ID, &input.ExpectedRevision)
+			if err != nil || prior == nil {
+				http.Error(w, "revision unavailable", http.StatusBadRequest)
+				return
+			}
+			current = prior
+			input.Title, input.Content, input.Purpose = prior.Title, prior.Content, prior.Purpose
+			provenance = prior.Provenance
+		}
 		var title *string
 		if strings.TrimSpace(input.Title) != "" {
 			title = &input.Title
 		}
 		receipt, _, err := save(r.Context(), gomemory.WriteInput{
 			Scope: current.Scope, Content: input.Content, Title: title, Tags: &current.Tags, MemoryType: &current.MemoryType,
-			Purpose: input.Purpose, Confirmed: true, Provenance: ownerProvenance, RequestID: input.RequestID,
+			Purpose: input.Purpose, Confirmed: true, Provenance: provenance, RequestID: input.RequestID,
 			Key: current.Key, ID: &input.ID, ExpectedRevision: &input.ExpectedRevision,
 		})
 		ownerWriteResult(w, r, store, input.ID, receipt, err)
@@ -413,6 +445,6 @@ func visualizerStartup(store *gomemory.Writer) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(preview)
+		writeOwnerJSON(w, r, store, preview)
 	}
 }

@@ -117,6 +117,11 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	if err := backend.Store.EnsureClientTokenSchema(upgradeCtx); err != nil {
 		return nil, err
 	}
+	if backend.Visualizer {
+		if err := backend.Store.EnsureOwnerSessionSchema(upgradeCtx); err != nil {
+			return nil, err
+		}
+	}
 	if backend.AllowedProxyHost != "" {
 		host, port, err := net.SplitHostPort(backend.AllowedProxyHost)
 		portNumber, portErr := strconv.Atoi(port)
@@ -207,12 +212,13 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		providedHash := sha256.Sum256([]byte(provided))
 		return subtle.ConstantTimeCompare(providedHash[:], tokenHash[:]) == 1
 	}
+	sessions := &ownerSessions{store: backend.Store, attempts: make(map[string]loginWindow)}
 	ownerValid := func(r *http.Request) bool {
 		if masterBearerValid(r) {
 			return true
 		}
 		cookie, err := r.Cookie(visualizerCookieName)
-		return err == nil && validVisualizerSession(cookie.Value, tokenHash[:], time.Now())
+		return err == nil && sessions.valid(r, cookie.Value, tokenHash[:])
 	}
 	bearerValid := func(r *http.Request) bool {
 		if masterBearerValid(r) {
@@ -314,11 +320,13 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		}
 		mux.HandleFunc("/visualizer/api/context", visualizerContext(backend.Store, version, searchModel))
 		ownerReads = map[string]http.HandlerFunc{
-			"/visualizer/api/search":  visualizerSearch(backend, embedQuery),
-			"/visualizer/api/record":  visualizerRecord(backend.Store),
-			"/visualizer/api/update":  visualizerUpdate(backend.Store, saveMemory),
-			"/visualizer/api/archive": visualizerArchive(backend.Store),
-			"/visualizer/api/startup": visualizerStartup(backend.Store),
+			"/visualizer/api/search":             visualizerSearch(backend, embedQuery),
+			"/visualizer/api/record":             visualizerRecord(backend.Store),
+			"/visualizer/api/update":             visualizerUpdate(backend.Store, saveMemory),
+			"/visualizer/api/archive":            visualizerArchive(backend.Store),
+			"/visualizer/api/startup":            visualizerStartup(backend.Store),
+			"/visualizer/api/export":             visualizerExport(backend.Store),
+			"/visualizer/api/session/revoke-all": sessions.revokeAll,
 		}
 	}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -422,7 +430,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			}
 		}
 		if backend.Visualizer && r.URL.Path == "/visualizer/api/session" {
-			visualizerSession(w, r, tokenHash[:], masterBearerValid(r), backend.AllowedProxyHost)
+			sessions.serve(w, r, tokenHash[:], masterBearerValid(r), backend.AllowedProxyHost)
 			return
 		}
 		if ownerRead, ok := ownerReads[r.URL.Path]; ok {
@@ -446,7 +454,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		// check. MCP continues to require a bearer token.
 		authorized := bearerValid(r)
 		if !authorized && backend.Visualizer && r.URL.Path == "/visualizer/api/context" {
-			if cookie, err := r.Cookie(visualizerCookieName); err == nil && validVisualizerSession(cookie.Value, tokenHash[:], time.Now()) {
+			if cookie, err := r.Cookie(visualizerCookieName); err == nil && sessions.valid(r, cookie.Value, tokenHash[:]) {
 				if r.Header.Get("Origin") != visualizerOrigin(r, backend.AllowedProxyHost) {
 					http.Error(w, "Origin rejected. Open the local server address or the configured private HTTPS proxy address; check --allowed-proxy-host and restart after configuration changes.", http.StatusForbidden)
 					return
