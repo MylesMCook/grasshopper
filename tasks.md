@@ -1,18 +1,21 @@
 # Grasshopper release state
 
-## Active report 11: scannability
+## Released report 11: 2.8.5
 
-[LAB-236](https://linear.app/mcook/issue/LAB-236): Codex on macOS owns
-`codex/ui-report11` in an isolated managed worktree, based on `405a5a3`.
-Separate `gpt-6.1-sol` workers own setup, home and compact memory-list slices.
-Parent owns integration, actual invented-data screenshot crops, acceptance,
-independent review and delivery. Proposed patch 2.8.5; live remains 2.8.4.
-[Accepted outcomes and examples](docs/ui-audit-report11-results.md).
-No dependencies, framework, API, authentication or data changes. Preserve
-pagination, global-memory identity and search/startup ordering. Primary checkout
-and unrelated private evidence remain preserved. Implementation is complete; 132 Node tests, Go/vet/race and synthetic browser
-checks pass. Actual desktop/phone crops are bundled. One independent ready-PR
-review, final-head CI, recovery, packaging and rollout remain before closeout.
+[LAB-236](https://linear.app/mcook/issue/LAB-236):
+[2.8.5](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.5) ships
+S1–S9, H1–H4, M1–M4 and address-page copy via PR #28/code `79dc7a9`, marketplace
+`8bf87ad`, public deployment `5dfb956d`. Codex coordinated isolated
+`gpt-6.1-sol` implementation, independent review, targeted re-review, packaging
+and live-site verification. All 132 Node tests, Go/vet/race, three-platform CI,
+seven archives/287 embedded hashes, eight published digests, quickstart,
+restored-copy recovery and 2.8.4 rollback pass. The Mac service and three Mac
+connectors run 2.8.5; live data/session/auth/assets and all 15 public assets pass.
+Pre/post encrypted off-host backups are verified. Primary `9963e4b`, previous
+packages and unrelated evidence are preserved. Existing chats may retain older
+bridges until reopened. [Delivery evidence and limits](docs/memory-acceptance.md#285-report-11-scannability-release-and-rollout-september-30).
+The documentation receipt uses `codex/ui-report11-receipt` in an isolated managed
+worktree; its PR records independent review and final CI.
 
 ## Released final UI audit: 2.8.4
 

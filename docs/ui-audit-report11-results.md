@@ -102,7 +102,10 @@ new command disclosure must refresh its overflow cue, and relative timestamp
 text must receive hover for its full-date tooltip. Both have targeted failing-
 before/native checks and fixes. A targeted final-revision review follows.
 
-Patch 2.8.5 awaits one completed independent review and successful
-final-head CI before merge, then verified packaging, recovery and rollout.
-No physical-device, real-screen-reader, non-Chromium or native-AI result is
-claimed. Delivery receipts will record actual release/deployment evidence.
+[2.8.5](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.5) shipped
+via PR #28/code `79dc7a9` after final `961d4ca` re-review cleared both findings
+and CI passed. Exact-main native CI, packaging, recovery, rollback, publication,
+Mac service/connectors and public deployment verification are complete.
+[Delivery evidence](memory-acceptance.md#285-report-11-scannability-release-and-rollout-september-30)
+records actual checks and limits. No physical-device, real-screen-reader,
+non-Chromium or native-AI result is claimed.
