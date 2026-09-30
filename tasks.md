@@ -3,23 +3,34 @@
 ## Active UX audit follow-up
 
 Codex · Mac mini · `/Users/mylescook/.codex/worktrees/ux-audit-integration/grasshopper`
-· `codex/ux-audit-integration` · baseline `4fea645`. Separate workers own
-`codex/ux-audit-report1`, `codex/ux-audit-report2` and
-`codex/ux-audit-site-connector` in their named managed worktrees. The primary
-checkout and LAB-223 release belong to the separate release task.
+· `codex/ux-audit-integration`. Release evidence through `origin/main` `2031446`
+is integrated. The primary checkout and released 2.7.0 service remain untouched.
 
-[LAB-224](https://linear.app/mcook/issue/LAB-224) covers report 1;
-[LAB-225](https://linear.app/mcook/issue/LAB-225) covers report 2. No new
-dependencies, framework or live-service changes. Fixes are being reproduced
-and checked on synthetic/local surfaces. The owner's autonomy instruction removes
-the separate approval round for the supplied unsaved-draft, URL view-state and
-earlier-revision restoration outcomes; [acceptance examples](docs/ux-audit-followup-scenarios.md)
-record them. Existing approved
-review/correction outcomes remain in `docs/memory-view-review.md`.
+Accepted owner audit outcomes authorize concise scenarios followed by fixes and
+tests without another scenario approval gate. No new dependencies or framework.
+Global autonomy guidance is canonical in the owner's AGENTS.md, with a local
+rollback copy outside Git. [Acceptance examples](docs/ux-audit-followup-scenarios.md).
 
-Next: integrate the verified worker commits, review overlap and run combined
-checks. Local implementation, browser evidence, merge and deployment are
-separate states; these fixes do not block 2.7.0.
+| Scope | State and owner |
+| --- | --- |
+| [Report 1 / LAB-224](https://linear.app/mcook/issue/LAB-224) | Local mobile layout, review controls, token help and setup changes integrated; final pagination depends on backend follow-up. |
+| [Report 2 / LAB-225](https://linear.app/mcook/issue/LAB-225) | Local polling recovery, limits, drafts, URL state, revision restore and site fixes integrated; combined browser verification pending. |
+| [Report 3 / LAB-226](https://linear.app/mcook/issue/LAB-226) | Server entry/help and generic public operations docs integrated; frontend follow-ups active. |
+| [Report 4 / LAB-227](https://linear.app/mcook/issue/LAB-227) | Owner data/session backend and frontend integration active. |
+| [Report 5 / LAB-228](https://linear.app/mcook/issue/LAB-228) | Credential binding `8a6b1a0` and scoped error guidance integrated; pagination/ETags, backup verification and structured audit logging remain active. |
+| [Report 6 / LAB-229](https://linear.app/mcook/issue/LAB-229) | Hosting/recovery/templates active. Tool-neutral policy and numerical handoff rule integrated. Startup regression confirms decisions precede handoffs; see agent-surface report. |
+
+Active delegated workers explicitly use `gpt-6.1-sol`, each sole editor of an
+isolated managed worktree: `ux-audit-owner-data` (owner backend),
+`ux-audit-report3-server` branch `codex/ux-audit-hosting` (hosting/recovery), and
+`ux-audit-frontend-followup` (UI). Primary owns integration, review and evidence.
+Completed earlier workers stopped; their commits are integrated.
+
+Evidence is in `docs/ux-audit-*-results.md`; task-local browser output stays out
+of Git. Focused Go tests/vet/race and native Node regressions passed for completed
+slices; release, real-device and deployed acceptance are separate. No audit
+fixes have been pushed, published or deployed. Next: finish workers, integrate,
+review security and run combined synthetic/browser/full-suite checks.
 
 Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
 
