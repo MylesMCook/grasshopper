@@ -85,17 +85,26 @@ Use generic self-hosting examples; keep machine-specific operator notes private.
 
 ## Pull request delivery
 
-Before merging, wait for CI and the Copilot review of the final pushed head.
-Address findings and resolve conversations before merging; a late review cannot
-protect an already merged PR. Do not infer review completion from passing CI.
+Before merging, wait for successful CI of the final pushed head and one completed,
+explicitly requested independent review of the ready changes. Request the review
+for a named PR and revision, then address findings and resolve conversations.
+Passing CI or a quota error is not a completed review. A late review cannot protect
+an already merged PR.
 
 ## PR review usage
 
 - Be frugal with external reviewers. Run relevant local checks, inspect the
   diff, and resolve known issues before requesting a review of a ready PR.
-- Use one external reviewer per ready PR by default. Copilot, Gemini and Cursor
+- Prefer one external reviewer per ready PR. Copilot, Gemini and Cursor
   Bugbot are the current options when connected and available; leave Claude
   reviews unused until the owner requests them.
+- When external reviewers are unavailable or quota-blocked, an explicitly
+  requested independent Codex subagent review may satisfy the repository review
+  requirement. The reviewer must not be an author of the changes. Record the
+  unavailable reviewer, reviewed revision, completed verdict and addressed
+  findings in the PR; do not claim an external review occurred. This applies to
+  code and documentation receipts, so a verified rollout does not require an
+  unreviewed follow-up merge.
 - Request another review only when substantial risk, material changes since
   the last review, or a verified finding justifies it. Do not call every
   available reviewer or repeat reviews for minor edits.
@@ -108,6 +117,10 @@ protect an already merged PR. Do not infer review completion from passing CI.
 - Preserve applicable required review gates. If a required reviewer is
   unavailable, report the blocker and ask for an explicit exception rather
   than silently substituting another reviewer or bypassing the gate.
+- The fallback above does not override GitHub-required reviewers, required
+  approvals or other protected gates. Re-review material changes or fixes to
+  verified findings; documentation-only receipt additions, base updates and
+  minor edits need a final diff inspection, not an automatic new review.
 
 ## Linear tracking
 

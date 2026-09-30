@@ -12,7 +12,7 @@ colors:
   surface: "#f7f7f5"
   foreground: "#282828"
   muted: "#595955"
-  border: "#90908c"
+  border: "#8a8a86"
   divider: "#e1e1de"
   link: "#125ab8"
   focus: "#125ab8"
