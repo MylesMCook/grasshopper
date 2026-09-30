@@ -32,3 +32,20 @@ Scenario: Installed policy works without the owner's tools
   Then its shared policy does not require a personal task tracker or host
   And it gives a concrete size limit for short handoffs
 ```
+
+## R6-2. Startup budget: selected the policy option; clarified the diagnosis
+
+The audit explicitly offered a numeric short-handoff policy as an alternative
+fix. That is implemented above. Retrieval still preserves full record text and
+the 3,000-byte Claude budget.
+
+Code and a synthetic regression contradict the proposed displacement mechanism:
+confirmed decisions and lessons are selected before handoffs. Five distinct
+200-byte confirmed decisions fill this test budget with four records once scope,
+provenance and timestamps are included. Adding a 1,700-byte handoff removes none
+of those four. The startup preview returns the same IDs and order. Unconfirmed
+decisions/lessons remain excluded by the existing accepted startup policy.
+Therefore five decisions plus a handoff cannot be promised under this budget;
+truncating only the handoff would not make them fit. A richer startup payload is
+a separate budget/product change, not hidden in this fix. The real live session
+reported in the audit was not independently inspected.
