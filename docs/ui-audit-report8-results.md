@@ -65,6 +65,10 @@ records; its alt text still describes the visible content.
   errors were confined to that injected failure; no JavaScript exceptions.
 - The first memory starts at 651px on a 375×812 viewport. At 320px with text
   enlarged to 200%, the page and detail dialog do not overflow horizontally.
+- Copilot identified the long original-author label at enlarged text sizes.
+  Shrinkable metadata columns pass 16 combinations across four widths, both
+  themes and 100%/200% text, including an actual synthetic owner-edited record.
+  Restoring the old max-content track reproduces the overflow.
 - Public-site browser assertions pass for 24 page/width/theme combinations, all
   six exact clipboard commands, native horizontal keyboard scrolling, 44px copy
   targets, all three OS choices and feedback reset. System-theme fallback and
