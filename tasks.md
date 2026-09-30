@@ -12,8 +12,16 @@ each belongs to exactly one loaded or omitted category from the same snapshot;
 loaded count plus exact omitted total equals the active count even when omitted
 details are capped. Preserve ordering, budgets, scope and archive exclusions.
 
-Next: verify the patch, open one PR, reply to and resolve all four old review
-threads, then wait for CI and Copilot review on the new final head before merge.
+Implemented: one scoped read followed by an in-memory partition; native tests
+cover complete classification, exact totals above the detail cap, scope/archive
+exclusions and agreement with agent ordering. Memory/MCP tests, vet and race
+checks pass. Independent `gpt-6.1-sol` review found no concrete defect. The
+fixtures also pass the prior code; they verify invariants, not race reproduction.
+The requested personal-path sweep is clean and branch/commit provenance remains.
+
+Delivery gate: one PR, replies/resolution on all four old review threads, then
+CI and Copilot review of the final head before merge. The LAB-230 record carries
+the final PR, review and merge evidence.
 Release, deployment and stale branch cleanup remain outside this follow-up.
 
 ## UX audits 1–6: merged and verified
