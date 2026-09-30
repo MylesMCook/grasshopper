@@ -1,5 +1,17 @@
 # Grasshopper release state
 
+## Active UI audit: report 9
+
+[LAB-234](https://linear.app/mcook/issue/LAB-234): Codex on macOS owns
+`codex/ui-report9-integration` in an isolated managed worktree. Separate
+`gpt-6.1-sol` workers own the memory-view and public-site details. Accepted
+outcomes and verification are in [report 9](docs/ui-audit-report9-results.md).
+Implementation, independent review and synthetic browser checks pass; planned
+patch 2.8.3. Local 117 Node tests, Go tests/vet/race pass. The owner approved completed Sol review and passing CI in place of the
+unavailable external reviewers for PRs #23/#24. Final-head CI and verified
+recovery precede release/deployment. Primary
+checkout's unrelated edits, release artifacts and local evidence are preserved.
+
 ## Released UI audit: report 8, 2.8.2
 
 [LAB-233](https://linear.app/mcook/issue/LAB-233): [2.8.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.2)
@@ -15,6 +27,7 @@ routing were preserved. [Delivery evidence and limits](docs/memory-acceptance.md
 
 Primary checkout and unrelated local evidence remain preserved. Existing chats
 may retain an earlier bridge until reopened.
+
 
 ## Released report 7: 2.8.1
 

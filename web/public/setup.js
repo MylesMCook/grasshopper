@@ -32,14 +32,19 @@ function chooseOS() {
   for (const command of commands) command.textContent = command.textContent.replace(/grasshopper-(macos|windows|linux)/g, plugin);
   cursorPlugin.textContent = plugin;
   const windows = osChoice.value === 'windows';
-  archiveCommand.textContent = `${windows ? '.\\bin\\grasshopper.exe' : './bin/grasshopper'} connect --agents claude --url https://your-private-server`;
+  archiveCommand.textContent = `${windows ? '.\\bin\\grasshopper.exe' : './bin/grasshopper'} connect --agents claude --url https://your-server.tailnet.ts.net`;
   serverCommand.textContent = `${windows ? '.\\bin\\grasshopper-server.exe' : './bin/grasshopper-server'} --quickstart`;
   const target = { macos: 'darwin-arm64', windows: 'windows-amd64', linux: 'linux-amd64' }[osChoice.value];
   const releaseURL = `https://github.com/MylesMCook/grasshopper/releases/download/v${releaseVersion}`;
   serverArchive.href = `${releaseURL}/grasshopper-server-${target}-${releaseVersion}.zip`;
   serverChecksums.href = `${releaseURL}/SHA256SUMS`;
-  serverArchive.textContent = `Download server for ${{ macos: 'macOS', windows: 'Windows', linux: 'Linux' }[osChoice.value]}`;
+  serverArchive.textContent = `Download the ${{ macos: 'macOS server (Apple silicon)', windows: 'Windows server (x64)', linux: 'Linux server (x64)' }[osChoice.value]}`;
+  updateOverflow();
 }
+const commandAreas = document.querySelectorAll('.command pre');
+for (const pre of commandAreas) pre.addEventListener('scroll', updateOverflow);
+window.addEventListener('resize', updateOverflow);
+document.fonts?.ready.then(updateOverflow);
 osChoice.addEventListener('change', chooseOS);
 chooseOS();
 
@@ -70,4 +75,11 @@ for (const button of copyButtons) {
       copyStatus.textContent = '';
     }, 2000));
   });
+}
+
+// Show the edge cue only while there is more command text to scroll into view.
+function updateOverflow() {
+  for (const pre of commandAreas) {
+    pre.parentElement.toggleAttribute('data-overflow', pre.scrollWidth - pre.clientWidth - pre.scrollLeft > 1);
+  }
 }

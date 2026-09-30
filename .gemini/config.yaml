@@ -1,0 +1,6 @@
+# Keep reviews available through /gemini review without automatic PR activity.
+code_review:
+  pull_request_opened:
+    help: false
+    summary: false
+    code_review: false

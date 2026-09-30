@@ -20,20 +20,21 @@
   <title>Memory view · Grasshopper</title>
 </head>
 <body>
+  <a class="skip-link" href="#content">Skip to content</a>
   <div class="wrap">
-    <header class="top"><a class="brand" href="/">GRASSHOPPER</a><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button><nav aria-label="Grasshopper"><a href="/">Home</a><a href="/setup/">Set up</a><a href="/view/" aria-current="page">Memory view</a></nav></header>
-    <main class="view-main">
+    <header class="top"><a class="brand" href="/">GRASSHOPPER</a><nav aria-label="Grasshopper"><a href="/">Home</a><a href="/setup/">Set up</a><a href="/view/" aria-current="page">Memory view</a></nav><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button></header>
+    <main id="content" tabindex="-1" class="view-main">
       <h1>Open your memory view.</h1>
-      <p class="lead">Open the viewer on your own server. This page only keeps its address; enter your token on the server.</p>
+      <p class="lead">Open the memory view on your own server. This page only keeps its address; enter your access token on the server.</p>
       <form id="server-form" class="server-form" novalidate>
         <label for="server-address">Your server address</label>
-        <div class="server-form-row"><input id="server-address" type="url" inputmode="url" autocomplete="url" placeholder="https://memory.example.com" required spellcheck="false"><button type="submit">Open view</button></div>
+        <div class="server-form-row"><input id="server-address" type="url" inputmode="url" autocomplete="url" placeholder="https://your-server.tailnet.ts.net" required spellcheck="false"><button type="submit">Open view</button></div>
         <p id="server-error" class="form-error" role="alert" hidden></p>
         <p class="note">This browser remembers the address for next time.</p>
         <button id="forget-address" type="button" class="text-button">Forget this address</button>
       </form>
     </main>
-    <footer><span>Grasshopper</span><span>This site never reads your memories or token.</span></footer>
+    <footer><span>Grasshopper</span><span>This site never reads your memories or access token.</span></footer>
   </div>
 </body>
 </html>

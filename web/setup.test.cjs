@@ -3,7 +3,7 @@ const { readFileSync } = require('node:fs');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-function setup(writeText, script = readFileSync(`${__dirname}/public/setup.js`, 'utf8')) {
+function setup(writeText, script = readFileSync(`${__dirname}/public/setup.js`, 'utf8'), areas = []) {
   const osChoice = { value: 'macos', addEventListener(_, fn) { this.change = fn; } };
   const commands = [
     { textContent: 'codex plugin add grasshopper-macos@grasshopper-marketplace' },
@@ -24,10 +24,10 @@ function setup(writeText, script = readFileSync(`${__dirname}/public/setup.js`, 
     setTimeout(fn, delay) { timers.set(++timerID, {fn, delay}); return timerID; },
     clearTimeout(id) { timers.delete(id); },
     navigator: { clipboard: { writeText } },
-    window: { getSelection: () => ({ removeAllRanges() {}, addRange() {} }) },
+    window: { addEventListener() {}, getSelection: () => ({ removeAllRanges() {}, addRange() {} }) },
     document: {
       getElementById: id => ({ 'connector-os': osChoice, 'cursor-plugin': cursorPlugin, 'archive-connect-command': archiveCommand, 'copy-status': copyStatus, 'server-quickstart-command': serverCommand, 'server-archive': serverArchive, 'server-checksums': serverChecksums })[id],
-      querySelectorAll: selector => selector === '[data-plugin-command]' ? commands : [button, secondButton],
+      querySelectorAll: selector => selector === '[data-plugin-command]' ? commands : selector === '.command pre' ? areas : [button, secondButton],
       createRange: () => ({ selectNodeContents: node => { selected = node.textContent; } }),
     },
   });
@@ -110,7 +110,7 @@ test('public navigation and privacy are consistent and later links stay below se
     const nav=html.match(/<nav[^>]*>(.*?)<\/nav>/s)[1];
     const labels=[...nav.matchAll(/<a[^>]*>(.*?)<\/a>/g)].map(match=>match[1]);
     assert.deepEqual(labels,['Home','Set up','Memory view']);
-    assert.match(html,/<footer[^>]*>.*This site never reads your memories or token\./s);
+    assert.match(html,/<footer[^>]*>.*This site never reads your memories or access token\./s);
   }
   const html=readFileSync(`${__dirname}/public/setup/index.html`,'utf8');
   assert.ok(html.indexOf('for="connector-os"')<html.indexOf('id="server-title"'));
@@ -161,11 +161,40 @@ test('checksum download is pinned to the same build release as every selected se
 test('setup commands expose a named keyboard scroll area and retain their adjacent exact-copy control', () => {
   const html = readFileSync(`${__dirname}/public/setup/index.html`, 'utf8');
   const commands = [...html.matchAll(/<div class="command">(<pre[^>]*>.*?<\/pre>)(<button[^>]*class="copy-command"[^>]*>.*?<\/button>)<\/div>/gs)];
-  assert.equal(commands.length, 6);
+  assert.equal(commands.length, 7);
   for(const [,pre,button] of commands) {
     assert.match(pre,/tabindex="0"/);
     assert.match(pre,/aria-label="[^"]+ command"/);
     assert.match(button,/aria-label="Copy [^"]+ command"/);
     assert.equal(pre.match(/<code[^>]*>(.*?)<\/code>/s)[1].includes('\n'),false);
   }
+});
+
+test('OS download language identifies the selected server architecture', () => {
+  const ui=setup(async()=>{});
+  for (const [os,label] of [['macos','Download the macOS server (Apple silicon)'],['windows','Download the Windows server (x64)'],['linux','Download the Linux server (x64)']]) {
+    ui.osChoice.value=os;ui.osChoice.change();assert.equal(ui.serverArchive.textContent,label);
+  }
+});
+
+test('all public pages offer a skip target and header DOM follows brand, navigation, theme', () => {
+  for (const path of ['index.html','setup/index.html','view/index.html','404.html']) {
+    const html=readFileSync(`${__dirname}/public/${path}`,'utf8');
+    assert.match(html,/<a class="skip-link" href="#content">Skip to content<\/a>/);
+    assert.match(html,/<main id="content" tabindex="-1"/);
+    const header=html.match(/<header.*?<\/header>/s)[0];
+    assert.ok(header.indexOf('class="brand"')<header.indexOf('<nav'));
+    assert.ok(header.indexOf('<nav')<header.indexOf('id="theme-toggle"'));
+  }
+});
+
+
+test('command overflow cue disappears at the end and for a fitting command', () => {
+  let cue=false,scroll;
+  const pre={scrollWidth:500,clientWidth:200,scrollLeft:0,parentElement:{toggleAttribute(name,value){ assert.equal(name,'data-overflow');cue=value; }},addEventListener(name,fn){assert.equal(name,'scroll');scroll=fn;}};
+  setup(async()=>{},readFileSync(`${__dirname}/public/setup.js`,'utf8'),[pre]);
+  assert.equal(cue,true);
+  pre.scrollLeft=300;scroll();assert.equal(cue,false);
+  pre.scrollLeft=100;scroll();assert.equal(cue,true);
+  pre.scrollLeft=0;pre.scrollWidth=200;scroll();assert.equal(cue,false);
 });

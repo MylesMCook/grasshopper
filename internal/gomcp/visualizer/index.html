@@ -9,11 +9,11 @@
   <link rel="stylesheet" href="/visualizer/style.css">
   <script src="/visualizer/theme.js" defer></script>
   <script src="/visualizer/app.js" defer></script>
-  <title>Grasshopper · Live memory</title>
+  <title>Memory view · Grasshopper</title>
 </head>
 <body>
-  <a class="skip-link" href="#device-panel">Skip to devices</a>
-    <header class="masthead"><span class="brand">GRASSHOPPER</span><nav class="masthead-actions" aria-label="Grasshopper"><a id="devices-link" href="#device-panel" hidden>Devices</a><a href="https://usegrasshopper.com/">How it works</a><button id="disconnect" type="button" class="quiet" disabled hidden>Sign out</button><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button></nav></header>
+  <a class="skip-link" href="#device-panel">Skip to settings</a>
+    <header class="masthead"><span class="brand">GRASSHOPPER</span><nav class="masthead-actions" aria-label="Grasshopper"><a id="devices-link" href="#device-panel" hidden>Settings</a><a href="https://usegrasshopper.com/">How it works</a><button id="disconnect" type="button" class="quiet" disabled hidden>Sign out</button><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button></nav></header>
   <main>
     <section class="intro" aria-labelledby="page-title">
       <h1 id="page-title">Your memories.</h1>
@@ -26,27 +26,28 @@
       <form id="connection-form" autocomplete="off">
         <div id="token-field" class="token-field">
           <label>Owner access token <input id="token" type="password" autocomplete="off" required spellcheck="false" aria-describedby="token-error token-help"></label>
-          <p id="token-error" class="token-error" role="alert" hidden></p><p id="token-help">Ask the person who runs your Grasshopper server for its owner access token using a private channel. If you run quickstart, the default owner token file is <code>~/Library/Application Support/Grasshopper/access-token</code> on macOS, <code>%APPDATA%\Grasshopper\access-token</code> on Windows, or <code>~/.config/Grasshopper/access-token</code> on Linux (<code>$XDG_CONFIG_HOME/Grasshopper/access-token</code> if XDG_CONFIG_HOME is set). With <code>--data-dir</code>, use <code>access-token</code> inside that directory. For a manual server, use the file selected by <code>--token-file</code>. If the installation uses custom paths, ask its operator for the owner token file location. A device token cannot sign in here. Never paste the token into an agent chat. This browser stays signed in for 7 days; Sign out forgets this browser. Sign out everywhere ends all owner browser sessions.</p>
+          <p id="token-error" class="token-error" role="alert" hidden></p><div id="token-help" class="token-help"><p>Paste the owner token from your server’s <code>access-token</code> file. Never share it with an agent.</p><details><summary>Where is my token?</summary><ul><li>macOS: <code>~/Library/Application Support/Grasshopper/access-token</code></li><li>Windows: <code>%APPDATA%\Grasshopper\access-token</code></li><li>Linux: <code>~/.config/Grasshopper/access-token</code>, or <code>$XDG_CONFIG_HOME/Grasshopper/access-token</code> if XDG_CONFIG_HOME is set.</li></ul><p>With <code>--data-dir</code>, use <code>access-token</code> inside that directory. A manual server uses <code>--token-file</code>. For a custom path or a server you do not run, ask its operator for the owner token file location using a private channel. A device token cannot sign in here.</p></details></div>
         </div>
-        <div class="actions"><button id="connect" type="submit">Sign in</button></div>
+        <div class="actions"><button id="connect" type="submit">Sign in</button></div><p class="session-help">This browser stays signed in for 7 days. Sign out ends this browser session; Sign out everywhere ends all owner browser sessions.</p>
       </form>
     </section>
 
     <section id="memory-section" class="memory" aria-labelledby="memory-title">
       <h2 id="memory-title" class="visually-hidden">Saved memories</h2>
-      <div id="view-tabs" class="view-tabs" role="group" aria-label="Which memories to list" hidden>
+      <div id="view-tabs" class="view-tabs" aria-describedby="tabs-hint" tabindex="0" role="group" aria-label="Which memories to list" hidden>
         <button type="button" data-view="" aria-pressed="true">Saved</button>
         <button type="button" data-view="review" aria-pressed="false">Needs review</button>
         <button type="button" data-view="archived" aria-pressed="false">Archived</button>
         <button type="button" data-view="startup" aria-pressed="false">Startup preview</button>
       </div>
+      <p id="tabs-hint" class="tabs-hint" hidden>More views → Scroll sideways to see all views.</p>
       <div id="browse-controls" class="browse-controls" hidden>
       <form id="search-form" class="search-form" hidden>
         <label for="search-query">Search memories</label>
         <div class="search-row"><input id="search-query" type="search" placeholder="A preference, decision, or lesson" maxlength="4096"><button type="submit">Search</button><button id="clear-search" type="button" class="quiet" hidden>Show all</button></div>
         <p id="search-hint" class="scope-note" hidden>Wording search matches any query word; meaning search can also match related wording.</p>
       </form>
-        <button id="toggle-filters" type="button" class="quiet filter-toggle" aria-expanded="false" aria-controls="filter-controls">Filters</button>
+        <button id="toggle-filters" type="button" class="quiet filter-toggle" aria-expanded="false" aria-controls="filter-controls">Filters ▸</button>
         <div id="filter-controls" class="filter-controls">
         <div class="fields" aria-label="Filter memories">
           <div class="filter-field"><label>Project <select id="project" aria-describedby="scope-note"><option value="">All projects</option></select></label>
@@ -54,16 +55,17 @@
           <div class="filter-field"><label>Device <select id="device" aria-describedby="scope-note"><option value="">All devices</option></select></label>
           <label id="manual-device-label" hidden>Device ID <input id="manual-device" type="text" placeholder="Exact device ID" spellcheck="false"></label></div>
           <label>Platform <select id="platform" aria-describedby="scope-note"><option value="">All platforms</option><option value="macos">macOS</option><option value="windows">Windows</option><option value="linux">Linux</option></select></label>
-          <label>Kind <select id="purpose"><option value="">All kinds</option><option value="preference">Preference</option><option value="decision">Decision</option><option value="lesson">Lesson</option><option value="handoff">Handoff</option><option value="observation">Observation</option></select></label>
+          <label id="kind-filter">Kind <select id="purpose"><option value="">All kinds</option><option value="preference">Preference</option><option value="decision">Decision</option><option value="lesson">Lesson</option><option value="handoff">Handoff</option><option value="observation">Observation</option></select></label>
         </div>
-        <p id="scope-note" class="scope-note">A project view includes global memories, and device and platform filters keep shared memories visible. These filters organize what you see; they do not restrict access.</p>
+        <p id="scope-note" class="scope-note">Choosing a project also shows global memories. Device and platform filters keep shared memories visible. Filters change what you see, not who can access it.</p>
         </div>
       </div>
       <div id="startup-controls" class="startup-controls" hidden>
         <label>Agent <select id="startup-agent"><option value="12000">Codex or Cursor · 12,000 bytes</option><option value="3000">Claude Code · 3,000 bytes</option></select></label>
+        <p id="startup-match-hint" class="scope-note" hidden>Choose a device and platform for an exact match.</p>
         <p class="scope-note">This is what the server would send an agent at startup for the project, device and platform chosen above. Agents always send all three, so choose them for an exact match. It does not prove a running session received these memories; a fresh agent session is the real check. Claude Code also skips every record if its whole startup message would be too long.</p>
       </div>
-      <div class="results-heading"><div><p id="scope-summary" class="scope-summary" hidden></p><p id="summary" class="summary">Sign in to see what is saved.</p></div><div class="results-actions"><span id="status" class="status" role="status" aria-live="polite">Signed out</span><button id="refresh" type="submit" form="connection-form" class="quiet" hidden>Refresh</button></div></div>
+      <div id="results-heading" class="results-heading" hidden><div><p id="scope-summary" class="scope-summary" hidden></p><p id="summary" class="summary">Sign in to see what is saved.</p></div><div class="results-actions"><span id="status" class="status" role="status" aria-live="polite">Signed out</span><button id="refresh" type="submit" form="connection-form" class="quiet" hidden>Refresh</button></div></div>
 
       <p id="archive-undo" role="status" hidden><span id="archive-undo-label"></span> <button id="undo-archive" type="button" class="quiet">Undo archive</button></p>
       <div id="omissions" class="omissions" hidden></div>
@@ -83,8 +85,9 @@
         <h4>Connected devices</h4>
         <div id="connected-devices" class="device-list"></div>
         <h3>Export</h3>
-      <div id="export-controls" class="actions" hidden><label>Export <select id="export-mode"><option value="filtered">Current scope and kind</option><option value="all">All memories</option></select></label><label class="checkbox-field"><input id="export-archived" type="checkbox"> Include archived</label><button id="export-memory" type="button" class="quiet">Download JSON</button><p class="summary">Export includes full text. Search words are not applied.</p></div>
+      <div id="export-controls" class="actions" hidden><label><span class="visually-hidden">Memories to export</span><select id="export-mode"><option value="filtered">Selected filters</option><option value="all">Everything</option></select></label><label class="checkbox-field"><input id="export-archived" type="checkbox"> Include archived</label><button id="export-memory" type="button" class="quiet">Download JSON</button><p class="summary">Export includes full text. Search words and startup-preview limits are not applied.</p></div>
         <h3>Sessions</h3>
+        <p>Ends sign-in on every browser, including this one.</p>
         <div class="actions"><button id="disconnect-all" type="button" class="quiet" hidden>Sign out everywhere</button></div>
       </div>
     </details>

@@ -89,6 +89,26 @@ Before merging, wait for CI and the Copilot review of the final pushed head.
 Address findings and resolve conversations before merging; a late review cannot
 protect an already merged PR. Do not infer review completion from passing CI.
 
+## PR review usage
+
+- Be frugal with external reviewers. Run relevant local checks, inspect the
+  diff, and resolve known issues before requesting a review of a ready PR.
+- Use one external reviewer per ready PR by default. Copilot, Gemini and Cursor
+  Bugbot are the current options when connected and available; leave Claude
+  reviews unused until the owner requests them.
+- Request another review only when substantial risk, material changes since
+  the last review, or a verified finding justifies it. Do not call every
+  available reviewer or repeat reviews for minor edits.
+- All code reviewers, including Copilot, Gemini, Cursor Bugbot, Claude and
+  Codex, must run only when explicitly requested for that PR and revision.
+  Keep automatic reviews on PR creation, draft readiness, pushes and schedules
+  disabled. Do not subscribe a PR to ongoing reviews. Check existing review
+  status and quota errors before retrying; do not repeatedly call a
+  quota-blocked reviewer.
+- Preserve applicable required review gates. If a required reviewer is
+  unavailable, report the blocker and ask for an explicit exception rather
+  than silently substituting another reviewer or bypassing the gate.
+
 ## Linear tracking
 
 Repository: https://github.com/MylesMCook/grasshopper
