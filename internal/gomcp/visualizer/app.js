@@ -114,10 +114,19 @@ const filterToggle = document.getElementById('toggle-filters');
 const baseTitle = 'Memory view · Grasshopper';
 document.title = baseTitle;
 function updateFilterLabel() {
-  const count = Number(Boolean(projectSelect.value)) + Number(Boolean(deviceSelect.value)) + Number(Boolean(document.getElementById('platform').value)) + Number(listView !== 'startup' && Boolean(purposeSelect.value));
+  const project = projectSelect.value === manualChoice ? manualProjectInput.value.trim() : projectSelect.value;
+  const device = deviceSelect.value === manualChoice ? manualDeviceInput.value.trim() : deviceSelect.value;
+  const count = Number(Boolean(project)) + Number(Boolean(device)) + Number(Boolean(document.getElementById('platform').value)) + Number(listView !== 'startup' && Boolean(purposeSelect.value));
   const expanded = filterToggle.getAttribute('aria-expanded') === 'true';
   filterToggle.textContent = `Filters ${expanded ? '▾' : '▸'}${!expanded && count ? ` (${count})` : ''}`;
 }
+function updateTabsHint() {
+  document.getElementById('tabs-hint').hidden = !active || viewTabs.scrollWidth <= viewTabs.clientWidth + 1 || viewTabs.scrollLeft >= viewTabs.scrollWidth - viewTabs.clientWidth - 1;
+}
+viewTabs.addEventListener('scroll', updateTabsHint);
+window.addEventListener('resize', updateTabsHint);
+document.fonts?.ready.then(updateTabsHint);
+
 filterToggle.addEventListener('click', () => {
   const expanded = filterToggle.getAttribute('aria-expanded') !== 'true';
   filterToggle.setAttribute('aria-expanded', String(expanded));
@@ -152,7 +161,11 @@ function updateOptions(select, values, known, emptyLabel, manualLabel, preserveS
   const selected = preserveSelection ? select.value : '';
   const choices = [option('', emptyLabel), ...extra];
   for (const name of names) { const choice = option(name, select === projectSelect ? projectLabel(name) : name); choice.title = name; choices.push(choice); }
-  if (selected && selected !== manualChoice && selected !== globalChoice && !names.includes(selected)) choices.push(option(selected, `Selected: ${select === projectSelect ? projectLabel(selected) : selected}`));
+  if (selected && selected !== manualChoice && selected !== globalChoice && !names.includes(selected)) {
+    const choice = option(selected, `Selected: ${select === projectSelect ? projectLabel(selected) : selected}`);
+    choice.title = selected;
+    choices.push(choice);
+  }
   choices.push(option(manualChoice, manualLabel));
   select.replaceChildren(...choices);
   select.value = selected;
@@ -214,7 +227,7 @@ function setConnected(value) {
   browseControls.hidden = !value;
   scopeSummary.hidden = !value;
   document.getElementById('results-heading').hidden = !value;
-  document.getElementById('tabs-hint').hidden = !value;
+  updateTabsHint();
   devicePanel.hidden = !value;
   searchForm.hidden = !value || listView !== '';
   startupControls.hidden = !value || listView !== 'startup';
@@ -1028,6 +1041,7 @@ function showViewTabs() {
     tab.setAttribute('aria-pressed', String(name === listView));
     if (name === listView && !previouslySelected && active) tab.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }
+  updateTabsHint();
 }
 
 function chooseView(name) {
@@ -1172,6 +1186,7 @@ function setRouteFields(route) {
   searchForm.hidden = !active || Boolean(listView);
   startupControls.hidden = !active || listView !== 'startup';
   showViewTabs();
+  updateFilterLabel();
 }
 
 function applyRoute(route, push) {
@@ -1184,7 +1199,7 @@ function applyRoute(route, push) {
   else replaceRouteURL(route);
   if (active) {
     updateFilterLabel();
-  restartList();
+    restartList();
     if (route.memory) openMemory({ id: route.memory }, false);
     if (approvalID) openDevicePanel();
     else placeDevicePanel();

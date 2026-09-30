@@ -1417,10 +1417,35 @@ test('token help and settings labels are concise and tabs have an overflow cue',
   assert.match(html, /Where is my token\?/);
   assert.match(html, /Skip to settings/);
   assert.match(html, /hidden>Settings<\/a>/);
-  assert.match(html, /What you’re viewing now/);
-  assert.match(html, /Search words are not applied/);
+  assert.match(html, /Selected filters/);
+  assert.match(html, /Search words and startup-preview limits are not applied/);
   assert.match(html, /Ends sign-in on every browser, including this one/);
   assert.match(html, /Scroll sideways/);
   assert.match(css, /\.view-tabs \{ flex-wrap:nowrap; overflow-x:auto/);
   assert.match(css, /\.record-title \{ margin-top:0; min-height:44px/);
+});
+
+
+test('blank manual filters are not counted and restored fields update the badge', () => {
+  const v = view();
+  v.get('project').value='\u0000manual';
+  v.get('device').value='\u0000manual';
+  v.ui.restartMemoryView();
+  assert.equal(v.get('toggle-filters').textContent,'Filters ▸');
+  v.get('manual-project').value='id:sample';
+  v.ui.restartMemoryView();
+  assert.equal(v.get('toggle-filters').textContent,'Filters ▸ (1)');
+});
+
+test('tab overflow cue disappears when views fit or the end is visible', () => {
+  const v=view();
+  const tabs=v.get('view-tabs');
+  tabs.clientWidth=300; tabs.scrollWidth=500; tabs.scrollLeft=0;
+  tabs.listeners.scroll();
+  assert.equal(v.get('tabs-hint').hidden,false);
+  tabs.scrollLeft=200; tabs.listeners.scroll();
+  assert.equal(v.get('tabs-hint').hidden,true);
+  tabs.scrollLeft=0; tabs.clientWidth=600;
+  v.windowListeners.resize();
+  assert.equal(v.get('tabs-hint').hidden,true);
 });
