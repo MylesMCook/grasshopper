@@ -1,9 +1,24 @@
 # Grasshopper release state
 
+## PR #16 post-merge review follow-up
+
+[LAB-230](https://linear.app/mcook/issue/LAB-230): Codex owns an isolated macOS
+worktree on `codex/post-merge-review`, based on `4af7ba1`. A `gpt-6.1-sol`
+worker owns the reader regression fix in a separate worktree. Scope: one-snapshot
+startup preview classification and generic public evidence references.
+
+Accepted outcome: given active memories in scope, when startup preview loads,
+each belongs to exactly one loaded or omitted category from the same snapshot;
+loaded count plus exact omitted total equals the active count even when omitted
+details are capped. Preserve ordering, budgets, scope and archive exclusions.
+
+Next: verify the patch, open one PR, reply to and resolve all four old review
+threads, then wait for CI and Copilot review on the new final head before merge.
+Release, deployment and stale branch cleanup remain outside this follow-up.
+
 ## UX audits 1–6: merged and verified
 
-Codex · Mac mini · `/Users/mylescook/.codex/worktrees/ux-audit-integration/grasshopper`
-· audit branch `codex/ux-audit-integration`; delivery receipt follows merged
+Codex · macOS · an isolated Codex worktree on branch `codex/ux-audit-integration`; delivery receipt follows merged
 `origin/main` in the same isolated checkout. Integrated released 2.7.0 evidence
 `2031446` and all audit worker slices through `9d681aa`. Primary checkout and live service were
 not edited. Explicit `gpt-6.1-sol` workers owned owner data, hosting, frontend and
@@ -33,7 +48,7 @@ separate and have not occurred. Physical devices, screen readers, native
 Windows/Linux, Tailscale Serve/reboot and fresh deployed agent turns remain
 untested. Task-local evidence is outside Git or under untracked `output/`.
 
-Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
+Release owner: Codex · macOS · primary checkout on `main`.
 
 ## Released memory review and Claude marketplace
 
@@ -57,7 +72,7 @@ Approved native Windows repair replaced the Store-app redirected owner credentia
 
 ## Released memory-view improvement
 
-[LAB-218](https://linear.app/mcook/issue/LAB-218/search-and-inspect-saved-memories-in-the-memory-view): [2.5.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.5.0) ships owner-only scoped search and full inspection of saved memories, including omitted large records, confirmation/date/source, and revision history. Release commit `2bd4927`; marketplace `160f630`. Granite, ranking, startup selection, stored records, credentials, and the five MCP tools remain unchanged. Paired Thermos review, three-OS real-model CI, package digests, synthetic desktop/mobile browser checks with real Granite semantic search, Mac rollback and live deployment, authenticated local/Tailnet reads, off-host backup, and direct Mac Codex/Cursor/Claude connector probes passed. [Evidence](docs/memory-acceptance.md#250-memory-view-search-and-inspection-september-29). No delivery work remains for this slice. Later product candidates are correction/archive controls, startup-budget allocation, and ranking trials; they have not been implemented. Research: `/Users/mylescook/Documents/Codex/2026-09-29-grasshopper-product-review/PRODUCT-REVIEW.md`.
+[LAB-218](https://linear.app/mcook/issue/LAB-218/search-and-inspect-saved-memories-in-the-memory-view): [2.5.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.5.0) ships owner-only scoped search and full inspection of saved memories, including omitted large records, confirmation/date/source, and revision history. Release commit `2bd4927`; marketplace `160f630`. Granite, ranking, startup selection, stored records, credentials, and the five MCP tools remain unchanged. Paired Thermos review, three-OS real-model CI, package digests, synthetic desktop/mobile browser checks with real Granite semantic search, Mac rollback and live deployment, authenticated local/Tailnet reads, off-host backup, and direct Mac Codex/Cursor/Claude connector probes passed. [Evidence](docs/memory-acceptance.md#250-memory-view-search-and-inspection-september-29). No delivery work remains for this slice. Later product candidates are correction/archive controls, startup-budget allocation, and ranking trials; they have not been implemented. Research: private task-local `PRODUCT-REVIEW.md`.
 
 ## Released model upgrade
 
