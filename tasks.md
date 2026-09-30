@@ -2,9 +2,11 @@
 
 Owner: Codex · Mac mini · `/Users/mylescook/Code/MylesMCook/grasshopper` · `main`.
 
-## In review: memory view review and correction
+## Merged, unreleased: memory view review and correction
 
-[LAB-222](https://linear.app/mcook/issue/LAB-222/let-the-owner-review-correct-and-understand-memories-in-the-memory): Claude Code · Mac mini · worktree `../grasshopper-worktrees/ux`. Five stacked PRs (#9 to #13) implement the owner-approved [scenarios](docs/memory-view-review.md): all-projects landing and complete previews, review/correct/confirm/archive/restore (the first browser write path), approval and status, startup preview, README order. Implemented and tested locally (Go tests/vet/race, 29 Node tests, real-browser checks on a synthetic server); three-OS CI runs on each PR. Not merged, released, deployed or run against the live database or native agents. Next action: owner review and merge in order, then a release with restored-copy rehearsal before any live cutover.
+[LAB-222](https://linear.app/mcook/issue/LAB-222/let-the-owner-review-correct-and-understand-memories-in-the-memory): Claude Code · Mac mini · worktree `../grasshopper-worktrees/ux`. PRs #9 to #14 are squash-merged to `main` (`1a71eb1` to `5090880`) after Copilot review (every comment fixed or answered) and three-OS CI. They implement the owner-approved [scenarios](docs/memory-view-review.md): all-projects landing and complete previews, review/correct/confirm/archive/restore (the first browser write path), approval and status, startup preview, README order and sign-in wording, and Claude Code marketplace plugins in the bundler. Evidence: [acceptance entry](docs/memory-acceptance.md#memory-view-review-and-claude-code-marketplace-september-29-unreleased). Not released, not deployed to the Mac service, and not run against the live database or native agents.
+
+Next actions, each needing the owner's go-ahead: cut a release (bump `VERSION`, build archives, rehearse a restored copy and rollback before any cutover); publish the marketplace branch with the Claude Code entries; redeploy the setup page after that. Until then the published site and `marketplace` branch are unchanged. The primary checkout's `main` is behind `origin/main`; its owner should pull.
 
 ## Released connection reliability
 
