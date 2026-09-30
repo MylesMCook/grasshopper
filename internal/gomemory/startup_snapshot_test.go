@@ -53,12 +53,12 @@ func TestStartupPreviewAccountsForEveryActiveScopedMemory(t *testing.T) {
 				t.Fatal(err)
 			}
 			if len(preview.Records)+preview.NotLoadedTotal != len(active) {
-				t.Fatalf("accounting loaded%d exclusions%d active%d", len(preview.Records), preview.NotLoadedTotal, len(active))
+				t.Fatalf("accounting loaded %d exclusions %d active %d", len(preview.Records), preview.NotLoadedTotal, len(active))
 			}
 			seen := map[int64]bool{}
 			for _, record := range preview.Records {
 				if seen[record.ID] || !active[record.ID] {
-					t.Fatalf("loaded duplicate/out-of-scope%d", record.ID)
+					t.Fatalf("loaded duplicate/out-of-scope %d", record.ID)
 				}
 				seen[record.ID] = true
 			}
@@ -67,13 +67,13 @@ func TestStartupPreviewAccountsForEveryActiveScopedMemory(t *testing.T) {
 			}
 			for _, record := range preview.NotLoaded {
 				if seen[record.ID] || !active[record.ID] {
-					t.Fatalf("excluded duplicate/out-of-scope%d", record.ID)
+					t.Fatalf("excluded duplicate/out-of-scope %d", record.ID)
 				}
 				seen[record.ID] = true
 			}
 			if unconfirmedCount < 100 {
 				if len(seen) != len(active) {
-					t.Fatalf("not all records represented: got%d want%d", len(seen), len(active))
+					t.Fatalf("not all records represented: got %d want %d", len(seen), len(active))
 				}
 			} else if len(preview.NotLoaded) != 100 {
 				t.Fatalf("detail cap changed: %d", len(preview.NotLoaded))
