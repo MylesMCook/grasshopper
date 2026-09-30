@@ -253,11 +253,11 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 				return nil, gomemory.Record{}, err
 			}
 			if record == nil {
-				return nil, gomemory.Record{}, errors.New("memory_not_found")
+				return nil, gomemory.Record{}, agentReadError(errors.New("memory_not_found"))
 			}
 			return nil, *record, nil
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "search", Title: "Search scoped memories", Description: "Use this when locating active memories by wording or meaning within explicit scope.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "query": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer"}, "budget": map[string]any{"type": "integer"}}, "scope", "query")},
+	mcp.AddTool(server, &mcp.Tool{Name: "search", Title: "Search scoped memories", Description: "Find active memories by wording or meaning, limited to the given project, device and platform scope. The limit is 1 to 100.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "query": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer"}, "budget": map[string]any{"type": "integer"}}, "scope", "query")},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in searchInput) (*mcp.CallToolResult, searchOutput, error) {
 			limit, budget := 10, 16384
 			if in.Limit != nil {
@@ -276,12 +276,12 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	mcp.AddTool(server, &mcp.Tool{Name: "store", Title: "Save or correct memory", Description: "Use this when saving an explicit preference, accepted decision, verified lesson, or concise handoff with provenance and a request ID.", Annotations: write, InputSchema: writeSchema()},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gomemory.WriteInput) (*mcp.CallToolResult, storeOutput, error) {
 			receipt, embedded, err := saveMemory(ctx, in)
-			return nil, storeOutput{receipt, receipt.ID, receipt.Revision, receipt.Deduplicated, embedded}, err
+			return nil, storeOutput{receipt, receipt.ID, receipt.Revision, receipt.Deduplicated, embedded}, agentReadError(err)
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "archive", Title: "Archive or restore memory", Description: "Use this when reversibly hiding or restoring a scoped record with an expected revision and request ID.", Annotations: write, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "id": map[string]any{"type": "integer"}, "expected_revision": map[string]any{"type": "integer"}, "archived": map[string]any{"type": "boolean"}, "request_id": map[string]any{"type": "string"}, "provenance": provenanceSchema()}, "scope", "id", "expected_revision", "archived", "request_id", "provenance")},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gomemory.ArchiveInput) (*mcp.CallToolResult, gomemory.Receipt, error) {
 			receipt, err := backend.Store.Archive(ctx, in)
-			return nil, receipt, err
+			return nil, receipt, agentReadError(err)
 		})
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: 131072, PropagateRequestCancellation: true})
 	mux := http.NewServeMux()
@@ -435,4 +435,13 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		defer cancel()
 		mux.ServeHTTP(w, r.WithContext(ctx))
 	}), nil
+}
+
+// agentReadError keeps missing and out-of-scope records indistinguishable while
+// explaining how an agent can correct its request without widening scope.
+func agentReadError(err error) error {
+	if err != nil && err.Error() == "memory_not_found" {
+		return errors.New("memory_not_found: not found in this project, device and platform scope; check the scope used for context")
+	}
+	return err
 }
