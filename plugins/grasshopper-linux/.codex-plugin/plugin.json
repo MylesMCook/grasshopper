@@ -17,5 +17,5 @@
   },
   "mcpServers": "./.mcp.json",
   "name": "grasshopper-linux",
-  "version": "2.8.1"
+  "version": "2.8.2"
 }
