@@ -1,5 +1,25 @@
+const purposeSelect = document.getElementById('purpose');
+const disconnectAll = document.getElementById('disconnect-all');
+const exportControls = document.getElementById('export-controls');
+let pageETag = '';
+let moreInFlight = null;
+let moreRequested = false;
+let undoState = null;
+let undoTimer = null;
+const connectionSection = document.getElementById('connection-section');
+const editTitleCount = document.getElementById('edit-title-count');
+const editContentCount = document.getElementById('edit-content-count');
+const searchHint = document.getElementById('search-hint');
+const discardChanges = document.getElementById('discard-changes');
+const keepEditing = document.getElementById('keep-editing');
+const discardDraft = document.getElementById('discard-draft');
+const restoreRevisionButton = document.getElementById('restore-revision');
 const form = document.getElementById('connection-form');
 const tokenInput = document.getElementById('token');
+const tokenError = document.getElementById('token-error');
+const devicesLink = document.getElementById('devices-link');
+const showMore = document.getElementById('show-more');
+const editActions = document.getElementById('edit-actions');
 const tokenField = document.getElementById('token-field');
 const connectButton = document.getElementById('connect');
 const disconnectButton = document.getElementById('disconnect');
@@ -58,13 +78,16 @@ const startupControls = document.getElementById('startup-controls');
 const startupAgent = document.getElementById('startup-agent');
 const notLoaded = document.getElementById('not-loaded');
 connectionPrompt.textContent = `Connect Grasshopper to ${location.origin}/visualizer/`;
-function requestFromHash() { return /^#connect=([0-9a-f]{64})$/.exec(location.hash)?.[1] || ''; }
+function requestFromHash() { const id = new URLSearchParams(location.hash.slice(1)).get('connect') || ''; return /^[0-9a-f]{64}$/.test(id) ? id : ''; }
 let approvalID = requestFromHash();
 let approvalFocused = false;
 
 let active = false;
+let sessionGeneration = 0;
 let loggingIn = false;
 let timer = null;
+let pollFailures = 0;
+let wasHidden = Boolean(document.hidden);
 let inFlight = null;
 let revisions = new Map();
 let hasLoaded = false;
@@ -81,6 +104,32 @@ let openButtons = new Map();
 let listView = '';
 let pendingWrite = null;
 let saving = false;
+let visibleLimit = 8;
+let latestPage = null;
+const inlineWrites = new Map();
+const inlineBusy = new Set();
+let inlineActionRows = new Map();
+
+const filterToggle = document.getElementById('toggle-filters');
+filterToggle.addEventListener('click', () => {
+  const expanded = filterToggle.getAttribute('aria-expanded') !== 'true';
+  filterToggle.setAttribute('aria-expanded', String(expanded));
+  browseControls.classList.toggle('filters-expanded', expanded);
+});
+showMore.addEventListener('click', () => {
+  visibleLimit += 8;
+  lastSignature = '';
+  if (latestPage) { draw(latestPage); if (visibleLimit > latestPage.records.length && latestPage.next) loadMore(); }
+});
+devicesLink.addEventListener('click', event => {
+  event.preventDefault();
+  openDevicePanel();
+  devicePanel.scrollIntoView({ block: 'start' });
+  devicePanel.querySelector('summary')?.focus();
+});
+let leaveDraft = null;
+let appliedRoute = null;
+let linkedMemory = null;
 
 function option(value, text) {
   const item = document.createElement('option');
@@ -130,7 +179,7 @@ updateProjectOptions([], false);
 updateDeviceOptions([], false);
 projectSelect.addEventListener('change', () => { showManualProject(); restartMemoryView(); });
 deviceSelect.addEventListener('change', () => { showManualDevice(); restartMemoryView(); });
-for (const input of [manualProjectInput, manualDeviceInput, document.getElementById('platform'), startupAgent]) input.addEventListener('change', restartMemoryView);
+for (const input of [manualProjectInput, manualDeviceInput, document.getElementById('platform'), startupAgent, purposeSelect]) input.addEventListener('change', restartMemoryView);
 
 function setStatus(message, kind = '') {
   if (status.textContent !== message) status.textContent = message;
@@ -139,13 +188,21 @@ function setStatus(message, kind = '') {
 }
 
 function setConnected(value) {
+  if (active !== value) sessionGeneration++;
   active = value;
+  if (!value) { inlineWrites.clear(); inlineBusy.clear(); }
+  devicesLink.hidden = !value;
+  tokenError.hidden = true;
+  tokenInput.setAttribute('aria-invalid', 'false');
   tokenInput.required = !value;
   tokenField.hidden = value;
   form.hidden = value;
+  connectionSection.hidden = value;
   refreshButton.hidden = !value;
   disconnectButton.disabled = !value;
   disconnectButton.hidden = !value;
+  disconnectAll.hidden = !value;
+  exportControls.hidden = !value;
   browseControls.hidden = !value;
   scopeSummary.hidden = !value;
   devicePanel.hidden = !value;
@@ -163,12 +220,22 @@ function stop(clearRecords = false) {
   if (inFlight) inFlight.abort();
   inFlight = null;
   stopDeviceRefresh();
+  pageETag = "";
+  moreInFlight?.abort();
+  moreInFlight = null;
+  moreRequested = false;
+  clearUndo();
+  pollFailures = 0;
   resetDeviceRows();
-  closeMemory();
+  closeMemory(true);
   devicePanel.hidden = true;
   serverStatus.hidden = true;
   if (clearRecords) {
     records.replaceChildren();
+    showMore.hidden = true;
+    latestPage = null;
+    visibleLimit = 8;
+    inlineWrites.clear();
     omissions.hidden = true;
     revisions = new Map();
     lastSignature = '';
@@ -216,10 +283,11 @@ copyConnectionPrompt.addEventListener('click', async () => {
 });
 
 window.addEventListener('hashchange', () => {
-  approvalID = requestFromHash();
-  approvalFocused = false;
-  if (approvalID && active) openDevicePanel();
-  else placeDevicePanel();
+  const route = routeFromHash();
+  if (dirtyDraft()) {
+    replaceRouteURL(appliedRoute);
+    askToLeaveDraft(() => applyRoute(route, true));
+  } else applyRoute(route, false);
 });
 
 devicePanel.addEventListener('toggle', () => { if (!devicePanel.open) resetDeviceRows(); refreshDevices(); });
@@ -345,7 +413,7 @@ async function revokeDevice(device) {
 
 async function refreshDevices() {
   stopDeviceRefresh();
-  if (!active || !devicePanel.open) return;
+  if (!active || !devicePanel.open || document.hidden) return;
   const controller = new AbortController();
   deviceInFlight = controller;
   try {
@@ -398,7 +466,7 @@ async function refreshDevices() {
     controller.abort();
     if (deviceInFlight === controller) {
       deviceInFlight = null;
-      if (active && devicePanel.open) deviceTimer = setTimeout(refreshDevices, 5000);
+      if (active && devicePanel.open && !document.hidden) deviceTimer = setTimeout(refreshDevices, 5000);
     }
   }
 }
@@ -415,6 +483,7 @@ function scopeInput() {
   if (project) scope.project = project;
   if (device) scope.device = device;
   if (platform) scope.platform = platform;
+  if (purposeSelect.value && listView !== "startup") scope.purpose = purposeSelect.value;
   const platforms = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
   const projectView = allProjects ? 'All projects' : project ? `${project} + global memories` : listView === 'startup' && projectSelect.value === '' ? 'No project chosen · global memories only' : 'Global memories only';
   const view = [projectView, device || 'All devices', platforms[platform] || 'All platforms'];
@@ -433,7 +502,7 @@ function label(text) {
 
 function updatedLabel(record) {
   const date = new Date(record.updated_at);
-  return Number.isNaN(date.getTime()) ? 'Update date unavailable' : `Updated ${date.toLocaleString()}`;
+  return Number.isNaN(date.getTime()) ? 'Update date unavailable' : `Updated ${date.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}`;
 }
 
 const platformNames = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
@@ -472,14 +541,42 @@ function recordMetadata(record) {
   ];
 }
 
+function dirtyDraft() {
+  return Boolean(detailState?.editing && detailState.draftBase !== JSON.stringify([editTitle.value, editPurpose.value, editContent.value]));
+}
+
+function askToLeaveDraft(action) {
+  if (!dirtyDraft()) { action(); return; }
+  leaveDraft = action;
+  discardChanges.hidden = false;
+  keepEditing.focus();
+  discardChanges.scrollIntoView({ block: 'nearest' });
+}
+
+keepEditing.addEventListener('click', () => {
+  leaveDraft = null;
+  discardChanges.hidden = true;
+  editContent.focus();
+});
+discardDraft.addEventListener('click', () => {
+  const action = leaveDraft;
+  leaveDraft = null;
+  discardChanges.hidden = true;
+  if (detailState) detailState.editing = false;
+  action?.();
+});
+
 function cancelDetail() {
   if (detailInFlight) detailInFlight.abort();
   detailInFlight = null;
   detailState = null;
+  leaveDraft = null;
+  discardChanges.hidden = true;
   pendingWrite = null;
   // `saving` belongs to the request in flight, not to the dialog: it stays set
   // until that request ends, so closing the dialog cannot allow a second write.
   editForm.hidden = true;
+  editActions.hidden = true;
   conflictPanel.hidden = true;
   detailContent.hidden = false;
   memoryActions.hidden = true;
@@ -490,17 +587,27 @@ function cancelDetail() {
   history.hidden = true;
 }
 
-function closeMemory() {
-  cancelDetail();
-  if (memoryDialog.open) memoryDialog.close();
+function closeMemory(force = false) {
+  const close = () => {
+    cancelDetail();
+    if (memoryDialog.open) memoryDialog.close();
+    if (!force) { linkedMemory = null; saveRoute(); }
+  };
+  if (force) close();
+  else askToLeaveDraft(close);
 }
 
-function openMemory(record) {
-  cancelDetail();
-  detailState = { id: record.id, scope: scopeInput(), revision: 0, maximumRevision: 0, record: null, editing: false };
-  if (!detailState.scope || !active) { cancelDetail(); return; }
-  if (!memoryDialog.open) memoryDialog.showModal();
-  loadRecord();
+function openMemory(record, updateURL = true) {
+  askToLeaveDraft(() => {
+    cancelDetail();
+    detailState = { id: record.id, scope: scopeInput(), revision: 0, maximumRevision: 0, record: null, editing: false };
+    if (!detailState.scope || !active) { cancelDetail(); return; }
+    linkedMemory = record.id;
+    if (updateURL) saveRoute();
+    if (!memoryDialog.open) memoryDialog.showModal();
+    detailTitle.focus();
+    loadRecord();
+  });
 }
 
 async function loadRecord(revision = null) {
@@ -525,7 +632,9 @@ async function loadRecord(revision = null) {
     if (revision === null) { selected.maximumRevision = record.revision; selected.record = record; }
     detailTitle.textContent = record.title || `Memory #${record.id}`;
     detailContent.textContent = record.content;
+    detailContent.className = record.purpose === "handoff" ? "record-content handoff-content" : "record-content";
     detailMeta.replaceChildren(...recordMetadata(record).map(label));
+    if (record.revision > 1 && record.provenance?.harness === "memory-view") showOriginalSource(selected, record);
     revisionLabel.textContent = `Memory #${record.id} · Revision ${record.revision} of ${selected.maximumRevision}`;
     history.hidden = false;
     detailStatus.textContent = record.revision === selected.maximumRevision ? 'Latest saved revision' : 'Earlier revision · current memory is unchanged';
@@ -545,7 +654,13 @@ async function loadRecord(revision = null) {
   }
 }
 
-document.getElementById('close-memory').addEventListener('click', closeMemory);
+document.getElementById('close-memory').addEventListener('click', () => closeMemory());
+memoryDialog.addEventListener('cancel', event => { event.preventDefault(); closeMemory(); });
+memoryDialog.addEventListener('click', event => {
+  if (event.target !== memoryDialog) return;
+  const box = memoryDialog.getBoundingClientRect?.();
+  if (!box || event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) closeMemory();
+});
 memoryDialog.addEventListener('close', () => { if (!memoryDialog.open) cancelDetail(); });
 previousRevision.addEventListener('click', () => { if (detailState?.revision > 1) loadRecord(detailState.revision - 1); });
 nextRevision.addEventListener('click', () => { if (detailState?.revision < detailState?.maximumRevision) loadRecord(detailState.revision + 1); });
@@ -566,8 +681,9 @@ async function postOwner(path, body) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       cache: 'no-store', credentials: 'same-origin', signal: controller.signal
     });
-    let data = null;
-    try { data = await response.json(); } catch { data = null; }
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { error: text.trim() }; }
     return { status: response.status, data };
   } finally {
     clearTimeout(timeout);
@@ -586,13 +702,60 @@ function showActions() {
   const state = detailState;
   const record = state?.record;
   const latest = Boolean(record) && state.revision === state.maximumRevision && record.revision === state.maximumRevision;
-  memoryActions.hidden = !latest || state.editing;
+  const earlier = Boolean(record) && state.revision > 0 && state.revision < state.maximumRevision && !record.archived;
+  memoryActions.hidden = (!latest && !earlier) || Boolean(state?.editing);
+  if (record) history.hidden = Boolean(state.editing);
   const archived = Boolean(record?.archived);
-  editButton.hidden = !record || archived;
-  confirmButton.hidden = !record || archived || Boolean(record.confirmed);
-  archiveButton.hidden = !record || archived;
-  restoreButton.hidden = !record || !archived;
-  for (const button of [editButton, confirmButton, archiveButton, restoreButton]) button.disabled = saving;
+  editButton.hidden = !latest || archived;
+  confirmButton.hidden = !latest || archived || Boolean(record.confirmed);
+  archiveButton.hidden = !latest || archived;
+  restoreButton.hidden = !latest || !archived;
+  restoreRevisionButton.hidden = !earlier;
+  for (const button of [editButton, confirmButton, archiveButton, restoreButton, restoreRevisionButton]) button.disabled = saving;
+}
+
+function updateEditLimits() {
+  const titleBytes = new TextEncoder().encode(editTitle.value.trim()).length;
+  const contentBytes = new TextEncoder().encode(editContent.value).length;
+  editTitleCount.textContent = `${titleBytes.toLocaleString()} / 512 bytes`;
+  editContentCount.textContent = `${contentBytes.toLocaleString()} / 32,768 bytes`;
+  const valid = titleBytes <= 512 && contentBytes <= 32768 && Boolean(editContent.value.trim());
+  editTitle.setAttribute('aria-invalid', String(titleBytes > 512));
+  editContent.setAttribute('aria-invalid', String(contentBytes > 32768));
+  saveEdit.disabled = saving || !valid;
+  return valid;
+}
+
+function invalidChangeMessage(reason) {
+  if (reason === 'content must be 1-32768 bytes') return 'Text must contain 1 to 32,768 bytes. Shorten it and try again.';
+  if (reason === 'metadata too large') return 'Title or tags are too long. Keep the title within 512 bytes.';
+  if (reason === 'invalid purpose') return 'Choose a valid memory kind and try again.';
+  return 'This change is not valid. Check the text and try again.';
+}
+
+editTitle.addEventListener('input', updateEditLimits);
+editContent.addEventListener('input', updateEditLimits);
+
+// Highlight only literal query terms; memory text never becomes HTML.
+function highlightMatches(node, text) {
+  node.textContent = text;
+  if (!searchQuery || !text) return;
+  const terms = [...new Set(searchQuery.split(/\s+/).filter(Boolean))].sort((a, b) => b.length - a.length);
+  const pattern = terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  if (!pattern) return;
+  const matcher = new RegExp(pattern, 'giu');
+  let start = 0;
+  const parts = [];
+  for (const match of text.matchAll(matcher)) {
+    parts.push(text.slice(start, match.index));
+    const strong = document.createElement('strong');
+    strong.textContent = match[0];
+    parts.push(strong);
+    start = match.index + match[0].length;
+  }
+  if (!parts.length) return;
+  parts.push(text.slice(start));
+  node.replaceChildren(...parts);
 }
 
 function startEdit() {
@@ -602,10 +765,13 @@ function startEdit() {
   editTitle.value = state.record.title || '';
   editPurpose.value = state.record.purpose || 'observation';
   editContent.value = state.record.content;
+  state.draftBase = JSON.stringify([editTitle.value, editPurpose.value, editContent.value]);
   conflictPanel.hidden = true;
   editForm.hidden = false;
+  editActions.hidden = false;
   detailContent.hidden = true;
   showActions();
+  updateEditLimits();
   editContent.focus();
 }
 
@@ -615,6 +781,7 @@ function endEdit() {
   detailState.conflicted = false;
   pendingWrite = null;
   editForm.hidden = true;
+  editActions.hidden = true;
   conflictPanel.hidden = true;
   detailContent.hidden = false;
   showActions();
@@ -649,7 +816,7 @@ async function changeMemory(path, fields, done) {
   body.request_id = requestIDFor(body);
   saving = true;
   saveEdit.disabled = true;
-  for (const button of [editButton, confirmButton, archiveButton, restoreButton]) button.disabled = true;
+  for (const button of [editButton, confirmButton, archiveButton, restoreButton, restoreRevisionButton]) button.disabled = true;
   detailStatus.textContent = 'Saving…';
   try {
     const { status, data } = await postOwner(path, body);
@@ -674,15 +841,69 @@ async function changeMemory(path, fields, done) {
       }
       return false;
     }
-    detailStatus.textContent = status === 400 ? 'This change is not valid. Check the text and try again.' : 'Could not save. Your text is still here; try again.';
+    detailStatus.textContent = status === 400 ? invalidChangeMessage(data?.error) : 'Could not save. Your text is still here; try again.';
     return false;
   } catch (error) {
     if (detailState === state) detailStatus.textContent = error.name === 'AbortError' ? 'The save timed out. Try again; a repeat cannot save twice.' : 'Could not save. Your text is still here; try again.';
     return false;
   } finally {
     saving = false;
-    saveEdit.disabled = false;
+    updateEditLimits();
     showActions();
+  }
+}
+
+// List previews may be truncated. Read full text before confirmation and refuse
+// a changed revision, so one-click review cannot overwrite a concurrent edit.
+async function reviewInline(reference, archived, actions) {
+  if (!active || inlineBusy.has(reference.id)) return;
+  const generation = sessionGeneration;
+  const currentSession = () => active && sessionGeneration === generation;
+  inlineBusy.add(reference.id);
+  for (const button of actions.children) button.disabled = true;
+  const key = `${reference.id}:${archived}`;
+  setStatus(archived ? 'Archiving…' : 'Confirming…');
+  try {
+    let pending = inlineWrites.get(key);
+    if (!pending) {
+      const { status: readStatus, data: record } = await postOwner('/visualizer/api/record', { scope: scopeInput(), id: reference.id });
+      if (!currentSession()) return;
+      if (readStatus === 401) { stop(true); setStatus('Session expired', 'error'); return; }
+      if (readStatus !== 200) throw new Error('Could not read the memory. Try again.');
+      if (record.revision !== reference.revision || record.archived) {
+        setStatus('This memory changed. Review the latest text before trying again.', 'error');
+        refreshList();
+        return;
+      }
+      pending = { path: archived ? '/visualizer/api/archive' : '/visualizer/api/update', body: {
+        id: record.id, expected_revision: record.revision,
+        ...(archived ? { archived: true } : { action: 'confirm' }),
+        request_id: newRequestID()
+      } };
+      inlineWrites.set(key, pending);
+    }
+    const { status: writeStatus, data: receipt } = await postOwner(pending.path, pending.body);
+    if (!currentSession()) return;
+    if (writeStatus === 200) {
+      inlineWrites.delete(key);
+      if (archived) offerUndo(reference, receipt.revision);
+      setStatus(archived ? 'Memory archived. Restore it from Archived.' : 'Memory confirmed.', 'live');
+      refreshList();
+    } else if (writeStatus === 401) { stop(true); setStatus('Session expired', 'error'); }
+    else if (writeStatus === 409) {
+      inlineWrites.delete(key);
+      setStatus('This memory changed. Review the latest text before trying again.', 'error');
+      refreshList();
+    } else throw new Error('Could not save. Try again; a repeat cannot save twice.');
+  } catch (error) {
+    if (currentSession()) setStatus(error.name === 'AbortError' ? 'The request timed out. Try again; a repeat cannot save twice.' : error.message, 'error');
+  } finally {
+    if (currentSession()) {
+      inlineBusy.delete(reference.id);
+      for (const row of [actions, inlineActionRows.get(reference.id)]) {
+        for (const button of row?.children || []) button.disabled = false;
+      }
+    }
   }
 }
 
@@ -695,6 +916,7 @@ async function saveMemoryEdit(event) {
   event.preventDefault();
   const content = editContent.value;
   if (!content.trim()) { detailStatus.textContent = 'Write some text before saving.'; return; }
+  if (!updateEditLimits()) { detailStatus.textContent = 'Keep the title within 512 bytes and text within 32,768 bytes.'; return; }
   await changeMemory('/visualizer/api/update', { title: editTitle.value.trim(), content, purpose: editPurpose.value }, async receipt => {
     endEdit();
     await loadRecord();
@@ -706,7 +928,7 @@ async function saveMemoryEdit(event) {
 async function confirmMemory() {
   const record = detailState?.record;
   if (!record) return;
-  await changeMemory('/visualizer/api/update', { title: record.title || '', content: record.content, purpose: record.purpose }, async receipt => {
+  await changeMemory('/visualizer/api/update', { action: 'confirm' }, async receipt => {
     await loadRecord();
     detailStatus.textContent = `Confirmed as revision ${receipt.revision}.`;
     refreshList();
@@ -716,7 +938,8 @@ async function confirmMemory() {
 async function setArchived(archived) {
   const record = detailState?.record;
   if (!record) return;
-  await changeMemory('/visualizer/api/archive', { archived }, async () => {
+  await changeMemory('/visualizer/api/archive', { archived }, async receipt => {
+    if (archived) offerUndo(record, receipt.revision);
     const name = record.title || `Memory #${record.id}`;
     closeMemory();
     setStatus(archived ? `Archived “${name}”. Restore it from Archived.` : `Restored “${name}”.`, 'live');
@@ -724,18 +947,29 @@ async function setArchived(archived) {
   });
 }
 
+async function restoreEarlierRevision() {
+  const revision = detailState?.revision;
+  if (!revision || revision >= detailState.maximumRevision) return;
+  await changeMemory('/visualizer/api/update', { restore_revision: revision }, async receipt => {
+    await loadRecord();
+    detailStatus.textContent = `Restored revision ${revision} as revision ${receipt.revision} and confirmed. Agents read this text from their next session.`;
+    refreshList();
+  });
+}
+restoreRevisionButton.addEventListener('click', restoreEarlierRevision);
+
 editButton.addEventListener('click', startEdit);
 confirmButton.addEventListener('click', confirmMemory);
 archiveButton.addEventListener('click', () => setArchived(true));
 restoreButton.addEventListener('click', () => setArchived(false));
 editForm.addEventListener('submit', saveMemoryEdit);
-document.getElementById('cancel-edit').addEventListener('click', () => {
+document.getElementById('cancel-edit').addEventListener('click', () => askToLeaveDraft(() => {
   // After a conflict the page still shows the text from before it; reload the latest.
   const stale = detailState?.conflicted;
   endEdit();
   if (stale) loadRecord();
   else detailStatus.textContent = '';
-});
+}));
 
 const viewNames = { '': 'Saved', review: 'Needs review', archived: 'Archived', startup: 'Startup preview' };
 const viewCounts = {};
@@ -752,6 +986,7 @@ function showViewTabs() {
 
 function chooseView(name) {
   if (name === listView) return;
+  askToLeaveDraft(() => {
   listView = name;
   searchQuery = '';
   searchInput.value = '';
@@ -760,6 +995,7 @@ function chooseView(name) {
   notLoaded.hidden = true;
   showViewTabs();
   restartMemoryView();
+  });
 }
 
 function updateServerStatus(info) {
@@ -780,11 +1016,32 @@ function updateViewCounts(page) {
 for (const tab of viewTabs.children || []) tab.addEventListener('click', () => chooseView(tab.dataset?.view ?? ''));
 
 function restartMemoryView() {
+  const desired = routeFromFields();
+  if (dirtyDraft()) {
+    setRouteFields(appliedRoute);
+    askToLeaveDraft(() => { setRouteFields(desired); restartMemoryView(); });
+    return;
+  }
+  clearUndo();
+  linkedMemory = null;
+  saveRoute();
+  restartList();
+}
+
+function restartList() {
   clearTimeout(timer);
   if (inFlight) inFlight.abort();
   inFlight = null;
-  closeMemory();
+  closeMemory(true);
   records.replaceChildren();
+  showMore.hidden = true;
+  latestPage = null;
+  pageETag = "";
+  moreInFlight?.abort();
+  moreInFlight = null;
+  moreRequested = false;
+  showMore.disabled = false;
+  visibleLimit = 8;
   omissions.hidden = true;
   lastSignature = '';
   lastOmissionSignature = '';
@@ -801,6 +1058,83 @@ searchForm.addEventListener('submit', event => {
 });
 clearSearch.addEventListener('click', () => { searchQuery = ''; searchInput.value = ''; restartMemoryView(); });
 
+function routeFromHash() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const bounded = (key, size) => {
+    const text = params.get(key) || '';
+    return text.length <= size && !/[\r\n]/.test(text) ? text : '';
+  };
+  const id = Number(params.get('memory'));
+  const view = params.get('view') || '';
+  const connect = params.get('connect') || '';
+  return { view: Object.hasOwn(viewNames, view) ? view : '', project: bounded('project', 512),
+    device: bounded('device', 256), platform: ['macos', 'windows', 'linux'].includes(params.get('platform')) ? params.get('platform') : '',
+    purpose: ['preference', 'decision', 'lesson', 'handoff', 'observation'].includes(params.get('purpose')) ? params.get('purpose') : '', query: bounded('query', 4096), memory: Number.isSafeInteger(id) && id > 0 ? id : null,
+    connect: /^[0-9a-f]{64}$/.test(connect) ? connect : '' };
+}
+
+function routeFromFields() {
+  return { view: listView, project: projectSelect.value === manualChoice ? manualProjectInput.value.trim() : projectSelect.value,
+    device: deviceSelect.value === manualChoice ? manualDeviceInput.value.trim() : deviceSelect.value,
+    purpose: purposeSelect.value, platform: document.getElementById('platform').value, query: searchQuery, memory: linkedMemory, connect: approvalID };
+}
+
+function routeHash(route) {
+  const params = new URLSearchParams();
+  for (const key of ['connect', 'view', 'project', 'device', 'platform', 'purpose', 'query', 'memory']) {
+    if (route?.[key]) params.set(key, String(route[key]));
+  }
+  const hash = params.toString();
+  return hash ? `#${hash}` : '';
+}
+
+function replaceRouteURL(route) { window.history.replaceState(null, '', routeHash(route) || location.pathname || '/visualizer/'); }
+
+function saveRoute() {
+  const route = routeFromFields();
+  const hash = routeHash(route);
+  if (location.hash !== hash) window.history.pushState(null, '', hash || location.pathname || '/visualizer/');
+  appliedRoute = route;
+}
+
+function setRouteFields(route) {
+  if (!route) return;
+  purposeSelect.value = route.purpose || "";
+  listView = route.view;
+  searchQuery = route.query;
+  searchInput.value = searchQuery;
+  for (const [select, value] of [[projectSelect, route.project], [deviceSelect, route.device]]) {
+    if (value && ![...(select.options || [])].some(item => item.value === value)) select.append(option(value, value));
+    select.value = value;
+  }
+  manualProjectInput.value = '';
+  manualDeviceInput.value = '';
+  manualProjectLabel.hidden = true;
+  manualDeviceLabel.hidden = true;
+  manualProjectInput.required = false;
+  manualDeviceInput.required = false;
+  document.getElementById('platform').value = route.platform;
+  searchForm.hidden = !active || Boolean(listView);
+  startupControls.hidden = !active || listView !== 'startup';
+  showViewTabs();
+}
+
+function applyRoute(route, push) {
+  setRouteFields(route);
+  linkedMemory = route.memory;
+  approvalID = route.connect;
+  approvalFocused = false;
+  appliedRoute = route;
+  if (push) saveRoute();
+  else replaceRouteURL(route);
+  if (active) {
+    restartList();
+    if (route.memory) openMemory({ id: route.memory }, false);
+    if (approvalID) openDevicePanel();
+    else placeDevicePanel();
+  }
+}
+
 function emptyState(omitted) {
   const empty = document.createElement('div');
   empty.className = 'empty';
@@ -816,7 +1150,7 @@ function emptyState(omitted) {
     return empty;
   }
   if (listView === 'archived') { message.textContent = 'No archived memories in this view. Archived memories no longer load for agents and can be restored.'; return empty; }
-  if (searchQuery) { message.textContent = 'No matching memories. Try fewer words, or search all projects.'; return empty; }
+  if (searchQuery) { message.textContent = `No matching memories. Try fewer words${projectSelect.value ? ', or search all projects' : ''}.`; return empty; }
   if (projectSelect.value !== '' || deviceSelect.value !== '' || document.getElementById('platform').value !== '') {
     message.textContent = 'Nothing saved in this view. Choose All projects, All devices and All platforms to see everything.';
     return empty;
@@ -854,7 +1188,7 @@ let lastNotLoaded = '';
 function drawNotLoaded(page) {
   const items = page.not_loaded || [];
   const count = page.records?.length || 0;
-  summary.textContent = `${count} ${count === 1 ? 'memory loads' : 'memories load'} at startup within ${Number(page.budget).toLocaleString()} bytes${items.length ? ` · ${items.length} not loaded` : ''}`;
+  summary.textContent = `${count} ${count === 1 ? 'memory loads' : 'memories load'} at startup within ${Number(page.budget).toLocaleString()} bytes${items.length ? ` · ${page.not_loaded_total || items.length} not loaded` : ''}`;
   notLoaded.hidden = !items.length;
   // A memory's title and scope change only with its revision, so this identifies what is drawn.
   const signature = JSON.stringify(items.map(item => [item.id, item.revision, item.reason]));
@@ -885,8 +1219,11 @@ function drawNotLoaded(page) {
 }
 
 function draw(page) {
+  latestPage = page;
   const items = page.records || [];
   const omitted = page.omitted || 0;
+  showMore.hidden = items.length <= visibleLimit && !page.next;
+  showMore.textContent = `Show more memories (${Math.max(0, (page.total || items.length) - visibleLimit)} remaining)`;
   omissions.hidden = !omitted;
   const omissionSignature = JSON.stringify([omitted, page.omitted_records, page.omitted_titles]);
   if (omitted && omissionSignature !== lastOmissionSignature) {
@@ -907,7 +1244,8 @@ function draw(page) {
   }
   lastOmissionSignature = omissionSignature;
   const signature = JSON.stringify(items.map(record => [record.id, record.revision, record.title, record.content, record.scope, record.provenance, record.confirmed, record.purpose, record.updated_at]));
-  summary.textContent = `${items.length} ${items.length === 1 ? 'memory' : 'memories'}${searchQuery ? ' in search results' : ''}`;
+  const total = !searchQuery && Number.isSafeInteger(page.total) ? page.total : items.length;
+  summary.textContent = searchQuery && !items.length ? 'No matching memories' : `${total} ${total === 1 ? 'memory' : 'memories'}${searchQuery ? ' in search results' : ''}`;
   const selection = window.getSelection();
   const selectingRecord = selection && !selection.isCollapsed && (records.contains(selection.anchorNode) || records.contains(selection.focusNode));
   // Defer replacement while someone is selecting text; the next poll can draw it.
@@ -916,9 +1254,11 @@ function draw(page) {
   const next = new Map();
   // A poll redraw must not strand keyboard focus on a removed button.
   const focusedID = document.activeElement?.memoryID;
+  const focusedAction = document.activeElement?.memoryAction;
   openButtons = new Map();
+  inlineActionRows = new Map();
   const fragment = document.createDocumentFragment();
-  for (const record of items) {
+  for (const record of items.slice(0, visibleLimit)) {
     const key = `${record.id}`;
     next.set(key, record.revision);
     const article = document.createElement('article');
@@ -938,11 +1278,11 @@ function draw(page) {
     number.textContent = `#${record.id}`;
     top.append(kind, scopeLabel, number);
     const heading = document.createElement('h3');
-    heading.textContent = record.title || `Memory #${record.id}`;
+    highlightMatches(heading, record.title || `Memory #${record.id}`);
     const content = document.createElement('p');
-    content.className = 'record-content';
+    content.className = record.purpose === 'handoff' ? 'record-content handoff-content' : 'record-content';
     const preview = Array.from(record.content || '');
-    content.textContent = record.content_truncated || preview.length > 240 ? preview.slice(0, 240).join('') + '…' : record.content;
+    highlightMatches(content, record.content_truncated || preview.length > 240 ? preview.slice(0, 240).join('') + '…' : record.content);
     const state = document.createElement('p');
     state.className = 'record-state';
     state.textContent = `${startupNote(record)} · ${updatedLabel(record)}`;
@@ -955,20 +1295,43 @@ function draw(page) {
     openButtons.set(record.id, open);
     open.addEventListener('click', () => openMemory(record));
     article.append(top, heading, state, content, open);
+    if (listView === 'review') {
+      const actions = document.createElement('div');
+      actions.className = 'actions inline-review';
+      inlineActionRows.set(record.id, actions);
+      for (const [name, archived] of [['Confirm', false], ['Archive', true]]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = name;
+        button.memoryID = record.id;
+        button.memoryAction = archived ? 'archive' : 'confirm';
+        button.setAttribute('aria-label', `${name} memory: ${record.title || `#${record.id}`}`);
+        if (archived) button.className = 'quiet';
+        button.disabled = inlineBusy.has(record.id);
+        button.addEventListener('click', () => reviewInline(record, archived, actions));
+        actions.append(button);
+      }
+      article.append(actions);
+    }
     fragment.append(article);
   }
   if (!items.length) {
     fragment.append(emptyState(omitted));
   }
   records.replaceChildren(fragment);
-  if (focusedID !== undefined) openButtons.get(focusedID)?.focus();
+  if (focusedID !== undefined) {
+    const action = Array.from(inlineActionRows.get(focusedID)?.children || []).find(button => button.memoryAction === focusedAction && !button.disabled);
+    (action || openButtons.get(focusedID) || openButtons.values().next().value || refreshButton).focus();
+  }
   revisions = next;
   lastSignature = signature;
   hasLoaded = true;
 }
 
 async function refresh() {
-  if (!active || inFlight) return;
+  if (!active || inFlight || moreInFlight || document.hidden) return;
+  clearTimeout(timer);
+  timer = null;
   const controller = new AbortController();
   inFlight = controller;
   // Search can wait for the server's bounded inference and wording fallback.
@@ -982,21 +1345,51 @@ async function refresh() {
     const startup = listView === 'startup';
     const response = await fetch(startup ? '/visualizer/api/startup' : searchQuery ? '/visualizer/api/search' : '/visualizer/api/context', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(!searchQuery && pageETag ? { 'If-None-Match': pageETag } : {}) },
       body: JSON.stringify(startup ? { scope: startupScope(scope), budget: Number(startupAgent.value) || 12000 } : searchQuery ? { scope, query: searchQuery } : scope),
       cache: 'no-store',
       credentials: 'same-origin',
       signal: controller.signal
     });
+    if (response.status === 304) {
+      if (!active || inFlight !== controller) return;
+      const recovered = pollFailures > 0;
+      pollFailures = 0;
+      // A changed snapshot may have deferred its redraw during text selection.
+      if (latestPage) { draw(latestPage); if (startup) drawNotLoaded(latestPage); }
+      if (recovered) setStatus('Live', 'live');
+      return;
+    }
     if (!response.ok) throw new Error(response.status === 401 ? 'Session expired' : response.status === 400 ? 'Scope not recognized' : 'Service unavailable');
     const page = await response.json();
     // A disconnected or replaced request must not redraw an older session.
     if (!active || inFlight !== controller) return;
+    pollFailures = 0;
+    const responseETag = response.headers?.get('ETag') || '';
+    // If the snapshot changed, rebuild the loaded range from its new cursor.
+    // Retaining old tail records would leave archived or edited memories stale.
+    if (!startup && !searchQuery && latestPage?.records.length > (page.records || []).length) {
+      const target = latestPage.records.length;
+      const seen = new Set();
+      while (page.next && page.records.length < target && !seen.has(page.next)) {
+        seen.add(page.next);
+        const nextResponse = await fetch('/visualizer/api/context', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...scope, after: page.next }), cache: 'no-store', credentials: 'same-origin', signal: controller.signal
+        });
+        if (!nextResponse.ok) throw new Error('Could not refresh loaded memories');
+        const nextPage = await nextResponse.json();
+        if (!active || inFlight !== controller) return;
+        const ids = new Set(page.records.map(record => record.id));
+        page.records.push(...(nextPage.records || []).filter(record => !ids.has(record.id)));
+        page.next = nextPage.next;
+      }
+    }
+    pageETag = responseETag;
     if (startup) {
       draw(page);
       drawNotLoaded(page);
       setStatus('Live', 'live');
-      timer = setTimeout(refresh, 3000);
       return;
     }
     updateProjectOptions(page.projects);
@@ -1006,20 +1399,44 @@ async function refresh() {
     notLoaded.hidden = true;
     draw(page);
     setStatus(searchQuery ? page.semantic_ready ? 'Search results' : 'Wording matches only · meaning search unavailable' : 'Live', 'live');
-    // Browsing follows live writes. Search runs on submission or explicit refresh,
-    // rather than repeating query inference while someone reads the results.
-    if (!searchQuery) timer = setTimeout(refresh, 3000);
+    searchHint.textContent = page.semantic_ready ? 'Meaning search can match related wording. Bold text marks exact words from your query.' : 'Wording search matches any query word. Bold text marks exact words from your query.';
+    searchHint.hidden = !searchQuery;
   } catch (error) {
     if (inFlight !== controller) return;
     const message = error.name === 'AbortError' ? 'Request timed out' : error instanceof TypeError ? 'Service unavailable' : error.message;
+    pollFailures++;
     if (message === 'Session expired') stop(true);
     setStatus(message, 'error');
-    summary.textContent = message === 'Session expired' ? 'Sign in again to see your memories.' : hasLoaded ? 'Showing the last results. Use Refresh to try again.' : 'No memories loaded. Use Refresh to try again.';
+    summary.textContent = message === 'Session expired' ? 'Sign in again to see your memories.' : hasLoaded ? `Showing the last results. ${searchQuery ? 'Use Refresh to try again.' : 'Trying again automatically.'}` : `No memories loaded. ${searchQuery ? 'Use Refresh to try again.' : 'Trying again automatically.'}`;
   } finally {
     clearTimeout(timeout);
-    if (inFlight === controller) inFlight = null;
+    if (inFlight === controller) {
+      inFlight = null;
+      // Retry live views after failures too. Search remains explicit to avoid
+      // repeating inference while someone reads the results.
+      if (active && !searchQuery && !document.hidden && scopeInput()) {
+        timer = setTimeout(refresh, pollFailures < 2 ? 3000 : pollFailures === 2 ? 10000 : 30000);
+      }
+      if (moreRequested) loadMore();
+    }
   }
 }
+
+document.addEventListener('visibilitychange', () => {
+  const hidden = Boolean(document.hidden);
+  if (hidden === wasHidden) return;
+  wasHidden = hidden;
+  if (hidden) {
+    clearTimeout(timer);
+    timer = null;
+    if (inFlight) inFlight.abort();
+    inFlight = null;
+    stopDeviceRefresh();
+  } else if (active) {
+    refresh();
+    refreshDevices();
+  }
+});
 
 async function sessionRequest(method, bearer) {
   const controller = new AbortController();
@@ -1049,24 +1466,33 @@ form.addEventListener('submit', async event => {
   tokenInput.value = '';
   loggingIn = true;
   connectButton.disabled = true;
+  tokenError.hidden = true;
+  tokenInput.setAttribute('aria-invalid', 'false');
   setStatus('Signing in');
   try {
     const response = await sessionRequest('POST', bearer);
     if (!response.ok) throw new Error(response.status === 401 ? 'Access token rejected' : 'Could not sign in');
+    const route = routeFromHash();
     stop(true);
     approvalNotice.hidden = true;
     setConnected(true);
     summary.textContent = 'Loading memories…';
-    refresh();
+    applyRoute(route, false);
   } catch (error) {
-    setStatus(error.name === 'AbortError' ? 'Request timed out' : error instanceof TypeError ? 'Service unavailable' : error.message, 'error');
+    const message = error.message === 'Access token rejected' ? 'That owner access token was rejected. Check it with the person who runs your server, then try again.' : error.name === 'AbortError' ? 'Sign-in timed out. Try again.' : 'Could not reach the server to sign in. Try again when it is available.';
+    tokenError.textContent = message;
+    tokenError.hidden = false;
+    tokenInput.setAttribute('aria-invalid', 'true');
+    tokenInput.focus();
+    summary.textContent = 'Sign-in failed. Check the token field above.';
+    setStatus('Sign-in failed', 'error');
   } finally {
     loggingIn = false;
     connectButton.disabled = false;
   }
 });
 
-disconnectButton.addEventListener('click', async () => {
+disconnectButton.addEventListener('click', () => askToLeaveDraft(async () => {
   disconnectButton.disabled = true;
   try {
     const response = await sessionRequest('DELETE');
@@ -1077,7 +1503,9 @@ disconnectButton.addEventListener('click', async () => {
     disconnectButton.disabled = false;
     setStatus('Could not sign out. Try again when the service is available.', 'error');
   }
-});
+}));
+
+applyRoute(routeFromHash(), false);
 
 (async () => {
   try {
@@ -1089,7 +1517,7 @@ disconnectButton.addEventListener('click', async () => {
       setConnected(true);
       setStatus('Signing in');
       summary.textContent = 'Loading memories…';
-      refresh();
+      applyRoute(routeFromHash(), false);
     } else if (approvalID && !session.connected) {
       approvalNotice.hidden = false;
       approvalNotice.textContent = 'An agent is asking to connect. Sign in as the owner to review the device and code, then approve or deny. Never give the agent your access token.';
@@ -1099,3 +1527,84 @@ disconnectButton.addEventListener('click', async () => {
     if (!loggingIn && !active) setStatus('Service unavailable', 'error');
   }
 })();
+
+function clearUndo() {
+  clearTimeout(undoTimer);
+  undoState = null;
+  document.getElementById('archive-undo').hidden = true;
+}
+function offerUndo(record, revision) {
+  clearUndo();
+  undoState = { id: record.id, expected_revision: revision, archived: false, request_id: newRequestID() };
+  document.getElementById('archive-undo-label').textContent = `Archived “${record.title || `Memory #${record.id}`}”.`;
+  document.getElementById('archive-undo').hidden = false;
+  undoTimer = setTimeout(clearUndo, 10000);
+}
+document.getElementById('undo-archive').addEventListener('click', async () => {
+  const pending = undoState;
+  if (!pending) return;
+  try {
+    const { status } = await postOwner('/visualizer/api/archive', pending);
+    if (pending !== undoState) return;
+    if (status === 200) { clearUndo(); pageETag = ''; setStatus('Memory restored.', 'live'); refreshList(); }
+    else if (status === 409) { clearUndo(); setStatus('Memory changed. Open Archived to review it.', 'error'); }
+    else { clearTimeout(undoTimer); undoTimer = setTimeout(clearUndo, 10000); setStatus('Could not restore. Try Undo again.', 'error'); }
+  } catch { if (pending === undoState) { clearTimeout(undoTimer); undoTimer = setTimeout(clearUndo, 10000); setStatus('Could not restore. Try Undo again.', 'error'); } }
+});
+disconnectAll.addEventListener('click', () => {
+  askToLeaveDraft(signOutEverywhere);
+});
+async function signOutEverywhere() {
+  const generation = sessionGeneration;
+  try {
+    const { status } = await postOwner('/visualizer/api/session/revoke-all', {});
+    if (generation !== sessionGeneration) return;
+    if (status >= 200 && status < 300) { stop(true); setStatus('Signed out everywhere'); }
+    else setStatus('Could not sign out everywhere. Try again.', 'error');
+  } catch { if (generation === sessionGeneration) setStatus('Could not sign out everywhere. Try again.', 'error'); }
+}
+document.getElementById('export-memory').addEventListener('click', async () => {
+  const generation = sessionGeneration;
+  try {
+    const { status, data } = await postOwner('/visualizer/api/export', { scope: scopeInput(), all: document.getElementById('export-mode').value === 'all', include_archived: document.getElementById('export-archived').checked === true });
+    if (!active || generation !== sessionGeneration) return;
+    if (status !== 200 || !Array.isArray(data?.records) || data.error) throw new Error();
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'grasshopper-memories.json'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatus('JSON downloaded.', 'live');
+  } catch { if (active && generation === sessionGeneration) setStatus('Could not export memories. Try again.', 'error'); }
+});
+async function loadMore() {
+  if (!active || document.hidden || moreInFlight || !latestPage?.next || searchQuery || listView === 'startup') { moreRequested = false; return; }
+  // Polling can replace the cursor snapshot; finish it before starting a page.
+  if (inFlight) { moreRequested = true; return; }
+  moreRequested = false;
+  clearTimeout(timer);
+  timer = null;
+  const selected = latestPage;
+  const generation = sessionGeneration;
+  const controller = new AbortController(); moreInFlight = controller;
+  showMore.disabled = true;
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch('/visualizer/api/context', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...scopeInput(), after: selected.next }), credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
+    if (response.status === 401) { stop(true); setStatus('Session expired', 'error'); return; }
+    if (!response.ok) throw new Error();
+    const page = await response.json();
+    if (!active || generation !== sessionGeneration || moreInFlight !== controller) return;
+    const existing = latestPage.records;
+    const ids = new Set(existing.map(record => record.id));
+    draw({ ...latestPage, records: [...existing, ...(page.records || []).filter(record => !ids.has(record.id))], next: page.next, total: page.total });
+  } catch { if (moreInFlight === controller) setStatus('Could not load more. Try again, or Refresh to reload an expired list.', 'error'); }
+  finally { clearTimeout(timeout); if (moreInFlight === controller) { moreInFlight = null; showMore.disabled = false; if (active && !document.hidden) { clearTimeout(timer); timer = setTimeout(refresh, 3000); } } }
+}
+
+async function showOriginalSource(selected, shown) {
+  try {
+    const { status, data } = await postOwner('/visualizer/api/record', { scope: selected.scope, id: selected.id, revision: 1 });
+    if (status === 200 && active && detailState === selected && selected.revision === shown.revision) {
+      detailMeta.append(label(`Originally saved by ${data.provenance?.harness || 'an unknown agent'} on ${data.provenance?.device || 'an unknown device'}.`));
+    }
+  } catch { /* Current provenance and revision history remain available. */ }
+}

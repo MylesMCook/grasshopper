@@ -15,7 +15,29 @@ import (
 
 var clientVersion = "dev"
 
-func run() error {
+func run() (resultErr error) {
+	defer func() {
+		if errors.Is(resultErr, flag.ErrHelp) {
+			resultErr = nil
+		}
+	}()
+	if len(os.Args) < 2 || os.Args[1] == "--help" || os.Args[1] == "-h" || os.Args[1] == "help" {
+		fmt.Fprintln(os.Stdout, `Grasshopper shares memories through your private server.
+
+Usage: grasshopper COMMAND [options]
+
+  connect        Connect this machine; request owner approval when needed
+  check          Check the saved connection without changing it
+  setup          Install agents from an extracted client archive
+  claude remove  Remove local Claude Code connector wiring
+  cursor remove  Remove local Cursor connector wiring
+  configure      Configure an existing private device token manually
+  config-path    Print this machine's client configuration path
+
+For agents: bridge runs the MCP transport; hook supplies startup context.
+Use grasshopper COMMAND --help for options, or --version for the version.`)
+		return nil
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		fmt.Fprintln(os.Stdout, "grasshopper "+clientVersion)
 		return nil
@@ -27,9 +49,6 @@ func run() error {
 		}
 		fmt.Fprintln(os.Stdout, path)
 		return nil
-	}
-	if len(os.Args) < 2 {
-		return errors.New("use bridge or hook")
 	}
 	switch os.Args[1] {
 	case "connect":

@@ -93,6 +93,52 @@ Windows PowerShell:
 
 This creates an empty database and master token without overwriting existing state. Open its memory view and sign in with that token. For other machines, give the server a **private HTTPS** address, such as [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve). Keep public access off and the master token on the server.
 
+An existing Tailscale Serve route must forward to `http://127.0.0.1:8106` with
+public access off. Restart the server with its exact HTTPS hostname and port:
+
+```sh
+./bin/grasshopper-server --quickstart --allowed-proxy-host memory.example:443
+```
+
+Use the same `--data-dir` if you chose one. This flag allows the configured proxy
+Host and HTTPS Origin. The default HTTPS port `:443` may be omitted by the
+browser; other ports must match explicitly. It does not change saved state or
+create a private route.
+Creating or changing your private route is a separate host operation. See
+[service templates and token recovery](docs/operations.md).
+
+The release executables are unsigned. After verifying the archive hash and its
+trusted source, macOS may require the supported **System Settings > Privacy &
+Security > Open Anyway** flow for an identified app. Follow [Apple's opening
+instructions](https://support.apple.com/en-us/102445); do not disable Gatekeeper
+or remove quarantine recursively. On Windows, inspect the publisher/source and
+follow [Microsoft SmartScreen guidance](https://learn.microsoft.com/en-us/windows/security/operating-system-security/virus-and-threat-protection/microsoft-defender-smartscreen/)
+if blocked. SmartScreen behavior for these archives has not been tested. Linux
+archives retain executable permissions; verify the digest before executing.
+
+
+### Archive names and source builds
+
+The commands above use packaged archive names. The Go source directories have
+different names; plain `go build ./cmd/grasshopper-go-server` creates
+`grasshopper-go-server`, not `grasshopper-server`. To produce the same names as
+the archives from a checkout, use:
+
+```sh
+mkdir -p bin
+go build -o ./bin/grasshopper ./cmd/grasshopper
+go build -o ./bin/grasshopper-server ./cmd/grasshopper-go-server
+go build -o ./bin/grasshopper-backup ./cmd/grasshopper-go-backup
+go build -o ./bin/grasshopper-migrate ./cmd/grasshopper-go-migrate
+```
+
+On Windows, add `.exe` to each output filename. Source builds compile binaries;
+they do not fetch or package the ONNX runtime, model or tokenizer. `--quickstart`
+and client `connect`/`setup` expect the extracted archive layout. For a manually
+configured source-built server, provide `--db`, `--token-file`, `--onnx-library`,
+`--model` and `--tokenizer`; add `--create-db` for an empty store and `--visualizer`
+for its owner memory view. Use each binary's `--help` for options.
+
 ## Update or remove a connector
 
 Connector changes do not delete server memories. After an update, reconnect and test a fresh session before discarding the old package.
@@ -163,6 +209,22 @@ If you chose a custom quickstart state folder, add `--data-dir` followed by its 
 ./bin/grasshopper-backup --source /absolute/path/to/memory.db --dest /absolute/path/to/new-backup.db
 ```
 
+Verify any saved snapshot independently:
+
+```sh
+./bin/grasshopper-backup --verify /absolute/path/to/new-backup.db
+```
+
+Both backup and verification print record count, historical revision count,
+SQLite `quick_check`, size and SHA-256. Verification is read-only and fails on a
+corrupt, empty or nonprivate file, or a database with pending WAL/journal state.
+Use `--source` and `--dest` to make a standalone snapshot first. Compare the digest after transferring an
+off-host copy. With the server stopped, copy a verified snapshot to a new private
+path (mode 0600 on Mac/Linux), verify that copy again, then start the server
+against it with the retained token and model settings. Open a known memory and
+an earlier revision before selecting that copy for cutover. Retain the original
+state and any WAL/SHM files; reconcile accepted writes before rollback.
+
 On Windows, use `./bin/grasshopper-backup.exe` and Windows paths. Stop the old server and keep its archive, configuration, and database. Never run two writers. Restore a backup to a new path and check its records before using it.
 
 **Upgrading from 2.3.x or earlier to 2.4.0 requires re-embedding.** The new [Granite model](docs/embedding-model.md) uses a different vector space. From the extracted new server archive, rehearse this command on a backup first. For cutover, run it again with the old server stopped and a destination that does not exist:
@@ -179,6 +241,6 @@ On Linux, use `./runtime/libonnxruntime.so`. On Windows, use `grasshopper-migrat
 
 Start the new server against the verified copy with the **same** token, listener, and private route settings. For `--quickstart`, retain the old state folder and replace its `memory.db` with the verified copy while both servers are stopped. Check a known memory and earlier revision. If verification fails, stop the new server and restore the old archive and old database. Preserve any database that accepted new writes so those writes can be reconciled before rollback.
 
-[Memory view](https://usegrasshopper.com/view/) · [Verified behavior](https://github.com/MylesMCook/grasshopper/blob/main/docs/memory-acceptance.md) · [Mac mini operator note](https://github.com/MylesMCook/grasshopper/blob/main/docs/operations.md)
+[Memory view](https://usegrasshopper.com/view/) · [Verified behavior](https://github.com/MylesMCook/grasshopper/blob/main/docs/memory-acceptance.md) · [Self-hosted operations](docs/operations.md)
 
 The [shared memory policy](https://github.com/MylesMCook/grasshopper/blob/main/integrations/policy/AGENTS.md) governs all three agents. [Repository instructions](https://github.com/MylesMCook/grasshopper/blob/main/AGENTS.md) cover development. [Report security concerns privately](https://github.com/MylesMCook/grasshopper/security/advisories/new), not in a public issue.

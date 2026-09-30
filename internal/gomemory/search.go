@@ -31,11 +31,11 @@ func (r *Reader) BrowseSearch(ctx context.Context, scope BrowseScope, query stri
 	if err != nil {
 		return Page{}, nil, nil, err
 	}
-	page, err := r.searchKeys(ctx, keys, query, vector, model, limit, budget, true)
+	page, err := r.searchKeys(ctx, keys, query, vector, model, limit, budget, true, scope.Purpose)
 	return page, devices, projects, err
 }
 
-func (r *Reader) searchKeys(ctx context.Context, keys []string, query string, vector []float32, model string, limit, budget int, preview bool) (Page, error) {
+func (r *Reader) searchKeys(ctx context.Context, keys []string, query string, vector []float32, model string, limit, budget int, preview bool, purpose ...string) (Page, error) {
 	if strings.TrimSpace(query) == "" || len(query) > 4096 {
 		return Page{}, errors.New("query must be 1-4096 bytes")
 	}
@@ -53,12 +53,16 @@ func (r *Reader) searchKeys(ctx context.Context, keys []string, query string, ve
 		return Page{}, err
 	}
 	defer tx.Rollback()
+	filter := ""
+	if len(purpose) > 0 {
+		filter = ownerPurposeFilter(purpose[0], "c.")
+	}
 	scores := make(map[int64]float64)
 	records := make(map[int64]Record)
 	if prepared := prepareFTSQuery(query); prepared != "" {
 		rows, err := tx.QueryContext(ctx, "SELECT "+prefixedRecordColumns("c")+` FROM chunks_fts JOIN chunks c ON c.id=chunks_fts.rowid
  WHERE chunks_fts MATCH ? AND c.kind='memory' AND c.archived=0
- AND c.memory_scope IN (SELECT value FROM json_each(?)) ORDER BY bm25(chunks_fts),c.id`, prepared, string(keyJSON))
+ AND c.memory_scope IN (SELECT value FROM json_each(?)) `+filter+` ORDER BY bm25(chunks_fts),c.id`, prepared, string(keyJSON))
 		if err != nil {
 			return Page{}, err
 		}
@@ -89,7 +93,7 @@ func (r *Reader) searchKeys(ctx context.Context, keys []string, query string, ve
 			}
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT c.id,c.memory_scope,c.embedding FROM chunks c WHERE c.kind='memory' AND c.archived=0
- AND c.memory_scope IN (SELECT value FROM json_each(?)) AND c.embedding_model=? AND c.embedding IS NOT NULL`, string(keyJSON), model)
+ AND c.memory_scope IN (SELECT value FROM json_each(?)) AND c.embedding_model=? AND c.embedding IS NOT NULL`+filter, string(keyJSON), model)
 		if err != nil {
 			return Page{}, err
 		}

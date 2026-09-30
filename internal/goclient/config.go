@@ -81,20 +81,20 @@ func LegacyConfigPath() (string, error) {
 	return filepath.Join(directory, "grasshopper", "client.json"), nil
 }
 
-// DefaultTokenPath follows the shared Windows profile, preserving other OS defaults.
+// DefaultTokenPath names a device credential, separate from the server owner token.
 func DefaultTokenPath() (string, error) {
 	if runtime.GOOS == "windows" {
 		path, err := DefaultConfigPath()
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(filepath.Dir(path), "access-token"), nil
+		return filepath.Join(filepath.Dir(path), "device-token"), nil
 	}
 	directory, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(directory, "Grasshopper", "access-token"), nil
+	return filepath.Join(directory, "Grasshopper", "device-token"), nil
 }
 
 // LoadConfig parses a bounded, strict JSON file. NewRemote separately

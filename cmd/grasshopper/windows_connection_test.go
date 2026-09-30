@@ -57,7 +57,7 @@ func TestWindowsConnectMigratesOnlyVerifiedLegacyDevice(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if shared.Device != "laptop" || shared.TokenFile != filepath.Join(filepath.Dir(canonical), "access-token") {
+				if shared.Device != "laptop" || shared.TokenFile != filepath.Join(filepath.Dir(canonical), "device-token") {
 					t.Fatal("shared device configuration differs")
 				}
 				path, _ := goclient.ConfigPath("")

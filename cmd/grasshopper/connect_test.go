@@ -14,7 +14,33 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/MylesMCook/grasshopper/internal/goclient"
 )
+
+func TestConnectInvalidAddressStatus(t *testing.T) {
+	for _, address := range []string{"not a url", "http://memory.example.com", "https://memory.example.com/other", "https://user:pass@memory.example.com"} {
+		t.Run(address, func(t *testing.T) {
+			root, _, config, _ := setupFixture(t)
+			// No saved configuration should mask the entered address's error.
+			if err := os.Remove(config); err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			var err error
+			result := captureConnectJSON(t, func() error {
+				err = connectWithRoot(context.Background(), []string{"--json", "--url", address, "--config", config}, root, nil)
+				return nil // Invalid input is expected; inspect its JSON below.
+			})
+			if err == nil {
+				t.Fatal("invalid address accepted")
+			}
+			status, next := connectErrorStatus(err)
+			if status != "invalid_address" || !strings.Contains(next, "server") || result["status"] != status || result["next_step"] != next {
+				t.Fatalf("status=%s next=%s", status, next)
+			}
+		})
+	}
+}
 
 func TestPairConnectsMarketplaceWithoutMasterToken(t *testing.T) {
 	root, _, config, _ := setupFixture(t)
@@ -84,14 +110,22 @@ func TestPairConnectsMarketplaceWithoutMasterToken(t *testing.T) {
 	if err := os.Remove(config); err != nil {
 		t.Fatal(err)
 	}
+	retained, _ := os.ReadFile(tokenPath)
 	if err := connectWithRoot(ctx, []string{"--url", server.URL, "--token-file", tokenPath, "--config", config}, root, run); err != nil {
-		t.Fatalf("resume after approved token but incomplete setup: %v", err)
+		t.Fatalf("pair after configuration was removed: %v", err)
 	}
 	if err := checkConnection([]string{"--config", config}); err != nil {
 		t.Fatalf("resumed connection cannot read context: %v", err)
 	}
-	if starts.Load() != 1 {
-		t.Fatalf("partial setup requested another approval: %d", starts.Load())
+	if starts.Load() != 2 {
+		t.Fatalf("unbound token must require a fresh approval: %d", starts.Load())
+	}
+	if after, _ := os.ReadFile(tokenPath); string(after) != string(retained) {
+		t.Fatal("fresh pairing overwrote the unbound token")
+	}
+	rebound, err := goclient.LoadConfig(config)
+	if err != nil || rebound.TokenFile == tokenPath {
+		t.Fatal("new approval reused the unbound token path")
 	}
 	server.Close()
 	if state, _ := connectionStatus(config); state != "unreachable_server" {
@@ -100,7 +134,7 @@ func TestPairConnectsMarketplaceWithoutMasterToken(t *testing.T) {
 	if err := connectWithRoot(ctx, []string{"--config", config}, root, run); err == nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("offline connection replaced credential: %v", err)
 	}
-	if starts.Load() != 1 {
+	if starts.Load() != 2 {
 		t.Fatalf("offline connection requested another approval: %d", starts.Load())
 	}
 }

@@ -318,6 +318,11 @@ func TestMarketplacePackagesOneStatelessClientPerPlatform(t *testing.T) {
 		if mcp := read(root + ".mcp.json"); !strings.Contains(mcp, "${CLAUDE_PLUGIN_ROOT}/bin/grasshopper"+exe) || strings.Contains(mcp, "\"cwd\"") {
 			t.Fatalf("Claude MCP config must not reuse Codex's: %s", mcp)
 		}
+		for _, skillPath := range []string{root + "skills/connect-grasshopper/SKILL.md", "plugins/grasshopper-" + slug + "/skills/connect-grasshopper/SKILL.md"} {
+			if skill := read(skillPath); !strings.Contains(skill, "Quote the returned `next_step`") || !strings.Contains(skill, "`invalid_address`") {
+				t.Fatalf("%s must relay the client's guidance", skillPath)
+			}
+		}
 		// Codex's directory keeps its own hook and MCP files, untouched by Claude's.
 		if codexHooks := read("plugins/grasshopper-" + slug + "/hooks/hooks.json"); !strings.Contains(codexHooks, "--harness codex") {
 			t.Fatalf("Codex hooks were replaced: %s", codexHooks)

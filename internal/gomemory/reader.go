@@ -110,7 +110,8 @@ type BrowseScope struct {
 	AllProjects bool `json:"all_projects"`
 	// View selects what the owner lists: active memories (empty), those
 	// awaiting review, or archived ones.
-	View string `json:"view"`
+	View    string `json:"view"`
+	Purpose string `json:"purpose"`
 }
 
 // Owner list views. Review omits handoffs: they load at startup unconfirmed
@@ -305,7 +306,7 @@ func (r *Reader) BrowseContext(ctx context.Context, scope BrowseScope, budget in
 	if err != nil {
 		return Page{}, nil, nil, err
 	}
-	page, err := r.browseKeys(ctx, keys, budget, scope.View)
+	page, err := r.browseKeys(ctx, keys, budget, scope.View, scope.Purpose)
 	return page, devices, projects, err
 }
 
@@ -370,7 +371,7 @@ func (r *Reader) BrowseCounts(ctx context.Context, scope BrowseScope) (review, a
 	err = r.db.QueryRowContext(ctx, `SELECT
  COALESCE(SUM(archived=0 AND confirmed=0 AND purpose<>'handoff'),0),
  COALESCE(SUM(archived=1),0)
- FROM chunks WHERE kind='memory' AND memory_scope IN (SELECT value FROM json_each(?))`, string(keyJSON)).Scan(&review, &archived)
+ FROM chunks WHERE kind='memory' AND memory_scope IN (SELECT value FROM json_each(?))`+ownerPurposeFilter(scope.Purpose, ""), string(keyJSON)).Scan(&review, &archived)
 	return review, archived, err
 }
 
@@ -383,6 +384,9 @@ func (r *Reader) browseScopeKeys(ctx context.Context, scope BrowseScope, include
 	}
 	if scope.View != "" && scope.View != ViewReview && scope.View != ViewArchived {
 		return nil, nil, nil, errors.New("invalid visualizer view")
+	}
+	if !validOwnerPurpose(scope.Purpose) {
+		return nil, nil, nil, errors.New("invalid purpose")
 	}
 	devices, err := r.browseDevices(ctx, scope, includeArchived)
 	if err != nil {
@@ -573,13 +577,14 @@ type NotLoaded struct {
 // It shows what the service would send; it cannot show what a running agent
 // session received.
 type Startup struct {
-	Budget    int         `json:"budget"`
-	Records   []Record    `json:"records"`
-	NotLoaded []NotLoaded `json:"not_loaded"`
+	Budget         int         `json:"budget"`
+	Records        []Record    `json:"records"`
+	NotLoaded      []NotLoaded `json:"not_loaded"`
+	NotLoadedTotal int         `json:"not_loaded_total"`
 }
 
 // StartupPreview applies the same selection as Context, with previews in place
-// of full text, and reports every active record in scope that would not load.
+// of full text. It reports the exact exclusion count and at most 100 details.
 func (r *Reader) StartupPreview(ctx context.Context, scope Scope, budget int) (Startup, error) {
 	keys, err := scope.applicableKeys()
 	if err != nil {
@@ -594,15 +599,18 @@ func (r *Reader) StartupPreview(ctx context.Context, scope Scope, budget int) (S
 	if err != nil {
 		return Startup{}, err
 	}
-	// boundRecords lists at most 100 omissions; recompute the exact set here so
-	// the preview never hides a record it was asked to explain.
+	// Recompute exclusions to report an exact total independently of the bounded
+	// detail list returned to the browser.
 	loaded := make(map[int64]bool, len(page.Records))
 	for _, record := range page.Records {
 		loaded[record.ID] = true
 	}
 	preview := Startup{Budget: budget, Records: previewRecords(page.Records), NotLoaded: []NotLoaded{}}
 	add := func(record Record, reason string) {
-		preview.NotLoaded = append(preview.NotLoaded, NotLoaded{record.ID, record.Revision, record.Scope, record.Title, record.Purpose, reason})
+		preview.NotLoadedTotal++
+		if len(preview.NotLoaded) < 100 {
+			preview.NotLoaded = append(preview.NotLoaded, NotLoaded{record.ID, record.Revision, record.Scope, record.Title, record.Purpose, reason})
+		}
 	}
 	for _, record := range selected {
 		if !loaded[record.ID] {
@@ -622,13 +630,16 @@ func (r *Reader) StartupPreview(ctx context.Context, scope Scope, budget int) (S
 	return preview, nil
 }
 
-func (r *Reader) browseKeys(ctx context.Context, keys []string, budget int, view string) (Page, error) {
+func (r *Reader) browseKeys(ctx context.Context, keys []string, budget int, view string, purpose ...string) (Page, error) {
 	filter, archived := "", false
 	switch view {
 	case ViewReview:
 		filter = " AND confirmed=0 AND purpose<>'handoff'"
 	case ViewArchived:
 		archived = true
+	}
+	if len(purpose) > 0 {
+		filter += ownerPurposeFilter(purpose[0], "")
 	}
 	records, err := r.scopedRecords(ctx, keys, filter, archived)
 	if err != nil {

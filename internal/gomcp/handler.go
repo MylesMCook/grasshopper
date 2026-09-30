@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -37,6 +38,8 @@ type Backend struct {
 	Visualizer            bool
 	VisualizerStyleHashes []string
 	AllowedProxyHost      string
+	// Logger optionally receives secret-free structured operational events.
+	Logger *slog.Logger
 }
 
 type contextInput struct {
@@ -116,6 +119,11 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	defer upgradeCancel()
 	if err := backend.Store.EnsureClientTokenSchema(upgradeCtx); err != nil {
 		return nil, err
+	}
+	if backend.Visualizer {
+		if err := backend.Store.EnsureOwnerSessionSchema(upgradeCtx); err != nil {
+			return nil, err
+		}
 	}
 	if backend.AllowedProxyHost != "" {
 		host, port, err := net.SplitHostPort(backend.AllowedProxyHost)
@@ -207,12 +215,14 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		providedHash := sha256.Sum256([]byte(provided))
 		return subtle.ConstantTimeCompare(providedHash[:], tokenHash[:]) == 1
 	}
+	audit := newAuditLog(backend.Logger)
+	sessions := &ownerSessions{audit: audit, store: backend.Store, attempts: make(map[string]loginWindow)}
 	ownerValid := func(r *http.Request) bool {
 		if masterBearerValid(r) {
 			return true
 		}
 		cookie, err := r.Cookie(visualizerCookieName)
-		return err == nil && validVisualizerSession(cookie.Value, tokenHash[:], time.Now())
+		return err == nil && sessions.valid(r, cookie.Value, tokenHash[:])
 	}
 	bearerValid := func(r *http.Request) bool {
 		if masterBearerValid(r) {
@@ -228,6 +238,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	var pairings *pairingManager
 	if backend.Visualizer {
 		pairings = newPairingManager(backend.Store)
+		pairings.audit = audit
 	}
 	version := backend.Version
 	if version == "" {
@@ -253,11 +264,11 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 				return nil, gomemory.Record{}, err
 			}
 			if record == nil {
-				return nil, gomemory.Record{}, errors.New("memory_not_found")
+				return nil, gomemory.Record{}, agentReadError(errors.New("memory_not_found"))
 			}
 			return nil, *record, nil
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "search", Title: "Search scoped memories", Description: "Use this when locating active memories by wording or meaning within explicit scope.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "query": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer"}, "budget": map[string]any{"type": "integer"}}, "scope", "query")},
+	mcp.AddTool(server, &mcp.Tool{Name: "search", Title: "Search scoped memories", Description: "Find active memories by wording or meaning, limited to the given project, device and platform scope. The limit is 1 to 100.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "query": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer"}, "budget": map[string]any{"type": "integer"}}, "scope", "query")},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in searchInput) (*mcp.CallToolResult, searchOutput, error) {
 			limit, budget := 10, 16384
 			if in.Limit != nil {
@@ -276,12 +287,12 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	mcp.AddTool(server, &mcp.Tool{Name: "store", Title: "Save or correct memory", Description: "Use this when saving an explicit preference, accepted decision, verified lesson, or concise handoff with provenance and a request ID.", Annotations: write, InputSchema: writeSchema()},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gomemory.WriteInput) (*mcp.CallToolResult, storeOutput, error) {
 			receipt, embedded, err := saveMemory(ctx, in)
-			return nil, storeOutput{receipt, receipt.ID, receipt.Revision, receipt.Deduplicated, embedded}, err
+			return nil, storeOutput{receipt, receipt.ID, receipt.Revision, receipt.Deduplicated, embedded}, agentReadError(err)
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "archive", Title: "Archive or restore memory", Description: "Use this when reversibly hiding or restoring a scoped record with an expected revision and request ID.", Annotations: write, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "id": map[string]any{"type": "integer"}, "expected_revision": map[string]any{"type": "integer"}, "archived": map[string]any{"type": "boolean"}, "request_id": map[string]any{"type": "string"}, "provenance": provenanceSchema()}, "scope", "id", "expected_revision", "archived", "request_id", "provenance")},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gomemory.ArchiveInput) (*mcp.CallToolResult, gomemory.Receipt, error) {
 			receipt, err := backend.Store.Archive(ctx, in)
-			return nil, receipt, err
+			return nil, receipt, agentReadError(err)
 		})
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: 131072, PropagateRequestCancellation: true})
 	mux := http.NewServeMux()
@@ -290,11 +301,11 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		// proxy Host, check Origin above and pass a loopback Host to the SDK;
 		// leave all other Hosts to its default check.
 		scheme := "http"
-		if backend.AllowedProxyHost != "" && r.Host == backend.AllowedProxyHost {
+		if proxyHostMatches(r.Host, backend.AllowedProxyHost) {
 			scheme = "https"
 		}
-		if origin := r.Header.Get("Origin"); origin != "" && origin != scheme+"://"+r.Host {
-			http.Error(w, "invalid Origin header", http.StatusForbidden)
+		if origin := r.Header.Get("Origin"); origin != "" && !originsMatch(origin, scheme+"://"+r.Host) {
+			http.Error(w, "Origin rejected. Open the local server address or the configured private HTTPS proxy address; check --allowed-proxy-host and restart after configuration changes.", http.StatusForbidden)
 			return
 		}
 		if scheme == "https" {
@@ -314,18 +325,44 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		}
 		mux.HandleFunc("/visualizer/api/context", visualizerContext(backend.Store, version, searchModel))
 		ownerReads = map[string]http.HandlerFunc{
-			"/visualizer/api/search":  visualizerSearch(backend, embedQuery),
-			"/visualizer/api/record":  visualizerRecord(backend.Store),
-			"/visualizer/api/update":  visualizerUpdate(backend.Store, saveMemory),
-			"/visualizer/api/archive": visualizerArchive(backend.Store),
-			"/visualizer/api/startup": visualizerStartup(backend.Store),
+			"/visualizer/api/search":             visualizerSearch(backend, embedQuery),
+			"/visualizer/api/record":             visualizerRecord(backend.Store),
+			"/visualizer/api/update":             visualizerUpdate(backend.Store, saveMemory, audit),
+			"/visualizer/api/archive":            visualizerArchive(backend.Store, audit),
+			"/visualizer/api/startup":            visualizerStartup(backend.Store),
+			"/visualizer/api/export":             visualizerExport(backend.Store),
+			"/visualizer/api/session/revoke-all": sessions.revokeAll,
 		}
 	}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok\n"))
 	})
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	audit.event("startup", nil, auditFields{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Browser owner APIs and MCP accept only local access or the explicitly
+		// configured private proxy. Never reflect the supplied Host in errors.
+		if r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/visualizer/api/") {
+			host := r.Host
+			if parsed, _, err := net.SplitHostPort(host); err == nil {
+				host = parsed
+			}
+			ip := net.ParseIP(host)
+			local := host == "localhost" || (ip != nil && ip.IsLoopback())
+			if !local && !proxyHostMatches(r.Host, backend.AllowedProxyHost) {
+				http.Error(w, "Host rejected. Use the local server address or configure --allowed-proxy-host with the exact private HTTPS proxy hostname and port, then restart the server.", http.StatusForbidden)
+				return
+			}
+		}
+
+		if r.URL.Path == "/" || (r.URL.Path == "/mcp" && r.Method == http.MethodGet && acceptsBrowserHTML(r.Header.Get("Accept"))) {
+			serverNavigation(w, r, backend.Visualizer)
+			return
+		}
+		if r.URL.Path == "/favicon.ico" {
+			http.NotFound(w, r)
+			return
+		}
 		// Connection identity is bearer-only and reports only this credential.
 		// It neither grants owner controls nor changes the five-tool MCP surface.
 		if r.URL.Path == "/connection" {
@@ -363,6 +400,10 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		if backend.Visualizer && visualizerAsset(w, r, backend.VisualizerStyleHashes) {
 			return
 		}
+		if (r.URL.Path == "/visualizer" || strings.HasPrefix(r.URL.Path, "/visualizer/")) && !strings.HasPrefix(r.URL.Path, "/visualizer/api/") {
+			http.NotFound(w, r)
+			return
+		}
 		if pairings != nil {
 			w.Header().Set("Cache-Control", "no-store")
 			switch r.URL.Path {
@@ -380,8 +421,8 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 					return
 				}
 				origin := visualizerOrigin(r, backend.AllowedProxyHost)
-				if (r.Method != http.MethodGet && r.Header.Get("Origin") != origin) || (r.Header.Get("Origin") != "" && r.Header.Get("Origin") != origin) {
-					http.Error(w, "invalid Origin header", http.StatusForbidden)
+				if (r.Method != http.MethodGet && !originsMatch(r.Header.Get("Origin"), origin)) || (r.Header.Get("Origin") != "" && !originsMatch(r.Header.Get("Origin"), origin)) {
+					http.Error(w, "Origin rejected. Open the local server address or the configured private HTTPS proxy address; check --allowed-proxy-host and restart after configuration changes.", http.StatusForbidden)
 					return
 				}
 				ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -395,7 +436,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			}
 		}
 		if backend.Visualizer && r.URL.Path == "/visualizer/api/session" {
-			visualizerSession(w, r, tokenHash[:], masterBearerValid(r), backend.AllowedProxyHost)
+			sessions.serve(w, r, tokenHash[:], masterBearerValid(r), backend.AllowedProxyHost)
 			return
 		}
 		if ownerRead, ok := ownerReads[r.URL.Path]; ok {
@@ -406,8 +447,8 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 				http.Error(w, "authentication required", http.StatusUnauthorized)
 				return
 			}
-			if r.Header.Get("Origin") != visualizerOrigin(r, backend.AllowedProxyHost) {
-				http.Error(w, "invalid Origin header", http.StatusForbidden)
+			if !originsMatch(r.Header.Get("Origin"), visualizerOrigin(r, backend.AllowedProxyHost)) {
+				http.Error(w, "Origin rejected. Open the local server address or the configured private HTTPS proxy address; check --allowed-proxy-host and restart after configuration changes.", http.StatusForbidden)
 				return
 			}
 			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -419,9 +460,9 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		// check. MCP continues to require a bearer token.
 		authorized := bearerValid(r)
 		if !authorized && backend.Visualizer && r.URL.Path == "/visualizer/api/context" {
-			if cookie, err := r.Cookie(visualizerCookieName); err == nil && validVisualizerSession(cookie.Value, tokenHash[:], time.Now()) {
-				if r.Header.Get("Origin") != visualizerOrigin(r, backend.AllowedProxyHost) {
-					http.Error(w, "invalid Origin header", http.StatusForbidden)
+			if cookie, err := r.Cookie(visualizerCookieName); err == nil && sessions.valid(r, cookie.Value, tokenHash[:]) {
+				if !originsMatch(r.Header.Get("Origin"), visualizerOrigin(r, backend.AllowedProxyHost)) {
+					http.Error(w, "Origin rejected. Open the local server address or the configured private HTTPS proxy address; check --allowed-proxy-host and restart after configuration changes.", http.StatusForbidden)
 					return
 				}
 				authorized = true
@@ -434,5 +475,15 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
 		mux.ServeHTTP(w, r.WithContext(ctx))
-	}), nil
+	})
+	return audit.wrap(handler), nil
+}
+
+// agentReadError keeps missing and out-of-scope records indistinguishable while
+// explaining how an agent can correct its request without widening scope.
+func agentReadError(err error) error {
+	if err != nil && err.Error() == "memory_not_found" {
+		return errors.New("memory_not_found: not found in this project, device and platform scope; check the scope used for context")
+	}
+	return err
 }

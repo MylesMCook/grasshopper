@@ -35,6 +35,7 @@ go test -race ./internal/gomemory ./internal/gomcp ./internal/goclient
 go build ./cmd/grasshopper             # Stateless client bridge and hooks
 go build ./cmd/grasshopper-go-server   # Fresh or converted database
 node --test internal/gomcp/visualizer/app.test.cjs # Device polling regressions; no npm dependencies
+node --test web/*.test.cjs # Public address and setup regressions; no npm dependencies
 go run ./cmd/grasshopper-go-backup --help
 go run ./cmd/grasshopper-go-migrate --help
 go run ./cmd/grasshopper-go-bundle --help
@@ -77,6 +78,10 @@ recovery beside the relevant code. Review affected comments when behavior
 changes and remove stale or speculative claims. Do not add line-by-line
 narration, comment quotas, vague TODOs, secrets, or private infrastructure
 details.
+
+Keep personal infrastructure addresses, supervisor names, credential locations
+and recovery references out of public documentation as well as code comments.
+Use generic self-hosting examples; keep machine-specific operator notes private.
 
 ## Linear tracking
 

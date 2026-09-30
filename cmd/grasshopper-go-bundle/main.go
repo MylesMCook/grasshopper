@@ -357,18 +357,10 @@ func run() error {
 		{"licenses/Granite-LICENSE", "docs/Granite-LICENSE"},
 		{"README.md", "README.md"},
 		{"docs/embedding-model.md", "docs/embedding-model.md"},
+		{"docs/operations.md", "docs/operations.md"},
 		{"docs/fonts/OFL-newsreader.txt", "docs/fonts/OFL-newsreader.txt"},
 		{"docs/fonts/OFL-geist-mono.txt", "docs/fonts/OFL-geist-mono.txt"},
-		{"integrations/client.example.json", "integrations/client.example.json"},
 		{"packaging/macos/com.example.grasshopper.plist", "packaging/macos/com.example.grasshopper.plist"},
-		{"integrations/policy/AGENTS.md", "integrations/policy/AGENTS.md"},
-		{"integrations/codex/config.toml.example", "integrations/codex/config.toml.example"},
-		{"integrations/codex/hooks.json.example", "integrations/codex/hooks.json.example"},
-		{"integrations/cursor/mcp.json.example", "integrations/cursor/mcp.json.example"},
-		{"integrations/cursor/hooks.json.example", "integrations/cursor/hooks.json.example"},
-		{"integrations/cursor/cli.json.example", "integrations/cursor/cli.json.example"},
-		{"integrations/claude/mcp.json.example", "integrations/claude/mcp.json.example"},
-		{"integrations/claude/settings.json.example", "integrations/claude/settings.json.example"},
 	}
 	notices, err := goNotices()
 	if err != nil {

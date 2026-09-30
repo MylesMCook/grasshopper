@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,16 +24,12 @@ import (
 	"github.com/MylesMCook/grasshopper/internal/goclient"
 )
 
+// Returned next_step text is the user-facing explanation for these states.
+const connectedNextStep = "Review your agent's Grasshopper permission prompt, then open a fresh session."
+const approvalPendingNextStep = "Open the link in your connected memory view, approve the matching device and code within five minutes, then run connect --json again."
+
 func connectClient(args []string) error {
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	root, err := clientPackageRoot(executable)
-	if err != nil {
-		return err
-	}
-	return connectWithRoot(context.Background(), args, root, runAgentCommand)
+	return connectWithRoot(context.Background(), args, "", runAgentCommand)
 }
 
 func connectWithRoot(parent context.Context, args []string, root string, run commandRunner) (resultErr error) {
@@ -57,6 +54,16 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 	if flags.NArg() != 0 {
 		return errors.New("unexpected connect arguments")
 	}
+	if root == "" {
+		executable, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		root, err = clientPackageRoot(executable)
+		if err != nil {
+			return err
+		}
+	}
 	provided := map[string]bool{}
 	flags.Visit(func(item *flag.Flag) { provided[item.Name] = true })
 	var jsonPhase map[string]string
@@ -71,7 +78,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 			_ = json.NewEncoder(os.Stdout).Encode(jsonPhase)
 			return
 		}
-		state, next := "connected", "Open a fresh agent session after native hook or MCP approval."
+		state, next := "connected", connectedNextStep
 		if resultErr != nil {
 			state, next = connectErrorStatus(resultErr)
 		}
@@ -100,7 +107,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		if *address != "" {
 			wanted, _, err := goclient.NormalizeServerAddress(*address)
 			if err != nil {
-				return err
+				return connectProblem("invalid_address", "Enter your private server, memory-view, or /mcp address. "+err.Error())
 			}
 			if wanted != pending.Address {
 				return connectProblem("conflicting_configuration", "Another server already has a pending connection. Finish or let it expire before switching.")
@@ -139,14 +146,15 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 	if *address == "" {
 		return connectProblem("missing_address", "Send your private Grasshopper server link once. No token is needed.")
 	}
-	if configErr == nil && *tokenPath == "" {
-		*tokenPath = existing.TokenFile
-	}
 	mcpURL, base, err := goclient.NormalizeServerAddress(*address)
 	if err != nil {
-		return err
+		return connectProblem("invalid_address", "Enter your private server, memory-view, or /mcp address. "+err.Error())
 	}
 	*address = mcpURL
+	matchingServer := configErr == nil && sameServerOrigin(existing.URL, mcpURL)
+	if matchingServer && *tokenPath == "" {
+		*tokenPath = existing.TokenFile
+	}
 	if *tokenPath == "" {
 		path, err := goclient.DefaultTokenPath()
 		if err != nil {
@@ -167,10 +175,10 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		return errors.New("client package policy/AGENTS.md is missing")
 	}
 	if configErr == nil && pending == nil {
-		if existing.URL != *address && !*switchServer {
+		if !matchingServer && !*switchServer {
 			return connectProblem("conflicting_configuration", "Grasshopper already uses another server. Confirm the change with --switch-server and its link.")
 		}
-		if existing.URL == *address {
+		if matchingServer {
 			report := connectionReport(configPath)
 			state, next := report["status"], report["next_step"]
 			if *jsonOutput {
@@ -228,7 +236,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 				return setupClientWithRoot(setupArgs, root, run)
 			}
 		}
-		if existing.URL != *address && !*switchServer {
+		if !matchingServer && !*switchServer {
 			return connectProblem("conflicting_configuration", "Switching servers needs --switch-server.")
 		}
 		jsonPhase = nil
@@ -239,6 +247,22 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 	} else if *reconnect && pending == nil {
 		if _, err := os.Stat(*tokenPath); err == nil {
 			*tokenPath += ".replacement"
+		}
+	}
+	// An occupied output path is never a credential source. Only the saved
+	// connection can authorize credential reuse, and only at its own origin.
+	*tokenPath, err = unusedDeviceTokenPath(*tokenPath)
+	if err != nil {
+		return err
+	}
+	if pending != nil && pending.TokenPath != *tokenPath {
+		pending.TokenPath = *tokenPath
+		data, err := json.Marshal(pending)
+		if err != nil {
+			return err
+		}
+		if err := privateFile(pendingPath(configPath), data); err != nil {
+			return err
 		}
 	}
 	setupArgs := []string{"--url", *address, "--token-file", *tokenPath, "--device", *device, "--agents", *agents, "--config", configPath}
@@ -253,52 +277,6 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 	}
 	if *update {
 		setupArgs = append(setupArgs, "--update")
-	}
-	if _, err := os.Stat(*tokenPath); err == nil {
-		if configErr == nil && pending == nil && *tokenPath != existing.TokenFile && !*reconnect && !*switchServer {
-			return connectProblem("conflicting_configuration", "A replacement credential already exists; inspect it before continuing.")
-		}
-		candidate := goclient.Config{URL: *address, TokenFile: *tokenPath, Device: *device, PolicyPath: filepath.Join(root, "policy", "AGENTS.md")}
-		remote, err := goclient.NewRemote(candidate)
-		if err != nil {
-			return err
-		}
-		verifyCtx, cancel := context.WithTimeout(parent, 6*time.Second)
-		identity, identityErr := remote.Identity(verifyCtx)
-		cancel()
-		if identityErr != nil && !errors.Is(identityErr, goclient.ErrIdentityUnsupported) {
-			if errors.Is(identityErr, goclient.ErrAuthenticationRejected) {
-				return connectProblem("authentication_rejected", "The saved credential was rejected. Request explicit replacement approval with connect --reconnect.")
-			}
-			if errors.Is(identityErr, goclient.ErrNetworkRestricted) {
-				return connectProblem("network_permission_required", "Allow access through the agent's normal network permission, then retry once. Saved access was kept.")
-			}
-			return connectProblem("unreachable_server", "The private server is unavailable. Saved access was kept; retry when it is online.")
-		}
-		if identityErr == nil && identity.Role == "owner" {
-			return connectProblem("owner_credential", "This is owner access, not a device credential. Keep it private and request a dedicated device approval before installing this connection.")
-		}
-		if identityErr == nil && identity.Device != *device {
-			return connectProblem("device_mismatch", "This credential belongs to a different registered device. Inspect it before changing the connection.")
-		}
-		if *jsonOutput {
-			jsonPhase = map[string]string{"status": "connected", "server": *address, "device": *device, "registration": "unverified", "next_step": "Open a fresh agent session after native hook or MCP approval."}
-			if identityErr == nil {
-				jsonPhase["registration"], jsonPhase["registered_device"], jsonPhase["credential_role"], jsonPhase["host_version"] = "verified", identity.Device, identity.Role, identity.Version
-			}
-		}
-		if err := setupClientWithRoot(setupArgs, root, run); err != nil {
-			return fmt.Errorf("saved device credential could not be used; if the server rejected it, run connect --reconnect: %w", err)
-		}
-		if pending != nil {
-			_ = os.Remove(pendingPath(configPath))
-		}
-		if !*jsonOutput {
-			fmt.Fprintln(os.Stdout, "Grasshopper connected with this device's existing credential.")
-		}
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
 	}
 	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	secret := ""
@@ -411,13 +389,52 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		_ = os.Remove(pendingPath(configPath))
 	}
 	if *jsonOutput {
-		jsonPhase = map[string]string{"status": "connected", "server": *address, "device": *device, "registered_device": *device, "credential_role": "device", "registration": "verified", "next_step": "Open a fresh agent session after native hook or MCP approval."}
+		jsonPhase = map[string]string{"status": "connected", "server": *address, "device": *device, "registered_device": *device, "credential_role": "device", "registration": "verified", "next_step": connectedNextStep}
 	}
 	return nil
 }
 
+// unusedDeviceTokenPath only inspects names. Existing files, including owner
+// tokens and failed setup output, remain untouched and are never authenticated.
+func unusedDeviceTokenPath(path string) (string, error) {
+	candidate := path
+	for {
+		if _, err := os.Lstat(candidate); errors.Is(err, os.ErrNotExist) {
+			return candidate, nil
+		} else if err != nil {
+			return "", err
+		}
+		candidate = path + ".replacement-" + rand.Text()
+	}
+}
+
+// sameServerOrigin treats view/MCP links, host case and default ports alike.
+// It deliberately retains scheme and nondefault ports as credential boundaries.
+func sameServerOrigin(first, second string) bool {
+	_, firstBase, err := goclient.NormalizeServerAddress(first)
+	if err != nil {
+		return false
+	}
+	_, secondBase, err := goclient.NormalizeServerAddress(second)
+	if err != nil {
+		return false
+	}
+	a, _ := url.Parse(firstBase)
+	b, _ := url.Parse(secondBase)
+	port := func(u *url.URL) string {
+		if u.Port() != "" {
+			return u.Port()
+		}
+		if u.Scheme == "https" {
+			return "443"
+		}
+		return "80"
+	}
+	return a.Scheme == b.Scheme && strings.EqualFold(a.Hostname(), b.Hostname()) && port(a) == port(b)
+}
+
 func pendingStatus(pending pendingConnection) map[string]string {
-	return map[string]string{"status": "approval_pending", "approval_url": pending.ApprovalURL, "device": pending.Device, "code": pending.Code, "next_step": "Open the link in an already connected memory view and approve the matching code within five minutes. Then run connect --json again to finish."}
+	return map[string]string{"status": "approval_pending", "approval_url": pending.ApprovalURL, "device": pending.Device, "code": pending.Code, "next_step": approvalPendingNextStep}
 }
 
 type connectStatusError struct{ status, next string }

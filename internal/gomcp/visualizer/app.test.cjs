@@ -4,8 +4,10 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-function view(hash = '', connected = true) {
+function view(hash = '', connected = true, sessionStatus = 200) {
   const elements = new Map();
+  const blobs = [];
+  const downloads = [];
   const element = () => ({
     value: '', textContent: '', open: false, children: [], listeners: {},
     addEventListener(name, action) { this.listeners[name] = action; },
@@ -15,7 +17,8 @@ function view(hash = '', connected = true) {
     contains() { return false; },
     showModal() { this.open = true; }, close() { this.open = false; this.listeners.close?.(); },
     before(node) { node.placedBefore = this; },
-    focus() { this.focused = true; }, scrollIntoView() {}, setAttribute(name, value) { this.attributes = { ...this.attributes, [name]: value }; }, classList: { add() {} }
+    click() { downloads.push(this.download); },
+    focus() { this.focused = true; }, scrollIntoView() {}, getAttribute(name) { return this.attributes?.[name]; }, setAttribute(name, value) { this.attributes = { ...this.attributes, [name]: value }; }, classList: { add() {}, toggle() {} }
   });
   const get = id => {
     if (!elements.has(id)) elements.set(id, element());
@@ -23,23 +26,29 @@ function view(hash = '', connected = true) {
   };
   const requests = [];
   const windowListeners = {};
+  const documentListeners = {};
   const timers = new Map();
   const timerDelays = new Map();
   let timerID = 0;
   const sandbox = {
-    document: { getElementById: get, querySelector: get, createElement: element, createDocumentFragment: element },
+    TextEncoder, URLSearchParams,
+    Blob: class { constructor(parts, options) { blobs.push({parts, options}); } },
+    URL: { createObjectURL: () => 'blob:synthetic', revokeObjectURL() {} },
+    history: { pushState(_state, _title, hash) { sandbox.location.hash = hash.startsWith('#') ? hash : ''; }, replaceState(_state, _title, hash) { sandbox.location.hash = hash.startsWith('#') ? hash : ''; } },
+    document: { hidden: false, addEventListener(name, action) { documentListeners[name] = action; }, getElementById: get, querySelector: get, createElement: element, createDocumentFragment: element },
     window: { addEventListener(name, action) { windowListeners[name] = action; }, confirm: () => true, getSelection: () => null },
     location: { origin: 'http://127.0.0.1', hash },
     AbortController,
     setTimeout(fn, delay) { timers.set(++timerID, fn); timerDelays.set(timerID, delay); return timerID; },
     clearTimeout(id) { timers.delete(id); timerDelays.delete(id); },
     fetch(url, options) {
-      if (url.endsWith('/session')) return Promise.resolve({ ok: true, json: async () => ({ connected: false }) });
+      if (url.endsWith('/session')) return Promise.resolve({ ok: sessionStatus < 400, status: sessionStatus, json: async () => ({ connected: false }) });
       return new Promise((resolve, reject) => requests.push({ url, options, reject, reply(data, status = 200) {
-        resolve({ ok: status < 400, status, json: async () => data });
+        resolve({ ok: status < 400, status, text: async () => typeof data === 'string' ? data : JSON.stringify(data), json: async () => data });
       } }));
     }
   };
+  sandbox.window.history = sandbox.history;
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8'), sandbox);
   const ui = vm.runInContext('({ refreshDevices, stop, setConnected, revokeDevice, refresh, draw, openMemory, loadRecord, closeMemory, restartMemoryView, chooseView, showViewTabs, updateViewCounts })', sandbox);
@@ -47,7 +56,7 @@ function view(hash = '', connected = true) {
     ui.setConnected(true);
     get('device-panel').open = true;
   }
-  return { ui, get, requests, timers, timerDelays, document: sandbox.document, location: sandbox.location, windowListeners };
+  return { ui, get, requests, timers, timerDelays, document: sandbox.document, location: sandbox.location, windowListeners, documentListeners, blobs, downloads, window: sandbox.window };
 }
 
 function replyPair(v, start, devices = []) {
@@ -272,6 +281,34 @@ test('a truncated list preview ends with an ellipsis and short text does not', (
   assert.equal(short.children[3].textContent, 'Synthetic saved decision.');
 });
 
+test('a changed review poll retains the focused inline action and removal finds a surviving memory', async () => {
+  const v = view();
+  v.ui.chooseView('review');
+  v.requests.at(-1).reply({ records: [memory(1), memory(2)] });
+  await tick();
+  const first = v.get('records').children[0].children[0];
+  v.document.activeElement = first.children.at(-1).children[0];
+  v.ui.draw({ records: [memory(1, 2), memory(2)] });
+  const replacement = v.get('records').children[0].children[0].children.at(-1).children[0];
+  assert.equal(replacement.focused, true);
+  v.document.activeElement = replacement;
+  v.ui.draw({ records: [memory(2)] });
+  assert.equal(v.get('records').children[0].children[0].children[4].focused, true);
+});
+
+test('search explanation consumes space only when there is a query', async () => {
+  const v = view();
+  const refresh = v.ui.refresh();
+  v.requests.at(-1).reply({ records: [memory(1)] });
+  await refresh;
+  assert.equal(v.get('search-hint').hidden, true);
+  v.get('search-query').value = 'decision';
+  v.get('search-form').listeners.submit({ preventDefault() {} });
+  v.requests.at(-1).reply({ records: [memory(1)], semantic_ready: false });
+  await tick();
+  assert.equal(v.get('search-hint').hidden, false);
+});
+
 const tick = () => new Promise(setImmediate);
 
 async function openLatest(v, record) {
@@ -283,7 +320,7 @@ async function openLatest(v, record) {
 const withoutRequestID = ({ request_id, ...rest }) => rest;
 const submitEdit = v => v.get('edit-form').listeners.submit({ preventDefault() {} });
 
-test('actions appear only on the latest revision and follow the memory state', async () => {
+test('latest actions and earlier revision restore follow the memory state', async () => {
   const v = view();
   await openLatest(v, { ...memory(1, 2), confirmed: false });
   assert.equal(v.get('memory-actions').hidden, false);
@@ -293,7 +330,11 @@ test('actions appear only on the latest revision and follow the memory state', a
   v.get('previous-revision').listeners.click();
   v.requests.at(-1).reply(memory(1, 1));
   await tick();
-  assert.equal(v.get('memory-actions').hidden, true);
+  assert.equal(v.get('memory-actions').hidden, false);
+  assert.equal(v.get('edit-memory').hidden, true);
+  assert.equal(v.get('confirm-memory').hidden, true);
+  assert.equal(v.get('archive-memory').hidden, true);
+  assert.equal(v.get('restore-revision').hidden, false);
   v.get('latest-revision').listeners.click();
   v.requests.at(-1).reply({ ...memory(1, 2), confirmed: true });
   await tick();
@@ -365,12 +406,12 @@ test('a conflicting save keeps the draft, shows the newer text, and saves agains
   assert.equal(JSON.parse(v.requests.at(-1).options.body).expected_revision, 2);
 });
 
-test('confirm as is resends the existing text, and archive and restore change visibility', async () => {
+test('confirm as is preserves existing provenance, and archive and restore change visibility', async () => {
   const v = view();
   await openLatest(v, { ...memory(10, 1), confirmed: false });
   v.get('confirm-memory').listeners.click();
   let request = v.requests.at(-1);
-  assert.deepEqual(withoutRequestID(JSON.parse(request.options.body)), { id: 10, expected_revision: 1, title: 'Synthetic decision', content: 'Synthetic saved decision.', purpose: 'decision' });
+  assert.deepEqual(withoutRequestID(JSON.parse(request.options.body)), { id: 10, expected_revision: 1, action: 'confirm' });
   request.reply({ id: 10, revision: 2, deduplicated: false });
   await tick();
   v.requests.at(-1).reply({ ...memory(10, 2), confirmed: true });
@@ -571,7 +612,7 @@ test('closing the dialog mid-save keeps the write lock until that request ends',
   v.get('edit-content').value = 'First memory edit.';
   submitEdit(v);
   const first = v.requests.at(-1);
-  v.ui.closeMemory();
+  v.ui.closeMemory(true);
   await openLatest(v, memory(31, 1));
   assert.equal(v.get('edit-memory').disabled, true);
   v.get('edit-memory').listeners.click();
@@ -614,6 +655,7 @@ test('cancelling after a conflict shows the newer text, not the stale page', asy
   v.requests.at(-1).reply({ error: 'revision_conflict', current: memory(33, 2, 'Agent text.') }, 409);
   await tick();
   v.get('cancel-edit').listeners.click();
+  v.get('discard-draft').listeners.click();
   const reload = v.requests.at(-1);
   assert.equal(reload.url, '/visualizer/api/record');
   reload.reply(memory(33, 2, 'Agent text.'));
@@ -638,4 +680,559 @@ test('the device panel returns to its place when the approval fragment is cleare
   v.location.hash = '';
   v.windowListeners.hashchange();
   assert.equal(v.get('device-panel').placedBefore, v.get('server-status'));
+});
+
+
+test('failed live polls recover automatically with one backed-off polling loop', async () => {
+  const v = view();
+  await tick();
+  const first = v.ui.refresh();
+  v.requests.at(-1).reply({ records: [memory(1)], omitted: 0 });
+  await first;
+  for (const delay of [3000, 10000, 30000]) {
+    const failed = v.ui.refresh();
+    v.requests.at(-1).reply(null, 503);
+    await failed;
+    assert.equal(v.get('status').textContent, 'Service unavailable');
+    assert.deepEqual([...v.timerDelays.values()], [delay]);
+  }
+  const callback = [...v.timers.values()][0];
+  const recovered = callback();
+  v.requests.at(-1).reply({ records: [memory(1)], omitted: 0 });
+  await recovered;
+  assert.equal(v.get('status').textContent, 'Live');
+  assert.deepEqual([...v.timerDelays.values()], [3000]);
+});
+
+test('hidden pages pause memory and device polling and refresh once on return', async () => {
+  const v = view();
+  await tick();
+  const first = v.ui.refresh();
+  v.requests.at(-1).reply({ records: [], omitted: 0 });
+  await first;
+  v.document.hidden = true;
+  v.documentListeners.visibilitychange();
+  assert.equal(v.timers.size, 0);
+  const count = v.requests.length;
+  await v.ui.refresh();
+  await v.ui.refreshDevices();
+  assert.equal(v.requests.length, count);
+  v.document.hidden = false;
+  v.documentListeners.visibilitychange();
+  assert.equal(v.requests.length, count + 3);
+  v.documentListeners.visibilitychange();
+  assert.equal(v.requests.length, count + 3);
+});
+
+test('edit limits count UTF-8 bytes and prevent oversized saves', async () => {
+  const v = view();
+  await openLatest(v, memory(41));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'é'.repeat(16385);
+  v.get('edit-content').listeners.input();
+  assert.equal(v.get('edit-content-count').textContent, '32,770 / 32,768 bytes');
+  assert.equal(v.get('save-edit').disabled, true);
+  const count = v.requests.length;
+  await submitEdit(v);
+  assert.equal(v.requests.length, count);
+  v.get('edit-content').value = 'Valid text.';
+  v.get('edit-title').value = 'é'.repeat(257);
+  v.get('edit-title').listeners.input();
+  assert.equal(v.get('edit-title-count').textContent, '514 / 512 bytes');
+  assert.equal(v.get('save-edit').disabled, true);
+  v.get('edit-title').value = 'é'.repeat(256);
+  v.get('edit-title').listeners.input();
+  assert.equal(v.get('save-edit').disabled, false);
+});
+
+for (const [reason, text] of [
+  ['content must be 1-32768 bytes', /Text must contain 1 to 32,768 bytes/],
+  ['metadata too large', /Title or tags are too long/],
+  ['invalid purpose', /Choose a valid memory kind/]
+]) test(`save explains ${reason}`, async () => {
+  const v = view();
+  await openLatest(v, memory(42));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'Draft.';
+  const saved = submitEdit(v);
+  v.requests.at(-1).reply(reason + '\n', 400);
+  await saved;
+  assert.match(v.get('memory-detail-status').textContent, text);
+});
+
+test('search highlights literal text safely and suggests all projects only when filtered', async () => {
+  const v = view();
+  v.get('search-query').value = 'orchard <script>';
+  v.get('search-form').listeners.submit({ preventDefault() {} });
+  v.requests.at(-1).reply({ records: [memory(44, 1, 'Orchard <script> trees.')], omitted: 0, semantic_ready: false });
+  await tick();
+  const content = v.get('records').children[0].children[0].children[3];
+  assert.deepEqual(content.children.filter(part => typeof part !== 'string').map(part => part.textContent), ['Orchard', '<script>']);
+  v.ui.draw({ records: [], omitted: 0 });
+  let text = v.get('records').children[0].children[0].children[0].textContent;
+  assert.doesNotMatch(text, /search all projects/);
+  v.get('project').value = 'id:filtered';
+  v.ui.restartMemoryView();
+  v.requests.at(-1).reply({ records: [], omitted: 0 });
+  await tick();
+  text = v.get('records').children[0].children[0].children[0].textContent;
+  assert.match(text, /search all projects/);
+});
+
+test('signed-in connection section is hidden and dialog heading receives focus', async () => {
+  const v = view();
+  assert.equal(v.get('connection-section').hidden, true);
+  await openLatest(v, memory(45));
+  assert.equal(v.get('memory-detail-title').focused, true);
+  assert.doesNotMatch(v.get('memory-detail-meta').children[2].textContent, /:\d{2}:\d{2}/);
+  v.ui.stop();
+  assert.equal(v.get('connection-section').hidden, false);
+});
+
+test('long lists show eight memories first and reveal more without a fetch', () => {
+  const v = view();
+  const page = { records: Array.from({ length: 32 }, (_, i) => memory(i + 1)) };
+  v.ui.draw(page);
+  assert.equal(v.get('records').children[0].children.length, 8);
+  assert.equal(v.get('show-more').hidden, false);
+  v.get('show-more').listeners.click();
+  assert.equal(v.get('records').children[0].children.length, 16);
+  assert.equal(v.requests.length, 0);
+  v.ui.draw(page);
+  assert.equal(v.get('records').children[0].children.length, 16);
+});
+
+test('masthead devices link opens the connection panel', () => {
+  const v = view();
+  v.get('device-panel').open = false;
+  v.get('devices-link').listeners.click({ preventDefault() {} });
+  assert.equal(v.get('device-panel').open, true);
+});
+
+test('wrong token reports at the field and returns focus without a contradictory summary', async () => {
+  const v = view('', false, 401);
+  await tick();
+  v.get('token').value = 'synthetic-wrong-token';
+  await v.get('connection-form').listeners.submit({ preventDefault() {} });
+  assert.match(v.get('token-error').textContent, /owner access token/);
+  assert.equal(v.get('token-error').hidden, false);
+  assert.equal(v.get('token').focused, true);
+  assert.equal(v.get('token').attributes['aria-invalid'], 'true');
+  assert.equal(v.get('summary').textContent, 'Sign-in failed. Check the token field above.');
+});
+
+
+function inlineActions(v, record) {
+  v.ui.chooseView('review');
+  v.requests.at(-1).reply({ records: [record] });
+  return tick().then(() => v.get('records').children[0].children[0].children.at(-1));
+}
+
+test('inline confirm reads full content, uses expected revision, and replays uncertain writes', async () => {
+  const v = view();
+  const reference = { ...memory(21, 4, 'Short preview…'), confirmed: false, content_truncated: true };
+  const actions = await inlineActions(v, reference);
+  actions.children[0].listeners.click();
+  const read = v.requests.at(-1);
+  assert.equal(read.url, '/visualizer/api/record');
+  const full = memory(21, 4, 'Full synthetic memory. '.repeat(800));
+  full.confirmed = false;
+  read.reply(full);
+  await tick();
+  const write = v.requests.at(-1);
+  const body = JSON.parse(write.options.body);
+  assert.equal(write.url, '/visualizer/api/update');
+  assert.equal(body.action, 'confirm');
+  assert.equal(body.content, undefined);
+  assert.equal(body.expected_revision, 4);
+  write.reject(new TypeError('synthetic network failure'));
+  await tick();
+  actions.children[0].listeners.click();
+  const retry = v.requests.at(-1);
+  assert.equal(retry.url, '/visualizer/api/update');
+  assert.equal(retry.options.body, write.options.body);
+  retry.reply({ revision: 5 });
+  await tick();
+  assert.equal(v.requests.at(-1).url, '/visualizer/api/context');
+});
+
+test('inline review refuses a concurrently changed memory and refreshes the list', async () => {
+  const v = view();
+  const actions = await inlineActions(v, { ...memory(22), confirmed: false });
+  actions.children[0].listeners.click();
+  v.requests.at(-1).reply(memory(22, 2, 'Concurrent correction.'));
+  await tick();
+  assert.equal(v.requests.some(request => request.url.endsWith('/update')), false);
+  assert.match(v.get('status').textContent, /Review the latest text/);
+  assert.equal(v.requests.at(-1).url, '/visualizer/api/context');
+});
+
+test('inline archive posts the existing revision and conflict never overwrites', async () => {
+  const v = view();
+  const actions = await inlineActions(v, { ...memory(23), confirmed: false });
+  actions.children[1].listeners.click();
+  v.requests.at(-1).reply({ ...memory(23), confirmed: false });
+  await tick();
+  const write = v.requests.at(-1);
+  assert.equal(write.url, '/visualizer/api/archive');
+  assert.deepEqual(withoutRequestID(JSON.parse(write.options.body)), { id: 23, expected_revision: 1, archived: true });
+  write.reply({ current: memory(23, 2) }, 409);
+  await tick();
+  assert.match(v.get('status').textContent, /Review the latest text/);
+  assert.equal(v.requests.at(-1).url, '/visualizer/api/context');
+});
+
+
+test('a poll redraw during inline review enables the current row after failure', async () => {
+  const v = view();
+  const record = { ...memory(24), confirmed: false };
+  const actions = await inlineActions(v, record);
+  actions.children[0].listeners.click();
+  v.requests.at(-1).reply(record);
+  await tick();
+  const write = v.requests.at(-1);
+  v.ui.draw({ records: [{ ...record, title: 'Changed list title' }] });
+  const current = v.get('records').children[0].children[0].children.at(-1);
+  assert.notEqual(current, actions);
+  assert.equal(current.children[0].disabled, true);
+  write.reject(new TypeError('synthetic connection failure'));
+  await tick();
+  assert.equal(current.children[0].disabled, false);
+  assert.equal(current.children[1].disabled, false);
+});
+
+test('an inline read from a former session cannot write into a new sign-in', async () => {
+  const v = view();
+  const record = { ...memory(25), confirmed: false };
+  const actions = await inlineActions(v, record);
+  actions.children[0].listeners.click();
+  const read = v.requests.at(-1);
+  v.ui.stop(true);
+  v.ui.setConnected(true);
+  const count = v.requests.length;
+  read.reply(record);
+  await tick();
+  assert.equal(v.requests.length, count);
+  assert.equal(v.requests.some(request => request.url.endsWith('/update')), false);
+});
+
+
+for (const action of ['Close', 'Escape', 'backdrop', 'Cancel', 'another memory', 'tab', 'filter']) test(`dirty edits survive ${action} until Discard`, async () => {
+  const v = view();
+  await openLatest(v, memory(51));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-content').value = 'Unsaved correction.';
+  const leave = () => {
+    if (action === 'Close') v.get('close-memory').listeners.click();
+    if (action === 'Escape') v.get('memory-dialog').listeners.cancel({ preventDefault() {} });
+    if (action === 'backdrop') v.get('memory-dialog').listeners.click({ target: v.get('memory-dialog'), clientX: -1, clientY: -1 });
+    if (action === 'Cancel') v.get('cancel-edit').listeners.click();
+    if (action === 'another memory') v.ui.openMemory(memory(52));
+    if (action === 'tab') v.ui.chooseView('review');
+    if (action === 'filter') { v.get('project').value = 'id:next'; v.get('project').listeners.change(); }
+  };
+  leave();
+  assert.equal(v.get('discard-changes').hidden, false);
+  assert.equal(v.get('memory-dialog').open, true);
+  assert.equal(v.get('edit-content').value, 'Unsaved correction.');
+  v.get('keep-editing').listeners.click();
+  assert.equal(v.get('discard-changes').hidden, true);
+  assert.equal(v.get('edit-content').value, 'Unsaved correction.');
+  leave();
+  v.get('discard-draft').listeners.click();
+  assert.equal(v.get('discard-changes').hidden, true);
+  if (action === 'another memory') assert.equal(JSON.parse(v.requests.at(-1).options.body).id, 52);
+  else if (action === 'tab') assert.equal(JSON.parse(v.requests.at(-1).options.body).view, 'review');
+  else if (action === 'filter') assert.equal(JSON.parse(v.requests.at(-1).options.body).project, 'id:next');
+  else if (action === 'Cancel') assert.equal(v.get('edit-form').hidden, true);
+  else assert.equal(v.get('memory-dialog').open, false);
+});
+
+test('URL restores tab filters query and safe memory links before sign-in', async () => {
+  const hash = '#view=review&project=id%3Aorchard&device=laptop&platform=windows&memory=56&token=never-keep';
+  const v = view(hash, false);
+  await tick();
+  assert.equal(v.get('project').value, 'id:orchard');
+  assert.equal(v.get('device').value, 'laptop');
+  assert.equal(v.get('platform').value, 'windows');
+  v.get('token').value = 'synthetic-owner-token-0123456789-abcdef';
+  await v.get('connection-form').listeners.submit({ preventDefault() {} });
+  assert.equal(v.requests.some(request => request.url === '/visualizer/api/record' && JSON.parse(request.options.body).id === 56), true);
+  assert.equal(JSON.parse(v.requests.find(request => request.url === '/visualizer/api/context').options.body).view, 'review');
+  assert.doesNotMatch(v.location.hash, /token|never-keep/);
+  v.ui.closeMemory();
+  v.location.hash = '#query=orchard&project=id%3Aorchard';
+  v.windowListeners.hashchange();
+  assert.equal(v.get('search-query').value, 'orchard');
+  assert.equal(v.requests.at(-1).url, '/visualizer/api/search');
+  v.location.hash = '#view=archived';
+  v.windowListeners.hashchange();
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).view, 'archived');
+});
+
+test('restoring a revision posts its ID against the latest revision and retries safely', async () => {
+  const v = view();
+  await openLatest(v, memory(61, 2, 'New text.'));
+  v.get('previous-revision').listeners.click();
+  v.requests.at(-1).reply(memory(61, 1, 'Earlier text.'));
+  await tick();
+  assert.equal(v.get('restore-revision').hidden, false);
+  v.get('restore-revision').listeners.click();
+  const first = v.requests.at(-1);
+  const body = JSON.parse(first.options.body);
+  assert.deepEqual(withoutRequestID(body), { id: 61, expected_revision: 2, restore_revision: 1 });
+  first.reply(null, 503);
+  await tick();
+  v.get('restore-revision').listeners.click();
+  assert.deepEqual(JSON.parse(v.requests.at(-1).options.body), body);
+  v.requests.at(-1).reply({ id: 61, revision: 3 });
+  await tick();
+  v.requests.at(-1).reply(memory(61, 3, 'Earlier text.'));
+  await tick();
+  assert.match(v.get('memory-detail-status').textContent, /Restored revision 1 as revision 3 and confirmed/);
+});
+
+test('reload keeps review scope and approval links can coexist with memory state', async () => {
+  const v = view();
+  v.get('project').value = 'id:orchard';
+  v.get('device').value = 'laptop';
+  v.get('platform').value = 'macos';
+  v.ui.chooseView('review');
+  const reloaded = view(v.location.hash);
+  reloaded.ui.refresh();
+  assert.deepEqual(JSON.parse(reloaded.requests.at(-1).options.body), { project: 'id:orchard', device: 'laptop', platform: 'macos', view: 'review' });
+  const linked = view('#connect=' + request64 + '&view=review&memory=72');
+  assert.equal(linked.get('device-panel').placedBefore, linked.get('memory-section'));
+  linked.ui.openMemory(memory(72));
+  assert.match(linked.location.hash, /connect=/);
+  assert.match(linked.location.hash, /memory=72/);
+});
+
+test('hash navigation asks before discarding and Keep editing restores the old URL', async () => {
+  const v = view();
+  await openLatest(v, memory(73));
+  const old = v.location.hash;
+  v.get('edit-memory').listeners.click();
+  v.get('edit-title').value = 'New title';
+  v.location.hash = '#view=archived';
+  v.windowListeners.hashchange();
+  assert.equal(v.location.hash, old);
+  assert.equal(v.get('discard-changes').hidden, false);
+  v.get('keep-editing').listeners.click();
+  assert.equal(v.get('edit-title').value, 'New title');
+  v.location.hash = '#view=archived';
+  v.windowListeners.hashchange();
+  v.get('discard-draft').listeners.click();
+  assert.match(v.location.hash, /view=archived/);
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).view, 'archived');
+});
+
+test('unchanged edit closes without a discard prompt', async () => {
+  const v = view();
+  await openLatest(v, memory(74));
+  v.get('edit-memory').listeners.click();
+  v.get('close-memory').listeners.click();
+  assert.equal(v.get('discard-changes').hidden, true);
+  assert.equal(v.get('memory-dialog').open, false);
+});
+
+test('explicit signout guards a draft and keeps the memory link for sign-in', async () => {
+  const v = view();
+  await openLatest(v, memory(75));
+  v.get('edit-memory').listeners.click();
+  v.get('edit-purpose').value = 'lesson';
+  v.get('disconnect').listeners.click();
+  assert.equal(v.get('discard-changes').hidden, false);
+  v.get('discard-draft').listeners.click();
+  await tick();
+  assert.equal(v.get('memory-dialog').open, false);
+  assert.match(v.location.hash, /memory=75/);
+  v.get('token').value = 'synthetic-owner-token-0123456789-abcdef';
+  await v.get('connection-form').listeners.submit({ preventDefault() {} });
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).id, 75);
+});
+
+test('restoring a stale revision shows the newer memory without overwriting it', async () => {
+  const v = view();
+  await openLatest(v, memory(76, 2));
+  v.get('previous-revision').listeners.click();
+  v.requests.at(-1).reply(memory(76, 1, 'Earlier.'));
+  await tick();
+  v.get('restore-revision').listeners.click();
+  v.requests.at(-1).reply({ error: 'revision_conflict', current: memory(76, 3, 'Newest agent text.') }, 409);
+  await tick();
+  const latest = v.requests.at(-1);
+  assert.equal(latest.url, '/visualizer/api/record');
+  latest.reply(memory(76, 3, 'Newest agent text.'));
+  await tick();
+  assert.equal(v.get('memory-detail-content').textContent, 'Newest agent text.');
+  assert.match(v.get('memory-detail-status').textContent, /changed while you were looking/);
+  assert.equal(v.get('restore-revision').hidden, true);
+});
+
+test('kind filter survives reload and scopes both lists and searches', async () => {
+  const v = view('#purpose=handoff');
+  assert.equal(v.get('purpose').value, 'handoff');
+  const loading = v.ui.refresh();
+  assert.equal(JSON.parse(v.requests[0].options.body).purpose, 'handoff');
+  v.requests[0].reply({ records: [], omitted: 0 }); await loading;
+  v.get('search-query').value = 'owner'; v.get('search-form').listeners.submit({ preventDefault() {} });
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).scope.purpose, 'handoff');
+});
+
+test('server Show more appends records and a poll preserves loaded pages', async () => {
+  const v = view();
+  const first = v.ui.refresh();
+  v.requests[0].reply({ records: Array.from({length:8}, (_,i)=>memory(i+1)), next:'cursor', total:10 }); await first;
+  v.get('show-more').listeners.click();
+  const next = v.requests.at(-1);
+  assert.equal(JSON.parse(next.options.body).after, 'cursor');
+  next.reply({ records:[memory(9),memory(10)], next:'', total:10 }); await tick();
+  assert.equal(v.get('records').children[0].children.length,10);
+  const poll = v.ui.refresh();
+  v.requests.at(-1).reply({records:Array.from({length:8},(_,i)=>memory(i+1)),next:'fresh-cursor',total:10}); await tick();
+  assert.equal(JSON.parse(v.requests.at(-1).options.body).after, 'fresh-cursor');
+  v.requests.at(-1).reply({records:[memory(9,2),memory(10)],next:'',total:10}); await poll;
+  assert.equal(v.get('records').children[0].children.length,10);
+});
+
+test('not modified polling preserves content and status', async () => {
+  const v = view(); const first = v.ui.refresh(); v.requests[0].reply({ records:[memory(1)] }); await first;
+  const content = v.get('records').children[0]; const status = v.get('status').textContent;
+  const poll = v.ui.refresh(); v.requests.at(-1).reply('',304); await poll;
+  assert.equal(v.get('records').children[0],content); assert.equal(v.get('status').textContent,status);
+});
+
+test('archive undo restores acknowledged revision and retries with the same request ID', async () => {
+  const v = view(); await openLatest(v,memory(90,2));
+  v.get('archive-memory').listeners.click(); v.requests.at(-1).reply({id:90,revision:3}); await tick();
+  assert.equal(v.get('archive-undo').hidden,false);
+  v.get('undo-archive').listeners.click(); const request=v.requests.at(-1); const body=JSON.parse(request.options.body);
+  assert.equal(body.expected_revision,3); assert.equal(body.archived,false);
+  request.reject(new TypeError()); await tick(); v.get('undo-archive').listeners.click();
+  assert.deepEqual(JSON.parse(v.requests.at(-1).options.body),body);
+  v.requests.at(-1).reply({id:90,revision:4}); await tick(); assert.equal(v.get('archive-undo').hidden,true);
+});
+
+test('owner-edited detail names the original agent and device from revision one', async () => {
+  const v=view(); v.ui.openMemory(memory(91,2));
+  v.requests[0].reply({...memory(91,2),provenance:{harness:'memory-view',device:'owner browser'}}); await tick();
+  const original=v.requests.at(-1); assert.equal(JSON.parse(original.options.body).revision,1);
+  original.reply({...memory(91),provenance:{harness:'cursor',device:'synthetic-mac'}}); await tick();
+  assert.equal(v.get('memory-detail-meta').children.some(item=>item.textContent==='Originally saved by cursor on synthetic-mac.'),true);
+});
+
+test('persisted theme applies before body DOM exists and its script precedes styles', () => {
+  for(const theme of ['light','dark']) {
+    const document={documentElement:{dataset:{}}};
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname,'theme-init.js'),'utf8'),{document,localStorage:{getItem:()=>theme}});
+    assert.equal(document.documentElement.dataset.theme,theme);
+  }
+  const pages=[path.join(__dirname,'index.html'), ...['index.html','setup/index.html','view/index.html','404.html'].map(file=>path.join(__dirname,'../../../web/public',file))];
+  for(const file of pages) { const html=fs.readFileSync(file,'utf8'); assert.ok(html.indexOf('theme-init.js')<html.indexOf('rel="stylesheet"')); assert.ok(!/<script[^>]*theme-init.js[^>]*defer/.test(html)); }
+});
+
+test('sign out everywhere accepts the server 204 and invalidates pending memory responses', async () => {
+  const v=view(); const loading=v.ui.refresh();
+  v.get('disconnect-all').listeners.click(); const revoke=v.requests.at(-1);
+  assert.equal(revoke.url,'/visualizer/api/session/revoke-all'); revoke.reply('',204); await tick();
+  v.requests[0].reply({records:[memory(1)]}); await loading;
+  assert.equal(v.get('status').textContent,'Signed out everywhere'); assert.equal(v.get('records').children.length,0);
+});
+
+test('export sends current filters and explicit all and archived choices', async () => {
+  const v=view('#project=id%3Aexport&purpose=decision');
+  v.get('export-mode').value='all'; v.get('export-archived').checked=true;
+  v.get('export-memory').listeners.click(); const request=v.requests.at(-1);
+  assert.equal(request.url,'/visualizer/api/export');
+  assert.deepEqual(JSON.parse(request.options.body),{scope:{project:'id:export',purpose:'decision'},all:true,include_archived:true});
+  request.reply({},500); await tick(); assert.match(v.get('status').textContent,/Could not export/);
+});
+
+test('scope changes abort a pending server page and ignore its response', async () => {
+  const v=view(); v.ui.draw({records:Array.from({length:8},(_,i)=>memory(i+1)),next:'cursor',total:10});
+  v.get('show-more').listeners.click(); const old=v.requests.at(-1);
+  v.get('purpose').value='lesson'; v.ui.restartMemoryView();
+  assert.equal(old.options.signal.aborted,true);
+  old.reply({records:[memory(9)],next:'',total:9}); await tick();
+  assert.equal(v.get('records').children.length,0);
+});
+
+test('a not-modified recovery clears poll failure feedback without replacing memories or adding loops', async () => {
+  for (const hash of ['', '#view=startup']) {
+    const v = view(hash);
+    const first = v.ui.refresh();
+    v.requests[0].reply({ records: [memory(1)], budget: 12000, not_loaded: [{ id: 2, revision: 1, reason: 'unconfirmed' }] });
+    await first;
+    const content = v.get('records').children[0];
+    const summary = v.get('summary').textContent;
+    const failed = v.ui.refresh(); v.requests.at(-1).reply('', 503); await failed;
+    assert.equal(v.get('status').textContent, 'Service unavailable');
+    assert.match(v.get('summary').textContent, /Showing the last results/);
+    const recovery = v.ui.refresh(); v.requests.at(-1).reply('', 304); await recovery;
+    assert.equal(v.get('status').textContent, 'Live');
+    assert.equal(v.get('summary').textContent, summary);
+    assert.equal(v.get('records').children[0], content);
+    assert.equal(v.timers.size, 1);
+  }
+});
+
+test('Show more waits for polling and uses the newly installed snapshot cursor', async () => {
+  const v = view();
+  const first = v.ui.refresh();
+  v.requests[0].reply({ records: Array.from({ length: 8 }, (_, i) => memory(i + 1)), next: 'snapshot-a', total: 10 }); await first;
+  const refresh = v.ui.refresh();
+  const pollRequest = v.requests.at(-1);
+  const count = v.requests.length;
+  v.get('show-more').listeners.click();
+  assert.equal(v.requests.length, count, 'Show more must not overlap the polling request');
+  pollRequest.reply({ records: Array.from({ length: 8 }, (_, i) => memory(i + 1, 2)), next: 'snapshot-b', total: 10 });
+  await refresh;
+  const more = v.requests.at(-1);
+  assert.equal(JSON.parse(more.options.body).after, 'snapshot-b');
+  more.reply({ records: [memory(9, 2), memory(10, 2)], next: '', total: 10 }); await tick();
+  const cards = v.get('records').children[0].children;
+  assert.equal(cards.length, 10);
+  assert.match(cards[8].children[2].textContent, /Confirmed/);
+  assert.equal(v.timers.size, 1);
+});
+
+test('a truncated successful export reports failure and creates no download', async () => {
+  const v = view(); v.get('export-memory').listeners.click();
+  v.requests.at(-1).reply('{"records":[', 200); await tick();
+  assert.match(v.get('status').textContent, /Could not export memories/);
+  assert.equal(v.blobs.length, 0); assert.equal(v.downloads.length, 0);
+});
+
+test('a valid export creates a JSON download', async () => {
+  const v = view(); v.get('export-memory').listeners.click();
+  v.requests.at(-1).reply({ records: [memory(1)] }); await tick();
+  assert.equal(v.blobs.length, 1);
+  assert.equal(JSON.parse(v.blobs[0].parts[0]).records[0].id, 1);
+  assert.deepEqual(v.downloads, ['grasshopper-memories.json']);
+});
+
+test('a not-modified poll draws a changed snapshot after text selection ends', async () => {
+  const v = view(); const first = v.ui.refresh(); v.requests[0].reply({records:[memory(1)]}); await first;
+  const old = v.get('records').children[0];
+  v.window.getSelection = () => ({isCollapsed:false, anchorNode:old});
+  v.get('records').contains = node => node === old;
+  const changed = v.ui.refresh(); v.requests.at(-1).reply({records:[memory(1,2,'Updated while selecting.')]}); await changed;
+  assert.equal(v.get('records').children[0], old);
+  v.window.getSelection = () => null;
+  const unchanged = v.ui.refresh(); v.requests.at(-1).reply('',304); await unchanged;
+  assert.notEqual(v.get('records').children[0],old);
+  assert.equal(v.get('records').children[0].children[0].children[3].textContent,'Updated while selecting.');
+  assert.equal(v.timers.size,1);
+});
+
+test('browse summary reports the exact server total beyond the first byte-limited page', () => {
+  const v = view(); v.ui.draw({ records: [memory(1), memory(2)], next: 'more', total: 103 });
+  assert.equal(v.get('summary').textContent, '103 memories');
+});
+
+test('export and global sign-out management controls follow the first memory list', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  assert.ok(html.indexOf('id="export-controls"') > html.indexOf('id="device-panel"'));
+  assert.ok(html.indexOf('id="disconnect-all"') > html.indexOf('id="device-panel"'));
 });

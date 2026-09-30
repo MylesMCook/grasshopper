@@ -118,6 +118,9 @@ func TestVisualizerOwnerReadsRejectUntrustedAndMalformedRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := store.AddOwnerSession(context.Background(), valid, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 	for _, route := range []struct{ path, body string }{
 		{"/visualizer/api/search", `{"scope":{},"query":"answer"}`},
 		{"/visualizer/api/record", `{"scope":{},"id":1}`},

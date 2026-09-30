@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -145,13 +146,15 @@ func quickstartState(dir string) (database, tokenFile string, err error) {
 
 func run() error {
 	var database, library, model, tokenizer, tokenFile, listen, allowedProxyHost, visualizerStyleHashes, dataDir string
-	var createDB, visualizer, quickstart, showVersion bool
+	var createDB, visualizer, quickstart, showVersion, rotateToken, serverStopped bool
+	flag.BoolVar(&rotateToken, "rotate-token", false, "replace the owner token offline, retaining a previous credential for rollback")
+	flag.BoolVar(&serverStopped, "server-stopped", false, "acknowledge all servers using data-dir have been stopped")
 	flag.BoolVar(&showVersion, "version", false, "show the server version")
 	flag.StringVar(&database, "db", "", "Grasshopper database path")
 	flag.BoolVar(&quickstart, "quickstart", false, "start a private server from an extracted bundle")
 	flag.StringVar(&dataDir, "data-dir", "", "quickstart state directory (default: user config directory/Grasshopper)")
 	flag.BoolVar(&createDB, "create-db", false, "create an empty memory database if missing")
-	flag.BoolVar(&visualizer, "visualizer", false, "serve optional read-only live memory view at /visualizer/")
+	flag.BoolVar(&visualizer, "visualizer", false, "serve the memory view at /visualizer/ with owner-only review, editing and device controls")
 	flag.StringVar(&visualizerStyleHashes, "visualizer-style-hashes", "", "comma-separated SHA-256 hashes for optional browser annotation styles")
 	flag.StringVar(&library, "onnx-library", "", "local ONNX Runtime shared library")
 	flag.StringVar(&model, "model", "", "pinned Granite ONNX model")
@@ -164,9 +167,22 @@ func run() error {
 		fmt.Println("grasshopper server " + serverVersion)
 		return nil
 	}
+	if rotateToken {
+		if quickstart || database != "" || tokenFile != "" || createDB || library != "" || model != "" || tokenizer != "" || allowedProxyHost != "" || visualizer || visualizerStyleHashes != "" {
+			return errors.New("rotation uses only --data-dir and --server-stopped")
+		}
+		if err := rotateOwnerToken(dataDir, serverStopped); err != nil {
+			return err
+		}
+		fmt.Println("Owner token replaced. Restart the server to apply it and invalidate old owner credentials and browser cookies. Paired device credentials and database are unchanged. Keep access-token.previous private for rollback, then remove it after verification if the old token leaked.")
+		return nil
+	}
+	if serverStopped {
+		return errors.New("server-stopped requires rotate-token")
+	}
 	if quickstart {
-		if database != "" || library != "" || model != "" || tokenizer != "" || tokenFile != "" || createDB || allowedProxyHost != "" {
-			return errors.New("quickstart cannot be combined with manual database, model, token, proxy, or create-db flags")
+		if database != "" || library != "" || model != "" || tokenizer != "" || tokenFile != "" || createDB {
+			return errors.New("quickstart cannot be combined with manual database, model, token, or create-db flags")
 		}
 		if dataDir == "" {
 			base, err := os.UserConfigDir()
@@ -201,12 +217,12 @@ func run() error {
 	if !quickstart {
 		token, err = readToken(tokenFile)
 		if err != nil {
-			return err
+			return fmt.Errorf("--token-file: %w", err)
 		}
 	}
 	embedder, err := goembed.NewGranite(library, model, tokenizer)
 	if err != nil {
-		return err
+		return fmt.Errorf("embedding startup (--onnx-library, --model, --tokenizer): %w", err)
 	}
 	defer embedder.Close()
 	if quickstart {
@@ -216,7 +232,7 @@ func run() error {
 		}
 		token, err = readToken(tokenFile)
 		if err != nil {
-			return err
+			return fmt.Errorf("--token-file: %w", err)
 		}
 	}
 	if createDB {
@@ -230,14 +246,14 @@ func run() error {
 	}
 	store, err := gomemory.OpenWritableExisting(database, goembed.ModelName, goembed.Dimensions)
 	if err != nil {
-		return err
+		return fmt.Errorf("--db: %w", err)
 	}
 	defer store.Close()
 	var styleHashes []string
 	if visualizerStyleHashes != "" {
 		styleHashes = strings.Split(visualizerStyleHashes, ",")
 	}
-	handler, err := gomcp.NewHandler(gomcp.Backend{Store: store, Version: serverVersion, Embedder: embedder, Model: goembed.ModelName, Visualizer: visualizer, VisualizerStyleHashes: styleHashes, AllowedProxyHost: allowedProxyHost}, token)
+	handler, err := gomcp.NewHandler(gomcp.Backend{Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil)), Store: store, Version: serverVersion, Embedder: embedder, Model: goembed.ModelName, Visualizer: visualizer, VisualizerStyleHashes: styleHashes, AllowedProxyHost: allowedProxyHost}, token)
 	if err != nil {
 		return err
 	}

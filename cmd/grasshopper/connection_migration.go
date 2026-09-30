@@ -32,7 +32,7 @@ func migrateDeviceCredential(existing goclient.Config, canonical string) (string
 	if err != nil {
 		return "", err
 	}
-	target := filepath.Join(filepath.Dir(canonical), "access-token")
+	target := filepath.Join(filepath.Dir(canonical), "device-token")
 	if err := os.MkdirAll(filepath.Dir(canonical), 0700); err != nil {
 		return "", err
 	}
