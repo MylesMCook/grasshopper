@@ -2,6 +2,59 @@
 
 Observed checks for Grasshopper releases. Synthetic checks and real-client observations are separate below.
 
+## 2.8.2 report 8 UI release and rollout (September 30)
+
+[2.8.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.2) ships all
+report 8 outcomes at `df877ec` ([PR #22](https://github.com/MylesMCook/grasshopper/pull/22));
+marketplace `5ab9998`. Final head `a88376a` passed three-platform CI and Copilot
+review with approval recommended and no findings before merge. Both review
+threads were resolved, and the merged tree matched. Copilot's original-author
+metadata reflow finding was reproduced and fixed; the refreshed image was
+verified in GitHub's binary diff. [Native release CI](https://github.com/MylesMCook/grasshopper/actions/runs/36684620395)
+passed on macOS, Linux and Windows with pinned real-model assets. Local Go
+tests/vet/race and all 107 Node tests passed. Seven archives passed 287 embedded
+hash checks; all eight published asset digests matched verified local files.
+
+The [synthetic UI checks](ui-audit-report8-results.md) covered ten memory-view
+width/theme combinations, keyboard title and checkbox controls, save progress
+and failure recovery, and 16 original-attribution width/theme/text-size cases.
+The packaged quickstart smoke verified printed-path sign-in guidance and owner
+session lifecycle. These used invented data, not live memory edits.
+
+A fresh consistent backup passed integrity verification, encrypted off-host
+upload and repository check. The packaged 2.8.2 server passed restored-copy
+current/history reads, real-model search and owner authorization checks. A
+separate checked copy passed the retained 2.8.1 binary rollback rehearsal.
+The Mac cutover preserved all 29 memory rows, 67 revisions, 67 request receipts,
+four device-token rows and the test browser session byte-for-byte. Database,
+credential references, model inputs, supervisor configuration and private
+routing stayed unchanged. Readiness took 2.30 seconds. The same browser session
+worked before and after cutover, then its own sign-out revoked it. Previous
+binaries and the stopped-writer snapshot retain the rollback path. A post-rollout
+consistent encrypted off-host backup and repository check passed.
+
+Live loopback and private HTTPS checks passed owner pagination, startup-preview
+parity with agent context at both budgets, conditional 304 responses, anonymous
+and originless-write rejection, exact embedded assets, and seven-day browser
+session cookie/sign-out behavior. SQLite integrity, loopback listening and
+immediate logs passed. Installed Mac Codex, Cursor and Claude startup adapters
+and bridges reported 2.8.2, resolved project scope, exposed the five tools and
+read a known record. Their installed files matched 10, five and five packaged
+files respectively. A fresh isolated Claude marketplace install also passed.
+Existing chats may retain earlier bridges until reopened.
+
+Cloudflare deployment `d861b106-c98f-4c10-9494-14e0667f7c01` serves the public
+site. All 14 assets match the release build byte-for-byte and carry expected
+security headers. Live Chromium checks through Playwright CLI passed 24
+page/width/theme combinations, six exact-copy commands, keyboard scrolling,
+unobscured 44px copy targets, all three OS release links and feedback reset.
+The three server archive links and SHA256SUMS returned HTTP 200 on HEAD requests.
+Task-owned browser sessions and synthetic servers were closed.
+
+Limits: no physical phones, real screen readers, Safari/Firefox, persistent
+Windows/Linux installations, fresh native AI turns or reboot test were performed.
+Native CI and archive verification do not establish those outcomes.
+
 ## 2.8.1 report 7 release and rollout (September 29)
 
 [2.8.1](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.1) ships all

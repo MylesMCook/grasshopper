@@ -1,14 +1,20 @@
 # Grasshopper release state
 
-## Active UI audit: report 8
+## Released UI audit: report 8, 2.8.2
 
-[LAB-233](https://linear.app/mcook/issue/LAB-233): Codex on macOS owns
-`codex/ui-audit-report8` in an isolated managed worktree. Separate
-`gpt-6.1-sol` workers own memory-view and public-site changes. Accepted outcomes
-and verification are in [report 8](docs/ui-audit-report8-results.md).
-Implementation and synthetic browser verification pass; planned patch 2.8.2.
-Release/deployment follow final-head CI, Copilot review and verified recovery.
-Live remains 2.8.1. Primary checkout and existing local evidence are preserved.
+[LAB-233](https://linear.app/mcook/issue/LAB-233): [2.8.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.2)
+ships U1–U15 and S1–S4 via PR #22, release `df877ec`, marketplace `5ab9998`.
+Codex coordinated isolated `gpt-6.1-sol` implementation, review, packaging and
+live-site workers. Final-head CI and Copilot review preceded merge; the review's
+metadata reflow finding was fixed and both conversations resolved. All 107 Node
+tests, local Go checks, native three-platform CI, seven archives/287 embedded
+hashes and eight published digests pass. Restored-copy upgrade and 2.8.1 rollback,
+session continuity and pre/post encrypted off-host backups pass. Mac service,
+installed Mac connectors and the public site run 2.8.2. Data, credentials and
+routing were preserved. [Delivery evidence and limits](docs/memory-acceptance.md#282-report-8-ui-release-and-rollout-september-30).
+
+Primary checkout and unrelated local evidence remain preserved. Existing chats
+may retain an earlier bridge until reopened.
 
 ## Released report 7: 2.8.1
 
