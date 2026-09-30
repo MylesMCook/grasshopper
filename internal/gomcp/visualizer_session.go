@@ -19,10 +19,10 @@ const visualizerSessionLifetime = 7 * 24 * time.Hour
 
 func visualizerOrigin(r *http.Request, allowedProxyHost string) string {
 	scheme := "http"
-	if allowedProxyHost != "" && r.Host == allowedProxyHost {
+	if proxyHostMatches(r.Host, allowedProxyHost) {
 		scheme = "https"
 	}
-	return scheme + "://" + r.Host
+	return canonicalHTTPSOrigin(scheme + "://" + r.Host)
 }
 
 // Session signatures are keyed by the master token hash. Authentication also
@@ -71,8 +71,8 @@ func visualizerCookie(value string, secure bool, age int) *http.Cookie {
 func (sessions *ownerSessions) serve(w http.ResponseWriter, r *http.Request, key []byte, bearerValid bool, allowedProxyHost string) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	secure := allowedProxyHost != "" && r.Host == allowedProxyHost
-	if origin := r.Header.Get("Origin"); origin != "" && origin != visualizerOrigin(r, allowedProxyHost) {
+	secure := proxyHostMatches(r.Host, allowedProxyHost)
+	if origin := r.Header.Get("Origin"); origin != "" && !originsMatch(origin, visualizerOrigin(r, allowedProxyHost)) {
 		http.Error(w, "invalid Origin header", http.StatusForbidden)
 		return
 	}
@@ -87,7 +87,7 @@ func (sessions *ownerSessions) serve(w http.ResponseWriter, r *http.Request, key
 			_, _ = w.Write([]byte("{\"connected\":false}\n"))
 		}
 	case http.MethodPost:
-		if r.Header.Get("Origin") != visualizerOrigin(r, allowedProxyHost) {
+		if !originsMatch(r.Header.Get("Origin"), visualizerOrigin(r, allowedProxyHost)) {
 			http.Error(w, "invalid Origin header", http.StatusForbidden)
 			return
 		}
@@ -114,7 +114,7 @@ func (sessions *ownerSessions) serve(w http.ResponseWriter, r *http.Request, key
 		http.SetCookie(w, visualizerCookie(value, secure, int(visualizerSessionLifetime.Seconds())))
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodDelete:
-		if r.Header.Get("Origin") != visualizerOrigin(r, allowedProxyHost) {
+		if !originsMatch(r.Header.Get("Origin"), visualizerOrigin(r, allowedProxyHost)) {
 			http.Error(w, "invalid Origin header", http.StatusForbidden)
 			return
 		}

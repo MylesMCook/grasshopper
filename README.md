@@ -101,7 +101,9 @@ public access off. Restart the server with its exact HTTPS hostname and port:
 ```
 
 Use the same `--data-dir` if you chose one. This flag allows the configured proxy
-Host and HTTPS Origin; it does not change saved state or create a private route.
+Host and HTTPS Origin. The default HTTPS port `:443` may be omitted by the
+browser; other ports must match explicitly. It does not change saved state or
+create a private route.
 Creating or changing your private route is a separate host operation. See
 [service templates and token recovery](docs/operations.md).
 

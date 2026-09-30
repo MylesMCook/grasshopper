@@ -76,7 +76,7 @@ func (p *pairingManager) start(w http.ResponseWriter, r *http.Request, origin st
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if header := r.Header.Get("Origin"); header != "" && header != origin {
+	if header := r.Header.Get("Origin"); header != "" && !originsMatch(header, origin) {
 		http.Error(w, "invalid Origin header", http.StatusForbidden)
 		return
 	}
@@ -130,7 +130,7 @@ func (p *pairingManager) poll(w http.ResponseWriter, r *http.Request, origin str
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if header := r.Header.Get("Origin"); header != "" && header != origin {
+	if header := r.Header.Get("Origin"); header != "" && !originsMatch(header, origin) {
 		http.Error(w, "invalid Origin header", http.StatusForbidden)
 		return
 	}

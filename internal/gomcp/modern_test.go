@@ -117,7 +117,7 @@ func TestModernDiscoveryAndStatelessCalls(t *testing.T) {
 func TestMCPThroughPrivateHTTPSProxyHost(t *testing.T) {
 	fixtureServer, store := testServer(t)
 	fixtureServer.Close()
-	const proxyHost = "memory.example.test:8456"
+	const proxyHost = "memory.example.test:443"
 	handler, err := NewHandler(Backend{Store: store, AllowedProxyHost: proxyHost}, testToken)
 	if err != nil {
 		t.Fatal(err)
@@ -154,10 +154,16 @@ func TestMCPThroughPrivateHTTPSProxyHost(t *testing.T) {
 		}
 		return resp.StatusCode, string(data)
 	}
-	for _, origin := range []string{"", "https://" + proxyHost} {
+	for _, origin := range []string{"", "https://" + proxyHost, "https://memory.example.test"} {
 		status, body := call(proxyHost, origin, true)
 		if status != http.StatusOK || !strings.Contains(body, "structuredContent") {
 			t.Fatalf("private proxy Host and Origin %q: status=%d body=%q", origin, status, body)
+		}
+	}
+	for _, origin := range []string{"", "https://memory.example.test", "https://" + proxyHost} {
+		status, body := call("memory.example.test", origin, true)
+		if status != http.StatusOK || !strings.Contains(body, "structuredContent") {
+			t.Errorf("omitted default port Origin %q: status=%d body=%q", origin, status, body)
 		}
 	}
 	for _, tc := range []struct {
@@ -167,6 +173,9 @@ func TestMCPThroughPrivateHTTPSProxyHost(t *testing.T) {
 	}{
 		{"untrusted.example:8456", "", true, http.StatusForbidden},
 		{proxyHost, "https://untrusted.example", true, http.StatusForbidden},
+		{"memory.example.test:8443", "https://memory.example.test:8443", true, http.StatusForbidden},
+		{"memory.example.test", "https://memory.example.test:8443", true, http.StatusForbidden},
+		{"memory.example.test", "http://memory.example.test", true, http.StatusForbidden},
 		{proxyHost, "", false, http.StatusUnauthorized},
 	} {
 		status, _ := call(tc.host, tc.origin, tc.auth)

@@ -30,6 +30,14 @@ HTTP Origin; it now returns 403. Matching proxy Host/HTTPS Origin signs in with
 200 for the configured Host/Origin and 403 for wrong Host/Origin. Quickstart flag
 parsing reaches bundle validation instead of rejecting proxy flags.
 
+**Default-port correction:** integration review found that the original tests
+used explicit `:443` in both headers, while browsers normally omit it. Added
+regressions first failed with 403 for omitted Host/Origin ports. Matching now
+accepts both equivalent HTTPS-default-port forms consistently for host guards,
+owner origins, Secure cookies, pairing origins and MCP proxy translation.
+Wrong hostname, nondefault port, HTTP scheme, userinfo and path variants remain
+rejected. Full gomcp tests, vet and race checks pass after correction.
+
 **Not tested:** an actual Tailscale route, off-machine browser or deployment.
 
 ## R6-4: Persistent server templates

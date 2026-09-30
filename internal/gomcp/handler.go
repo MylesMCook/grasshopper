@@ -301,10 +301,10 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		// proxy Host, check Origin above and pass a loopback Host to the SDK;
 		// leave all other Hosts to its default check.
 		scheme := "http"
-		if backend.AllowedProxyHost != "" && r.Host == backend.AllowedProxyHost {
+		if proxyHostMatches(r.Host, backend.AllowedProxyHost) {
 			scheme = "https"
 		}
-		if origin := r.Header.Get("Origin"); origin != "" && origin != scheme+"://"+r.Host {
+		if origin := r.Header.Get("Origin"); origin != "" && !originsMatch(origin, scheme+"://"+r.Host) {
 			http.Error(w, "Origin rejected. Open the local server address or the configured private HTTPS proxy address; check --allowed-proxy-host and restart after configuration changes.", http.StatusForbidden)
 			return
 		}
@@ -349,7 +349,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			}
 			ip := net.ParseIP(host)
 			local := host == "localhost" || (ip != nil && ip.IsLoopback())
-			if !local && (backend.AllowedProxyHost == "" || r.Host != backend.AllowedProxyHost) {
+			if !local && !proxyHostMatches(r.Host, backend.AllowedProxyHost) {
 				http.Error(w, "Host rejected. Use the local server address or configure --allowed-proxy-host with the exact private HTTPS proxy hostname and port, then restart the server.", http.StatusForbidden)
 				return
 			}
@@ -421,7 +421,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 					return
 				}
 				origin := visualizerOrigin(r, backend.AllowedProxyHost)
-				if (r.Method != http.MethodGet && r.Header.Get("Origin") != origin) || (r.Header.Get("Origin") != "" && r.Header.Get("Origin") != origin) {
+				if (r.Method != http.MethodGet && !originsMatch(r.Header.Get("Origin"), origin)) || (r.Header.Get("Origin") != "" && !originsMatch(r.Header.Get("Origin"), origin)) {
 					http.Error(w, "Origin rejected. Open the local server address or the configured private HTTPS proxy address; check --allowed-proxy-host and restart after configuration changes.", http.StatusForbidden)
 					return
 				}
@@ -447,7 +447,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 				http.Error(w, "authentication required", http.StatusUnauthorized)
 				return
 			}
-			if r.Header.Get("Origin") != visualizerOrigin(r, backend.AllowedProxyHost) {
+			if !originsMatch(r.Header.Get("Origin"), visualizerOrigin(r, backend.AllowedProxyHost)) {
 				http.Error(w, "Origin rejected. Open the local server address or the configured private HTTPS proxy address; check --allowed-proxy-host and restart after configuration changes.", http.StatusForbidden)
 				return
 			}
@@ -461,7 +461,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		authorized := bearerValid(r)
 		if !authorized && backend.Visualizer && r.URL.Path == "/visualizer/api/context" {
 			if cookie, err := r.Cookie(visualizerCookieName); err == nil && sessions.valid(r, cookie.Value, tokenHash[:]) {
-				if r.Header.Get("Origin") != visualizerOrigin(r, backend.AllowedProxyHost) {
+				if !originsMatch(r.Header.Get("Origin"), visualizerOrigin(r, backend.AllowedProxyHost)) {
 					http.Error(w, "Origin rejected. Open the local server address or the configured private HTTPS proxy address; check --allowed-proxy-host and restart after configuration changes.", http.StatusForbidden)
 					return
 				}
