@@ -85,6 +85,10 @@ func visualizerSearch(backend Backend, embedQuery func(context.Context, string) 
 			titles, err = omittedTitles(r.Context(), backend.Store, page)
 		}
 		if err != nil {
+			if strings.HasPrefix(err.Error(), "invalid") {
+				http.Error(w, "invalid search filters", http.StatusBadRequest)
+				return
+			}
 			http.Error(w, "search unavailable", http.StatusServiceUnavailable)
 			return
 		}

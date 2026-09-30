@@ -303,8 +303,8 @@ func TestOwnerPurposeFilterAppliesBeforeSearchAndList(t *testing.T) {
 	}
 	for _, route := range []struct{ path, body string }{{"/visualizer/api/context", `{"purpose":"invalid"}`}, {"/visualizer/api/search", `{"scope":{"purpose":"invalid"},"query":"orchard"}`}} {
 		status, _ := ownerRead(t, server, route.path, route.body)
-		if status == 200 {
-			t.Fatal("invalid purpose accepted")
+		if status != http.StatusBadRequest {
+			t.Fatalf("invalid purpose status %d", status)
 		}
 	}
 }

@@ -40,12 +40,12 @@ func ownerViewFilter(scope BrowseScope) string {
 // statement. Cursors can subsequently load these historical revisions without
 // skipping or duplicating memories that an agent updates between pages.
 func (r *Reader) BrowseReferences(ctx context.Context, scope BrowseScope, maximum int) ([]Reference, []string, []string, error) {
-	keys, devices, projects, err := r.browseScopeKeys(ctx, scope, scope.View == ViewArchived)
+	_, devices, projects, err := r.browseScopeKeys(ctx, scope, scope.View == ViewArchived)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	raw, _ := json.Marshal(keys)
-	rows, err := r.db.QueryContext(ctx, `SELECT id,revision,memory_scope FROM chunks WHERE kind='memory' AND memory_scope IN (SELECT value FROM json_each(?))`+ownerViewFilter(scope)+` ORDER BY CASE purpose WHEN 'preference' THEN 0 WHEN 'decision' THEN 1 WHEN 'lesson' THEN 2 WHEN 'handoff' THEN 3 ELSE 4 END,updated_at DESC,id DESC LIMIT ?`, string(raw), maximum+1)
+	args := append(ownerScopeArgs(scope), maximum+1)
+	rows, err := r.db.QueryContext(ctx, ownerRowsCTE+`SELECT id,revision,memory_scope FROM owner_rows WHERE `+ownerScopePredicate+ownerViewFilter(scope)+` ORDER BY CASE purpose WHEN 'preference' THEN 0 WHEN 'decision' THEN 1 WHEN 'lesson' THEN 2 WHEN 'handoff' THEN 3 ELSE 4 END,updated_at DESC,id DESC LIMIT ?`, args...)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -71,11 +71,9 @@ func (r *Reader) BrowseReferences(ctx context.Context, scope BrowseScope, maximu
 // WalkOwnerExport streams complete stored records from one SQLite read snapshot.
 // Export never uses preview text or startup budgets and never includes legacy data.
 func (r *Reader) WalkOwnerExport(ctx context.Context, scope BrowseScope, includeArchived bool, visit func(Record) error) error {
-	keys, _, _, err := r.browseScopeKeys(ctx, scope, includeArchived || scope.View == ViewArchived)
-	if err != nil {
-		return err
+	if _, err := scope.Key(); err != nil || scope.Legacy || !validOwnerPurpose(scope.Purpose) || (scope.View != "" && scope.View != ViewReview && scope.View != ViewArchived) {
+		return errors.New("invalid export filters")
 	}
-	raw, _ := json.Marshal(keys)
 	filter := ownerViewFilter(scope)
 	if includeArchived && scope.View != ViewArchived {
 		filter = ownerPurposeFilter(scope.Purpose, "")
@@ -83,7 +81,10 @@ func (r *Reader) WalkOwnerExport(ctx context.Context, scope BrowseScope, include
 			filter += " AND (archived=1 OR (archived=0 AND confirmed=0 AND purpose<>'handoff'))"
 		}
 	}
-	rows, err := r.db.QueryContext(ctx, "SELECT "+recordColumns+` FROM chunks WHERE kind='memory' AND memory_scope IN (SELECT value FROM json_each(?))`+filter+` ORDER BY id`, string(raw))
+	// Scope enumeration and content selection must be in the same SQLite
+	// statement. Two independent reads can combine old scope keys with newer
+	// content, producing an export that never existed at any point in time.
+	rows, err := r.db.QueryContext(ctx, ownerRowsCTE+"SELECT "+recordColumns+` FROM owner_rows WHERE `+ownerScopePredicate+filter+` ORDER BY id`, ownerScopeArgs(scope)...)
 	if err != nil {
 		return err
 	}
@@ -112,4 +113,15 @@ func (r *Reader) OwnerMemoryVersion(ctx context.Context) (string, error) {
 func (r *Reader) BrowseChoices(ctx context.Context, scope BrowseScope) ([]string, []string, error) {
 	_, devices, projects, err := r.browseScopeKeys(ctx, scope, scope.View == ViewArchived)
 	return devices, projects, err
+}
+
+// Scope predicates run alongside record selection, so dynamic scope creation
+// cannot separate scope visibility from the ordered revision snapshot.
+const ownerRowsCTE = `WITH owner_rows AS (SELECT *,CASE WHEN json_valid(memory_scope) THEN memory_scope ELSE '{}' END AS owner_scope FROM chunks WHERE kind='memory' AND memory_scope<>'legacy' AND json_valid(memory_scope)) `
+const ownerScopePredicate = `(json_extract(owner_scope,'$.project') IS NULL OR ? OR json_extract(owner_scope,'$.project')=?)
+ AND (? IS NULL OR json_extract(owner_scope,'$.device') IS NULL OR json_extract(owner_scope,'$.device')=?)
+ AND (? IS NULL OR json_extract(owner_scope,'$.platform') IS NULL OR json_extract(owner_scope,'$.platform')=?)`
+
+func ownerScopeArgs(scope BrowseScope) []any {
+	return []any{scope.AllProjects, scope.Project, scope.Device, scope.Device, scope.Platform, scope.Platform}
 }

@@ -124,3 +124,24 @@ Not tested: Browser integration of the new controls, deployed service behavior,
 other harnesses/machines, GUI refresh, reboot persistence, load testing at the
 snapshot/session caps and live backup/restore. Frontend and structured audit-log
 integration belong to the primary task. No push, PR or deployment performed.
+
+## Follow-up: Keep scope selection inside the export snapshot
+
+Review found that separate scope-key enumeration and streaming selection could
+combine old scope keys with newer content when another connection committed in
+between. Export now resolves project/device/platform predicates and selects full
+records in one SQLite SELECT, with bound parameters and safe JSON scope parsing.
+No preliminary scope read remains. This preserves global/applicable-dimension,
+All projects, purpose, review and archived selection behavior.
+
+Focused native scope-boundary tests pass. A deterministic WAL test commits a new
+project scope and an existing record change together while the export stream is
+open: the current download contains the entire older state and the next download
+contains both changes. The former pre-SELECT gap is removed structurally; this
+test exercises mid-stream isolation rather than injecting a production test hook
+into that removed gap. Full Go tests/vet/race are rerun for the follow-up.
+
+The same single-statement scope predicates also select ordered page references.
+Filter-choice queries may observe newer metadata, but they cannot narrow or widen
+the record/revision snapshot. This closes the equivalent scope-enumeration gap in
+pagination without changing cursor or agent contracts.
