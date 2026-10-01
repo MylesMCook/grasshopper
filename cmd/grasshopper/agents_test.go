@@ -197,20 +197,58 @@ func TestCheckReportsAgentCLIFailureWithoutHidingIt(t *testing.T) {
 	}
 }
 
-func TestCheckListsOldCursorMarketplacePlugin(t *testing.T) {
+func writeJSONFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// cursorPluginFiles writes the installed plugin files Cursor keeps per commit.
+func cursorPluginFiles(t *testing.T, cursorDir, commit, version string) {
+	writeJSONFile(t, filepath.Join(cursorDir, "plugins", "cache", "grasshopper-marketplace", "grasshopper-windows", commit, ".cursor-plugin", "plugin.json"),
+		`{"name":"grasshopper-windows","version":"`+version+`"}`)
+}
+
+// cursorMarketplacePin writes Cursor's copy of the commit its Grasshopper
+// marketplace is pinned to.
+func cursorMarketplacePin(t *testing.T, cursorDir, commit, version string) {
+	root := filepath.Join(cursorDir, "plugins", "marketplaces", "github.com", "mylesmcook", "grasshopper", commit)
+	writeJSONFile(t, filepath.Join(root, ".cursor-plugin", "marketplace.json"), `{"name":"grasshopper-marketplace","plugins":[]}`)
+	writeJSONFile(t, filepath.Join(root, "plugins", "grasshopper-windows", ".cursor-plugin", "plugin.json"),
+		`{"name":"grasshopper-windows","version":"`+version+`"}`)
+}
+
+func TestCheckRepinsOldCursorMarketplaceBeforeUpdatingPlugin(t *testing.T) {
 	cursorDir := filepath.Join(t.TempDir(), ".cursor")
-	manifest := filepath.Join(cursorDir, "plugins", "cache", "grasshopper-marketplace", "grasshopper-windows", "5ad8fac", ".cursor-plugin", "plugin.json")
-	if err := os.MkdirAll(filepath.Dir(manifest), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(manifest, []byte(`{"name":"grasshopper-windows","version":"2.2.0"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	cursorPluginFiles(t, cursorDir, "160f630", "2.5.0")
+	cursorMarketplacePin(t, cursorDir, "160f630", "2.5.0")
 
 	cursor := agentByName(t, inspectAgents(fakeAgents(nil), cursorDir, "2.9.1"), "Cursor")
-	if cursor.State != "behind" || cursor.Version != "2.2.0" || !strings.Contains(cursor.Route, "grasshopper-windows") ||
-		!strings.Contains(cursor.Update, "agent plugin marketplace remove grasshopper-marketplace") {
-		t.Fatalf("an old Cursor marketplace plugin should be behind with its update steps, got %+v", cursor)
+	if cursor.State != "behind" || cursor.Version != "2.5.0" || !strings.Contains(cursor.Route, "plugin files") {
+		t.Fatalf("old Cursor plugin files should be behind and labelled as files, got %+v", cursor)
+	}
+	for _, want := range []string{"agent plugin marketplace remove grasshopper-marketplace", "--git-ref marketplace", "Plugins menu"} {
+		if !strings.Contains(cursor.Update, want) {
+			t.Fatalf("a marketplace pinned to an old commit needs %q in its update step, got %q", want, cursor.Update)
+		}
+	}
+}
+
+func TestCheckUpdatesCursorPluginWhenMarketplaceIsCurrent(t *testing.T) {
+	cursorDir := filepath.Join(t.TempDir(), ".cursor")
+	cursorPluginFiles(t, cursorDir, "160f630", "2.5.0")
+	cursorMarketplacePin(t, cursorDir, "e2c2504", "2.9.1")
+
+	cursor := agentByName(t, inspectAgents(fakeAgents(nil), cursorDir, "2.9.1"), "Cursor")
+	if cursor.State != "behind" || !strings.Contains(cursor.Update, "Plugins menu") || strings.Contains(cursor.Update, "marketplace remove") {
+		t.Fatalf("a current marketplace only needs the plugin updated in Cursor, got %+v", cursor)
+	}
+	if !strings.Contains(cursor.Update, "Imported") {
+		t.Fatalf("the update step should say how to keep one copy beside Claude Code's import, got %q", cursor.Update)
 	}
 }
 

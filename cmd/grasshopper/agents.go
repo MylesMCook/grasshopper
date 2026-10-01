@@ -187,10 +187,57 @@ func cursorWiringReport(run commandRunner, cursorDir, serverVersion string) (age
 	return withNewerDetail(report), true
 }
 
-// cursorPluginReports reads marketplace plugin manifests from Cursor's plugin
-// cache. Cursor keeps one folder per fetched revision, so only the newest
-// manifest for each plugin name counts.
+// cursorMarketplaceVersions reads the plugin versions in Cursor's copy of the
+// Grasshopper marketplace. Cursor pins a marketplace to the commit its branch
+// pointed at when it was added, so these are the versions an update in
+// Cursor's Plugins menu would install, not the branch's current release.
+func cursorMarketplaceVersions(cursorDir string) map[string]string {
+	catalogs, _ := filepath.Glob(filepath.Join(cursorDir, "plugins", "marketplaces", "*", "*", "*", "*", ".cursor-plugin", "marketplace.json"))
+	versions := map[string]string{}
+	var newest time.Time
+	for _, catalog := range catalogs {
+		info, err := os.Stat(catalog)
+		data, readErr := os.ReadFile(catalog)
+		var marketplace struct {
+			Name string `json:"name"`
+		}
+		if err != nil || readErr != nil || json.Unmarshal(data, &marketplace) != nil || marketplace.Name != "grasshopper-marketplace" || info.ModTime().Before(newest) {
+			continue
+		}
+		newest = info.ModTime()
+		versions = map[string]string{}
+		manifests, _ := filepath.Glob(filepath.Join(filepath.Dir(filepath.Dir(catalog)), "plugins", "*", ".cursor-plugin", "plugin.json"))
+		for _, manifest := range manifests {
+			var plugin struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			}
+			if data, err := os.ReadFile(manifest); err == nil && json.Unmarshal(data, &plugin) == nil {
+				versions[plugin.Name] = plugin.Version
+			}
+		}
+	}
+	return versions
+}
+
+// cursorPluginUpdate repins the marketplace first when its pinned commit is
+// itself behind, because updating the plugin alone would reinstall the old
+// release.
+func cursorPluginUpdate(name, pinnedVersion, serverVersion string) string {
+	update := "Update " + name + " in Cursor's Plugins menu."
+	if state := versionState(pinnedVersion, serverVersion); state != agentCurrent && state != agentNewer {
+		update = "Run agent plugin marketplace remove grasshopper-marketplace, then agent plugin marketplace add " +
+			"https://github.com/MylesMCook/grasshopper.git --git-ref marketplace, then update " + name + " in Cursor's Plugins menu."
+	}
+	return update + " If Cursor also lists an Imported Grasshopper plugin from Claude Code, uninstall this copy instead."
+}
+
+// cursorPluginReports reads the installed plugin files in Cursor's plugin
+// cache. Cursor keeps one folder per fetched commit, so only the newest
+// manifest for each plugin name counts. Cursor does not record whether the
+// plugin is turned on in a readable place, so the route names files, not use.
 func cursorPluginReports(cursorDir, serverVersion string) []agentReport {
+	pinned := cursorMarketplaceVersions(cursorDir)
 	manifests, _ := filepath.Glob(filepath.Join(cursorDir, "plugins", "cache", "grasshopper-marketplace", "*", "*", ".cursor-plugin", "plugin.json"))
 	type found struct {
 		version  string
@@ -222,9 +269,9 @@ func cursorPluginReports(cursorDir, serverVersion string) []agentReport {
 	var reports []agentReport
 	for _, name := range names {
 		version := newest[name].version
-		report := agentReport{Agent: "Cursor", Route: "plugin " + name + "@grasshopper-marketplace", Version: version, State: versionState(version, serverVersion)}
+		report := agentReport{Agent: "Cursor", Route: "plugin files " + name + "@grasshopper-marketplace", Version: version, State: versionState(version, serverVersion)}
 		if report.State == agentBehind {
-			report.Update = "Run agent plugin marketplace remove grasshopper-marketplace, add it again, then reinstall " + name + " from Cursor's Plugins menu."
+			report.Update = cursorPluginUpdate(name, pinned[name], serverVersion)
 		}
 		reports = append(reports, withNewerDetail(report))
 	}
