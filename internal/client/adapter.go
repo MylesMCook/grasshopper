@@ -191,6 +191,9 @@ func HookUnavailable(harness string, input map[string]any) map[string]any {
 	if harness == "cursor" {
 		return map[string]any{"additional_context": message}
 	}
+	if harness == "claude" {
+		event = claudeEventName(event)
+	}
 	return withCursorImportContext(harness, event, map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": message}}, message)
 }
 

@@ -85,6 +85,10 @@ func TestCursorImportedSessionStartLoadsContext(t *testing.T) {
 	if _, err := HookGlobalPart(1, input); err != nil {
 		t.Fatalf("Claude global guidance hooks must not fail under Cursor: %v", err)
 	}
+	unavailable := HookUnavailable("claude", input)
+	if text, _ := unavailable["additional_context"].(string); !strings.Contains(text, "startup unavailable") {
+		t.Fatalf("Cursor imports must see the unavailable notice for sessionStart: %v", unavailable)
+	}
 }
 
 type blockedTransport struct{ err error }
