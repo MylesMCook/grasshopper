@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -169,6 +170,70 @@ func TestCheckFailsWhenOnlyCursorHookProgramIsMissing(t *testing.T) {
 	cursor := agentByName(t, inspectAgents(run, cursorDir, "2.9.1"), "Cursor")
 	if cursor.State != "broken" || !strings.Contains(cursor.Detail, missing) {
 		t.Fatalf("a missing startup hook program is broken wiring, got %+v", cursor)
+	}
+}
+
+func TestCheckGivesCursorCLIUpdateForMCPOnlyWiring(t *testing.T) {
+	cursorDir := filepath.Join(t.TempDir(), ".cursor")
+	binary := fakeBinary(t)
+	mcp := map[string]any{"mcpServers": map[string]any{"grasshopper": grasshopperMCPEntry(binary, "client.json")}}
+	data, _ := json.Marshal(mcp)
+	writeJSONFile(t, filepath.Join(cursorDir, "mcp.json"), string(data))
+	run := fakeAgents(map[string]string{binary + " --version": "grasshopper 2.6.0\n"})
+
+	cursor := agentByName(t, inspectAgents(run, cursorDir, "2.9.1"), "Cursor")
+	// MCP-only wiring leaves startup to the marketplace plugin; a full Cursor
+	// setup update would add a second startup hook.
+	if cursor.State != "behind" || !strings.Contains(cursor.Update, "--agents none --cursor-cli --update") || strings.Contains(cursor.Update, "--agents cursor") {
+		t.Fatalf("MCP-only Cursor wiring needs the Cursor CLI update step, got %+v", cursor)
+	}
+}
+
+func TestCheckResolvesCursorCommandOnPath(t *testing.T) {
+	cursorDir := filepath.Join(t.TempDir(), ".cursor")
+	dir := t.TempDir()
+	name := "grasshopper"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	resolved, err := exec.LookPath("grasshopper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursorWired(t, cursorDir, "grasshopper")
+	run := fakeAgents(map[string]string{resolved + " --version": "grasshopper 2.9.1\n"})
+
+	cursor := agentByName(t, inspectAgents(run, cursorDir, "2.9.1"), "Cursor")
+	if cursor.State != "current" {
+		t.Fatalf("a Grasshopper command found through PATH works, got %+v", cursor)
+	}
+}
+
+func TestCheckFailsWhenPluginProgramIsMissing(t *testing.T) {
+	emptied := t.TempDir()
+	installed := t.TempDir()
+	writeJSONFile(t, filepath.Join(installed, "bin", "grasshopper.exe"), "binary")
+	claude, _ := json.Marshal([]any{map[string]any{"id": "grasshopper-windows@grasshopper-marketplace", "version": "2.9.1", "installPath": emptied}})
+	codex, _ := json.Marshal(map[string]any{"installed": []any{map[string]any{
+		"pluginId": "grasshopper-windows@grasshopper-marketplace", "version": "2.9.1", "source": map[string]any{"path": installed},
+	}}})
+	run := fakeAgents(map[string]string{"claude plugin list --json": string(claude), "codex plugin list --json": string(codex)})
+
+	reports := inspectAgents(run, filepath.Join(t.TempDir(), ".cursor"), "2.9.1")
+
+	claudeReport := agentByName(t, reports, "Claude Code")
+	if claudeReport.State != "broken" || !strings.Contains(claudeReport.Detail, emptied) || !strings.Contains(claudeReport.Update, "claude plugin install") {
+		t.Fatalf("a plugin without its program is broken and needs a reinstall, got %+v", claudeReport)
+	}
+	if codexReport := agentByName(t, reports, "Codex"); codexReport.State != "current" {
+		t.Fatalf("a plugin with its program matches the server, got %+v", codexReport)
+	}
+	if err := agentProblem(reports); err == nil || !strings.Contains(err.Error(), "Claude Code") {
+		t.Fatalf("a plugin without its program must fail check, got %v", err)
 	}
 }
 

@@ -36,6 +36,11 @@ const (
 
 const cursorArchiveUpdate = "Run bin/grasshopper setup --agents cursor --update from the new client archive."
 
+// cursorCLIUpdate refreshes MCP-only wiring from connect --cursor-cli, which
+// leaves the startup hook to the marketplace plugin. A full Cursor update
+// would add a second startup hook.
+const cursorCLIUpdate = "Run bin/grasshopper setup --agents none --cursor-cli --update from the new client archive."
+
 // inspectAgents lists the Grasshopper connectors of Claude Code, Codex and
 // Cursor and compares each version with serverVersion. An agent whose CLI or
 // settings are absent is left out. An empty serverVersion marks every
@@ -80,12 +85,51 @@ func pluginAgents(run commandRunner, agent, cli, serverVersion string) []agentRe
 		}
 		version, _ := item["version"].(string)
 		report := agentReport{Agent: agent, Route: "plugin " + id, Version: version, State: versionState(version, serverVersion)}
+		if dir := pluginDir(cli, item); dir != "" && !pluginProgramExists(dir) {
+			report.State, report.Update = agentBroken, pluginReinstall(cli, id, marketplace)
+			report.Detail = "Missing program in " + filepath.Join(dir, "bin")
+			reports = append(reports, report)
+			continue
+		}
 		if report.State == agentBehind {
 			report.Update = pluginUpdate(cli, id, marketplace)
 		}
 		reports = append(reports, withNewerDetail(report))
 	}
 	return reports
+}
+
+// pluginDir returns the installed plugin folder an agent's plugin list
+// reports, or "" when the list does not say.
+func pluginDir(cli string, item map[string]any) string {
+	if cli == "claude" {
+		dir, _ := item["installPath"].(string)
+		return dir
+	}
+	source, _ := item["source"].(map[string]any)
+	dir, _ := source["path"].(string)
+	return dir
+}
+
+// pluginProgramExists checks the bundled client that the plugin's MCP server
+// and hooks run; plugin metadata can outlive a deleted program.
+func pluginProgramExists(dir string) bool {
+	for _, name := range []string{"grasshopper.exe", "grasshopper"} {
+		if info, err := os.Stat(filepath.Join(dir, "bin", name)); err == nil && info.Mode().IsRegular() {
+			return true
+		}
+	}
+	return false
+}
+
+func pluginReinstall(cli, id, marketplace string) string {
+	if marketplace == "grasshopper-local" {
+		return "Run bin/grasshopper setup --agents " + cli + " --update from the new client archive."
+	}
+	if cli == "claude" {
+		return "Reinstall it: claude plugin uninstall " + id + ", then claude plugin install " + id + "."
+	}
+	return "Reinstall it: remove " + id + " in the Codex plugin manager, then run codex plugin add " + id + "."
 }
 
 func isGrasshopperPluginName(name string) bool {
@@ -140,30 +184,38 @@ func cursorWiringReport(run commandRunner, cursorDir, serverVersion string) (age
 			}
 		}
 	}
+	hasHook := false
 	if events, ok := jsonObject(hooks["hooks"]); ok {
 		list, _ := events["sessionStart"].([]any)
 		for _, hook := range list {
 			if binary, ok := grasshopperHookBinary(hook); ok {
 				add(binary)
+				hasHook = true
 			}
 		}
 	}
 	if len(binaries) == 0 {
 		return report, false
 	}
-	var missing []string
+	update := cursorArchiveUpdate
+	if !hasHook {
+		report.Route, update = "Cursor settings (mcp.json)", cursorCLIUpdate
+	}
+	var missing, programs []string
 	for _, binary := range binaries {
-		if info, err := os.Stat(binary); err != nil || !info.Mode().IsRegular() {
+		if program, ok := resolveProgram(binary); ok {
+			programs = append(programs, program)
+		} else {
 			missing = append(missing, binary)
 		}
 	}
 	if len(missing) > 0 {
-		report.State, report.Update = agentBroken, cursorArchiveUpdate
+		report.State, report.Update = agentBroken, update
 		report.Detail = "Missing program: " + strings.Join(missing, ", ")
 		return report, true
 	}
 	var versions []string
-	for _, binary := range binaries {
+	for _, binary := range programs {
 		output, err := run(binary, "--version")
 		version, ok := strings.CutPrefix(strings.TrimSpace(string(output)), "grasshopper ")
 		if err != nil || !ok {
@@ -175,16 +227,27 @@ func cursorWiringReport(run commandRunner, cursorDir, serverVersion string) (age
 	report.Version = versions[0]
 	for _, version := range versions[1:] {
 		if version != report.Version {
-			report.State, report.Version, report.Update = agentUnknown, "", cursorArchiveUpdate
+			report.State, report.Version, report.Update = agentUnknown, "", update
 			report.Detail = "The MCP server and startup hook run different versions: " + strings.Join(versions, ", ")
 			return report, true
 		}
 	}
 	report.State = versionState(report.Version, serverVersion)
 	if report.State == agentBehind {
-		report.Update = cursorArchiveUpdate
+		report.Update = update
 	}
 	return withNewerDetail(report), true
+}
+
+// resolveProgram finds the program a Cursor command runs. A bare name such
+// as grasshopper is looked up on PATH, as Cursor would; a path must exist.
+func resolveProgram(command string) (string, bool) {
+	if !strings.ContainsAny(command, `/\`) {
+		path, err := exec.LookPath(command)
+		return path, err == nil
+	}
+	info, err := os.Stat(command)
+	return command, err == nil && info.Mode().IsRegular()
 }
 
 // cursorMarketplaceVersions reads the plugin versions in Cursor's copy of the
