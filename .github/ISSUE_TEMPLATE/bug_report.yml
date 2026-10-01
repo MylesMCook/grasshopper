@@ -3,10 +3,18 @@ description: Something in Grasshopper does not work as expected.
 labels: [bug]
 body:
   - type: input
-    id: version
+    id: client-version
     attributes:
-      label: Grasshopper version
-      description: Run `grasshopper --version` or check Settings in the memory view.
+      label: Client version
+      description: Run `grasshopper --version` on the machine with the problem. Write "Unknown" or "N/A" if it does not apply.
+      placeholder: "2.8.5"
+    validations:
+      required: true
+  - type: input
+    id: server-version
+    attributes:
+      label: Server version
+      description: Shown in the memory view, or run `grasshopper-server --version`. Write "Unknown" or "N/A" if it does not apply.
       placeholder: "2.8.5"
     validations:
       required: true
