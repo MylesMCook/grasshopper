@@ -215,7 +215,7 @@ test('shared light control borders meet 3 to 1 contrast against their surfaces',
   const design=readFileSync(`${__dirname}/../DESIGN.md`,'utf8');
   const token=design.match(/^  border: "#([a-f0-9]{6})"$/m)[1];
   const luminance=hex=>{const rgb=hex.match(/../g).map(v=>parseInt(v,16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;};
-  for(const path of ['docs/site.css','internal/gomcp/visualizer/style.css']) {
+  for(const path of ['docs/site.css','internal/service/visualizer/style.css']) {
     const css=readFileSync(`${__dirname}/../${path}`,'utf8');
     for(const light of [css.match(/:root \{([^}]+)\}/)[1],css.match(/:root\[data-theme="light"\] \{([^}]+)\}/)[1]]) {
       const border=light.match(/--border:#([a-f0-9]{6})/)[1];

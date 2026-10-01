@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/MylesMCook/grasshopper/internal/goclient"
+	"github.com/MylesMCook/grasshopper/internal/client"
 )
 
 func bundledPolicy() (string, error) {
@@ -48,7 +48,7 @@ func checkConnection(args []string) error {
 	if flags.NArg() != 0 {
 		return errors.New("unexpected check arguments")
 	}
-	path, err := goclient.ConfigPath(*configArg)
+	path, err := client.ConfigPath(*configArg)
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func connectionReport(path string) map[string]string {
 			return report("conflicting_configuration", "Grasshopper configuration changed during approval. Inspect it before continuing.")
 		}
 		result["server"], result["device"] = pending.Address, pending.Device
-		_, base, err := goclient.NormalizeServerAddress(pending.Address)
+		_, base, err := client.NormalizeServerAddress(pending.Address)
 		if err != nil {
 			return report("conflicting_configuration", "Inspect the private pending connection before continuing.")
 		}
@@ -113,7 +113,7 @@ func connectionReport(path string) map[string]string {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return report("conflicting_configuration", "Inspect the private pending connection before continuing.")
 	}
-	config, err := goclient.LoadConfig(path)
+	config, err := client.LoadConfig(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return report("missing_address", "Connect Grasshopper with your private server link.")
 	}
@@ -124,26 +124,26 @@ func connectionReport(path string) map[string]string {
 	if info, err := os.Stat(config.PolicyPath); err != nil || !info.Mode().IsRegular() {
 		return report("conflicting_configuration", "The shared AGENTS.md is missing; reinstall the plugin without replacing your credential.")
 	}
-	remote, err := goclient.NewRemote(config)
+	remote, err := client.NewRemote(config)
 	if err != nil {
 		return report("conflicting_configuration", "The saved Grasshopper credential or address needs inspection.")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 	identity, err := remote.Identity(ctx)
-	if errors.Is(err, goclient.ErrIdentityUnsupported) {
-		platform := goclient.Platform()
-		_, err = remote.Context(ctx, goclient.Scope{Device: &config.Device, Platform: &platform}, 512)
+	if errors.Is(err, client.ErrIdentityUnsupported) {
+		platform := client.Platform()
+		_, err = remote.Context(ctx, client.Scope{Device: &config.Device, Platform: &platform}, 512)
 		if err == nil {
 			result["registration"] = "unverified"
 			return report("connected", "Memory access works; this older host cannot verify registration. Upgrade the host to verify device identity.")
 		}
 	}
 	if err != nil {
-		if errors.Is(err, goclient.ErrAuthenticationRejected) {
+		if errors.Is(err, client.ErrAuthenticationRejected) {
 			return report("authentication_rejected", "This device's access was rejected. Run connect --reconnect to request approval for a replacement.")
 		}
-		if errors.Is(err, goclient.ErrNetworkRestricted) {
+		if errors.Is(err, client.ErrNetworkRestricted) {
 			return report("network_permission_required", "Allow Grasshopper to reach this private server through your agent's normal network permission, then retry once.")
 		}
 		return report("unreachable_server", "The private server is unavailable. Keep this connection and try again when it is online.")
@@ -196,7 +196,7 @@ func configureWithReport(args []string, report bool) error {
 	if flags.NArg() != 0 || *url == "" || *tokenFile == "" || *device == "" {
 		return errors.New("configure needs --url, --token-file, and --device")
 	}
-	configPath, err := goclient.ConfigPath(*configArg)
+	configPath, err := client.ConfigPath(*configArg)
 	if err != nil {
 		return err
 	}
@@ -220,8 +220,8 @@ func configureWithReport(args []string, report bool) error {
 	if err != nil {
 		return err
 	}
-	config := goclient.Config{URL: *url, TokenFile: *tokenFile, PolicyPath: filepath.Join(filepath.Dir(configPath), "AGENTS.md"), Device: *device}
-	if _, err := goclient.NewRemote(config); err != nil {
+	config := client.Config{URL: *url, TokenFile: *tokenFile, PolicyPath: filepath.Join(filepath.Dir(configPath), "AGENTS.md"), Device: *device}
+	if _, err := client.NewRemote(config); err != nil {
 		return fmt.Errorf("client connection invalid: %w", err)
 	}
 	encoded, err := json.MarshalIndent(config, "", "  ")

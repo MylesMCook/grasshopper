@@ -30,7 +30,7 @@ for target in darwin-arm64 windows-amd64 linux-amd64; do
 		-o "$staged/grasshopper-$target$suffix" ./cmd/grasshopper
 done
 
-go run ./cmd/grasshopper-go-bundle \
+go run ./cmd/grasshopper-bundle \
 	-marketplace-plugins -plugin-version "$version" \
 	-client-macos "$staged/grasshopper-darwin-arm64" \
 	-client-windows "$staged/grasshopper-windows-amd64.exe" \

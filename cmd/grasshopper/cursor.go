@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/MylesMCook/grasshopper/internal/goclient"
+	"github.com/MylesMCook/grasshopper/internal/client"
 )
 
 func cursorCommand(args []string) (resultErr error) {
@@ -42,7 +42,7 @@ func cursorCommand(args []string) (resultErr error) {
 	if !filepath.IsAbs(*cursorDir) {
 		return errors.New("Cursor directory must be absolute")
 	}
-	configPath, err := goclient.ConfigPath(*configArg)
+	configPath, err := client.ConfigPath(*configArg)
 	if err != nil {
 		return err
 	}
@@ -50,11 +50,11 @@ func cursorCommand(args []string) (resultErr error) {
 		return errors.New("client configuration path must be absolute")
 	}
 	if args[0] == "install" {
-		config, err := goclient.LoadConfig(configPath)
+		config, err := client.LoadConfig(configPath)
 		if err != nil {
 			return fmt.Errorf("configure Grasshopper first: %w", err)
 		}
-		if _, err := goclient.NewRemote(config); err != nil {
+		if _, err := client.NewRemote(config); err != nil {
 			return err
 		}
 		if _, err := os.Stat(config.PolicyPath); err != nil {

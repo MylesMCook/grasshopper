@@ -1,0 +1,308 @@
+// Grasshopper-server serves an existing database or creates one on request.
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/MylesMCook/grasshopper/internal/embedding"
+	"github.com/MylesMCook/grasshopper/internal/memory"
+	"github.com/MylesMCook/grasshopper/internal/service"
+)
+
+var serverVersion = "dev"
+
+func readToken(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", errors.New("token file is not a regular file")
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
+		return "", errors.New("token file must be private (mode 0600)")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	if len(data) > 4096 {
+		return "", errors.New("token file is too large")
+	}
+	return strings.TrimRight(string(data), "\r\n"), nil
+}
+
+func validateListen(address string) error {
+	host, _, err := net.SplitHostPort(address)
+	ip := net.ParseIP(host)
+	if err != nil || ip == nil || !ip.IsLoopback() {
+		return errors.New("listen must use an explicit loopback IP and port")
+	}
+	return nil
+}
+
+func quickstartFiles(executable string) (library, model, tokenizer string, err error) {
+	root := filepath.Dir(filepath.Dir(executable))
+	libraryName := map[string]string{
+		"darwin":  "libonnxruntime.dylib",
+		"linux":   "libonnxruntime.so",
+		"windows": "onnxruntime.dll",
+	}[runtime.GOOS]
+	if libraryName == "" {
+		return "", "", "", errors.New("quickstart is unavailable on this operating system")
+	}
+	library = filepath.Join(root, "runtime", libraryName)
+	model = filepath.Join(root, "models", "granite-embedding-small-english-r2", "model.onnx")
+	tokenizer = filepath.Join(root, "models", "granite-embedding-small-english-r2", "tokenizer.json")
+	for _, path := range []string{library, model, filepath.Join(filepath.Dir(model), "model.onnx_data"), tokenizer} {
+		info, statErr := os.Stat(path)
+		if statErr != nil || !info.Mode().IsRegular() {
+			return "", "", "", fmt.Errorf("bundle file missing: %s", path)
+		}
+	}
+	return library, model, tokenizer, nil
+}
+
+// quickstartState reuses a complete database/token pair or creates both in
+// an empty private directory. A partial pair requires manual recovery.
+func quickstartState(dir string) (database, tokenFile string, err error) {
+	info, err := os.Lstat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		if err = os.MkdirAll(dir, 0700); err != nil {
+			return "", "", err
+		}
+	} else if err != nil {
+		return "", "", err
+	} else if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", "", errors.New("quickstart data path must be a directory, not a link")
+	} else if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
+		return "", "", errors.New("quickstart data directory must be private (mode 0700)")
+	}
+	database = filepath.Join(dir, "memory.db")
+	tokenFile = filepath.Join(dir, "access-token")
+	dbInfo, dbErr := os.Lstat(database)
+	tokenInfo, tokenErr := os.Lstat(tokenFile)
+	dbExists, tokenExists := dbErr == nil, tokenErr == nil
+	if dbErr != nil && !errors.Is(dbErr, os.ErrNotExist) {
+		return "", "", dbErr
+	}
+	if tokenErr != nil && !errors.Is(tokenErr, os.ErrNotExist) {
+		return "", "", tokenErr
+	}
+	if dbExists != tokenExists {
+		return "", "", errors.New("incomplete quickstart state: back up and inspect the data directory before retrying")
+	}
+	if dbExists {
+		if !dbInfo.Mode().IsRegular() || !tokenInfo.Mode().IsRegular() {
+			return "", "", errors.New("quickstart state must use regular files")
+		}
+		if _, err := readToken(tokenFile); err != nil {
+			return "", "", err
+		}
+		return database, tokenFile, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", "", err
+	}
+	if len(entries) != 0 {
+		return "", "", errors.New("quickstart data directory is not empty: choose a new data-dir or open existing state with manual flags")
+	}
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		return "", "", err
+	}
+	file, err := os.OpenFile(tokenFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return "", "", err
+	}
+	_, writeErr := fmt.Fprintln(file, base64.RawURLEncoding.EncodeToString(secret))
+	closeErr := file.Close()
+	if writeErr != nil || closeErr != nil {
+		_ = os.Remove(tokenFile)
+		return "", "", errors.Join(writeErr, closeErr)
+	}
+	if err := memory.CreateEmpty(database); err != nil {
+		_ = os.Remove(tokenFile)
+		return "", "", err
+	}
+	return database, tokenFile, nil
+}
+
+// writeStartup keeps owner sign-in guidance beside the actual configured paths.
+func writeStartup(w io.Writer, platform, address, database, tokenFile string, visualizer bool) {
+	fmt.Fprintf(w, "Grasshopper listening on http://%s/mcp\n", address)
+	if visualizer {
+		fmt.Fprintf(w, "Memory view: http://%s/visualizer/\nMemory database: %s\nAccess token file: %s\n", address, database, tokenFile)
+		quotedPath := "'" + strings.ReplaceAll(tokenFile, "'", "'\"'\"'") + "'"
+		command := "cat -- " + quotedPath
+		switch platform {
+		case "darwin":
+			command = "pbcopy < " + quotedPath
+		case "windows":
+			command = "Get-Content -LiteralPath '" + strings.ReplaceAll(tokenFile, "'", "''") + "' -Raw | Set-Clipboard"
+		}
+		fmt.Fprintln(w, "Sign in: Open the memory view. Copy or read the owner token with this command, then paste it into Access token and choose Sign in:")
+		fmt.Fprintln(w, command)
+		fmt.Fprintln(w, "Never paste the token into an agent chat.")
+	}
+}
+
+func run() error {
+	var database, library, model, tokenizer, tokenFile, listen, allowedProxyHost, visualizerStyleHashes, dataDir string
+	var createDB, visualizer, quickstart, showVersion, rotateToken, serverStopped bool
+	flag.BoolVar(&rotateToken, "rotate-token", false, "replace the owner token offline, retaining a previous credential for rollback")
+	flag.BoolVar(&serverStopped, "server-stopped", false, "acknowledge all servers using data-dir have been stopped")
+	flag.BoolVar(&showVersion, "version", false, "show the server version")
+	flag.StringVar(&database, "db", "", "Grasshopper database path")
+	flag.BoolVar(&quickstart, "quickstart", false, "start a private server from an extracted bundle")
+	flag.StringVar(&dataDir, "data-dir", "", "quickstart state directory (default: user config directory/Grasshopper)")
+	flag.BoolVar(&createDB, "create-db", false, "create an empty memory database if missing")
+	flag.BoolVar(&visualizer, "visualizer", false, "serve the memory view at /visualizer/ with owner-only review, editing and device controls")
+	flag.StringVar(&visualizerStyleHashes, "visualizer-style-hashes", "", "comma-separated SHA-256 hashes for optional browser annotation styles")
+	flag.StringVar(&library, "onnx-library", "", "local ONNX Runtime shared library")
+	flag.StringVar(&model, "model", "", "pinned Granite ONNX model")
+	flag.StringVar(&tokenizer, "tokenizer", "", "pinned Granite tokenizer.json")
+	flag.StringVar(&tokenFile, "token-file", "", "private bearer token file")
+	flag.StringVar(&listen, "listen", "127.0.0.1:8106", "loopback listen address")
+	flag.StringVar(&allowedProxyHost, "allowed-proxy-host", "", "exact HTTPS proxy Host, including port")
+	flag.Parse()
+	if showVersion {
+		fmt.Println("grasshopper server " + serverVersion)
+		return nil
+	}
+	if rotateToken {
+		if quickstart || database != "" || tokenFile != "" || createDB || library != "" || model != "" || tokenizer != "" || allowedProxyHost != "" || visualizer || visualizerStyleHashes != "" {
+			return errors.New("rotation uses only --data-dir and --server-stopped")
+		}
+		if err := rotateOwnerToken(dataDir, serverStopped); err != nil {
+			return err
+		}
+		fmt.Println("Owner token replaced. Restart the server to apply it and invalidate old owner credentials and browser cookies. Paired device credentials and database are unchanged. Keep access-token.previous private for rollback, then remove it after verification if the old token leaked.")
+		return nil
+	}
+	if serverStopped {
+		return errors.New("server-stopped requires rotate-token")
+	}
+	if quickstart {
+		if database != "" || library != "" || model != "" || tokenizer != "" || tokenFile != "" || createDB {
+			return errors.New("quickstart cannot be combined with manual database, model, token, or create-db flags")
+		}
+		if dataDir == "" {
+			base, err := os.UserConfigDir()
+			if err != nil {
+				return err
+			}
+			dataDir = filepath.Join(base, "Grasshopper")
+		}
+		if !filepath.IsAbs(dataDir) {
+			return errors.New("quickstart data-dir must be absolute")
+		}
+		executable, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		library, model, tokenizer, err = quickstartFiles(executable)
+		if err != nil {
+			return err
+		}
+		visualizer = true
+	} else if dataDir != "" {
+		return errors.New("data-dir requires quickstart")
+	}
+	if !quickstart && (database == "" || library == "" || model == "" || tokenizer == "" || tokenFile == "") {
+		return errors.New("db, ONNX library, model, tokenizer, and token file are required")
+	}
+	if err := validateListen(listen); err != nil {
+		return err
+	}
+	var token string
+	var err error
+	if !quickstart {
+		token, err = readToken(tokenFile)
+		if err != nil {
+			return fmt.Errorf("--token-file: %w", err)
+		}
+	}
+	embedder, err := embedding.NewGranite(library, model, tokenizer)
+	if err != nil {
+		return fmt.Errorf("embedding startup (--onnx-library, --model, --tokenizer): %w", err)
+	}
+	defer embedder.Close()
+	if quickstart {
+		database, tokenFile, err = quickstartState(dataDir)
+		if err != nil {
+			return err
+		}
+		token, err = readToken(tokenFile)
+		if err != nil {
+			return fmt.Errorf("--token-file: %w", err)
+		}
+	}
+	if createDB {
+		if _, err := os.Stat(database); errors.Is(err, os.ErrNotExist) {
+			if err := memory.CreateEmpty(database); err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
+	}
+	store, err := memory.OpenWritableExisting(database, embedding.ModelName, embedding.Dimensions)
+	if err != nil {
+		return fmt.Errorf("--db: %w", err)
+	}
+	defer store.Close()
+	var styleHashes []string
+	if visualizerStyleHashes != "" {
+		styleHashes = strings.Split(visualizerStyleHashes, ",")
+	}
+	handler, err := service.NewHandler(service.Backend{Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil)), Store: store, Version: serverVersion, Embedder: embedder, Model: embedding.ModelName, Visualizer: visualizer, VisualizerStyleHashes: styleHashes, AllowedProxyHost: allowedProxyHost}, token)
+	if err != nil {
+		return err
+	}
+	listener, err := net.Listen("tcp", listen)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16384}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.Serve(listener) }()
+	writeStartup(os.Stderr, runtime.GOOS, listener.Addr().String(), database, tokenFile, visualizer)
+	select {
+	case <-ctx.Done():
+	case err := <-errCh:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return server.Shutdown(shutdownCtx)
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "Grasshopper:", err)
+		os.Exit(1)
+	}
+}

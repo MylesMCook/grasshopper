@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MylesMCook/grasshopper/internal/goclient"
+	"github.com/MylesMCook/grasshopper/internal/client"
 )
 
 func setupFixture(t *testing.T) (string, string, string, string) {
@@ -123,7 +123,7 @@ func TestSetupUpdateReusesSavedRemoteAddressAndDeviceToken(t *testing.T) {
 	if err := setupClientWithRoot([]string{"--agents", "none", "--update", "--config", config}, root, run); err != nil {
 		t.Fatalf("update forgot saved remote settings: %v", err)
 	}
-	got, err := goclient.LoadConfig(config)
+	got, err := client.LoadConfig(config)
 	if err != nil || got.URL != server.URL+"/mcp" || got.TokenFile != token || got.Device != "remote-device" {
 		t.Fatalf("update changed connection: %+v %v", got, err)
 	}

@@ -140,7 +140,7 @@ from 2.3.x or earlier.
 ```sh
 go test ./...
 go vet ./...
-node --test internal/gomcp/visualizer/app.test.cjs web/*.test.cjs
+node --test internal/service/visualizer/app.test.cjs web/*.test.cjs
 ```
 
 [AGENTS.md](AGENTS.md) has the layout and project rules, and

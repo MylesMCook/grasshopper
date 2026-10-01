@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MylesMCook/grasshopper/internal/goclient"
+	"github.com/MylesMCook/grasshopper/internal/client"
 )
 
 func isolatedDeviceDefaults(t *testing.T) {
@@ -46,7 +46,7 @@ func TestConnectNeverProbesUnboundDefaultCredentials(t *testing.T) {
 		t.Run(occupied, func(t *testing.T) {
 			isolatedDeviceDefaults(t)
 			root, _, config, _ := setupFixture(t)
-			path, err := goclient.DefaultTokenPath()
+			path, err := client.DefaultTokenPath()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -189,7 +189,7 @@ func TestConnectPendingCollisionUsesOnlyServerBoundPairingSecret(t *testing.T) {
 	if result["status"] != "connected" || starts.Load() != 0 || polls.Load() != 1 || leaked.Load() != 0 {
 		t.Fatalf("status=%s starts=%d polls=%d leaked=%d", result["status"], starts.Load(), polls.Load(), leaked.Load())
 	}
-	active, err := goclient.LoadConfig(config)
+	active, err := client.LoadConfig(config)
 	if err != nil || active.TokenFile == token {
 		t.Fatal("pending flow reused occupied token")
 	}

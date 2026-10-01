@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/MylesMCook/grasshopper/internal/goclient"
+	"github.com/MylesMCook/grasshopper/internal/client"
 )
 
 var clientVersion = "dev"
@@ -43,7 +43,7 @@ Use grasshopper COMMAND --help for options, or --version for the version.`)
 		return nil
 	}
 	if len(os.Args) == 2 && os.Args[1] == "config-path" {
-		path, err := goclient.ConfigPath("")
+		path, err := client.ConfigPath("")
 		if err != nil {
 			return err
 		}
@@ -69,11 +69,11 @@ Use grasshopper COMMAND --help for options, or --version for the version.`)
 		if err := flags.Parse(os.Args[2:]); err != nil {
 			return err
 		}
-		path, err := goclient.ConfigPath(*config)
+		path, err := client.ConfigPath(*config)
 		if err != nil {
 			return err
 		}
-		return goclient.Bridge(context.Background(), path, os.Stdin, os.Stdout)
+		return client.Bridge(context.Background(), path, os.Stdin, os.Stdout)
 	case "hook":
 		flags := flag.NewFlagSet("hook", flag.ContinueOnError)
 		config := flags.String("config", "", "client configuration path")
@@ -85,11 +85,11 @@ Use grasshopper COMMAND --help for options, or --version for the version.`)
 		if *harness == "" {
 			return errors.New("hook needs --harness")
 		}
-		path, err := goclient.ConfigPath(*config)
+		path, err := client.ConfigPath(*config)
 		if err != nil {
 			return err
 		}
-		input, err := goclient.ParseHookInput(os.Stdin)
+		input, err := client.ParseHookInput(os.Stdin)
 		if err != nil {
 			return err
 		}
@@ -98,13 +98,13 @@ Use grasshopper COMMAND --help for options, or --version for the version.`)
 			if *harness != "claude" {
 				return errors.New("global guidance parts are Claude-only")
 			}
-			output, err = goclient.HookGlobalPart(*globalPart, input)
+			output, err = client.HookGlobalPart(*globalPart, input)
 		} else {
-			output, err = goclient.Hook(path, *harness, input)
+			output, err = client.Hook(path, *harness, input)
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Grasshopper hook unavailable; no persistence acknowledged")
-			return json.NewEncoder(os.Stdout).Encode(goclient.HookUnavailable(*harness, input))
+			return json.NewEncoder(os.Stdout).Encode(client.HookUnavailable(*harness, input))
 		}
 		return json.NewEncoder(os.Stdout).Encode(output)
 	default:

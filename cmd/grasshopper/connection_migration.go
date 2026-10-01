@@ -6,13 +6,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/MylesMCook/grasshopper/internal/goclient"
+	"github.com/MylesMCook/grasshopper/internal/client"
 )
 
 // migrateDeviceCredential stages only an already host-verified device credential.
 // The caller must verify role and device before this helper. Originals remain
 // untouched; setup performs the normal config/wiring transaction afterwards.
-func migrateDeviceCredential(existing goclient.Config, canonical string) (string, error) {
+func migrateDeviceCredential(existing client.Config, canonical string) (string, error) {
 	if _, err := os.Lstat(canonical); !errors.Is(err, os.ErrNotExist) {
 		return "", connectProblem("conflicting_configuration", "A shared connection already exists or cannot be inspected. Keep both connections and inspect them before changing either.")
 	}
@@ -43,7 +43,7 @@ func migrateDeviceCredential(existing goclient.Config, canonical string) (string
 		// Reject links/nonprivate files through the regular remote credential loader.
 		test := existing
 		test.TokenFile = target
-		if _, err := goclient.NewRemote(test); err != nil {
+		if _, err := client.NewRemote(test); err != nil {
 			return "", connectProblem("conflicting_configuration", "The shared credential needs inspection before migration.")
 		}
 		saved, err := os.ReadFile(target)
