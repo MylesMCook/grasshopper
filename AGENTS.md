@@ -82,6 +82,15 @@ details.
 Keep personal infrastructure addresses, supervisor names, credential locations
 and recovery references out of public documentation as well as code comments.
 Use generic self-hosting examples; keep machine-specific operator notes private.
+Do not name the owner's machines, hostnames or employer devices in public files;
+say "the Windows PC" or "a Linux machine" instead.
+
+## Release cadence
+
+Batch memory-view and setup polish into one release at most weekly. Deploy
+changes that touch only the public site without a version release. Run the full
+package, recovery and rollback rehearsal only when server, storage, migration or
+client-bridge code changes.
 
 ## Pull request delivery
 

@@ -26,8 +26,8 @@ func TestClientTokensUpgradeBackupAndRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := "synthetic-device-token-0123456789-abcdef"
-	issued, err := w.AddClientToken(ctx, "work-hp", sha256.Sum256([]byte(token)))
-	if err != nil || issued.ID < 1 || issued.Device != "work-hp" {
+	issued, err := w.AddClientToken(ctx, "test-laptop", sha256.Sum256([]byte(token)))
+	if err != nil || issued.ID < 1 || issued.Device != "test-laptop" {
 		t.Fatalf("issue token: %+v %v", issued, err)
 	}
 	if valid, err := w.ClientTokenValid(ctx, token); err != nil || !valid {
