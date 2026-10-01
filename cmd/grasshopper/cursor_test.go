@@ -115,6 +115,26 @@ func TestCursorWiringRefusesConflictingServer(t *testing.T) {
 	}
 }
 
+// Cursor rejects a hooks.json whose hooks field is missing, which also
+// disables every other user hook in that file.
+func TestCursorRemovalLeavesValidHooksFile(t *testing.T) {
+	dir := t.TempDir()
+	binary, config := filepath.Join(dir, "grasshopper"), filepath.Join(dir, "client.json")
+	if err := cursorWiring(dir, config, binary, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := cursorWiring(dir, config, binary, false, false); err != nil {
+		t.Fatal(err)
+	}
+	hooks, err := readJSONObject(filepath.Join(dir, "hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if events, ok := hooks["hooks"].(map[string]any); !ok || len(events) != 0 {
+		t.Fatalf("removal must leave an empty hooks object for Cursor, got %v", hooks)
+	}
+}
+
 func TestCursorRemovalKeepsUnrelatedHookMention(t *testing.T) {
 	dir := t.TempDir()
 	hooksPath := filepath.Join(dir, "hooks.json")
