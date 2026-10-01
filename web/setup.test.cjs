@@ -257,14 +257,16 @@ test('changing agents cancels feedback from a pending clipboard request', async 
   }
 });
 
-test('setup keeps four overview anchors and a collapsed native Claude alternative', () => {
+test('setup steps keep linkable labels in order and a collapsed native Claude alternative', () => {
   const html=readFileSync(`${__dirname}/public/setup/index.html`,'utf8');
-  for(const name of ['server','install','connect','check']) {
-    assert.match(html,new RegExp(`href="#${name}-title"`));assert.match(html,new RegExp(`id="${name}-title"`));
-  }
+  const order=['server','install','connect','check'].map(name=>{
+    assert.match(html,new RegExp(`<h2 class="sec-label" id="${name}-title" tabindex="-1">`));
+    return html.indexOf(`id="${name}-title"`);
+  });
+  assert.deepEqual([...order].sort((a,b)=>a-b),order);
   assert.match(html,/<details class="claude-alternative"><summary>/);
   assert.match(html,/<code>Connect Grasshopper<\/code>/);
-  assert.match(html,/<h1>Set up Grasshopper\.<\/h1>/);
+  assert.match(html,/<h1>Set up Grasshopper<\/h1>/);
 });
 
 

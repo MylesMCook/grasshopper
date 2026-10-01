@@ -8,8 +8,8 @@
   <meta name="description" content="Open the memory view on your own Grasshopper server.">
   <meta property="og:title" content="Memory view · Grasshopper">
   <meta property="og:description" content="Open the memory view on your own Grasshopper server.">
-  <meta property="og:image" content="https://usegrasshopper.com/memory-view.png">
-  <meta property="og:image:alt" content="Grasshopper memory view with invented example memories.">
+  <meta property="og:image" content="https://usegrasshopper.com/social.png">
+  <meta property="og:image:alt" content="Grasshopper: memory for your coding agents, with an example memory view.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://usegrasshopper.com/view/">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -23,19 +23,16 @@
   <a class="skip-link" href="#content">Skip to content</a>
   <div class="wrap">
     <header class="top"><a class="brand" href="/">GRASSHOPPER</a><nav aria-label="Grasshopper"><a href="/">Home</a><a href="/setup/">Set up</a><a href="/view/" aria-current="page">Memory view</a></nav><button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button></header>
-    <main id="content" tabindex="-1" class="view-main">
-      <h1>Open your memory view.</h1>
-      <p class="lead">Enter your server address.</p>
-      <p class="note">Your access token is only entered on your server.</p>
+    <main id="content" tabindex="-1" class="narrow">
+      <h1>Open your memory view</h1>
       <form id="server-form" class="server-form" novalidate>
-        <label for="server-address">Your server address</label>
-        <div class="server-form-row"><input id="server-address" type="url" inputmode="url" autocomplete="url" placeholder="https://your-server.tailnet.ts.net" required spellcheck="false"><button type="submit">Open view</button></div>
+        <label for="server-address">Server address</label>
+        <div class="server-form-row"><input id="server-address" type="url" inputmode="url" autocomplete="url" placeholder="https://your-server.tailnet.ts.net" required spellcheck="false"><button type="submit">Open</button></div>
         <p id="server-error" class="form-error" role="alert" hidden></p>
-        <p class="note">This browser remembers the address for next time.</p>
-        <button id="forget-address" type="button" class="text-button">Forget this address</button>
+        <p class="note">This browser remembers the address. You sign in on your server, not here. <button id="forget-address" type="button" class="text-button">Forget it</button></p>
       </form>
     </main>
-    <footer><span>Grasshopper</span><span>This site never reads your memories or access token.</span></footer>
+    <footer><span>This site never reads your memories or access token.</span><span class="later-links"><a href="https://github.com/MylesMCook/grasshopper#back-up-and-update-the-server">Back up and update</a><a href="https://github.com/MylesMCook/grasshopper">GitHub</a></span></footer>
   </div>
 </body>
 </html>
