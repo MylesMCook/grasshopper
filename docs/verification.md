@@ -18,7 +18,7 @@ any tool call. Each cell is the last version where that passed.
 | Windows (x64) | 2.6.0 | Not delivered in 2.3.3 | Not tested |
 
 Since then, each release runs the installed macOS connectors' startup hooks and
-five-tool bridges directly (latest: 2.8.5), without a fresh AI session.
+five-tool bridges directly (latest: 2.9.0), without a fresh AI session.
 Cross-machine save, correct and read back through one server passed between
 macOS and Linux in 2.3.4. Desktop apps (Codex Desktop, Cursor IDE, Claude
 desktop) have not been retested since 2.3.0.
@@ -42,9 +42,19 @@ search has its model, an installed connector read a known memory, and a second
 off-machine backup passed. The 2.8.5 binaries, service definition and
 pre-upgrade snapshot are kept for rollback.
 
+The macOS connectors then moved to 2.9.0: Codex through its marketplace
+plugin, Claude Code and Cursor from the checksum-verified client archive with
+`setup --update`. The Mac swapped the owner token for its own approved device
+token; `check` reports registration verified, the Codex and Claude Code startup
+hooks loaded project context with it, and its last-seen time appeared in
+Agents. A fresh Claude Code session (Haiku 4.5) in an unresolved folder loaded
+only the global memory, read memory 8, and saved, searched and archived a test
+memory. It saved a requested global memory with device scope and guessed an
+invalid `memory_type`, which 2.9.1 addresses in the `store` tool guidance.
+
 Not verified: phones, screen readers, non-Chromium browsers, fresh AI
-sessions on other machines, and device last-seen times (no paired device has
-connected since the upgrade).
+sessions on other machines, and last-seen times for the Windows and Linux
+devices (neither has connected since the upgrade).
 
 ## Every release
 

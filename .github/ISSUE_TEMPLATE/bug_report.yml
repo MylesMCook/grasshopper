@@ -7,7 +7,7 @@ body:
     attributes:
       label: Client version
       description: Run `grasshopper --version` on the machine with the problem. Write "Unknown" or "N/A" if it does not apply.
-      placeholder: "2.9.0"
+      placeholder: "2.9.1"
     validations:
       required: true
   - type: input
@@ -15,7 +15,7 @@ body:
     attributes:
       label: Server version
       description: Shown in the memory view, or run `grasshopper-server --version`. Write "Unknown" or "N/A" if it does not apply.
-      placeholder: "2.9.0"
+      placeholder: "2.9.1"
     validations:
       required: true
   - type: dropdown

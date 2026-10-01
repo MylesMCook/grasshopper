@@ -95,10 +95,19 @@ func scopeSchema() map[string]any {
 func provenanceSchema() map[string]any {
 	return objectSchema(map[string]any{"harness": map[string]any{"type": "string"}, "device": map[string]any{"type": "string"}, "source": map[string]any{"type": "string"}}, "harness", "device", "source")
 }
+
+// memoryTypeSchema lists the stored kinds the writer accepts. It is separate
+// from purpose, which agents set to preference, decision and so on.
+func memoryTypeSchema() map[string]any {
+	schema := optional("string")
+	schema["enum"] = []any{"knowledge", "identity", "episode", "procedure", nil}
+	schema["description"] = "Optional; omit it to use knowledge. Not the same as purpose."
+	return schema
+}
 func writeSchema() map[string]any {
 	return objectSchema(map[string]any{
 		"scope": scopeSchema(), "content": map[string]any{"type": "string", "maxLength": 32768}, "title": optional("string"), "tags": optional("string"),
-		"memory_type": optional("string"), "purpose": map[string]any{"type": "string", "enum": []string{"preference", "decision", "lesson", "handoff", "observation"}},
+		"memory_type": memoryTypeSchema(), "purpose": map[string]any{"type": "string", "enum": []string{"preference", "decision", "lesson", "handoff", "observation"}},
 		"confirmed": map[string]any{"type": "boolean"}, "provenance": provenanceSchema(), "request_id": map[string]any{"type": "string"},
 		"key": optional("string"), "id": optional("integer"), "expected_revision": optional("integer"), "restore_revision": optional("integer"),
 	}, "scope", "content", "purpose", "confirmed", "provenance", "request_id")
@@ -302,7 +311,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			page, err := backend.Store.Search(ctx, in.Scope, in.Query, vector, backend.Model, limit, budget)
 			return nil, searchOutput{page, vector != nil}, err
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "store", Title: "Save or correct memory", Description: "Use this when saving an explicit preference, accepted decision, verified lesson, or concise handoff with provenance and a request ID.", Annotations: write, InputSchema: writeSchema()},
+	mcp.AddTool(server, &mcp.Tool{Name: "store", Title: "Save or correct memory", Description: "Use this when saving an explicit preference, accepted decision, verified lesson, or concise handoff with provenance and a request ID. The scope is where the memory applies: {} applies everywhere, project limits it to one project, and device or platform are only for facts about one machine or OS.", Annotations: write, InputSchema: writeSchema()},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in memory.WriteInput) (*mcp.CallToolResult, storeOutput, error) {
 			receipt, embedded, err := saveMemory(ctx, in)
 			return nil, storeOutput{receipt, receipt.ID, receipt.Revision, receipt.Deduplicated, embedded}, agentReadError(err)

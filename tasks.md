@@ -1,13 +1,14 @@
 # Grasshopper status
 
 Current release: [2.9.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.0),
-deployed to the macOS service, the marketplace and usegrasshopper.com.
-Installed macOS connectors still run 2.8.5 until updated. Earlier release records are in Git history and
+deployed to the macOS service, its connectors, the marketplace and usegrasshopper.com. Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-Nothing in progress. Owner: Claude Code, macOS.
+2.9.1: the store tool lists memory_type values and says where a saved memory
+applies, after a Haiku test saved a global preference to one device. Owner:
+Claude Code, macOS, branch `claude/store-guidance`. Next: merge, tag, deploy.
 
 ## Decisions
 
@@ -19,4 +20,4 @@ Nothing in progress. Owner: Claude Code, macOS.
 
 ## Next
 
-Update the installed connectors to 2.9.0 when convenient; deferred: project archive and rename.
+Update the Windows PC and Linux connectors when next used; deferred: project archive and rename.
