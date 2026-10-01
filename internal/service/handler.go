@@ -207,6 +207,19 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		receipt, err := backend.Store.Write(ctx, in, vector, backend.Model)
 		return receipt, vector != nil, err
 	}
+	// moveMemory embeds the moved text, then copies and archives in one
+	// transaction. The text comes from the revision the owner saw.
+	moveMemory := func(ctx context.Context, in memory.MoveInput, content string) (memory.Receipt, error) {
+		var vector []float32
+		if backend.Embedder != nil {
+			var err error
+			vector, err = runInference(ctx, func() ([]float32, error) { return backend.Embedder.EmbedDocument(content) })
+			if err != nil {
+				return memory.Receipt{}, err
+			}
+		}
+		return backend.Store.Move(ctx, in, vector, backend.Model)
+	}
 	tokenHash := sha256.Sum256([]byte(token))
 	masterBearerValid := func(r *http.Request) bool {
 		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -334,7 +347,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			"/visualizer/api/record":             visualizerRecord(backend.Store),
 			"/visualizer/api/update":             visualizerUpdate(backend.Store, saveMemory, audit),
 			"/visualizer/api/archive":            visualizerArchive(backend.Store, audit),
-			"/visualizer/api/move":               visualizerMove(backend.Store, saveMemory, audit),
+			"/visualizer/api/move":               visualizerMove(backend.Store, moveMemory, audit),
 			"/visualizer/api/startup":            visualizerStartup(backend.Store),
 			"/visualizer/api/export":             visualizerExport(backend.Store),
 			"/visualizer/api/session/revoke-all": sessions.revokeAll,
@@ -511,7 +524,10 @@ func (d *deviceActivity) touch(ctx context.Context, store *memory.Writer, token 
 	}
 	d.last[key] = now
 	d.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-	defer cancel()
-	_ = store.TouchClientToken(ctx, token, now)
+	// The write runs after the request is answered, bounded to one second.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+		defer cancel()
+		_ = store.TouchClientToken(ctx, token, now)
+	}()
 }

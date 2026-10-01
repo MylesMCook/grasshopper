@@ -51,3 +51,31 @@ func TestNewHandoffRetiresTheEarlierOneInItsScope(t *testing.T) {
 		t.Fatalf("retry changed the receipt: %+v vs %+v", again, second)
 	}
 }
+
+// Restoring an older handoff makes it current and archives the newer one, so
+// a scope never holds two active handoffs.
+func TestRestoringAHandoffKeepsOnePerScope(t *testing.T) {
+	w := fixtureWriter(t)
+	ctx := context.Background()
+	project := "id:restore"
+	scope := Scope{Project: &project}
+	save := func(text, request string) Receipt {
+		t.Helper()
+		receipt, err := w.Write(ctx, WriteInput{Scope: scope, Content: text, Purpose: "handoff", Provenance: Provenance{"codex", "synthetic-mac", "end of session"}, RequestID: request}, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return receipt
+	}
+	first := save("First session note.", "restore-1")
+	second := save("Second session note.", "restore-2")
+	older, _ := w.RecordByID(ctx, first.ID, nil)
+	if _, err := w.Archive(ctx, ArchiveInput{Scope: scope, ID: first.ID, ExpectedRevision: older.Revision, Archived: false, RequestID: "restore-older", Provenance: Provenance{"memory-view", "owner browser", "restore"}}); err != nil {
+		t.Fatal(err)
+	}
+	restored, _ := w.RecordByID(ctx, first.ID, nil)
+	newer, _ := w.RecordByID(ctx, second.ID, nil)
+	if restored.Archived || !newer.Archived {
+		t.Fatalf("restore left two or zero active handoffs: restored archived=%v newer archived=%v", restored.Archived, newer.Archived)
+	}
+}
