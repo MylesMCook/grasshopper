@@ -154,7 +154,7 @@ function setURL(push) {
   if (push) window.history.pushState(null, '', hash); else window.history.replaceState(null, '', hash);
 }
 function go(route, push = true) {
-  if (dirty() && !confirmLeave()) return;
+  if (dirty() && !confirmLeave()) return false;
   state.route = { page: 'project', project: '', query: '', memory: null, connect: '', ...route };
   Object.assign(state, { panel: null, menu: false, expanded: new Set(), showGlobal: false, page: null, pageKey: '', approvalFocused: false, searchDraft: null });
   setURL(push);
@@ -163,13 +163,14 @@ function go(route, push = true) {
   restartPolling();
   render();
   document.getElementById('main')?.focus?.();
+  return true;
 }
 const ROUTE_KEYS = ['page', 'project', 'query', 'memory', 'connect'];
 window.addEventListener('hashchange', () => {
   // In-page anchors such as the skip link are not routes.
   if (![...new URLSearchParams(location.hash.slice(1)).keys()].some(key => ROUTE_KEYS.includes(key)) && location.hash) return;
   const route = routeFromHash();
-  if (routeHash(route) !== routeHash(state.route)) go(route, false);
+  if (routeHash(route) !== routeHash(state.route) && !go(route, false)) setURL(false);
 });
 
 // ---------- network ----------
@@ -225,7 +226,7 @@ async function loadList(target, generation, signal, cached = true) {
   const page = first.data;
   page.records = page.records || [];
   const seen = new Set();
-  while (page.next && !seen.has(page.next) && seen.size < 20 && target.url.endsWith('context')) {
+  while (page.next && !seen.has(page.next) && target.url.endsWith('context')) {
     seen.add(page.next);
     const more = await api(target.url, { ...target.body, after: page.next }, { signal });
     if (more.status !== 200 || generation !== state.generation) throw new Error('unavailable');
@@ -357,7 +358,8 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) stopP
 async function checkSession() {
   try {
     const response = await fetch('/visualizer/api/session', { method: 'GET', credentials: 'same-origin', cache: 'no-store' });
-    const data = response.ok ? await response.json() : {};
+    if (!response.ok) throw new Error('unavailable');
+    const data = await response.json();
     state.checking = false;
     if (data.connected) { Object.assign(state, { active: true, generation: state.generation + 1 }); restartPolling(); if (state.route.memory) openMemory(state.route.memory, false); }
   } catch { state.checking = false; state.signInError = "Can't reach your server. Check it's running, then reload."; }
@@ -427,18 +429,21 @@ async function loadMemory(panel, revision) {
   } catch (error) { if (!error.session && state.panel === panel && !revision) { panel.error = "Couldn't load this memory."; render(); } return null; }
 }
 
-// Earlier versions load in the background, newest first, up to five.
-async function loadHistory(panel) {
+// Earlier versions load newest first, five at a time, back to the first.
+async function loadHistory(panel, more = false) {
   const record = panel.record;
-  if (!record || record.revision <= 1) { panel.history = []; return; }
-  const items = [];
-  for (let revision = record.revision - 1; revision >= Math.max(1, record.revision - 5); revision--) {
+  if (!record || record.revision <= 1) { panel.history = []; panel.olderFrom = 0; return; }
+  const items = more ? [...(panel.history || [])] : [];
+  const start = more ? panel.olderFrom : record.revision - 1;
+  const stop = Math.max(1, start - 4);
+  for (let revision = start; revision >= stop; revision--) {
     const older = await loadMemory(panel, revision);
     if (!older || state.panel !== panel || panel.record !== record) return;
     // An archive or restore revision repeats the text; show each text once.
     if (!items.some(item => item.content === older.content && item.title === older.title) && !(older.content === record.content && older.title === record.title)) items.push(older);
   }
   panel.history = items;
+  panel.olderFrom = stop - 1;
   if (!editing()) render();
 }
 
@@ -565,8 +570,11 @@ async function undo() {
   if (!pending) return;
   if (saving) { say('Another change is still saving. Try Undo again in a moment.'); return; }
   clearTimeout(timers.undo);
-  state.undo = null;
-  await write('/visualizer/api/archive', { id: pending.record.id, expected_revision: pending.revision, archived: false }, { onDone: () => say(`Restored “${pending.record.title}”.`) });
+  const done = await write('/visualizer/api/archive', { id: pending.record.id, expected_revision: pending.revision, archived: false }, {
+    onDone: () => { say(`Restored “${pending.record.title}”.`); if (state.undo === pending) state.undo = null; }
+  });
+  // On failure the Undo stays for another ten seconds so it can be retried.
+  if (!done && state.undo === pending) timers.undo = setTimeout(() => { if (state.undo === pending) { state.undo = null; render(); } }, 10000);
 }
 
 async function decidePairing(request, decision) {
@@ -652,7 +660,7 @@ function sidebar() {
 function row(record, { meta } = {}) {
   const only = [record.scope?.device && `${record.scope.device} only`, record.scope?.platform && `${PLATFORM[record.scope.platform] || record.scope.platform} only`].filter(Boolean).join(' · ');
   const right = meta ?? [by(record), relDate(record.updated_at), only].filter(Boolean).join(' · ');
-  return h('button', { type: 'button', class: `row${record.purpose === 'handoff' ? ' handoff' : ''}`, 'aria-current': state.panel?.id === record.id ? 'true' : null,
+  return h('button', { type: 'button', class: `row${record.purpose === 'handoff' ? ' handoff' : ''}`, 'data-key': `open:${record.id}`, 'aria-current': state.panel?.id === record.id ? 'true' : null,
     title: fullDate(record.updated_at), onclick: () => openMemory(record.id) },
   h('span', { class: 't', text: record.title || `Memory #${record.id}` }), h('span', { class: 'm', text: right }));
 }
@@ -666,8 +674,8 @@ function suggestionRow(record, kept) {
   const meta = [by(record), relDate(record.updated_at), similar ? 'similar' : ''].filter(Boolean).join(' · ');
   return h('div', { class: 'row-inline' }, row(record, { meta }),
     h('span', { class: 'actions tight' },
-      h('button', { type: 'button', class: 'quiet', disabled: saving, 'aria-label': `Keep ${record.title}`, onclick: () => keep(record) }, 'Keep'),
-      h('button', { type: 'button', class: 'quiet muted', disabled: saving, 'aria-label': `Discard ${record.title}`, onclick: () => discard(record) }, 'Discard')));
+      h('button', { type: 'button', class: 'quiet', disabled: saving, 'data-key': `keep:${record.id}`, 'aria-label': `Keep ${record.title}`, onclick: () => keep(record) }, 'Keep'),
+      h('button', { type: 'button', class: 'quiet muted', disabled: saving, 'data-key': `discard:${record.id}`, 'aria-label': `Discard ${record.title}`, onclick: () => discard(record) }, 'Discard')));
 }
 
 function grouped(records) {
@@ -735,9 +743,11 @@ function allPage() {
     if (state.index && !state.index.total && !records.length) return firstRun();
     const fresh = records.filter(record => !record.confirmed && record.purpose !== 'handoff');
     const kept = records.filter(record => record.confirmed && record.purpose !== 'handoff');
+    const handoff = records.filter(record => record.purpose === 'handoff').sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0];
     return [head('All projects', 'Memories that apply to every project'), banner(),
       fresh.length ? section('New', fresh.map(record => suggestionRow(record, kept)), 'warn') : null,
-      grouped(kept) || section('All projects', kept.length ? kept.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing applies to every project yet.' }))];
+      grouped(kept) || section('All projects', kept.length ? kept.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing applies to every project yet.' })),
+      handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null];
   });
 }
 
@@ -766,7 +776,13 @@ function searchPage() {
   const body = !state.page ? h('p', { class: 'meta loading', text: 'Searching…' })
     : !records.length ? h('p', { class: 'meta empty', text: `Nothing matches “${state.route.query}”. Try fewer words.` })
     : order.map(project => { const items = records.filter(record => (record.scope?.project || null) === project); return items.length ? section(projectName(project), items.map(record => row(record))) : null; });
-  return [head('Search', state.page ? `${records.length} found${state.page.semantic_ready === false ? ' · exact words only' : ''}` : ''), banner(), body];
+  const omitted = state.page?.omitted_records || [];
+  const titles = state.page?.omitted_titles || {};
+  const extra = omitted.length ? section('More', [h('p', { class: 'meta', text: `${omitted.length} more ${omitted.length === 1 ? 'match' : 'matches'} did not fit in one response.` }),
+    omitted.map(reference => h('button', { type: 'button', class: 'row', 'data-key': `open:${reference.id}`, onclick: () => openMemory(reference.id) },
+      h('span', { class: 't', text: titles[reference.id] || `Memory #${reference.id}` }), h('span', { class: 'm', text: projectName(reference.scope?.project) })))]) : null;
+  const found = records.length + omitted.length;
+  return [head('Search', state.page ? `${found} found${state.page.semantic_ready === false ? ' · exact words only' : ''}` : ''), banner(), body, extra];
 }
 
 function archivedPage() {
@@ -781,7 +797,7 @@ function archivedPage() {
       [null, ...sortedProjects()].map(project => {
         const items = records.filter(record => (record.scope?.project || null) === project);
         return items.length ? section(projectName(project), items.map(record => h('div', { class: 'row-inline' }, row(record, { meta: label(record) }),
-          h('button', { type: 'button', class: 'quiet', disabled: saving, 'aria-label': `Restore ${record.title}`, onclick: () => restore(record) }, 'Restore')))) : null;
+          h('button', { type: 'button', class: 'quiet', disabled: saving, 'data-key': `restore:${record.id}`, 'aria-label': `Restore ${record.title}`, onclick: () => restore(record) }, 'Restore')))) : null;
       })];
   });
 }
@@ -795,11 +811,11 @@ function agentsPage() {
       h('div', { class: 'row-inline' }, h('span', { class: 'reading', text: `${request.device} wants to connect` }), h('code', { class: 'code', text: request.code })),
       h('p', { class: 'label muted', text: `Approve only if the agent shows the same code. ${request.expires_in >= 60 ? `Expires in ${Math.ceil(request.expires_in / 60)} min.` : `Expires in ${request.expires_in} s.`}` }),
       h('div', { class: 'actions' },
-        h('button', { type: 'button', class: 'btn', onclick: () => decidePairing(request, 'approve') }, 'Approve'),
-        h('button', { type: 'button', class: 'quiet muted', onclick: () => decidePairing(request, 'deny') }, 'Deny')))), 'warn') : null,
+        h('button', { type: 'button', class: 'btn', 'data-key': `approve:${request.request_id}`, 'aria-label': `Approve ${request.device}`, onclick: () => decidePairing(request, 'approve') }, 'Approve'),
+        h('button', { type: 'button', class: 'quiet muted', 'data-key': `deny:${request.request_id}`, 'aria-label': `Deny ${request.device}`, onclick: () => decidePairing(request, 'deny') }, 'Deny')))), 'warn') : null,
     linked && state.devicesLoaded && !waiting.some(request => request.request_id === linked)
       ? h('p', { class: 'label muted', text: 'That connection request has expired or was already handled. Ask the agent to connect again.' }) : null,
-    section('Connected', connected.length ? connected.map(device => h('button', { type: 'button', class: 'row', 'aria-current': state.panel?.type === 'device' && state.panel.id === device.id ? 'true' : null, onclick: () => { state.panel = { type: 'device', id: device.id, confirm: false }; render(); } },
+    section('Connected', connected.length ? connected.map(device => h('button', { type: 'button', class: 'row', 'data-key': `device:${device.id}`, 'aria-current': state.panel?.type === 'device' && state.panel.id === device.id ? 'true' : null, onclick: () => { state.panel = { type: 'device', id: device.id, confirm: false }; render(); } },
       h('span', { class: 't' }, h('i', { class: recentlySeen(device) ? 'dot on' : 'dot', 'aria-hidden': 'true' }), device.device),
       h('span', { class: 'm', text: ago(device.last_seen_at) }))) : h('p', { class: 'meta empty', text: 'No agents connected yet.' })),
     section('Add one', h('div', { class: 'stack' },
@@ -894,7 +910,8 @@ function memoryPanel(panel) {
       h('div', { class: 'row static' }, h('span', { class: 't', text: record.title }), h('span', { class: 'm', text: `${by(record)} · ${relDate(record.updated_at)} · current` })),
       panel.history.map(older => h('div', { class: 'row-inline' },
         h('div', { class: 'row static' }, h('span', { class: 't muted', text: older.title || older.content.slice(0, 80) }), h('span', { class: 'm', text: `${by(older)} · ${relDate(older.updated_at)}` })),
-        record.archived ? null : h('button', { type: 'button', class: 'quiet', disabled: saving, 'aria-label': `Restore version from ${relDate(older.updated_at)}`, onclick: () => restoreRevision(record, older) }, 'Restore')))]) : null];
+        record.archived ? null : h('button', { type: 'button', class: 'quiet', disabled: saving, 'data-key': `restore-version:${older.revision}`, 'aria-label': `Restore version from ${relDate(older.updated_at)}`, onclick: () => restoreRevision(record, older) }, 'Restore'))),
+      panel.olderFrom >= 1 ? h('button', { type: 'button', class: 'quiet more', onclick: () => loadHistory(panel, true) }, 'Show older versions') : null]) : null];
 }
 
 function devicePanel(panel) {
@@ -922,16 +939,22 @@ function startupPanel(panel) {
         data.not_loaded_total > data.not_loaded.length ? h('p', { class: 'meta', text: `And ${data.not_loaded_total - data.not_loaded.length} more.` }) : null]) : null]];
 }
 
+function panelBody(panel) {
+  const back = { memory: currentPlace(), device: 'Agents', startup: 'Settings' }[panel.type];
+  return [h('div', { class: 'panel-top' },
+    h('button', { type: 'button', class: 'quiet back', onclick: closePanel }, `← ${back}`),
+    h('button', { type: 'button', class: 'icon-btn close-x', 'aria-label': 'Close', onclick: closePanel }, '×')),
+  panel.type === 'memory' ? memoryPanel(panel) : panel.type === 'device' ? devicePanel(panel) : startupPanel(panel)];
+}
 function panelView() {
   const panel = state.panel;
   if (!panel) return null;
-  const back = { memory: currentPlace(), device: 'Agents', startup: 'Settings' }[panel.type];
-  return h('aside', { class: 'panel', 'aria-label': { memory: 'Memory', device: 'Agent', startup: 'Startup preview' }[panel.type] },
-    h('div', { class: 'panel-top' },
-      h('button', { type: 'button', class: 'quiet back', onclick: closePanel }, `← ${back}`),
-      h('button', { type: 'button', class: 'icon-btn close-x', 'aria-label': 'Close', onclick: closePanel }, '×')),
-    panel.type === 'memory' ? memoryPanel(panel) : panel.type === 'device' ? devicePanel(panel) : startupPanel(panel));
+  return h('aside', { class: 'panel', 'aria-label': { memory: 'Memory', device: 'Agent', startup: 'Startup preview' }[panel.type] }, panelBody(panel));
 }
+// Below 1200px the opened item replaces the list, so it becomes the page's
+// main region (and the skip link's target) instead of a hidden list.
+const narrowLayout = window.matchMedia?.('(max-width: 1199px)');
+narrowLayout?.addEventListener?.('change', () => { if (state.active) render(); });
 
 function signInView() {
   return h('main', { class: 'signin', id: 'main', tabindex: '-1' },
@@ -972,26 +995,30 @@ function render() {
     state.panel.draft = { title: document.getElementById('edit-title').value, content: document.getElementById('edit-text').value };
   }
   const focused = document.activeElement;
-  const focusKey = focused && focused !== document.body ? focused.getAttribute?.('aria-label') || focused.id || focused.textContent : '';
+  const keyOf = node => node.getAttribute?.('data-key') || node.getAttribute?.('aria-label') || node.id || node.textContent;
+  const focusKey = focused && focused !== document.body ? keyOf(focused) : '';
   document.title = state.active ? `${state.panel?.record?.title || currentPlace()} · Grasshopper` : 'Grasshopper';
   if (!state.active) { root.replaceChildren(signInView()); return; }
   // Scrolling areas keep their position across a redraw.
   const scrolled = ['side', 'panel'].map(name => [name, root.querySelector?.(`.${name}`)?.scrollTop || 0]);
-  const panel = panelView();
+  const narrow = Boolean(narrowLayout?.matches) && Boolean(state.panel);
+  const panel = narrow ? null : panelView();
   const review = state.index?.review || 0;
   root.replaceChildren(...[h('div', { class: `app${panel ? ' has-panel' : ''}${state.menu ? ' menu-open' : ''}` },
     h('header', { class: 'topbar' }, h('span', { class: 'brand', text: 'GRASSHOPPER' }),
       h('button', { type: 'button', class: 'menu-btn', 'aria-expanded': String(state.menu), onclick: () => { state.menu = !state.menu; render(); } },
         `${currentPlace()} ${state.menu ? '▴' : '▾'}`, review ? h('span', { class: 'warn', text: ` · ${review} new` }) : null)),
     sidebar(),
-    h('main', { id: 'main', tabindex: '-1', class: state.offline ? 'offline' : null }, h('div', { class: 'page' }, mainView())),
+    narrow
+      ? h('main', { id: 'main', tabindex: '-1', class: 'panel panel-main', 'aria-label': state.panel.record?.title || 'Memory' }, panelBody(state.panel))
+      : h('main', { id: 'main', tabindex: '-1', class: state.offline ? 'offline' : null }, h('div', { class: 'page' }, mainView())),
     panel),
   state.undo ? h('div', { class: 'undo', role: 'status' }, h('span', { text: `${state.undo.verb} “${state.undo.record.title}”` }), h('button', { type: 'button', class: 'quiet', onclick: undo }, 'Undo')) : null].filter(Boolean));
   for (const [name, top] of scrolled) { const node = root.querySelector?.(`.${name}`); if (node && top) node.scrollTop = top; }
   // A redraw must not strand keyboard focus on a removed control.
   if (focusKey) {
-    const match = [...(root.querySelectorAll?.('button, input, textarea, select, a') || [])].find(node => (node.getAttribute('aria-label') || node.id || node.textContent) === focusKey);
-    match?.focus?.();
+    const match = [...(root.querySelectorAll?.('button, input, textarea, select, a') || [])].find(node => keyOf(node) === focusKey);
+    (match || document.getElementById('main'))?.focus?.();
   }
   // An approval link moves focus to its request once, not on every redraw.
   if (state.route.connect && !state.approvalFocused) {
