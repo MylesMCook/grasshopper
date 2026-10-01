@@ -1,17 +1,13 @@
 # Grasshopper status
 
-Current release: [2.8.5](https://github.com/MylesMCook/grasshopper/releases/tag/v2.8.5),
-deployed to the macOS service, the installed macOS connectors and
-usegrasshopper.com. Earlier release records are in Git history and
+Current release: [2.9.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.0),
+deployed to the macOS service, the marketplace and usegrasshopper.com.
+Installed macOS connectors still run 2.8.5 until updated. Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-Owner: Claude Code, macOS, worktrees under `grasshopper-worktrees/`.
-
-- 2.9.0: memory view and site redesign (#37, #38) and the server changes they
-  need (#36). Release by tag through the release workflow, then upgrade the
-  macOS service with a verified backup and a rollback copy of 2.8.5.
+Nothing in progress. Owner: Claude Code, macOS.
 
 ## Decisions
 
@@ -23,4 +19,4 @@ Owner: Claude Code, macOS, worktrees under `grasshopper-worktrees/`.
 
 ## Next
 
-Tag v2.9.0, upgrade the macOS service, record the result in docs/verification.md.
+Update the installed connectors to 2.9.0 when convenient; deferred: project archive and rename.

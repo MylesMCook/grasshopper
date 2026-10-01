@@ -23,6 +23,29 @@ Cross-machine save, correct and read back through one server passed between
 macOS and Linux in 2.3.4. Desktop apps (Codex Desktop, Cursor IDE, Claude
 desktop) have not been retested since 2.3.0.
 
+## 2.9.0 rollout (September 30)
+
+The tag-driven release workflow built, published and deployed 2.9.0 on its
+first run: native server archives on macOS, Linux and Windows, client and
+marketplace archives, `SHA256SUMS`, the marketplace branch and the site. The
+macOS archive matched its published digest and every embedded hash; its model
+and runtime were identical to the installed ones.
+
+Before cutover, the 2.9.0 server ran against a copy of the live database (all
+active and archived memories, sessions and paired devices intact; the device
+activity table was created) and 2.8.5 reopened that upgraded copy. The live
+service then took a verified snapshot and an encrypted off-machine backup,
+swapped in the 2.9.0 binaries under the existing file names, and restarted.
+Afterwards: anonymous requests are refused, the owner view and API answer
+locally and over the private HTTPS route, memory and archive counts match,
+search has its model, an installed connector read a known memory, and a second
+off-machine backup passed. The 2.8.5 binaries, service definition and
+pre-upgrade snapshot are kept for rollback.
+
+Not verified: phones, screen readers, non-Chromium browsers, fresh AI
+sessions on other machines, and device last-seen times (no paired device has
+connected since the upgrade).
+
 ## Every release
 
 - `go test ./...`, `go vet ./...`, race tests and all Node tests pass locally.
