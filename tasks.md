@@ -29,4 +29,4 @@ Owner: Claude Code, macOS, worktrees under `grasshopper-worktrees/`.
 
 ## Next
 
-Merge step 1, then start step 2.
+Merge steps 1 to 3 in order, then start step 4.
