@@ -93,9 +93,16 @@ lists both as current. Replaying the exact input Cursor IDE 3.23.12 sent to an
 imported hook (byte order mark, `sessionStart`) against the installed 2.9.2
 plugin returned memory context in `additional_context`.
 
-Not verified: Cursor IDE injecting that context into a fresh chat, and the Mac's
-own connectors on 2.9.2. `check` lists leftover Cursor plugin files as behind
-because Cursor records no readable install state.
+On the Mac, Claude Code (client archive) and Codex moved to 2.9.2 and `check`
+lists both as current; its installed hook loaded context for both Claude’s
+SessionStart input and Cursor’s byte-order-marked `sessionStart` input. Cursor on
+both machines imports the Claude Code plugin, so the duplicate direct Cursor
+wiring on the Mac was removed with `cursor remove` (other hooks kept) and
+leftover Cursor plugin files were moved to the trash on both machines.
+
+Not verified: Cursor IDE injecting that context into a fresh chat. `check`
+lists leftover Cursor plugin files as behind because Cursor records no readable
+install state.
 
 ## Agent versions in check (2.9.2, October 1)
 

@@ -1,15 +1,14 @@
 # Grasshopper status
 
 Current release: [2.9.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.2),
-deployed to the macOS service, the marketplace and usegrasshopper.com. Earlier release records are in Git history and
+deployed to the macOS service, its connectors, the marketplace and usegrasshopper.com. Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-2.9.2 is live on the macOS service, the marketplace and the Windows PC's Claude Code
-and Codex connectors ([LAB-237](https://linear.app/mcook/issue/LAB-237/show-each-agents-grasshopper-version-in-check)). Open: confirm Cursor IDE
-startup memory from its hooks log after a real chat; update the Mac's own
-connectors. Owner: Claude Code, Windows.
+2.9.2 is live on the macOS service, the marketplace, and the Claude Code and
+Codex connectors on both machines ([LAB-237](https://linear.app/mcook/issue/LAB-237/show-each-agents-grasshopper-version-in-check)). Open: confirm Cursor IDE
+startup memory from its hooks log after a real chat. Owner: Claude Code, Windows.
 
 ## Decisions
 
