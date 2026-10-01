@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestClientTokensUpgradeBackupAndRevocation(t *testing.T) {
@@ -54,5 +55,59 @@ func TestClientTokensUpgradeBackupAndRevocation(t *testing.T) {
 	listed, err := w.ListClientTokens(ctx)
 	if err != nil || len(listed) != 1 || listed[0].RevokedAt == nil {
 		t.Fatalf("revocation not inspectable: %+v %v", listed, err)
+	}
+}
+
+// Last seen is recorded per active token to the minute and never for a
+// revoked or unknown token.
+func TestClientTokenLastSeen(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "memory.db")
+	if err := CreateEmpty(path); err != nil {
+		t.Fatal(err)
+	}
+	w, err := OpenWritableExisting(path, "test-model", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if err := w.EnsureClientTokenSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	active, revoked := "synthetic-active-token-0123456789-abcdef", "synthetic-revoked-token-0123456789-abcdef"
+	first, _ := w.AddClientToken(ctx, "test-laptop", sha256.Sum256([]byte(active)))
+	second, _ := w.AddClientToken(ctx, "old-desktop", sha256.Sum256([]byte(revoked)))
+	if _, err := w.RevokeClientToken(ctx, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	seen := func() map[int64]*string {
+		items, err := w.ListClientTokens(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[int64]*string{}
+		for _, item := range items {
+			out[item.ID] = item.LastSeenAt
+		}
+		return out
+	}
+	if got := seen(); got[first.ID] != nil {
+		t.Fatalf("new token already has activity: %v", *got[first.ID])
+	}
+	at := time.Date(2026, 10, 1, 9, 30, 45, 0, time.UTC)
+	for _, token := range []string{active, revoked, "unknown-token-0123456789-0123456789"} {
+		if err := w.TouchClientToken(ctx, token, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := seen()
+	if got[first.ID] == nil || *got[first.ID] != "2026-10-01T09:30:00Z" || got[second.ID] != nil {
+		t.Fatalf("unexpected activity: active=%v revoked=%v", got[first.ID], got[second.ID])
+	}
+	if err := w.TouchClientToken(ctx, active, at.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := seen(); *got[first.ID] != "2026-10-01T09:32:00Z" {
+		t.Fatalf("activity not updated: %v", *got[first.ID])
 	}
 }

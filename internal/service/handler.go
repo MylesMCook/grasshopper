@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -206,6 +207,19 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		receipt, err := backend.Store.Write(ctx, in, vector, backend.Model)
 		return receipt, vector != nil, err
 	}
+	// moveMemory embeds the moved text, then copies and archives in one
+	// transaction. The text comes from the revision the owner saw.
+	moveMemory := func(ctx context.Context, in memory.MoveInput, content string) (memory.Receipt, error) {
+		var vector []float32
+		if backend.Embedder != nil {
+			var err error
+			vector, err = runInference(ctx, func() ([]float32, error) { return backend.Embedder.EmbedDocument(content) })
+			if err != nil {
+				return memory.Receipt{}, err
+			}
+		}
+		return backend.Store.Move(ctx, in, vector, backend.Model)
+	}
 	tokenHash := sha256.Sum256([]byte(token))
 	masterBearerValid := func(r *http.Request) bool {
 		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -224,6 +238,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		cookie, err := r.Cookie(visualizerCookieName)
 		return err == nil && sessions.valid(r, cookie.Value, tokenHash[:])
 	}
+	seen := &deviceActivity{last: map[[sha256.Size]byte]time.Time{}}
 	bearerValid := func(r *http.Request) bool {
 		if masterBearerValid(r) {
 			return true
@@ -233,6 +248,9 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			return false
 		}
 		valid, err := backend.Store.ClientTokenValid(r.Context(), provided)
+		if err == nil && valid {
+			seen.touch(r.Context(), backend.Store, provided)
+		}
 		return err == nil && valid
 	}
 	var pairings *pairingManager
@@ -329,6 +347,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			"/visualizer/api/record":             visualizerRecord(backend.Store),
 			"/visualizer/api/update":             visualizerUpdate(backend.Store, saveMemory, audit),
 			"/visualizer/api/archive":            visualizerArchive(backend.Store, audit),
+			"/visualizer/api/move":               visualizerMove(backend.Store, moveMemory, audit),
 			"/visualizer/api/startup":            visualizerStartup(backend.Store),
 			"/visualizer/api/export":             visualizerExport(backend.Store),
 			"/visualizer/api/session/revoke-all": sessions.revokeAll,
@@ -486,4 +505,29 @@ func agentReadError(err error) error {
 		return errors.New("memory_not_found: not found in this project, device and platform scope; check the scope used for context")
 	}
 	return err
+}
+
+// deviceActivity throttles last-seen writes to one per device token a minute.
+// A failed write is ignored: last seen is informational and must never block
+// an authenticated request.
+type deviceActivity struct {
+	mu   sync.Mutex
+	last map[[sha256.Size]byte]time.Time
+}
+
+func (d *deviceActivity) touch(ctx context.Context, store *memory.Writer, token string) {
+	key, now := sha256.Sum256([]byte(token)), time.Now()
+	d.mu.Lock()
+	if now.Sub(d.last[key]) < time.Minute {
+		d.mu.Unlock()
+		return
+	}
+	d.last[key] = now
+	d.mu.Unlock()
+	// The write runs after the request is answered, bounded to one second.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+		defer cancel()
+		_ = store.TouchClientToken(ctx, token, now)
+	}()
 }

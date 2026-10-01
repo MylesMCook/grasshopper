@@ -26,7 +26,14 @@ func TestStartupPreviewMatchesAgentContextAndExplainsWhatIsLeftOut(t *testing.T)
 	}
 	loadedID := save("startup-pref", "Short answers", "Prefer short answers.", "preference", true)
 	observation := save("startup-observation", "Maybe weekly", "Maybe send a weekly summary.", "observation", false)
-	olderHandoff := save("startup-handoff-1", "Old handoff", "Earlier session note.", "handoff", false)
+	// A newer handoff archives an older one in the same scope, so the handoff
+	// left out at startup is an all-projects one beside the project handoff.
+	global, err := store.Write(ctx, memory.WriteInput{Scope: memory.Scope{}, Content: "Earlier session note.", Purpose: "handoff",
+		Provenance: memory.Provenance{Harness: "test", Device: "test", Source: "startup preview regression"}, RequestID: "startup-handoff-1"}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	olderHandoff := global.ID
 	newerHandoff := save("startup-handoff-2", "New handoff", "Latest session note.", "handoff", false)
 	var heavy []int64
 	for index := 0; index < 8; index++ {

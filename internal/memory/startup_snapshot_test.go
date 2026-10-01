@@ -38,7 +38,8 @@ func TestStartupPreviewAccountsForEveryActiveScopedMemory(t *testing.T) {
 			save("confirmed decision", "decision", true, scope, true)
 			save("confirmed preference", "preference", true, Scope{}, true)
 			save("global handoff", "handoff", false, Scope{}, true)
-			save("old project handoff", "handoff", false, scope, true)
+			// The newer project handoff archives this one, so it is no longer active.
+			save("old project handoff", "handoff", false, scope, false)
 			projectHandoff := save("new project handoff", "handoff", false, scope, true)
 			for i := 0; i < unconfirmedCount; i++ {
 				save(fmt.Sprintf("observation-%d", i), "observation", false, scope, true)

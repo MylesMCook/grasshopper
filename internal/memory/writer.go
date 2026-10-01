@@ -346,6 +346,12 @@ func (w *Writer) Write(ctx context.Context, input WriteInput, vector []float32, 
 		return receipt, err
 	}
 	defer commitOrRollback(tx, &err)
+	return writeTx(ctx, tx, input, scopeKey, fingerprint, vector, model)
+}
+
+// writeTx performs an already validated write inside the caller's
+// transaction, so Move can copy and archive atomically.
+func writeTx(ctx context.Context, tx *sql.Tx, input WriteInput, scopeKey, fingerprint string, vector []float32, model string) (receipt Receipt, err error) {
 	if previous, replayErr := replay(ctx, tx, input.RequestID, fingerprint); replayErr != nil {
 		return receipt, replayErr
 	} else if previous != nil {
@@ -516,7 +522,66 @@ func (w *Writer) Write(ctx context.Context, input WriteInput, vector []float32, 
 	if err = snapshot(ctx, tx, *newRecord); err != nil {
 		return receipt, err
 	}
+	if !newRecord.Archived && newRecord.Purpose == "handoff" {
+		if err = retireHandoffs(ctx, tx, input.Scope, scopeKey, *id, input.Provenance); err != nil {
+			return receipt, err
+		}
+	}
 	return acknowledge(ctx, tx, input.RequestID, fingerprint, Receipt{*id, revision, false})
+}
+
+// retireHandoffs archives the earlier active handoffs in a new handoff's exact
+// scope, inside the same transaction, so each scope keeps one current handoff.
+// Archiving adds a revision rather than deleting, so the owner can still read
+// or restore a replaced handoff. Its provenance names the replacing record.
+func retireHandoffs(ctx context.Context, tx *sql.Tx, scope Scope, scopeKey string, replacement int64, by Provenance) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM chunks WHERE kind='memory' AND archived=0 AND purpose='handoff' AND memory_scope=? AND id<>?`, scopeKey, replacement)
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	provenanceJSON, err := canonicalJSON(Provenance{Harness: by.Harness, Device: by.Device, Source: fmt.Sprintf("Replaced by handoff %d", replacement)})
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format("2006-01-02T15:04:05.999999-07:00")
+	for _, id := range ids {
+		old, err := getInTx(ctx, tx, scope, id, nil)
+		if err != nil {
+			return err
+		}
+		if old == nil {
+			return errors.New("memory_not_found")
+		}
+		if err := snapshot(ctx, tx, *old); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE chunks SET archived=1,revision=revision+1,updated_at=?,provenance=? WHERE id=? AND revision=?", now, string(provenanceJSON), id, old.Revision); err != nil {
+			return err
+		}
+		current, err := getInTx(ctx, tx, scope, id, nil)
+		if err != nil {
+			return err
+		}
+		if current == nil {
+			return errors.New("memory_not_found")
+		}
+		if err := snapshot(ctx, tx, *current); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Store vectors as little-endian float32 values; Search checks the byte
@@ -564,6 +629,12 @@ func (w *Writer) Archive(ctx context.Context, input ArchiveInput) (receipt Recei
 		return receipt, err
 	}
 	defer commitOrRollback(tx, &err)
+	return archiveTx(ctx, tx, input, fingerprint)
+}
+
+// archiveTx changes visibility inside the caller's transaction. Restoring a
+// handoff makes it the scope's current handoff, so the others are archived.
+func archiveTx(ctx context.Context, tx *sql.Tx, input ArchiveInput, fingerprint string) (receipt Receipt, err error) {
 	if previous, replayErr := replay(ctx, tx, input.RequestID, fingerprint); replayErr != nil {
 		return receipt, replayErr
 	} else if previous != nil {
@@ -605,5 +676,108 @@ func (w *Writer) Archive(ctx context.Context, input ArchiveInput) (receipt Recei
 	if err = snapshot(ctx, tx, *current); err != nil {
 		return receipt, err
 	}
+	if !input.Archived && current.Purpose == "handoff" {
+		scopeKey, keyErr := current.Scope.Key()
+		if keyErr != nil {
+			return receipt, keyErr
+		}
+		if err = retireHandoffs(ctx, tx, current.Scope, scopeKey, input.ID, input.Provenance); err != nil {
+			return receipt, err
+		}
+	}
 	return acknowledge(ctx, tx, input.RequestID, fingerprint, Receipt{input.ID, old.Revision + 1, false})
+}
+
+// MoveInput moves a memory between a project and every project.
+type MoveInput struct {
+	ID               int64      `json:"id"`
+	ExpectedRevision int64      `json:"expected_revision"`
+	Project          *string    `json:"project"`
+	RequestID        string     `json:"request_id"`
+	Provenance       Provenance `json:"provenance"`
+}
+
+// Move saves a copy of a memory at the other scope, with the same text,
+// purpose, confirmation and original provenance, and archives the original
+// with a note naming the copy, in one transaction. Only project-to-every-
+// project moves (either direction) are allowed; device and platform scope stay
+// as they are. A stale revision, a handoff, or a target that already holds the
+// same memory changes nothing. Retries with the same request ID replay.
+func (w *Writer) Move(ctx context.Context, input MoveInput, vector []float32, model string) (receipt Receipt, err error) {
+	if err = validateProvenance(input.Provenance); err != nil {
+		return receipt, err
+	}
+	if strings.TrimSpace(input.RequestID) == "" || len(input.RequestID) > 100 || input.ID < 1 || input.ExpectedRevision < 1 {
+		return receipt, errors.New("invalid move request")
+	}
+	fingerprint, err := digest(input)
+	if err != nil {
+		return receipt, err
+	}
+	tx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return receipt, err
+	}
+	defer commitOrRollback(tx, &err)
+	if previous, replayErr := replay(ctx, tx, input.RequestID, fingerprint); replayErr != nil {
+		return receipt, replayErr
+	} else if previous != nil {
+		return *previous, nil
+	}
+	var scopeJSON string
+	if err = tx.QueryRowContext(ctx, "SELECT memory_scope FROM chunks WHERE id=? AND kind='memory'", input.ID).Scan(&scopeJSON); errors.Is(err, sql.ErrNoRows) {
+		return receipt, errors.New("memory_not_found")
+	} else if err != nil {
+		return receipt, err
+	}
+	var source Scope
+	if err = json.Unmarshal([]byte(scopeJSON), &source); err != nil {
+		return receipt, err
+	}
+	old, err := getInTx(ctx, tx, source, input.ID, nil)
+	if err != nil {
+		return receipt, err
+	}
+	if old == nil {
+		return receipt, errors.New("memory_not_found")
+	}
+	if old.Archived || old.Revision != input.ExpectedRevision {
+		return receipt, fmt.Errorf("revision_conflict: current revision %d", old.Revision)
+	}
+	target := old.Scope
+	target.Project = input.Project
+	if (old.Scope.Project == nil) == (target.Project == nil) || old.Scope.Legacy || old.Purpose == "handoff" {
+		return receipt, errors.New("invalid move target: move between a project and every project")
+	}
+	if err = target.durableProject(); err != nil {
+		return receipt, fmt.Errorf("invalid move target: %w", err)
+	}
+	targetKey, err := target.Key()
+	if err != nil {
+		return receipt, fmt.Errorf("invalid move target: %w", err)
+	}
+	copyInput := WriteInput{Scope: target, Content: old.Content, Title: &old.Title, Tags: &old.Tags, MemoryType: &old.MemoryType,
+		Purpose: old.Purpose, Confirmed: old.Confirmed, Provenance: old.Provenance, RequestID: input.RequestID + ":copy", Key: old.Key}
+	copyFingerprint, err := digest(copyInput)
+	if err != nil {
+		return receipt, err
+	}
+	copied, err := writeTx(ctx, tx, copyInput, targetKey, copyFingerprint, vector, model)
+	if err != nil {
+		return receipt, err
+	}
+	if copied.Deduplicated {
+		return receipt, errors.New("move_target_exists: the same memory already exists there")
+	}
+	note := input.Provenance
+	note.Source = fmt.Sprintf("Moved to memory %d", copied.ID)
+	archiveInput := ArchiveInput{Scope: old.Scope, ID: old.ID, ExpectedRevision: old.Revision, Archived: true, RequestID: input.RequestID + ":archive", Provenance: note}
+	archiveFingerprint, err := digest(archiveInput)
+	if err != nil {
+		return receipt, err
+	}
+	if _, err = archiveTx(ctx, tx, archiveInput, archiveFingerprint); err != nil {
+		return receipt, err
+	}
+	return acknowledge(ctx, tx, input.RequestID, fingerprint, copied)
 }

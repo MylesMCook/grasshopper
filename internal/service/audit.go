@@ -35,7 +35,7 @@ func newAuditLog(logger *slog.Logger) *auditLog {
 }
 func auditRoute(r *http.Request) string {
 	switch r.URL.Path {
-	case "/mcp", "/healthz", "/connection", "/pair/start", "/pair/poll", "/visualizer/api/session", "/visualizer/api/session/revoke-all", "/visualizer/api/context", "/visualizer/api/search", "/visualizer/api/record", "/visualizer/api/update", "/visualizer/api/archive", "/visualizer/api/startup", "/visualizer/api/export", "/visualizer/api/pairings", "/visualizer/api/devices":
+	case "/mcp", "/healthz", "/connection", "/pair/start", "/pair/poll", "/visualizer/api/session", "/visualizer/api/session/revoke-all", "/visualizer/api/context", "/visualizer/api/search", "/visualizer/api/record", "/visualizer/api/update", "/visualizer/api/archive", "/visualizer/api/move", "/visualizer/api/startup", "/visualizer/api/export", "/visualizer/api/pairings", "/visualizer/api/devices":
 		return r.URL.Path
 	}
 	return "other"

@@ -24,6 +24,7 @@ device, and a concise source reference.
 At meaningful stops, save an unconfirmed project handoff: verified progress,
 open issues, file references, and relevant branch/commit. Verify current Git
 state before relying on it; a changed commit needs checking, not dismissal.
+Each new handoff archives the previous one in the same scope, so write it whole.
 An exit hook cannot confirm a handoff. Keep handoffs under 600 characters; put
 details in files or the project task tracker. Task trackers track tasks; files
 and version control track implementation.

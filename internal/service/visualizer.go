@@ -371,6 +371,53 @@ func visualizerUpdate(store *memory.Writer, save ownerSave, audit *auditLog) htt
 	}
 }
 
+// visualizerMove moves a memory between a project and every project. The
+// writer copies it (same text, purpose, confirmation and original source) and
+// archives the original in one transaction, so a failed or stale move changes
+// nothing and a retry with the same request ID replays.
+func visualizerMove(store *memory.Writer, move func(context.Context, memory.MoveInput, string) (memory.Receipt, error), audit *auditLog) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			ID               int64   `json:"id"`
+			ExpectedRevision int64   `json:"expected_revision"`
+			Project          *string `json:"project"`
+			RequestID        string  `json:"request_id"`
+		}
+		if !decodeVisualizerRead(w, r, &input) {
+			return
+		}
+		if input.ID < 1 || input.ExpectedRevision < 1 || strings.TrimSpace(input.RequestID) == "" || len(input.RequestID) > 100 {
+			http.Error(w, "invalid move request", http.StatusBadRequest)
+			return
+		}
+		source, err := store.RecordByID(r.Context(), input.ID, &input.ExpectedRevision)
+		if err != nil {
+			http.Error(w, "memory unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if source == nil {
+			ownerConflict(w, r, store, input.ID, "revision_conflict")
+			return
+		}
+		receipt, err := move(r.Context(), memory.MoveInput{ID: input.ID, ExpectedRevision: input.ExpectedRevision, Project: input.Project, RequestID: input.RequestID, Provenance: ownerProvenance}, source.Content)
+		switch {
+		case err == nil:
+			audit.event("owner_write", r, auditFields{action: "move", id: receipt.ID, revision: receipt.Revision, requestID: input.RequestID})
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_ = json.NewEncoder(w).Encode(struct {
+				memory.Receipt
+				MovedFrom int64 `json:"moved_from"`
+			}{receipt, input.ID})
+		case strings.HasPrefix(err.Error(), "invalid move"):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case strings.HasPrefix(err.Error(), "move_target_exists"):
+			ownerConflict(w, r, store, input.ID, "move_target_exists")
+		default:
+			ownerWriteResult(w, r, store, input.ID, receipt, err)
+		}
+	}
+}
+
 // visualizerArchive hides or restores a memory at an expected revision.
 func visualizerArchive(store *memory.Writer, audit *auditLog) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
