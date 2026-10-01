@@ -112,6 +112,11 @@ not who can access it.
 
 Connector changes never delete memories on the server.
 
+To see which connectors need an update, run `./bin/grasshopper check` from the
+client archive. It lists each agent's connector version, whether it matches the
+server, and the exact update step for any that are behind. It fails only when an
+agent points at a Grasshopper program that no longer exists.
+
 | Agent | Update | Remove |
 | --- | --- | --- |
 | Codex | `codex plugin marketplace upgrade grasshopper-marketplace`, then `codex plugin add` your entry again | Remove the entry in the Codex plugin manager |

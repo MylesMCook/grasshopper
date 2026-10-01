@@ -73,6 +73,18 @@ binaries, service definition and pre-upgrade snapshot are kept for rollback.
 
 Not verified: a fresh AI session saving a global memory under the new guidance.
 
+## Agent versions in check (unreleased, October 1)
+
+A Windows build of `grasshopper check` from the `check-agent-versions` branch
+ran on a Windows (x64) PC with Claude Code, Codex and Cursor connectors and a
+2.9.1 server. It listed Claude Code and Codex plugins and Cursor's direct wiring
+as current, and an old Cursor marketplace plugin (2.2.0) left in Cursor's plugin
+cache as behind, with its update steps; it exited 0. With an unreachable server
+address it still listed every agent with server version unknown and exited 1.
+`check --json` output was unchanged. A missing program and a failing agent CLI
+were tested only with synthetic settings in unit tests. Whether Cursor loads a
+cached marketplace plugin it has turned off was not checked.
+
 ## Every release
 
 - `go test ./...`, `go vet ./...`, race tests and all Node tests pass locally.

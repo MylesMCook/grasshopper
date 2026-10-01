@@ -143,9 +143,15 @@ func shellQuoted(value string) string {
 // isGrasshopperHook recognizes only our installed command form so removal
 // leaves unrelated hooks alone.
 func isGrasshopperHook(value any) bool {
+	_, ok := grasshopperHookBinary(value)
+	return ok
+}
+
+// grasshopperHookBinary returns the program a Grasshopper Cursor hook runs.
+func grasshopperHookBinary(value any) (string, bool) {
 	entry, ok := jsonObject(value)
 	if !ok {
-		return false
+		return "", false
 	}
 	command, _ := entry["command"].(string)
 	for _, quote := range []string{"'", `"`} {
@@ -171,10 +177,10 @@ func isGrasshopperHook(value any) bool {
 			} else {
 				binary = strings.ReplaceAll(binary, `\"`, `"`)
 			}
-			return grasshopperExecutable(binary) && strings.HasPrefix(command[end+1:], " hook --config ") && strings.HasSuffix(command, " --harness cursor")
+			return binary, grasshopperExecutable(binary) && strings.HasPrefix(command[end+1:], " hook --config ") && strings.HasSuffix(command, " --harness cursor")
 		}
 	}
-	return false
+	return "", false
 }
 
 func grasshopperExecutable(path string) bool {

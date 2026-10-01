@@ -53,14 +53,22 @@ func checkConnection(args []string) error {
 		return err
 	}
 	result := connectionReport(path)
+	// The connect skill polls check --json during approval, so JSON stays a
+	// fast connection-only report without agent CLI calls.
 	if *jsonOutput {
 		return json.NewEncoder(os.Stdout).Encode(result)
 	}
-	if result["status"] != "connected" {
-		return errors.New(result["next_step"])
+	return renderCheck(os.Stdout, result, checkAgents(result["host_version"]))
+}
+
+// checkAgents inspects this machine's agents. Tests replace it so check never
+// runs the developer's real agent CLIs or reads their Cursor settings.
+var checkAgents = func(serverVersion string) []agentReport {
+	cursorDir := ""
+	if home, err := os.UserHomeDir(); err == nil {
+		cursorDir = filepath.Join(home, ".cursor")
 	}
-	fmt.Fprintf(os.Stdout, "Grasshopper connected. Device: %s. Registration: %s. %s\n", result["device"], result["registration"], result["next_step"])
-	return nil
+	return inspectAgents(runAgentCommand, cursorDir, serverVersion)
 }
 
 func connectionStatus(path string) (string, string) {
