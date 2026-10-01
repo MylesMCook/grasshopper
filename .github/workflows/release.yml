@@ -45,6 +45,13 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: Restore the pinned model and ONNX Runtime
+        if: runner.os != 'Windows'
+        run: node scripts/fetch-embedding-test-assets.mjs
+      # Git Bash's tar reads "D:" in Windows paths as a remote host, so use pwsh
+      # (and Windows' own tar) for the asset restore, as CI does.
+      - name: Restore the pinned model and ONNX Runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: node scripts/fetch-embedding-test-assets.mjs
       - run: go test ./...
       - name: Build binaries
@@ -133,13 +140,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The annotated tag message is the release summary.
+          # The annotated tag message is the release summary; a lightweight tag
+          # has no message of its own, so refuse it.
           git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != tag ]; then
+            echo "$GITHUB_REF_NAME is a lightweight tag; push an annotated tag (git tag -a)" >&2
+            exit 1
+          fi
           git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
           echo >> notes.md
           sed "s/VERSION/$VERSION/g" .github/release-notes.md >> notes.md
-          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS \
-            --verify-tag --title "Grasshopper $VERSION" --notes-file notes.md
+          # Re-runs after a partial failure replace the assets instead of failing.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS \
+              --verify-tag --title "Grasshopper $VERSION" --notes-file notes.md
+          fi
       - name: Update the marketplace branch
         run: |
           git fetch origin marketplace
@@ -149,8 +166,12 @@ jobs:
           unzip -q "../dist/grasshopper-marketplace-$VERSION.zip"
           test -x plugins/grasshopper-linux/bin/grasshopper
           git add -A
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            commit -m "Publish Grasshopper $VERSION marketplace"
+          if git diff --cached --quiet; then
+            echo "marketplace already matches $VERSION"
+          else
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "Publish Grasshopper $VERSION marketplace"
+          fi
           git push origin HEAD:marketplace
 
   site:
