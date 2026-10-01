@@ -508,7 +508,8 @@ function saveEdit(panel) {
 function keepTheirs(panel) { Object.assign(panel, { mode: 'view', draft: null, theirs: null }); loadMemory(panel); }
 function move(record, project) {
   return write('/visualizer/api/move', { id: record.id, expected_revision: record.revision, project: project || null }, {
-    onDone: receipt => { say(`Moved to ${projectName(project)}.`); openMemory(receipt.id); }
+    onDone: receipt => { say(`Moved to ${projectName(project)}.`); openMemory(receipt.id); },
+    onConflict: () => { say(`Not moved. ${projectName(project)} may already have it, or it changed. Showing the latest.`); if (state.panel) { state.panel.mode = 'view'; loadMemory(state.panel); } }
   });
 }
 
