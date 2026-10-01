@@ -18,7 +18,7 @@ any tool call. Each cell is the last version where that passed.
 | Windows (x64) | 2.6.0 | Not delivered in 2.3.3 | Not tested |
 
 Since then, each release runs the installed macOS connectors' startup hooks and
-five-tool bridges directly (latest: 2.9.1), without a fresh AI session.
+five-tool bridges directly (latest: 2.9.2), without a fresh AI session.
 Cross-machine save, correct and read back through one server passed between
 macOS and Linux in 2.3.4. Desktop apps (Codex Desktop, Cursor IDE, Claude
 desktop) have not been retested since 2.3.0.
@@ -100,9 +100,9 @@ both machines imports the Claude Code plugin, so the duplicate direct Cursor
 wiring on the Mac was removed with `cursor remove` (other hooks kept) and
 leftover Cursor plugin files were moved to the trash on both machines.
 
-Not verified: Cursor IDE injecting that context into a fresh chat. `check`
-lists leftover Cursor plugin files as behind because Cursor records no readable
-install state.
+Not verified: Cursor IDE injecting that context into a fresh chat. If leftover
+Cursor plugin files remain in its plugin cache, `check` lists them as behind,
+because Cursor records no readable install state.
 
 ## Agent versions in check (2.9.2, October 1)
 
