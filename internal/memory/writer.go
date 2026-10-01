@@ -437,7 +437,7 @@ func writeTx(ctx context.Context, tx *sql.Tx, input WriteInput, scopeKey, finger
 	switch memoryType {
 	case "identity", "knowledge", "episode", "procedure":
 	default:
-		return receipt, errors.New("invalid memory_type")
+		return receipt, errors.New("invalid memory_type: use knowledge, identity, episode or procedure, or omit it; preference, decision, lesson, handoff and observation go in purpose")
 	}
 	purpose := input.Purpose
 	if restored != nil {
