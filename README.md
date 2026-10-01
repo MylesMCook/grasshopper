@@ -31,7 +31,7 @@ To use it from other machines, put it behind a private HTTPS proxy (such as
 to `http://127.0.0.1:8106`, public access off) and restart with:
 
 ```sh
-./bin/grasshopper-server --quickstart --allowed-proxy-host your-server.tailnet.ts.net
+./bin/grasshopper-server --quickstart --allowed-proxy-host your-server.tailnet.ts.net:443
 ```
 
 [Operations](docs/operations.md) covers running it as a service, unsigned
