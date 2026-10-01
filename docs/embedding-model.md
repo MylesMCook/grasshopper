@@ -59,10 +59,9 @@ Equal vector dimensions do not make the model spaces compatible. The server
 rejects old vectors. Stop the sole writer, keep a consistent backup, and use
 the new migration binary to re-embed a separate database. Verify current and
 historical records, scopes, credentials, and recall before replacing the live
-database. See the [update guide](../README.md#back-up-and-update-the-server).
+database. See [re-embedding](operations.md#re-embed-when-upgrading-from-23x-or-earlier).
 
 Retain the old archive, configuration, and BGE database for rollback. If writes
 were accepted after cutover, preserve the new database before rolling back and
 reconcile those writes. Never replace a newer database silently or run two
-writers. Observed deployment and recovery evidence belongs in
-[memory acceptance](https://github.com/MylesMCook/grasshopper/blob/main/docs/memory-acceptance.md).
+writers. Real-machine results belong in [verification](verification.md).

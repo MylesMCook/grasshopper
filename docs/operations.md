@@ -24,6 +24,76 @@ Do not infer restart or machine-loss recovery from configuration inspection.
 Test recovery separately with copied data. Change only the relevant private
 route, preserving unrelated services and remote access.
 
+### Back up a custom database
+
+If you chose a custom quickstart folder, add `--data-dir` with its absolute
+path. For a server started with `--db`, write the snapshot to a new path:
+
+```sh
+./bin/grasshopper-backup --source /absolute/path/to/memory.db --dest /absolute/path/to/new-backup.db
+```
+
+Backup and `--verify` both print the record count, revision count, SQLite
+`quick_check`, size and SHA-256. Verification is read-only and fails on a
+corrupt, empty or non-private file, or one with pending WAL or journal state.
+Compare the digest after copying a backup off the machine.
+
+### Restore a backup
+
+With the server stopped, copy a verified snapshot to a new private path (mode
+0600 on macOS and Linux), verify the copy, and start the server against it with
+the same token, listener and private route settings. For `--quickstart`, keep
+the old state folder and replace its `memory.db` with the verified copy. Open a
+known memory and an earlier revision before relying on it. Keep the original
+database and any WAL/SHM files, and reconcile writes it accepted before rolling
+back.
+
+### Re-embed when upgrading from 2.3.x or earlier
+
+2.4.0 switched to the [Granite model](embedding-model.md), which uses a
+different vector space. From the new server archive, rehearse on a backup first,
+then run again with the old server stopped and a destination that does not exist:
+
+```sh
+./bin/grasshopper-migrate --source /absolute/path/to/memory.db \
+  --copy /absolute/path/to/memory-granite.db \
+  --onnx-library ./runtime/libonnxruntime.dylib \
+  --model ./models/granite-embedding-small-english-r2/model.onnx \
+  --tokenizer ./models/granite-embedding-small-english-r2/tokenizer.json
+```
+
+On Linux use `./runtime/libonnxruntime.so`; on Windows use
+`grasshopper-migrate.exe`, `runtime/onnxruntime.dll` and Windows paths on one
+line. Keep `model.onnx_data` next to `model.onnx`. Start the new server against
+the verified copy as in [Restore a backup](#restore-a-backup).
+
+## Unsigned archives
+
+Release executables are unsigned. After checking the archive against
+`SHA256SUMS`, macOS may require **System Settings > Privacy & Security > Open
+Anyway** ([Apple's instructions](https://support.apple.com/en-us/102445)). Do not
+disable Gatekeeper or remove quarantine recursively. On Windows, follow
+[SmartScreen guidance](https://learn.microsoft.com/en-us/windows/security/operating-system-security/virus-and-threat-protection/microsoft-defender-smartscreen/)
+if blocked; this has not been tested. Linux archives keep executable permissions.
+
+## Build from source
+
+Source builds compile the binaries only; they do not fetch the ONNX runtime,
+model or tokenizer that `--quickstart` expects from an archive.
+
+```sh
+mkdir -p bin
+go build -o ./bin/grasshopper ./cmd/grasshopper
+go build -o ./bin/grasshopper-server ./cmd/grasshopper-go-server
+go build -o ./bin/grasshopper-backup ./cmd/grasshopper-go-backup
+go build -o ./bin/grasshopper-migrate ./cmd/grasshopper-go-migrate
+```
+
+On Windows, add `.exe` to each output. A source-built server needs `--db`,
+`--token-file`, `--onnx-library`, `--model` and `--tokenizer`; add `--create-db`
+for an empty store and `--visualizer` for the memory view. Each binary has
+`--help`.
+
 ## Public site
 
 The site is separate from the private server and contains no memory data.

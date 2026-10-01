@@ -134,11 +134,10 @@ Go resolves Windows configuration through AppData and home through USERPROFILE:
 can redirect AppData writes into per-package LocalCache:
 [Microsoft MSIX documentation](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-behind-the-scenes).
 The earlier Windows PC investigation demonstrated separate native packaged and
-ordinary connection state; see `docs/memory-acceptance.md` and LAB-219. Profile
+ordinary connection state; see [verification](verification.md) and LAB-219. Profile
 sharing must also be verified on actual native Windows; synthetic paths alone do
 not prove packaged-app behavior.
 
 No MCP tool is added. No owner credential is copied into agent configuration.
 No registry, network, supervisor, account, or shared-service change occurs during
-connection checking. Implementation and release evidence will be recorded in
-`tasks.md` and `docs/memory-acceptance.md` after approval.
+connection checking. Real-machine results are recorded in [verification](verification.md).
