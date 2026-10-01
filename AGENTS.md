@@ -31,14 +31,14 @@ mining service, or parallel instruction files.
 ```sh
 go test ./...
 go vet ./...
-go test -race ./internal/gomemory ./internal/gomcp ./internal/goclient
+go test -race ./internal/memory ./internal/service ./internal/client
 go build ./cmd/grasshopper             # Stateless client bridge and hooks
-go build ./cmd/grasshopper-go-server   # Fresh or converted database
-node --test internal/gomcp/visualizer/app.test.cjs # Device polling regressions; no npm dependencies
+go build ./cmd/grasshopper-server   # Fresh or converted database
+node --test internal/service/visualizer/app.test.cjs # Device polling regressions; no npm dependencies
 node --test web/*.test.cjs # Public address and setup regressions; no npm dependencies
-go run ./cmd/grasshopper-go-backup --help
-go run ./cmd/grasshopper-go-migrate --help
-go run ./cmd/grasshopper-go-bundle --help
+go run ./cmd/grasshopper-backup --help
+go run ./cmd/grasshopper-migrate --help
+go run ./cmd/grasshopper-bundle --help
 ```
 
 The real Granite ONNX tests need `GRASSHOPPER_EMBED_TEST_ROOT` (the directory
@@ -46,14 +46,14 @@ containing model.onnx, model.onnx_data, and tokenizer.json) and
 `GRASSHOPPER_ONNX_RUNTIME_LIBRARY`. Restore the pinned test assets with
 `node scripts/fetch-embedding-test-assets.mjs`; CI sets both variables.
 Do not call skipped model tests a real-model pass. All three asset digests
-are pinned in `internal/goembed/granite.go`.
+are pinned in `internal/embedding/granite.go`.
 
 ## Layout and safety
 
-- `internal/gomemory/` owns scoped SQLite reads, writes, history, search,
-  migration, and backup. `internal/goembed/` owns local ONNX embeddings.
-- `internal/gomcp/` exposes the authenticated five-tool HTTP service.
-  `internal/goclient/` supplies the one stateless harness bridge and AGENTS.md
+- `internal/memory/` owns scoped SQLite reads, writes, history, search,
+  migration, and backup. `internal/embedding/` owns local ONNX embeddings.
+- `internal/service/` exposes the authenticated five-tool HTTP service.
+  `internal/client/` supplies the one stateless harness bridge and AGENTS.md
   hook adapter. `cmd/` contains their binaries and the archive builder.
 - Keep shared behavioral policy only in `integrations/policy/AGENTS.md`; use
   root or genuinely narrower nested AGENTS.md for project instructions.

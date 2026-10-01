@@ -84,9 +84,9 @@ model or tokenizer that `--quickstart` expects from an archive.
 ```sh
 mkdir -p bin
 go build -o ./bin/grasshopper ./cmd/grasshopper
-go build -o ./bin/grasshopper-server ./cmd/grasshopper-go-server
-go build -o ./bin/grasshopper-backup ./cmd/grasshopper-go-backup
-go build -o ./bin/grasshopper-migrate ./cmd/grasshopper-go-migrate
+go build -o ./bin/grasshopper-server ./cmd/grasshopper-server
+go build -o ./bin/grasshopper-backup ./cmd/grasshopper-backup
+go build -o ./bin/grasshopper-migrate ./cmd/grasshopper-migrate
 ```
 
 On Windows, add `.exe` to each output. A source-built server needs `--db`,

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MylesMCook/grasshopper/internal/goclient"
+	"github.com/MylesMCook/grasshopper/internal/client"
 )
 
 type commandRunner func(string, ...string) ([]byte, error)
@@ -311,14 +311,14 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	if err != nil {
 		return err
 	}
-	configPath, err := goclient.ConfigPath(*configArg)
+	configPath, err := client.ConfigPath(*configArg)
 	if err != nil {
 		return err
 	}
 	if *update {
 		provided := map[string]bool{}
 		flags.Visit(func(item *flag.Flag) { provided[item.Name] = true })
-		if existing, err := goclient.LoadConfig(configPath); err == nil {
+		if existing, err := client.LoadConfig(configPath); err == nil {
 			if !provided["url"] {
 				*url = existing.URL
 			}
@@ -331,7 +331,7 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 		}
 	}
 	if *tokenFile == "" {
-		path, err := goclient.DefaultTokenPath()
+		path, err := client.DefaultTokenPath()
 		if err != nil {
 			return err
 		}
@@ -351,15 +351,15 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	if info, err := os.Stat(policy); err != nil || !info.Mode().IsRegular() {
 		return errors.New("client package policy/AGENTS.md is missing")
 	}
-	config := goclient.Config{URL: *url, TokenFile: *tokenFile, PolicyPath: filepath.Join(filepath.Dir(configPath), "AGENTS.md"), Device: *device}
-	remote, err := goclient.NewRemote(config)
+	config := client.Config{URL: *url, TokenFile: *tokenFile, PolicyPath: filepath.Join(filepath.Dir(configPath), "AGENTS.md"), Device: *device}
+	remote, err := client.NewRemote(config)
 	if err != nil {
 		return err
 	}
-	platform := goclient.Platform()
+	platform := client.Platform()
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	if _, err := remote.Context(ctx, goclient.Scope{Device: device, Platform: &platform}, 512); err != nil {
+	if _, err := remote.Context(ctx, client.Scope{Device: device, Platform: &platform}, 512); err != nil {
 		return errors.New("server or token check failed; no agent settings were changed")
 	}
 	var native []agentInstall

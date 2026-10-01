@@ -4,7 +4,7 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/MylesMCook/grasshopper/internal/goclient"
+	"github.com/MylesMCook/grasshopper/internal/client"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -42,9 +42,9 @@ func TestWindowsConnectMigratesOnlyVerifiedLegacyDevice(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			legacy, _ := goclient.LegacyConfigPath()
-			canonical, _ := goclient.DefaultConfigPath()
-			config := goclient.Config{URL: server.URL + "/mcp", TokenFile: token, Device: "laptop", PolicyPath: filepath.Join(root, "policy", "AGENTS.md")}
+			legacy, _ := client.LegacyConfigPath()
+			canonical, _ := client.DefaultConfigPath()
+			config := client.Config{URL: server.URL + "/mcp", TokenFile: token, Device: "laptop", PolicyPath: filepath.Join(root, "policy", "AGENTS.md")}
 			data, _ := json.Marshal(config)
 			os.MkdirAll(filepath.Dir(legacy), 0700)
 			os.WriteFile(legacy, data, 0600)
@@ -53,14 +53,14 @@ func TestWindowsConnectMigratesOnlyVerifiedLegacyDevice(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				shared, err := goclient.LoadConfig(canonical)
+				shared, err := client.LoadConfig(canonical)
 				if err != nil {
 					t.Fatal(err)
 				}
 				if shared.Device != "laptop" || shared.TokenFile != filepath.Join(filepath.Dir(canonical), "device-token") {
 					t.Fatal("shared device configuration differs")
 				}
-				path, _ := goclient.ConfigPath("")
+				path, _ := client.ConfigPath("")
 				if path != canonical {
 					t.Fatal("agent default still legacy")
 				}

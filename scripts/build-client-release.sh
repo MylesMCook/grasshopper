@@ -35,6 +35,6 @@ for target in darwin-arm64 windows-amd64 linux-amd64; do
 	archive="$output/grasshopper-client-$target-$version.zip"
 	binary="$output/grasshopper-$target$suffix"
 	GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags="-X main.clientVersion=$version" -o "$binary" ./cmd/grasshopper
-	go run ./cmd/grasshopper-go-bundle -client "$binary" -client-plugins -target "$target" -plugin-version "$version" -output "$archive"
+	go run ./cmd/grasshopper-bundle -client "$binary" -client-plugins -target "$target" -plugin-version "$version" -output "$archive"
 	printf '%s\n' "$archive"
 done

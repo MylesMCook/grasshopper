@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MylesMCook/grasshopper/internal/goclient"
+	"github.com/MylesMCook/grasshopper/internal/client"
 )
 
 func TestConnectInvalidAddressStatus(t *testing.T) {
@@ -123,7 +123,7 @@ func TestPairConnectsMarketplaceWithoutMasterToken(t *testing.T) {
 	if after, _ := os.ReadFile(tokenPath); string(after) != string(retained) {
 		t.Fatal("fresh pairing overwrote the unbound token")
 	}
-	rebound, err := goclient.LoadConfig(config)
+	rebound, err := client.LoadConfig(config)
 	if err != nil || rebound.TokenFile == tokenPath {
 		t.Fatal("new approval reused the unbound token path")
 	}

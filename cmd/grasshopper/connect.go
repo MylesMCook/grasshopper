@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/MylesMCook/grasshopper/internal/goclient"
+	"github.com/MylesMCook/grasshopper/internal/client"
 )
 
 // Returned next_step text is the user-facing explanation for these states.
@@ -84,11 +84,11 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": state, "next_step": next})
 	}()
-	configPath, err := goclient.ConfigPath(*configArg)
+	configPath, err := client.ConfigPath(*configArg)
 	if err != nil {
 		return err
 	}
-	existing, configErr := goclient.LoadConfig(configPath)
+	existing, configErr := client.LoadConfig(configPath)
 	if configErr != nil && !errors.Is(configErr, os.ErrNotExist) {
 		return connectProblem("conflicting_configuration", "The saved Grasshopper configuration needs inspection before reconnecting.")
 	}
@@ -105,7 +105,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 			return connectProblem("approval_pending", "Finish the pending connection with connect --json after owner approval.")
 		}
 		if *address != "" {
-			wanted, _, err := goclient.NormalizeServerAddress(*address)
+			wanted, _, err := client.NormalizeServerAddress(*address)
 			if err != nil {
 				return connectProblem("invalid_address", "Enter your private server, memory-view, or /mcp address. "+err.Error())
 			}
@@ -146,7 +146,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 	if *address == "" {
 		return connectProblem("missing_address", "Send your private Grasshopper server link once. No token is needed.")
 	}
-	mcpURL, base, err := goclient.NormalizeServerAddress(*address)
+	mcpURL, base, err := client.NormalizeServerAddress(*address)
 	if err != nil {
 		return connectProblem("invalid_address", "Enter your private server, memory-view, or /mcp address. "+err.Error())
 	}
@@ -156,7 +156,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		*tokenPath = existing.TokenFile
 	}
 	if *tokenPath == "" {
-		path, err := goclient.DefaultTokenPath()
+		path, err := client.DefaultTokenPath()
 		if err != nil {
 			return err
 		}
@@ -198,7 +198,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 				// Only explicit Connect migrates a verified default Windows
 				// device connection. Overrides and old-host access stay put.
 				if runtime.GOOS == "windows" && *configArg == "" && os.Getenv("GRASSHOPPER_CLIENT_CONFIG") == "" && report["registration"] == "verified" {
-					canonical, err := goclient.DefaultConfigPath()
+					canonical, err := client.DefaultConfigPath()
 					if err != nil {
 						return err
 					}
@@ -411,11 +411,11 @@ func unusedDeviceTokenPath(path string) (string, error) {
 // sameServerOrigin treats view/MCP links, host case and default ports alike.
 // It deliberately retains scheme and nondefault ports as credential boundaries.
 func sameServerOrigin(first, second string) bool {
-	_, firstBase, err := goclient.NormalizeServerAddress(first)
+	_, firstBase, err := client.NormalizeServerAddress(first)
 	if err != nil {
 		return false
 	}
-	_, secondBase, err := goclient.NormalizeServerAddress(second)
+	_, secondBase, err := client.NormalizeServerAddress(second)
 	if err != nil {
 		return false
 	}

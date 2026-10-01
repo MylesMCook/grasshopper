@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MylesMCook/grasshopper/internal/goclient"
+	"github.com/MylesMCook/grasshopper/internal/client"
 )
 
 func TestConfigureUsesOnePolicyAndExistingToken(t *testing.T) {
@@ -43,7 +43,7 @@ func TestConfigureUsesOnePolicyAndExistingToken(t *testing.T) {
 			t.Fatalf("repeat configuration rewrote %s: %v", path, err)
 		}
 	}
-	loaded, err := goclient.LoadConfig(configPath)
+	loaded, err := client.LoadConfig(configPath)
 	if err != nil || loaded.TokenFile != token || loaded.Device != "test-mac" || loaded.PolicyPath != filepath.Join(root, "client", "AGENTS.md") {
 		t.Fatalf("unexpected client config: %+v: %v", loaded, err)
 	}

@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/MylesMCook/grasshopper/internal/goclient"
+	"github.com/MylesMCook/grasshopper/internal/client"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -62,7 +62,7 @@ func TestCheckDoesNotInferDeviceFromOwnerAccess(t *testing.T) {
 				json.NewEncoder(w).Encode(map[string]string{"role": item.role, "device": item.device, "version": "test"})
 			}))
 			defer server.Close()
-			config := goclient.Config{URL: server.URL + "/mcp", TokenFile: token, Device: "laptop", PolicyPath: filepath.Join(root, "policy", "AGENTS.md")}
+			config := client.Config{URL: server.URL + "/mcp", TokenFile: token, Device: "laptop", PolicyPath: filepath.Join(root, "policy", "AGENTS.md")}
 			data, _ := json.Marshal(config)
 			os.MkdirAll(filepath.Dir(path), 0700)
 			os.WriteFile(path, data, 0600)
@@ -82,7 +82,7 @@ func TestLegacyMigrationPreservesOriginalAndRejectsConflict(t *testing.T) {
 	root, token, _, _ := setupFixture(t)
 	canonical := filepath.Join(t.TempDir(), "shared", "client.json")
 	original, _ := os.ReadFile(token)
-	config := goclient.Config{URL: "https://example.invalid/mcp", TokenFile: token, Device: "laptop", PolicyPath: filepath.Join(root, "policy", "AGENTS.md")}
+	config := client.Config{URL: "https://example.invalid/mcp", TokenFile: token, Device: "laptop", PolicyPath: filepath.Join(root, "policy", "AGENTS.md")}
 	target, err := migrateDeviceCredential(config, canonical)
 	if err != nil {
 		t.Fatal(err)
