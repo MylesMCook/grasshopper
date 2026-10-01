@@ -9,15 +9,9 @@ usegrasshopper.com. Earlier release records are in Git history and
 
 Owner: Claude Code, macOS, worktrees under `grasshopper-worktrees/`.
 
-1. Clean the repository: remove audit reports, replace the release log with
-   [verification](docs/verification.md), shorten the README, run site tests in CI.
-2. Drop the `go` prefix from command and package names. Behavior unchanged.
-3. Automate releases on version tags: build, checksums, GitHub release,
-   marketplace branch and site deploy (Cloudflare secrets are configured).
-4. Delete stale branches; turn off the unused Projects tab; add a social preview
-   and a bug report template.
-5. Build 2.9.0, the memory view and site redesign, from the owner-approved
-   prototypes. It is the first release shipped by the automated workflow.
+- 2.9.0: memory view and site redesign (#37, #38) and the server changes they
+  need (#36). Release by tag through the release workflow, then upgrade the
+  macOS service with a verified backup and a rollback copy of 2.8.5.
 
 ## Decisions
 
@@ -29,4 +23,4 @@ Owner: Claude Code, macOS, worktrees under `grasshopper-worktrees/`.
 
 ## Next
 
-Merge steps 1 to 3 in order, then start step 4.
+Tag v2.9.0, upgrade the macOS service, record the result in docs/verification.md.
