@@ -1,0 +1,196 @@
+# Pushing an annotated tag vX.Y.Z (matching VERSION) publishes a release: native
+# server archives on each OS, client and marketplace archives, SHA256SUMS, the
+# GitHub release, the marketplace branch and the public site. A pull request
+# that changes this workflow builds every archive without publishing anything.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths: ['.github/workflows/release.yml', 'cmd/grasshopper-bundle/**', 'scripts/build-*.sh']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  server:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: macos-latest, target: darwin-arm64, suffix: '' }
+          - { os: ubuntu-latest, target: linux-amd64, suffix: '' }
+          - { os: windows-latest, target: windows-amd64, suffix: '.exe' }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check the tag matches VERSION
+        run: |
+          version=$(cat VERSION)
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match VERSION $version" >&2
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Restore the pinned model and ONNX Runtime
+        if: runner.os != 'Windows'
+        run: node scripts/fetch-embedding-test-assets.mjs
+      # Git Bash's tar reads "D:" in Windows paths as a remote host, so use pwsh
+      # (and Windows' own tar) for the asset restore, as CI does.
+      - name: Restore the pinned model and ONNX Runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: node scripts/fetch-embedding-test-assets.mjs
+      - run: go test ./...
+      - name: Build binaries
+        run: |
+          mkdir -p bin dist
+          for app in grasshopper grasshopper-server grasshopper-backup grasshopper-migrate; do
+            flags=
+            case "$app" in
+              grasshopper) flags="-X main.clientVersion=$VERSION" ;;
+              grasshopper-server) flags="-X main.serverVersion=$VERSION" ;;
+            esac
+            go build -trimpath -buildvcs=false -ldflags="$flags" -o "bin/$app${{ matrix.suffix }}" "./cmd/$app"
+          done
+          test "$(bin/grasshopper${{ matrix.suffix }} --version)" = "grasshopper $VERSION"
+          test "$(bin/grasshopper-server${{ matrix.suffix }} --version)" = "grasshopper server $VERSION"
+      - name: Package the server archive
+        run: |
+          # The pinned runtime archive keeps LICENSE and ThirdPartyNotices.txt beside lib/.
+          runtime_root=$(node -p "require('path').resolve(process.env.GRASSHOPPER_ONNX_RUNTIME_LIBRARY, '..', '..')")
+          go run ./cmd/grasshopper-bundle \
+            -output "dist/grasshopper-server-${{ matrix.target }}-$VERSION.zip" \
+            -client "bin/grasshopper${{ matrix.suffix }}" \
+            -server "bin/grasshopper-server${{ matrix.suffix }}" \
+            -backup "bin/grasshopper-backup${{ matrix.suffix }}" \
+            -migrate "bin/grasshopper-migrate${{ matrix.suffix }}" \
+            -onnx-library "$GRASSHOPPER_ONNX_RUNTIME_LIBRARY" \
+            -model "$GRASSHOPPER_EMBED_TEST_ROOT/model.onnx" \
+            -tokenizer "$GRASSHOPPER_EMBED_TEST_ROOT/tokenizer.json" \
+            -onnx-license "$runtime_root/LICENSE" \
+            -onnx-notices "$runtime_root/ThirdPartyNotices.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ matrix.target }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  package:
+    needs: server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: echo "VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+      - name: Build client and marketplace archives
+        run: |
+          sh scripts/build-client-release.sh "$VERSION" dist
+          sh scripts/build-marketplace-release.sh dist
+          rm -f dist/grasshopper-*-amd64 dist/grasshopper-*-arm64 dist/grasshopper-*.exe
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: server-*
+          path: dist
+          merge-multiple: true
+      - name: Write SHA256SUMS
+        run: |
+          cd dist
+          set -- ./*.zip
+          if [ "$#" -ne 7 ]; then ls -l; echo "Expected 7 archives, found $#" >&2; exit 1; fi
+          sha256sum -- *.zip > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: package
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: echo "VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The annotated tag message is the release summary; a lightweight tag
+          # has no message of its own, so refuse it.
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != tag ]; then
+            echo "$GITHUB_REF_NAME is a lightweight tag; push an annotated tag (git tag -a)" >&2
+            exit 1
+          fi
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
+          echo >> notes.md
+          sed "s/VERSION/$VERSION/g" .github/release-notes.md >> notes.md
+          # Re-runs after a partial failure replace the assets instead of failing.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS \
+              --verify-tag --title "Grasshopper $VERSION" --notes-file notes.md
+          fi
+      - name: Update the marketplace branch
+        run: |
+          git fetch origin marketplace
+          git worktree add --detach marketplace origin/marketplace
+          cd marketplace
+          git rm -rq --ignore-unmatch .
+          unzip -q "../dist/grasshopper-marketplace-$VERSION.zip"
+          test -x plugins/grasshopper-linux/bin/grasshopper
+          git add -A
+          if git diff --cached --quiet; then
+            echo "marketplace already matches $VERSION"
+          else
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "Publish Grasshopper $VERSION marketplace"
+          fi
+          git push origin HEAD:marketplace
+
+  site:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+      - run: sh web/build.sh
+      - name: Deploy usegrasshopper.com
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4.145.0 deploy -c web/wrangler.jsonc
+      - name: Check the live setup page links this release
+        run: |
+          for _ in 1 2 3 4 5 6; do
+            if curl -fsS https://usegrasshopper.com/setup.js | grep -q "$VERSION"; then exit 0; fi
+            sleep 10
+          done
+          echo "Live setup page does not reference $VERSION" >&2
+          exit 1

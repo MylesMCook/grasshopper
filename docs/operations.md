@@ -97,8 +97,8 @@ for an empty store and `--visualizer` for the memory view. Each binary has
 ## Public site
 
 The site is separate from the private server and contains no memory data.
-Publish only after release downloads exist. The repository's existing site
-configuration defines the deployment target:
+The release workflow deploys it after each release. To deploy a site-only change
+by hand, after the current release downloads exist:
 
 ```sh
 sh web/build.sh
