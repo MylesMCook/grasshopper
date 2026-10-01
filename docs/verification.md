@@ -94,8 +94,8 @@ imported hook (byte order mark, `sessionStart`) against the installed 2.9.2
 plugin returned memory context in `additional_context`.
 
 On the Mac, Claude Code (client archive) and Codex moved to 2.9.2 and `check`
-lists both as current; its installed hook loaded context for both Claude’s
-SessionStart input and Cursor’s byte-order-marked `sessionStart` input. Cursor on
+lists both as current; its installed hook loaded context for both Claude's
+SessionStart input and Cursor's byte-order-marked `sessionStart` input. Cursor on
 both machines imports the Claude Code plugin, so the duplicate direct Cursor
 wiring on the Mac was removed with `cursor remove` (other hooks kept) and
 leftover Cursor plugin files were moved to the trash on both machines.
