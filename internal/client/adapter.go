@@ -62,6 +62,9 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	if event == "" {
 		event = "SessionStart"
 	}
+	if harness == "claude" {
+		event = claudeEventName(event)
+	}
 	config, err := LoadConfig(configPath)
 	if err != nil {
 		return nil, err
@@ -155,7 +158,27 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	if harness == "codex" && event == "UserPromptSubmit" {
 		markPromptContext(stamp, delivered)
 	}
-	return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": text}}, nil
+	return withCursorImportContext(harness, event, map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": text}}, text), nil
+}
+
+// claudeEventName maps the event name Cursor passes when it runs an imported
+// Claude Code plugin hook back to Claude Code's name.
+func claudeEventName(event string) string {
+	if event == "sessionStart" {
+		return "SessionStart"
+	}
+	return event
+}
+
+// withCursorImportContext repeats Claude SessionStart context as
+// additional_context. Cursor runs imported Claude Code plugin hooks but reads
+// startup context only from that field; Claude Code ignores it. Cursor does
+// not map SubagentStart, so other events stay Claude-only.
+func withCursorImportContext(harness, event string, output map[string]any, text string) map[string]any {
+	if harness == "claude" && event == "SessionStart" {
+		output["additional_context"] = text
+	}
+	return output
 }
 
 // HookUnavailable keeps a failed startup visible without exposing local paths.
@@ -168,7 +191,7 @@ func HookUnavailable(harness string, input map[string]any) map[string]any {
 	if harness == "cursor" {
 		return map[string]any{"additional_context": message}
 	}
-	return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": message}}
+	return withCursorImportContext(harness, event, map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": message}}, message)
 }
 
 // This records a prompt-hook attempt, not a memory cache or proof that the
@@ -210,7 +233,7 @@ func HookGlobalPart(part int, input map[string]any) (map[string]any, error) {
 	if part != 1 && part != 2 {
 		return nil, errors.New("invalid global guidance part")
 	}
-	event := stringValue(input["hook_event_name"])
+	event := claudeEventName(stringValue(input["hook_event_name"]))
 	if event == "" {
 		event = "SessionStart"
 	}
@@ -302,6 +325,8 @@ func ParseHookInput(reader io.Reader) (map[string]any, error) {
 	if err != nil || len(data) > 131072 {
 		return nil, errors.New("hook input exceeds limit")
 	}
+	// Cursor on Windows starts hook input with a UTF-8 byte order mark.
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 	if len(bytes.TrimSpace(data)) == 0 {
 		return map[string]any{}, nil
 	}

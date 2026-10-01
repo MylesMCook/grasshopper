@@ -39,6 +39,54 @@ func TestHookUnavailableIsVisibleInEachHarness(t *testing.T) {
 	}
 }
 
+// Cursor imports Claude Code plugins and runs their SessionStart hooks, but
+// reads startup context only from additional_context.
+func TestClaudeSessionStartAlsoReachesCursorImports(t *testing.T) {
+	_, config, root := testClientServer(t)
+	startup, err := Hook(config, "claude", map[string]any{"cwd": root, "hook_event_name": "SessionStart"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claudeText, _ := startup["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
+	if claudeText == "" || startup["additional_context"] != claudeText {
+		t.Fatalf("Claude SessionStart must carry the same context for Cursor imports: %v", startup)
+	}
+	unavailable := HookUnavailable("claude", map[string]any{"hook_event_name": "SessionStart"})
+	if unavailable["additional_context"] != unavailable["hookSpecificOutput"].(map[string]any)["additionalContext"] {
+		t.Fatalf("Cursor imports must also see the unavailable notice: %v", unavailable)
+	}
+	subagent, err := Hook(config, "claude", map[string]any{"cwd": root, "hook_event_name": "SubagentStart"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := subagent["additional_context"]; ok {
+		t.Fatalf("Cursor does not map SubagentStart; keep its output Claude-only: %v", subagent)
+	}
+}
+
+// Cursor on Windows starts hook input with a UTF-8 byte order mark and names
+// the imported Claude SessionStart event sessionStart. Both previously made the
+// imported hook fail before loading context.
+func TestCursorImportedSessionStartLoadsContext(t *testing.T) {
+	input, err := ParseHookInput(strings.NewReader("\xef\xbb\xbf" + `{"hook_event_name":"sessionStart","cursor_version":"3.23.12"}`))
+	if err != nil {
+		t.Fatalf("hook input with a byte order mark must parse: %v", err)
+	}
+	_, config, root := testClientServer(t)
+	input["cwd"] = root
+	startup, err := Hook(config, "claude", input)
+	if err != nil {
+		t.Fatalf("Cursor's sessionStart event must load context: %v", err)
+	}
+	text, _ := startup["additional_context"].(string)
+	if !strings.Contains(text, "Grasshopper context loaded") {
+		t.Fatalf("Cursor import did not receive memory context: %v", startup)
+	}
+	if _, err := HookGlobalPart(1, input); err != nil {
+		t.Fatalf("Claude global guidance hooks must not fail under Cursor: %v", err)
+	}
+}
+
 type blockedTransport struct{ err error }
 
 func (b blockedTransport) RoundTrip(*http.Request) (*http.Response, error) { return nil, b.err }
