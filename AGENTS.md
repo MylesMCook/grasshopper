@@ -62,7 +62,7 @@ are pinned in `internal/goembed/granite.go`.
 - Keep credentials out of Git, output, logs, exports, and repository identity.
   Bind the server to explicit loopback; private routing requires approval.
 - Record actual harness, version, OS, and observed behavior in
-  `docs/memory-acceptance.md`; keep `tasks.md` short and current. Do not claim
+  `docs/verification.md`; keep `tasks.md` short and current. Do not claim
   cross-harness or deployed success from unit tests alone.
 
 The old Linux service names in historical documentation do not prove a running
