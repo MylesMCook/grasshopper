@@ -18,7 +18,7 @@ any tool call. Each cell is the last version where that passed.
 | Windows (x64) | 2.6.0 | Not delivered in 2.3.3 | Not tested |
 
 Since then, each release runs the installed macOS connectors' startup hooks and
-five-tool bridges directly (latest: 2.9.1), without a fresh AI session.
+five-tool bridges directly (latest: 2.9.2), without a fresh AI session.
 Cross-machine save, correct and read back through one server passed between
 macOS and Linux in 2.3.4. Desktop apps (Codex Desktop, Cursor IDE, Claude
 desktop) have not been retested since 2.3.0.
@@ -73,7 +73,38 @@ binaries, service definition and pre-upgrade snapshot are kept for rollback.
 
 Not verified: a fresh AI session saving a global memory under the new guidance.
 
-## Agent versions in check (unreleased, October 1)
+## 2.9.2 rollout (October 1)
+
+The release workflow passed every job on its first run. The macOS server
+archive matched `SHA256SUMS` and every embedded hash, with the model and runtime
+unchanged. Rehearsal on copies: packaged `--quickstart` started, owner sign-in
+returned a session, and it shut down cleanly; a restored copy of the live
+database opened under 2.9.2 with owner sign-in, a record read at its current and
+earlier revision, and search results; a separate copy opened by 2.9.2 reopened
+under 2.9.1 with search results. The live service stopped, took a verified
+snapshot (38 records, 99 revisions, 84 receipts, 5 credentials), swapped in the
+2.9.2 binaries and restarted; it reports 2.9.2 over the private route, and an
+encrypted off-machine backup before and after the cutover verified with the same
+counts. The 2.9.1 binaries, service definition and snapshot are kept for
+rollback.
+
+On the Windows PC, Claude Code and Codex moved to 2.9.2 and `grasshopper check`
+lists both as current. Replaying the exact input Cursor IDE 3.23.12 sent to an
+imported hook (byte order mark, `sessionStart`) against the installed 2.9.2
+plugin returned memory context in `additional_context`.
+
+On the Mac, Claude Code (client archive) and Codex moved to 2.9.2 and `check`
+lists both as current; its installed hook loaded context for both Claude's
+SessionStart input and Cursor's byte-order-marked `sessionStart` input. Cursor on
+both machines imports the Claude Code plugin, so the duplicate direct Cursor
+wiring on the Mac was removed with `cursor remove` (other hooks kept) and
+leftover Cursor plugin files were moved to the trash on both machines.
+
+Not verified: Cursor IDE injecting that context into a fresh chat. If leftover
+Cursor plugin files remain in its plugin cache, `check` lists them as behind,
+because Cursor records no readable install state.
+
+## Agent versions in check (2.9.2, October 1)
 
 A Windows build of `grasshopper check` from the `check-agent-versions` branch
 ran on a Windows (x64) PC with Claude Code, Codex and Cursor connectors and a
@@ -93,7 +124,7 @@ Whether that imported copy's startup hook delivers context in a fresh Cursor
 session, and whether Cursor loads cached plugin files for a plugin that is
 turned off, were not checked.
 
-## Cursor startup hooks on Windows (unreleased, October 1)
+## Cursor startup hooks on Windows (2.9.2, October 1)
 
 On a Windows (x64) PC, Cursor IDE 3.23.12 imported the Claude Code 2.9.1
 plugin and ran its SessionStart hooks, but every Grasshopper hook produced no
