@@ -62,6 +62,8 @@ agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git
 ```
 
 Then install your entry from the Plugins menu (IDE: **Customize → Plugins**).
+If you also use Claude Code, Cursor can import its Grasshopper plugin instead;
+it appears in the Plugins menu as **Imported**. Keep only one copy.
 
 **Claude Code**
 
@@ -112,10 +114,15 @@ not who can access it.
 
 Connector changes never delete memories on the server.
 
+To see which connectors need an update, run `./bin/grasshopper check` from the
+client archive. It lists each agent's connector version, whether it matches the
+server, and the exact update step for any that are behind. It fails only when an
+agent points at a Grasshopper program that no longer exists.
+
 | Agent | Update | Remove |
 | --- | --- | --- |
 | Codex | `codex plugin marketplace upgrade grasshopper-marketplace`, then `codex plugin add` your entry again | Remove the entry in the Codex plugin manager |
-| Cursor | `agent plugin marketplace remove grasshopper-marketplace`, add it again, reinstall your entry | Run `./bin/grasshopper cursor remove` from the client archive, then uninstall the plugin |
+| Cursor | `agent plugin marketplace remove grasshopper-marketplace`, then `agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace`, then update your entry in the Plugins menu. Cursor pins the marketplace to one commit, so `agent plugin marketplace update` alone does not pick up a new release. An Imported copy updates with Claude Code | Run `./bin/grasshopper cursor remove` from the client archive, then uninstall the plugin |
 | Claude Code | `claude plugin marketplace update grasshopper-marketplace`, then `claude plugin update` your entry | `claude plugin uninstall` your entry, then `claude plugin marketplace remove grasshopper-marketplace` |
 | Claude Code (client archive) | `./bin/grasshopper setup --agents claude --update` | `./bin/grasshopper claude remove`, then remove the plugin |
 
