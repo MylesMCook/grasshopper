@@ -468,12 +468,12 @@ const request64 = 'a'.repeat(64);
 test('a pending request shows a prominent code, time left, and a primary Approve', async () => {
   const v = view();
   const refreshed = v.ui.refreshDevices();
-  v.requests[0].reply([{ request_id: request64, code: 'c0de42', device: 'work-hp', status: 'pending', expires_in: 272 }]);
+  v.requests[0].reply([{ request_id: request64, code: 'c0de42', device: 'test-laptop', status: 'pending', expires_in: 272 }]);
   v.requests[1].reply([]);
   await refreshed;
   const row = v.get('pending-devices').children[0];
   const [approve, deny] = row.children[1].children;
-  assert.equal(row.children[0].children[0].textContent, 'work-hp wants to connect');
+  assert.equal(row.children[0].children[0].textContent, 'test-laptop wants to connect');
   const detail = row.children[0].children[1];
   assert.equal(detail.children[0], 'Code ');
   assert.equal(detail.children[1].textContent, 'c0de42');
@@ -487,13 +487,13 @@ test('a pending request shows a prominent code, time left, and a primary Approve
 test('a poll updates the countdown in place and keeps unchanged rows for keyboard users', async () => {
   const v = view();
   const first = v.ui.refreshDevices();
-  v.requests[0].reply([{ request_id: request64, code: 'c0de42', device: 'work-hp', status: 'pending', expires_in: 100 }]);
+  v.requests[0].reply([{ request_id: request64, code: 'c0de42', device: 'test-laptop', status: 'pending', expires_in: 100 }]);
   v.requests[1].reply([{ id: 1, device: 'mac-mini', created_at: '2026-09-29T10:00:00Z' }]);
   await first;
   const pendingRow = v.get('pending-devices').children[0];
   const connectedRow = v.get('connected-devices').children[0];
   const second = v.ui.refreshDevices();
-  v.requests[2].reply([{ request_id: request64, code: 'c0de42', device: 'work-hp', status: 'pending', expires_in: 40 }]);
+  v.requests[2].reply([{ request_id: request64, code: 'c0de42', device: 'test-laptop', status: 'pending', expires_in: 40 }]);
   v.requests[3].reply([{ id: 1, device: 'mac-mini', created_at: '2026-09-29T10:00:00Z' }]);
   await second;
   assert.equal(v.get('pending-devices').children[0], pendingRow);

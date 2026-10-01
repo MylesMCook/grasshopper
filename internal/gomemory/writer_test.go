@@ -56,7 +56,7 @@ func TestGoWriterCorrectionAndScopedRecall(t *testing.T) {
 	w := fixtureWriter(t)
 	ctx := context.Background()
 	key := "answer-style"
-	input := WriteInput{Scope: Scope{}, Content: "Answer in brief, but keep the complete qualification after character 200. " + strings.Repeat("Source details matter. ", 12), Purpose: "preference", Confirmed: true, Provenance: Provenance{"cursor", "synthetic-work-hp", "approved synthetic correction"}, RequestID: "go-correction-1", Key: &key, ExpectedRevision: intPtr(2)}
+	input := WriteInput{Scope: Scope{}, Content: "Answer in brief, but keep the complete qualification after character 200. " + strings.Repeat("Source details matter. ", 12), Purpose: "preference", Confirmed: true, Provenance: Provenance{"cursor", "synthetic-test-laptop", "approved synthetic correction"}, RequestID: "go-correction-1", Key: &key, ExpectedRevision: intPtr(2)}
 	receipt, err := w.Write(ctx, input, []float32{1, 0}, "fixture-vector")
 	if err != nil {
 		t.Fatal(err)

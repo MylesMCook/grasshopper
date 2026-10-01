@@ -68,7 +68,7 @@ func TestViewerApprovedDevicePairingAndRevocation(t *testing.T) {
 	if status, _ := request(http.MethodGet, "/visualizer/api/pairings", "", nil, true); status != http.StatusUnauthorized {
 		t.Fatalf("anonymous viewer could list pairings: %d", status)
 	}
-	status, data := request(http.MethodPost, "/pair/start", "", map[string]any{"device": "work-hp", "token_hash": hex.EncodeToString(hash[:])}, false)
+	status, data := request(http.MethodPost, "/pair/start", "", map[string]any{"device": "test-laptop", "token_hash": hex.EncodeToString(hash[:])}, false)
 	if status != http.StatusCreated {
 		t.Fatalf("start pairing: %d %s", status, data)
 	}
@@ -127,7 +127,7 @@ func TestViewerApprovedDevicePairingAndRevocation(t *testing.T) {
 	correction := gomemory.WriteInput{
 		Scope: current.Scope, ID: &current.ID, ExpectedRevision: &current.Revision,
 		Key: current.Key, Content: "Synthetic paired-device correction.", Purpose: current.Purpose,
-		Confirmed: true, Provenance: gomemory.Provenance{Harness: "cursor", Device: "work-hp", Source: "synthetic pairing test"},
+		Confirmed: true, Provenance: gomemory.Provenance{Harness: "cursor", Device: "test-laptop", Source: "synthetic pairing test"},
 		RequestID: "paired-device-correction",
 	}
 	stored := decodeResult[storeOutput](t, call(t, mcpSession, "store", correction))
@@ -167,7 +167,7 @@ func TestViewerApprovedDevicePairingAndRevocation(t *testing.T) {
 		ID     int64  `json:"id"`
 		Device string `json:"device"`
 	}
-	if status != http.StatusOK || json.Unmarshal(data, &devices) != nil || len(devices) != 1 || devices[0].Device != "work-hp" {
+	if status != http.StatusOK || json.Unmarshal(data, &devices) != nil || len(devices) != 1 || devices[0].Device != "test-laptop" {
 		t.Fatalf("device list: %d %s", status, data)
 	}
 	if status, _ := request(http.MethodDelete, "/visualizer/api/devices", "", map[string]any{"id": devices[0].ID}, true); status != http.StatusNoContent {

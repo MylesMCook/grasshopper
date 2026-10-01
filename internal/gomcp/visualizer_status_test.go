@@ -63,7 +63,7 @@ func TestOwnerViewReportsServerVersionModelAndCounts(t *testing.T) {
 func TestPendingConnectionRequestsReportTimeLeft(t *testing.T) {
 	server, _ := testServer(t, true)
 	hash := sha256.Sum256([]byte("synthetic-per-device-token-0123456789-abcdef"))
-	body, _ := json.Marshal(map[string]any{"device": "work-hp", "token_hash": hex.EncodeToString(hash[:])})
+	body, _ := json.Marshal(map[string]any{"device": "test-laptop", "token_hash": hex.EncodeToString(hash[:])})
 	response, err := http.Post(server.URL+"/pair/start", "application/json", strings.NewReader(string(body)))
 	if err != nil || response.StatusCode != http.StatusCreated {
 		t.Fatalf("start pairing: %v %v", response, err)
