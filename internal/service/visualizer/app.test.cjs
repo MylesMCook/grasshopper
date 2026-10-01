@@ -323,3 +323,55 @@ test('persisted theme applies before body DOM exists and its script precedes sty
   const pages = [path.join(__dirname, 'index.html'), ...['index.html', 'setup/index.html', 'view/index.html', '404.html'].map(file => path.join(__dirname, '../../../web/public', file))];
   for (const file of pages) { const html = fs.readFileSync(file, 'utf8'); assert.ok(html.indexOf('theme-init.js') < html.indexOf('rel="stylesheet"')); assert.ok(!/<script[^>]*theme-init.js[^>]*defer/.test(html)); }
 });
+
+test('an unchanged poll does not redraw, and an in-page anchor is not navigation', async () => {
+  const ui = await signedIn();
+  const drawn = ui.app.children[0];
+  for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 5000) { ui.timers.delete(id); timer.fn(); }
+  await flush();
+  const poll = ui.pending('/visualizer/api/context').find(request => request.body?.project === PROJECT);
+  poll.done = true; poll.reply(304);
+  await flush();
+  assert.equal(ui.app.children[0], drawn, 'a 304 keeps the page as drawn');
+  ui.hashChange('#main');
+  await flush();
+  assert.equal(ui.app.children[0], drawn, 'the skip link does not navigate');
+  assert.match(ui.text(), /Squash merge only/);
+});
+
+test('a conflict on Keep refreshes the open memory, and an uncertain failure keeps the request ID', async () => {
+  const ui = await signedIn();
+  ui.rows('Use gh for PR status').click();
+  await ui.answer('/visualizer/api/record', 200, projectRecords[1]);
+  ui.find('Keep').click();
+  await flush();
+  const first = ui.requests.find(request => request.url === '/visualizer/api/update');
+  first.done = true; first.reply(503, { error: 'unavailable' });
+  await flush();
+  ui.find('Keep').click();
+  await flush();
+  const retry = ui.requests.filter(request => request.url === '/visualizer/api/update')[1];
+  assert.equal(retry.body.request_id, first.body.request_id, 'a 5xx retry reuses its ID');
+  retry.done = true; retry.reply(409, { error: 'revision_conflict', current: { ...projectRecords[1], revision: 3, content: 'Use gh, newer.' } });
+  await flush();
+  assert.match(ui.text(), /Use gh, newer\./);
+  ui.app.querySelector('aside.panel').querySelectorAll('button').find(node => node.textContent === 'Keep').click();
+  await flush();
+  assert.equal(ui.requests.filter(request => request.url === '/visualizer/api/update')[2].body.expected_revision, 3);
+});
+
+test('a project memory can only move to All projects', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Move to…').click();
+  assert.deepEqual(ui.app.querySelectorAll('button.pick').map(node => node.textContent), ['All projects']);
+});
+
+test('a rate-limited sign-in says to wait', async () => {
+  const ui = setup();
+  await flush();
+  ui.app.querySelector('#token').value = TOKEN;
+  ui.app.querySelector('form.signin-box').dispatch('submit');
+  await ui.answer('/visualizer/api/session', 429);
+  assert.match(ui.text(), /Too many attempts\. Wait five minutes/);
+});

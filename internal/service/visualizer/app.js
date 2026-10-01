@@ -110,6 +110,7 @@ function similarTo(record, kept) {
   let best = null, score = 0;
   for (const other of kept) {
     if (other.id === record.id || !other.confirmed || other.purpose === 'handoff') continue;
+    if (other.scope?.project && other.scope.project !== record.scope?.project) continue;
     let shared = 0;
     for (const word of words(`${other.title} ${other.content}`)) if (mine.has(word)) shared++;
     if (shared > score) { score = shared; best = other; }
@@ -155,14 +156,18 @@ function setURL(push) {
 function go(route, push = true) {
   if (dirty() && !confirmLeave()) return;
   state.route = { page: 'project', project: '', query: '', memory: null, connect: '', ...route };
-  Object.assign(state, { panel: null, menu: false, expanded: new Set(), showGlobal: false, page: null, pageKey: '', approvalFocused: false });
+  Object.assign(state, { panel: null, menu: false, expanded: new Set(), showGlobal: false, page: null, pageKey: '', approvalFocused: false, searchDraft: null });
   setURL(push);
+  chooseDefaultProject();
   if (state.route.memory) openMemory(state.route.memory, false);
   restartPolling();
   render();
   document.getElementById('main')?.focus?.();
 }
+const ROUTE_KEYS = ['page', 'project', 'query', 'memory', 'connect'];
 window.addEventListener('hashchange', () => {
+  // In-page anchors such as the skip link are not routes.
+  if (![...new URLSearchParams(location.hash.slice(1)).keys()].some(key => ROUTE_KEYS.includes(key)) && location.hash) return;
   const route = routeFromHash();
   if (routeHash(route) !== routeHash(state.route)) go(route, false);
 });
@@ -190,7 +195,9 @@ async function api(path, body, { method = 'POST', etag = '', timeout = 8000, sig
 function sessionEnded() {
   if (!state.active) return;
   stopPolling();
-  Object.assign(state, { active: false, generation: state.generation + 1, index: null, page: null, panel: null, devices: [], pairings: [], undo: null, signedOutNote: 'Your session ended. Sign in again.' });
+  const draft = draftOf(state.panel);
+  if (draft) state.keptDraft = draft;
+  Object.assign(state, { active: false, generation: state.generation + 1, index: null, page: null, panel: null, devices: [], pairings: [], undo: null, signedOutNote: state.keptDraft ? 'Your session ended. Sign in again; your unsaved text is kept.' : 'Your session ended. Sign in again.' });
   writes.clear();
   render();
 }
@@ -244,10 +251,11 @@ async function refreshPage() {
   try {
     const page = await loadList(target, generation, controller.signal, Boolean(state.page) && state.pageKey === key);
     if (generation !== state.generation || inFlight.page !== controller) return;
+    const changed = Boolean(page) || Boolean(state.offline) || state.loading;
     state.offline = null;
     if (page) { state.page = page; state.pageKey = key; }
     state.loading = false;
-    if (!editing() && !selecting()) render();
+    if (changed && !editing() && !selecting()) render();
   } catch (error) {
     if (error.session || generation !== state.generation || inFlight.page !== controller) return;
     state.loading = false;
@@ -260,6 +268,15 @@ async function refreshPage() {
       if (state.active && !document.hidden && state.route.page !== 'search') timers.page = setTimeout(refreshPage, state.offline ? 15000 : POLL.page);
     }
   }
+}
+
+// With no project chosen, open the most recently used one once the index is known.
+function chooseDefaultProject() {
+  if (state.route.page !== 'project' || state.route.project || !state.index) return false;
+  state.route.project = sortedProjects()[0] || '';
+  if (!state.route.project) state.route.page = 'all';
+  setURL(false);
+  return true;
 }
 
 function sortedProjects() {
@@ -277,6 +294,7 @@ async function refreshIndex() {
   try {
     const page = await loadList({ url: '/visualizer/api/context', body: { all_projects: true } }, generation, controller.signal, Boolean(state.index));
     if (generation !== state.generation || inFlight.index !== controller) return;
+    const wasOffline = Boolean(state.offline);
     state.offline = null;
     if (page) {
       const recency = new Map();
@@ -285,15 +303,9 @@ async function refreshIndex() {
         if (project && !(recency.get(project) >= record.updated_at)) recency.set(project, record.updated_at);
       }
       state.index = { projects: page.projects || [], recency, records: page.records, review: page.review_count || 0, server: page.server, total: page.total ?? page.records.length };
-      // With no project chosen, open the most recently used one.
-      if (state.route.page === 'project' && !state.route.project) {
-        state.route.project = sortedProjects()[0] || '';
-        if (!state.route.project) state.route.page = 'all';
-        setURL(false);
-        refreshPage();
-      }
     }
-    if (!editing() && !selecting()) render();
+    if (chooseDefaultProject()) refreshPage();
+    if ((page || wasOffline) && !editing() && !selecting()) render();
   } catch (error) {
     if (!error.session && generation === state.generation && inFlight.index === controller) { state.offline = state.offline || new Date(); render(); }
   } finally {
@@ -358,13 +370,26 @@ async function signIn(token) {
   state.signingIn = true; state.signInError = ''; render();
   try {
     const response = await fetch('/visualizer/api/session', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, credentials: 'same-origin', cache: 'no-store' });
-    if (!response.ok) throw new Error(response.status === 401 ? 'rejected' : 'unavailable');
+    if (!response.ok) throw new Error(response.status === 401 ? 'rejected' : response.status === 429 ? 'limited' : 'unavailable');
     Object.assign(state, { active: true, generation: state.generation + 1, signedOutNote: '' });
     restartPolling();
-    if (state.route.memory) openMemory(state.route.memory, false);
+    const kept = state.keptDraft;
+    state.keptDraft = null;
+    if (kept) restoreDraft(kept);
+    else if (state.route.memory) openMemory(state.route.memory, false);
   } catch (error) {
-    state.signInError = error.message === 'rejected' ? 'That token was rejected. Check the file on your server and try again.' : "Can't reach your server. Try again when it's running.";
+    state.signInError = error.message === 'rejected' ? 'That token was rejected. Check the file on your server and try again.'
+      : error.message === 'limited' ? 'Too many attempts. Wait five minutes, then try again.' : "Can't reach your server. Try again when it's running.";
   } finally { state.signingIn = false; render(); }
+}
+
+// Reopens a memory with text that was being edited when the session ended.
+async function restoreDraft(kept) {
+  await openMemory(kept.id, false);
+  if (state.panel?.id === kept.id && state.panel.record) {
+    Object.assign(state.panel, { mode: 'edit', draft: { title: kept.title, content: kept.content } });
+    render();
+  }
 }
 
 async function signOut(everywhere) {
@@ -425,8 +450,16 @@ function closePanel() {
 }
 
 function editing() { return state.panel?.mode === 'edit'; }
+// The text being edited, if it differs from the saved memory.
+function draftOf(panel) {
+  if (!panel?.record || (panel.mode !== 'edit' && panel.mode !== 'conflict')) return null;
+  const title = document.getElementById('edit-title')?.value ?? panel.draft?.title ?? panel.record.title;
+  const content = document.getElementById('edit-text')?.value ?? panel.draft?.content ?? panel.record.content;
+  return title !== panel.record.title || content !== panel.record.content ? { id: panel.record.id, title, content } : null;
+}
 function dirty() {
   const panel = state.panel;
+  if (panel?.mode === 'conflict') return Boolean(draftOf(panel));
   if (!panel || panel.mode !== 'edit' || !panel.record) return false;
   const title = document.getElementById('edit-title')?.value ?? panel.draft?.title ?? panel.record.title;
   const text = document.getElementById('edit-text')?.value ?? panel.draft?.content ?? panel.record.content;
@@ -445,8 +478,17 @@ async function write(path, body, { onDone, onConflict } = {}) {
     const { status, data } = await api(path, { ...body, request_id: id }, { timeout: 20000 });
     if (generation !== state.generation) return false;
     if (status === 200) { writes.delete(key); await onDone?.(data); refreshAfterWrite(); return true; }
-    writes.delete(key);
-    if (status === 409) { if (onConflict) onConflict(data?.current); else say('This memory changed. Showing the latest.'); refreshAfterWrite(); return false; }
+    // Only a definite answer retires the request ID; a retry after 5xx reuses it.
+    if ([400, 404, 409].includes(status)) writes.delete(key);
+    if (status === 409) {
+      if (onConflict) onConflict(data?.current);
+      else {
+        say('This memory changed. Showing the latest.');
+        if (state.panel?.type === 'memory' && state.panel.id === body.id && data?.current) { state.panel.record = data.current; state.panel.history = null; loadHistory(state.panel); }
+      }
+      refreshAfterWrite();
+      return false;
+    }
     say(status === 400 ? 'That change is not valid. Check the text and try again.' : "Couldn't save. Try again; it won't save twice.");
     return false;
   } catch (error) {
@@ -518,12 +560,13 @@ function offerUndo(record, revision, verb) {
   state.undo = { record, revision, verb };
   timers.undo = setTimeout(() => { state.undo = null; render(); }, 10000);
 }
-function undo() {
+async function undo() {
   const pending = state.undo;
   if (!pending) return;
+  if (saving) { say('Another change is still saving. Try Undo again in a moment.'); return; }
   clearTimeout(timers.undo);
   state.undo = null;
-  write('/visualizer/api/archive', { id: pending.record.id, expected_revision: pending.revision, archived: false }, { onDone: () => say(`Restored “${pending.record.title}”.`) });
+  await write('/visualizer/api/archive', { id: pending.record.id, expected_revision: pending.revision, archived: false }, { onDone: () => say(`Restored “${pending.record.title}”.`) });
 }
 
 async function decidePairing(request, decision) {
@@ -645,7 +688,8 @@ function head(title, sub, { search = true } = {}) {
       event.preventDefault();
       const query = event.target.querySelector('input').value.trim();
       if (query) go({ page: 'search', query, project: state.route.page === 'project' ? state.route.project : '' });
-    } }, h('input', { type: 'search', 'aria-label': 'Search memories', placeholder: 'Search', value: state.route.page === 'search' ? state.route.query : '' })) : null);
+    } }, h('input', { type: 'search', 'aria-label': 'Search memories', placeholder: 'Search', value: state.searchDraft ?? (state.route.page === 'search' ? state.route.query : ''),
+      oninput: event => { state.searchDraft = event.target.value; } })) : null);
 }
 
 function banner() {
@@ -820,7 +864,7 @@ function memoryPanel(panel) {
   if (panel.mode === 'edit' || panel.mode === 'conflict') return editForm(panel);
   if (panel.mode === 'move') {
     return [h('h2', { class: 'panel-title', text: record.title }), h('p', { class: 'label', text: 'Move to' }),
-      h('div', { class: 'picker' }, [null, ...sortedProjects()].filter(project => project !== (record.scope?.project || null)).map(project =>
+      h('div', { class: 'picker' }, (record.scope?.project ? [null] : sortedProjects().filter(project => /^id:.+|^git:[^/]+\/.+/.test(project))).map(project =>
         h('button', { type: 'button', class: 'pick', disabled: saving, onclick: () => move(record, project) }, projectName(project)))),
       h('button', { type: 'button', class: 'quiet muted', onclick: () => { panel.mode = 'view'; render(); } }, 'Cancel')];
   }
@@ -931,6 +975,8 @@ function render() {
   const focusKey = focused && focused !== document.body ? focused.getAttribute?.('aria-label') || focused.id || focused.textContent : '';
   document.title = state.active ? `${state.panel?.record?.title || currentPlace()} · Grasshopper` : 'Grasshopper';
   if (!state.active) { root.replaceChildren(signInView()); return; }
+  // Scrolling areas keep their position across a redraw.
+  const scrolled = ['side', 'panel'].map(name => [name, root.querySelector?.(`.${name}`)?.scrollTop || 0]);
   const panel = panelView();
   const review = state.index?.review || 0;
   root.replaceChildren(...[h('div', { class: `app${panel ? ' has-panel' : ''}${state.menu ? ' menu-open' : ''}` },
@@ -941,6 +987,7 @@ function render() {
     h('main', { id: 'main', tabindex: '-1', class: state.offline ? 'offline' : null }, h('div', { class: 'page' }, mainView())),
     panel),
   state.undo ? h('div', { class: 'undo', role: 'status' }, h('span', { text: `${state.undo.verb} “${state.undo.record.title}”` }), h('button', { type: 'button', class: 'quiet', onclick: undo }, 'Undo')) : null].filter(Boolean));
+  for (const [name, top] of scrolled) { const node = root.querySelector?.(`.${name}`); if (node && top) node.scrollTop = top; }
   // A redraw must not strand keyboard focus on a removed control.
   if (focusKey) {
     const match = [...(root.querySelectorAll?.('button, input, textarea, select, a') || [])].find(node => (node.getAttribute('aria-label') || node.id || node.textContent) === focusKey);
