@@ -73,6 +73,26 @@ binaries, service definition and pre-upgrade snapshot are kept for rollback.
 
 Not verified: a fresh AI session saving a global memory under the new guidance.
 
+## Agent versions in check (unreleased, October 1)
+
+A Windows build of `grasshopper check` from the `check-agent-versions` branch
+ran on a Windows (x64) PC with Claude Code, Codex and Cursor connectors and a
+2.9.1 server. It listed Claude Code and Codex plugins and Cursor's direct wiring
+as current, and an old Cursor marketplace plugin (2.2.0) left in Cursor's plugin
+cache as behind, with its update steps; it exited 0. With an unreachable server
+address it still listed every agent with server version unknown and exited 1.
+`check --json` output was unchanged. A missing program and a failing agent CLI
+were tested only with synthetic settings in unit tests.
+
+On the same PC, Cursor (agent CLI 2026.09.26) had pinned the Grasshopper
+marketplace to the 2.5.0 commit it saw when added; `agent plugin marketplace
+update` re-indexed that same commit, and only removing and re-adding it with
+`--git-ref marketplace` moved the pin to 2.9.1. Cursor's Plugins menu also
+showed Claude Code's 2.9.1 plugin as Imported with all five MCP tools enabled.
+Whether that imported copy's startup hook delivers context in a fresh Cursor
+session, and whether Cursor loads cached plugin files for a plugin that is
+turned off, were not checked.
+
 ## Cursor startup hooks on Windows (unreleased, October 1)
 
 On a Windows (x64) PC, Cursor IDE 3.23.12 imported the Claude Code 2.9.1
