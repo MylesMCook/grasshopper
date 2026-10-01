@@ -22,4 +22,4 @@ startup memory from its hooks log after a real chat. Owner: Claude Code, Windows
 
 ## Next
 
-Update the Windows PC and Linux connectors when next used; deferred: project archive and rename.
+Update the Linux connectors when next used; deferred: project archive and rename.
