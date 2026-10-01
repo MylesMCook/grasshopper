@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -368,6 +369,82 @@ func visualizerUpdate(store *memory.Writer, save ownerSave, audit *auditLog) htt
 			audit.event("owner_write", r, auditFields{action: action, id: receipt.ID, revision: receipt.Revision, requestID: input.RequestID})
 		}
 		ownerWriteResult(w, r, store, input.ID, receipt, err)
+	}
+}
+
+// visualizerMove moves a memory between a project and every project. It saves a
+// copy at the new scope with the original text, purpose, confirmation and
+// provenance, then archives the original with a note naming the copy. Each
+// step has its own request ID derived from the caller's, so a retry after a
+// partial failure replays the finished step and completes the other.
+func visualizerMove(store *memory.Writer, save ownerSave, audit *auditLog) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			ID               int64   `json:"id"`
+			ExpectedRevision int64   `json:"expected_revision"`
+			Project          *string `json:"project"`
+			RequestID        string  `json:"request_id"`
+		}
+		if !decodeVisualizerRead(w, r, &input) {
+			return
+		}
+		if input.ID < 1 || input.ExpectedRevision < 1 || strings.TrimSpace(input.RequestID) == "" || len(input.RequestID) > 100 {
+			http.Error(w, "invalid move request", http.StatusBadRequest)
+			return
+		}
+		current, err := store.RecordByID(r.Context(), input.ID, nil)
+		if err != nil {
+			http.Error(w, "memory unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if current == nil {
+			http.Error(w, "memory not found", http.StatusNotFound)
+			return
+		}
+		// A retry finds the original already archived one revision later.
+		retry := current.Archived && current.Revision == input.ExpectedRevision+1
+		if !retry && (current.Archived || current.Revision != input.ExpectedRevision) {
+			ownerConflict(w, r, store, input.ID, "revision_conflict")
+			return
+		}
+		// Copy from the revision the owner saw. On a retry the current record is
+		// the archived one, whose provenance now carries the move note.
+		source, err := store.RecordByID(r.Context(), input.ID, &input.ExpectedRevision)
+		if err != nil || source == nil {
+			http.Error(w, "memory unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		target := current.Scope
+		target.Project = input.Project
+		from, _ := current.Scope.Key()
+		to, err := target.Key()
+		if err != nil || to == from || target.Legacy {
+			http.Error(w, "invalid move target", http.StatusBadRequest)
+			return
+		}
+		copied, _, err := save(r.Context(), memory.WriteInput{
+			Scope: target, Content: source.Content, Title: &source.Title, Tags: &source.Tags, MemoryType: &source.MemoryType,
+			Purpose: source.Purpose, Confirmed: source.Confirmed, Provenance: source.Provenance,
+			RequestID: input.RequestID + ":copy", Key: source.Key,
+		})
+		if err != nil {
+			ownerWriteResult(w, r, store, input.ID, copied, err)
+			return
+		}
+		note := ownerProvenance
+		note.Source = fmt.Sprintf("Moved to memory %d", copied.ID)
+		archived, err := store.Archive(r.Context(), memory.ArchiveInput{Scope: current.Scope, ID: input.ID, ExpectedRevision: input.ExpectedRevision,
+			Archived: true, RequestID: input.RequestID + ":archive", Provenance: note})
+		if err != nil {
+			ownerWriteResult(w, r, store, input.ID, archived, err)
+			return
+		}
+		audit.event("owner_write", r, auditFields{action: "move", id: copied.ID, revision: copied.Revision, requestID: input.RequestID})
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(struct {
+			memory.Receipt
+			MovedFrom int64 `json:"moved_from"`
+		}{copied, input.ID})
 	}
 }
 

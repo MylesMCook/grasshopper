@@ -516,7 +516,66 @@ func (w *Writer) Write(ctx context.Context, input WriteInput, vector []float32, 
 	if err = snapshot(ctx, tx, *newRecord); err != nil {
 		return receipt, err
 	}
+	if revision == 1 && purpose == "handoff" {
+		if err = retireHandoffs(ctx, tx, input.Scope, scopeKey, *id, input.Provenance); err != nil {
+			return receipt, err
+		}
+	}
 	return acknowledge(ctx, tx, input.RequestID, fingerprint, Receipt{*id, revision, false})
+}
+
+// retireHandoffs archives the earlier active handoffs in a new handoff's exact
+// scope, inside the same transaction, so each scope keeps one current handoff.
+// Archiving adds a revision rather than deleting, so the owner can still read
+// or restore a replaced handoff. Its provenance names the replacing record.
+func retireHandoffs(ctx context.Context, tx *sql.Tx, scope Scope, scopeKey string, replacement int64, by Provenance) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM chunks WHERE kind='memory' AND archived=0 AND purpose='handoff' AND memory_scope=? AND id<>?`, scopeKey, replacement)
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	provenanceJSON, err := canonicalJSON(Provenance{Harness: by.Harness, Device: by.Device, Source: fmt.Sprintf("Replaced by handoff %d", replacement)})
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format("2006-01-02T15:04:05.999999-07:00")
+	for _, id := range ids {
+		old, err := getInTx(ctx, tx, scope, id, nil)
+		if err != nil {
+			return err
+		}
+		if old == nil {
+			return errors.New("memory_not_found")
+		}
+		if err := snapshot(ctx, tx, *old); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE chunks SET archived=1,revision=revision+1,updated_at=?,provenance=? WHERE id=? AND revision=?", now, string(provenanceJSON), id, old.Revision); err != nil {
+			return err
+		}
+		current, err := getInTx(ctx, tx, scope, id, nil)
+		if err != nil {
+			return err
+		}
+		if current == nil {
+			return errors.New("memory_not_found")
+		}
+		if err := snapshot(ctx, tx, *current); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Store vectors as little-endian float32 values; Search checks the byte
