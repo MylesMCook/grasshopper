@@ -18,7 +18,7 @@ any tool call. Each cell is the last version where that passed.
 | Windows (x64) | 2.6.0 | Not delivered in 2.3.3 | Not tested |
 
 Since then, each release runs the installed macOS connectors' startup hooks and
-five-tool bridges directly (latest: 2.9.0), without a fresh AI session.
+five-tool bridges directly (latest: 2.9.1), without a fresh AI session.
 Cross-machine save, correct and read back through one server passed between
 macOS and Linux in 2.3.4. Desktop apps (Codex Desktop, Cursor IDE, Claude
 desktop) have not been retested since 2.3.0.
@@ -55,6 +55,23 @@ invalid `memory_type`, which 2.9.1 addresses in the `store` tool guidance.
 Not verified: phones, screen readers, non-Chromium browsers, fresh AI
 sessions on other machines, and last-seen times for the Windows and Linux
 devices (neither has connected since the upgrade).
+
+## 2.9.1 rollout (September 30)
+
+The release workflow's Windows server job hit the known slow-runner test
+startup timeout once and passed on rerun; every other job passed first time.
+The macOS archives matched `SHA256SUMS` and every embedded hash, with the model
+and runtime unchanged. The 2.9.1 server and then 2.9.0 opened the same copy of
+the live database with matching counts. The live service took a verified
+snapshot and an encrypted off-machine backup, swapped in the 2.9.1 binaries and
+restarted. Afterwards anonymous requests are refused, the owner view answers
+locally and over the private route, counts match, and `tools/list` shows the new
+`store` scope guidance and `memory_type` values. The Codex, Claude Code and
+Cursor connectors moved to 2.9.1 and each startup hook loaded project context
+with the Mac's device token. A second off-machine backup passed. The 2.9.0
+binaries, service definition and pre-upgrade snapshot are kept for rollback.
+
+Not verified: a fresh AI session saving a global memory under the new guidance.
 
 ## Every release
 
