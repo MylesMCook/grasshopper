@@ -171,12 +171,11 @@ func cursorWiringReport(run commandRunner, cursorDir, serverVersion string) (age
 		}
 		binaries = append(binaries, binary)
 	}
+	// Read each settings file on its own, so one unreadable file cannot hide
+	// a missing program the other points at.
 	mcp, mcpErr := readJSONObject(filepath.Join(cursorDir, "mcp.json"))
 	hooks, hooksErr := readJSONObject(filepath.Join(cursorDir, "hooks.json"))
-	if mcpErr != nil || hooksErr != nil {
-		report.State, report.Detail = agentUnknown, errors.Join(mcpErr, hooksErr).Error()
-		return report, true
-	}
+	settingsErr := errors.Join(mcpErr, hooksErr)
 	if servers, ok := jsonObject(mcp["mcpServers"]); ok {
 		if entry, ok := jsonObject(servers["grasshopper"]); ok {
 			if command, _ := entry["command"].(string); grasshopperExecutable(command) {
@@ -194,11 +193,14 @@ func cursorWiringReport(run commandRunner, cursorDir, serverVersion string) (age
 			}
 		}
 	}
-	if len(binaries) == 0 {
+	if len(binaries) == 0 && settingsErr == nil {
 		return report, false
 	}
 	update := cursorArchiveUpdate
-	if !hasHook {
+	if settingsErr != nil {
+		// Route-specific repair waits until both files can be read.
+		update = "Fix the unreadable Cursor settings first: " + settingsErr.Error()
+	} else if !hasHook {
 		report.Route, update = "Cursor settings (mcp.json)", cursorCLIUpdate
 	}
 	var missing, programs []string
@@ -212,6 +214,13 @@ func cursorWiringReport(run commandRunner, cursorDir, serverVersion string) (age
 	if len(missing) > 0 {
 		report.State, report.Update = agentBroken, update
 		report.Detail = "Missing program: " + strings.Join(missing, ", ")
+		if settingsErr != nil {
+			report.Detail += ". " + settingsErr.Error()
+		}
+		return report, true
+	}
+	if settingsErr != nil {
+		report.State, report.Detail = agentUnknown, settingsErr.Error()
 		return report, true
 	}
 	var versions []string
@@ -304,6 +313,7 @@ func cursorPluginReports(cursorDir, serverVersion string) []agentReport {
 	manifests, _ := filepath.Glob(filepath.Join(cursorDir, "plugins", "cache", "grasshopper-marketplace", "*", "*", ".cursor-plugin", "plugin.json"))
 	type found struct {
 		version  string
+		dir      string
 		modified time.Time
 	}
 	newest := map[string]found{}
@@ -326,13 +336,19 @@ func cursorPluginReports(cursorDir, serverVersion string) []agentReport {
 			names = append(names, plugin.Name)
 		}
 		if !seen || info.ModTime().After(previous.modified) {
-			newest[plugin.Name] = found{plugin.Version, info.ModTime()}
+			newest[plugin.Name] = found{plugin.Version, filepath.Dir(filepath.Dir(manifest)), info.ModTime()}
 		}
 	}
 	var reports []agentReport
 	for _, name := range names {
 		version := newest[name].version
 		report := agentReport{Agent: "Cursor", Route: "plugin files " + name + "@grasshopper-marketplace", Version: version, State: versionState(version, serverVersion)}
+		if dir := newest[name].dir; !pluginProgramExists(dir) {
+			report.State, report.Detail = agentBroken, "Missing program in "+filepath.Join(dir, "bin")
+			report.Update = "Reinstall " + name + " in Cursor's Plugins menu. If Cursor also lists an Imported Grasshopper plugin from Claude Code, uninstall this copy instead."
+			reports = append(reports, report)
+			continue
+		}
 		if report.State == agentBehind {
 			report.Update = cursorPluginUpdate(name, pinned[name], serverVersion)
 		}

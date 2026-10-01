@@ -274,8 +274,51 @@ func writeJSONFile(t *testing.T, path, content string) {
 
 // cursorPluginFiles writes the installed plugin files Cursor keeps per commit.
 func cursorPluginFiles(t *testing.T, cursorDir, commit, version string) {
-	writeJSONFile(t, filepath.Join(cursorDir, "plugins", "cache", "grasshopper-marketplace", "grasshopper-windows", commit, ".cursor-plugin", "plugin.json"),
-		`{"name":"grasshopper-windows","version":"`+version+`"}`)
+	root := filepath.Join(cursorDir, "plugins", "cache", "grasshopper-marketplace", "grasshopper-windows", commit)
+	writeJSONFile(t, filepath.Join(root, ".cursor-plugin", "plugin.json"), `{"name":"grasshopper-windows","version":"`+version+`"}`)
+	writeJSONFile(t, filepath.Join(root, "bin", "grasshopper.exe"), "binary")
+}
+
+func TestCheckFailsWhenCursorPluginFilesLackProgram(t *testing.T) {
+	cursorDir := filepath.Join(t.TempDir(), ".cursor")
+	cursorPluginFiles(t, cursorDir, "e2c2504", "2.9.1")
+	cursorMarketplacePin(t, cursorDir, "e2c2504", "2.9.1")
+	program := filepath.Join(cursorDir, "plugins", "cache", "grasshopper-marketplace", "grasshopper-windows", "e2c2504", "bin", "grasshopper.exe")
+	if err := os.Remove(program); err != nil {
+		t.Fatal(err)
+	}
+
+	reports := inspectAgents(fakeAgents(nil), cursorDir, "2.9.1")
+	cursor := agentByName(t, reports, "Cursor")
+	if cursor.State != "broken" || !strings.Contains(cursor.Route, "plugin files") || !strings.Contains(cursor.Update, "Plugins menu") {
+		t.Fatalf("Cursor plugin files without their program are broken and need a reinstall, got %+v", cursor)
+	}
+	if agentProblem(reports) == nil {
+		t.Fatal("incomplete Cursor plugin files must fail check")
+	}
+}
+
+// One unreadable Cursor settings file must not hide a missing program the
+// other file points at.
+func TestCheckFindsMissingProgramBesideUnreadableCursorSettings(t *testing.T) {
+	for _, broken := range []string{"hooks.json", "mcp.json"} {
+		cursorDir := filepath.Join(t.TempDir(), ".cursor")
+		missing := filepath.Join(t.TempDir(), "gone", "grasshopper.exe")
+		cursorWired(t, cursorDir, missing)
+		writeJSONFile(t, filepath.Join(cursorDir, broken), "{not json")
+
+		reports := inspectAgents(fakeAgents(nil), cursorDir, "2.9.1")
+		cursor := agentByName(t, reports, "Cursor")
+		if cursor.State != "broken" || !strings.Contains(cursor.Detail, missing) || !strings.Contains(cursor.Detail, broken) {
+			t.Fatalf("with %s unreadable, the missing program must still be reported, got %+v", broken, cursor)
+		}
+		if !strings.Contains(cursor.Update, broken) {
+			t.Fatalf("repair advice should start with the unreadable %s, got %q", broken, cursor.Update)
+		}
+		if agentProblem(reports) == nil {
+			t.Fatalf("with %s unreadable, a missing program must still fail check", broken)
+		}
+	}
 }
 
 // cursorMarketplacePin writes Cursor's copy of the commit its Grasshopper
