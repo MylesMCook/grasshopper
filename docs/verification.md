@@ -93,6 +93,22 @@ Whether that imported copy's startup hook delivers context in a fresh Cursor
 session, and whether Cursor loads cached plugin files for a plugin that is
 turned off, were not checked.
 
+## Cursor startup hooks on Windows (unreleased, October 1)
+
+On a Windows (x64) PC, Cursor IDE 3.23.12 imported the Claude Code 2.9.1
+plugin and ran its SessionStart hooks, but every Grasshopper hook produced no
+output. Cursor's hooks log showed the input began with a UTF-8 byte order mark
+and named the event `sessionStart`; the client failed with `invalid character
+'﻿'`. Replaying that exact input reproduced the failure with the released
+2.9.1 client, and the `cursor-imported-hook-context` build returned memory
+context in both `additionalContext` and `additional_context`. Claude Code 2.x
+on the same PC still loaded context from a SessionStart hook that returns both
+fields. The same log showed `cursor remove` had left `~/.cursor/hooks.json`
+without a `hooks` object, which Cursor rejects.
+
+Not verified: Cursor injecting the fixed hook's context into a fresh IDE chat.
+Cursor's headless CLI runs no sessionStart hooks, so it cannot test this.
+
 ## Every release
 
 - `go test ./...`, `go vet ./...`, race tests and all Node tests pass locally.

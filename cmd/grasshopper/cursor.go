@@ -399,7 +399,9 @@ func cursorWiringWithOptions(dir, configPath, binary string, install, update, dr
 		} else {
 			events["sessionStart"] = kept
 		}
-		if len(events) == 0 {
+		// Cursor rejects a versioned hooks.json without a hooks object, which
+		// would disable the user's other hooks, so keep an empty one.
+		if len(events) == 0 && hooks["version"] == nil {
 			delete(hooks, "hooks")
 		} else {
 			hooks["hooks"] = events
