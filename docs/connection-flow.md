@@ -133,7 +133,7 @@ Go resolves Windows configuration through AppData and home through USERPROFILE:
 [Go implementation](https://go.dev/src/os/file.go). Packaged desktop applications
 can redirect AppData writes into per-package LocalCache:
 [Microsoft MSIX documentation](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-behind-the-scenes).
-The earlier Work HP investigation demonstrated separate native packaged and
+The earlier Windows PC investigation demonstrated separate native packaged and
 ordinary connection state; see `docs/memory-acceptance.md` and LAB-219. Profile
 sharing must also be verified on actual native Windows; synthetic paths alone do
 not prove packaged-app behavior.
