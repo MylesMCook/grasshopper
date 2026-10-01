@@ -99,12 +99,14 @@ Then find it in your memory view.
 
 ## Use the memory view
 
-Sign in on your server as the owner. **Saved** lists everything active;
-**Needs review** holds what agents saved without your confirmation (agents do
-not load these at startup until you confirm them); **Archived** holds hidden
-memories you can restore; **Startup preview** shows what an agent would receive.
-Edits keep every earlier revision. Project, device and platform filters change
-what you see, not who can access it.
+Sign in on your server as the owner. The sidebar has **New** (what agents saved
+that you have not kept yet; agents load it at startup only after you keep it.
+Handoffs are the exception: the latest one loads without being kept),
+**All projects**, your projects, **Agents**, **Archived** and **Settings**.
+Open a memory to edit it, move it between a project and All projects, or
+archive it; earlier versions stay in its history. Each project keeps only its
+latest handoff, and older ones move to Archived. Projects change what you see,
+not who can access it.
 
 ## Update or remove a connector
 
