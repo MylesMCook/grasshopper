@@ -20,8 +20,8 @@ any tool call. Each cell is the last version where that passed.
 Since then, each release runs the installed macOS connectors' startup hooks and
 five-tool bridges directly (latest: 2.9.2), without a fresh AI session.
 Cross-machine save, correct and read back through one server passed between
-macOS and Linux in 2.3.4. Desktop apps (Codex Desktop, Cursor IDE, Claude
-desktop) have not been retested since 2.3.0.
+macOS and Linux in 2.3.4. Codex Desktop and Claude desktop have not been
+retested since 2.3.0; Cursor IDE startup hooks are covered under 2.9.2 below.
 
 ## 2.9.0 rollout (September 30)
 
@@ -105,9 +105,27 @@ loaded at startup: three confirmed global preferences, no project records and
 no handoff, and it quoted one preference verbatim. The Cursor IDE version was
 not recorded.
 
-Not verified: the same fresh-chat check in the Cursor IDE on the Windows PC. If
+On a Windows (x64) PC, Cursor IDE 3.23.12 ran the imported Claude Code 2.9.2
+plugin's sessionStart hooks in a fresh chat; all three exited 0 with
+`additional_context`. With no folder open, startup memory loaded with
+`project_resolved=false`. In a project folder the project hook returned only the
+"startup unavailable" notice: Cursor passed the folder as
+`workspace_roots: ["/C:/..."]` with no `cwd`, which the 2.9.2 client could not
+resolve. Feeding that input to the 2.9.2 binary reproduced it; the same path
+without the leading slash loaded project context. The client fix is in PR #48
+and needs a release. The agent could still call `context` itself.
+
+Cursor skips sessionStart for a chat typed into the panel it restores when a
+window opens, or started before the window's hooks finish loading (10 to 40
+seconds). Start a new chat after the window loads. A window with no folder open
+loads no hooks at all.
+
+`grasshopper check` on that PC passed with Claude Code and Codex current. Old
+2.9.1 plugin copies and Cursor's Grasshopper marketplace entry were removed; if
 leftover Cursor plugin files remain in its plugin cache, `check` lists them as
 behind, because Cursor records no readable install state.
+
+Not verified: Windows Cursor IDE project context after the PR #48 fix ships.
 
 ## Agent versions in check (2.9.2, October 1)
 
