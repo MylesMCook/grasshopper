@@ -3,6 +3,7 @@
 package client
 
 import (
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +14,11 @@ import (
 // that root and returned only the startup-unavailable notice.
 func TestCursorWindowsWorkspaceRootLoadsProjectContext(t *testing.T) {
 	_, config, root := testClientServer(t)
+	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "git@GitHub.com:Owner/Repo.git"}} {
+		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git fixture: %v: %s", err, output)
+		}
+	}
 	input := map[string]any{
 		"hook_event_name": "sessionStart",
 		"cursor_version":  "3.23.12",
