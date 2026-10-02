@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -79,7 +80,7 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	cwd := stringValue(input["cwd"])
 	if cwd == "" {
 		if roots, ok := input["workspace_roots"].([]any); ok && len(roots) > 0 {
-			cwd = stringValue(roots[0])
+			cwd = workspaceRootPath(stringValue(roots[0]))
 		}
 	}
 	if cwd == "" {
@@ -159,6 +160,17 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 		markPromptContext(stamp, delivered)
 	}
 	return withCursorImportContext(harness, event, map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": text}}, text), nil
+}
+
+// workspaceRootPath converts Cursor's workspace_roots entry to a local path.
+// On Windows, Cursor sends URI-style roots such as "/C:/Users/me/repo"; taken
+// as-is, filepath.Abs makes that an invalid path and the hook fails.
+func workspaceRootPath(root string) string {
+	if runtime.GOOS == "windows" && len(root) >= 3 && root[0] == '/' && root[2] == ':' &&
+		(root[1] >= 'A' && root[1] <= 'Z' || root[1] >= 'a' && root[1] <= 'z') {
+		return filepath.FromSlash(root[1:])
+	}
+	return root
 }
 
 // claudeEventName maps the event name Cursor passes when it runs an imported
