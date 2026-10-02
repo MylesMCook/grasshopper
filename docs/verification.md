@@ -100,9 +100,14 @@ both machines imports the Claude Code plugin, so the duplicate direct Cursor
 wiring on the Mac was removed with `cursor remove` (other hooks kept) and
 leftover Cursor plugin files were moved to the trash on both machines.
 
-Not verified: Cursor IDE injecting that context into a fresh chat. If leftover
-Cursor plugin files remain in its plugin cache, `check` lists them as behind,
-because Cursor records no readable install state.
+On October 2, a fresh chat in the Cursor IDE on the Mac reported the memory
+loaded at startup: three confirmed global preferences, no project records and
+no handoff, and it quoted one preference verbatim. The Cursor IDE version was
+not recorded.
+
+Not verified: the same fresh-chat check in the Cursor IDE on the Windows PC. If
+leftover Cursor plugin files remain in its plugin cache, `check` lists them as
+behind, because Cursor records no readable install state.
 
 ## Agent versions in check (2.9.2, October 1)
 

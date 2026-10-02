@@ -7,8 +7,9 @@ deployed to the macOS service, its connectors, the marketplace and usegrasshoppe
 ## Active
 
 2.9.2 is live on the macOS service, the marketplace, and the Claude Code and
-Codex connectors on both machines ([LAB-237](https://linear.app/mcook/issue/LAB-237/show-each-agents-grasshopper-version-in-check)). Open: confirm Cursor IDE
-startup memory from its hooks log after a real chat. Owner: Claude Code, Windows.
+Codex connectors on both machines ([LAB-237](https://linear.app/mcook/issue/LAB-237/show-each-agents-grasshopper-version-in-check)). A fresh Cursor IDE
+chat on the Mac received startup memory. Open: the same check on the Windows PC.
+Owner: Claude Code, Windows.
 
 ## Decisions
 
