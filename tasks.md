@@ -1,15 +1,15 @@
 # Grasshopper status
 
-Current release: [2.9.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.2),
-deployed to the macOS service, its connectors, the marketplace and usegrasshopper.com. Earlier release records are in Git history and
+Current release: [2.9.3](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.3),
+a client-only release on the marketplace and usegrasshopper.com; the macOS
+service runs 2.9.2. Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-Releasing 2.9.3: Cursor on Windows loads project memory from its URI-style
-workspace root (#48). Client-only; the macOS service stays on 2.9.2. Next: tag,
-update the Windows PC connectors, confirm project memory in a fresh Cursor IDE
-chat. Owner: Claude Code, Windows.
+2.9.3 is installed on the Windows PC, where a fresh Cursor IDE chat loaded
+project memory at startup. Next: move the Mac's Claude Code and Codex connectors
+to 2.9.3 when next used. Owner: Claude Code, Windows.
 
 ## Decisions
 

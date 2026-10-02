@@ -125,7 +125,20 @@ loads no hooks at all.
 leftover Cursor plugin files remain in its plugin cache, `check` lists them as
 behind, because Cursor records no readable install state.
 
-Not verified: Windows Cursor IDE project context after the PR #48 fix ships.
+## 2.9.3 rollout (October 2)
+
+The release workflow passed every job on its first run; 2.9.3 is client-only
+and the macOS service stays on 2.9.2. On the Windows PC, the Claude Code and
+Codex plugins moved to 2.9.3 and `grasshopper check` exited 0, listing both as
+newer than the server. The installed 2.9.3 hook, fed Cursor's exact
+`workspace_roots: ["/C:/..."]` input with no `cwd`, resolved the project; 2.9.2
+had returned only the unavailable notice for the same input. After restarting
+Cursor IDE 3.23.12 on the repository and starting a new chat once the window
+had loaded, the agent, told not to call tools, quoted the startup line with the
+`git:github.com/MylesMCook/grasshopper` project and `project_resolved=true`, one
+project-scoped record and three global preferences.
+
+Not verified: Codex Desktop and Claude desktop startup since 2.3.0.
 
 ## Agent versions in check (2.9.2, October 1)
 
