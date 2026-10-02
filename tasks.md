@@ -6,11 +6,10 @@ deployed to the macOS service, its connectors, the marketplace and usegrasshoppe
 
 ## Active
 
-2.9.2 is live on the macOS service, the marketplace, and the Claude Code and
-Codex connectors on both machines ([LAB-237](https://linear.app/mcook/issue/LAB-237/show-each-agents-grasshopper-version-in-check)). A fresh Cursor IDE
-chat received startup memory on the Mac and on Windows. Open: Windows Cursor
-project context fails on 2.9.2 (URI-style workspace root); fix in PR #48, then
-release and recheck. Owner: Claude Code, Windows.
+Releasing 2.9.3: Cursor on Windows loads project memory from its URI-style
+workspace root (#48). Client-only; the macOS service stays on 2.9.2. Next: tag,
+update the Windows PC connectors, confirm project memory in a fresh Cursor IDE
+chat. Owner: Claude Code, Windows.
 
 ## Decisions
 
