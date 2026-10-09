@@ -40,6 +40,28 @@ func TestWindowsHookPreservesInputAndExitStatus(t *testing.T) {
 	}
 }
 
+func TestWindowsHookMissingClientFails(t *testing.T) {
+	t.Setenv("PLUGIN_ROOT", t.TempDir())
+	for _, shell := range []string{"cmd", "powershell"} {
+		t.Run(shell, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			command := exec.CommandContext(ctx, "cmd.exe")
+			command.SysProcAttr = &syscall.SysProcAttr{CmdLine: `cmd.exe /c "` + windowsHookCommand() + `"`}
+			if shell == "powershell" {
+				command = exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", windowsHookCommand())
+			}
+			command.Stdin = strings.NewReader(`{"hook_event_name":"SessionStart"}`)
+			var stdout, stderr bytes.Buffer
+			command.Stdout, command.Stderr = &stdout, &stderr
+			err := command.Run()
+			if _, failed := err.(*exec.ExitError); !failed || stdout.Len() != 0 || stderr.Len() == 0 {
+				t.Fatalf("missing client was not a visible failure: %v; stdout=%s; stderr=%s", err, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
 func testWindowsHookPath(t *testing.T, name, shell string) {
 	root := filepath.Join(t.TempDir(), name)
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0700); err != nil {

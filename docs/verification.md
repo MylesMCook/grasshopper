@@ -229,6 +229,8 @@ The two-second shared Git budget and the plugin's eight-second hook timeout
 are unchanged. Forwarding regressions now cover both caller shells, exact
 stdin, failure propagation and spaces, apostrophes, ampersands, parentheses,
 literal percent signs and exclamation marks in the installed path.
+Invocation errors terminate the launcher with a failing status; a missing
+client executable must not be reported as a successful empty hook.
 
 The synthetic forwarding fixture has a 30-second cleanup guard for cold
 Windows runtime startup; it does not assert production latency. Package tests
@@ -240,10 +242,15 @@ Before publication, the verified installed 2.9.4 client was piloted with the
 locally rendered 2.9.5 hook definition, keeping the prior file for rollback.
 Codex Desktop 26.1002.7124.0's 0.162.0-alpha.2 native app-server discovered and
 trusted all three hooks. A fresh ephemeral turn completed SessionStart in
-3.38 seconds and UserPromptSubmit in 2.69 seconds, both with loaded project
+2.92 seconds and UserPromptSubmit in 3.56 seconds, both with loaded project
 context; the model confirmed receipt. Native forwarding checks passed for both
 caller shells. Final release, installation and post-install acceptance remain
 pending.
+
+The missing-client test first reproduced a successful empty hook in both caller
+shells. After invocation errors were made terminating, both cases returned a
+visible failing status; the native context-delivery pilot above was rerun with
+that final launcher.
 
 ## Every release
 

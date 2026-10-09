@@ -16,9 +16,10 @@ the normal release workflow restored the 2.9.3 marketplace and site.
 2.9.5 restores a portable encoded launcher without Join-Path, preserving the
 two-second Git budget and eight-second hook limit. Both caller-shell forwarding
 checks passed. A backed-up local pilot with the verified 2.9.4 client and
-rendered 2.9.5 hooks completed native startup in 3.38 seconds and prompt
-submission in 2.69 seconds; the model confirmed injected project context.
-Release, installation and trust approval remain in effect. Next: full checks,
+rendered 2.9.5 hooks completed native startup in 2.92 seconds and prompt
+submission in 3.56 seconds; the model confirmed injected project context.
+Full local checks, archive startup, hashes and snapshot rollback passed.
+Release, installation and trust approval remain in effect. Next: final
 independent PR review and CI, publish 2.9.5, replace the pilot with its verified
 package, and record native post-install acceptance. Server cutover is outside
 this client fix; the running service remains 2.9.2.
