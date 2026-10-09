@@ -12,7 +12,7 @@ and tag `v2.9.5` at `df544d2`. Native startup and prompt hooks completed in
 2.63 and 2.37 seconds with project context reaching the model. Three hooks
 are enabled/trusted; seven release digests and 284 embedded hashes passed.
 2.9.4 is marked as affected. The temporary pilot is removed and rollback
-copies are retained. Owner: Codex, macOS; only rollout-record landing remains.
+copies are retained. Owner: Codex, macOS; runtime and release acceptance complete.
 Detailed evidence: [verification](docs/verification.md). The service stays 2.9.2.
 
 ## Decisions
