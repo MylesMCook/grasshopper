@@ -252,6 +252,23 @@ shells. After invocation errors were made terminating, both cases returned a
 visible failing status; the native context-delivery pilot above was rerun with
 that final launcher.
 
+The [2.9.5 publication workflow](https://github.com/MylesMCook/grasshopper/actions/runs/37980320896)
+passed all native builds, packaging, publication, marketplace and site steps.
+All seven downloaded archives matched their published digests, and all 284
+embedded file hashes verified. The latest stable release and setup download
+links point to 2.9.5; 2.9.4 remains marked as affected and prerelease.
+
+The Windows Codex catalog refreshed and discovery materialized 2.9.5 without
+stopping active connectors. Its executable and newline-normalized hook JSON
+matched the published marketplace archive. Native discovery reported all three
+hooks enabled and trusted at their eight-second timeout, with no hook errors.
+A fresh ephemeral turn through the installed native app-server completed
+SessionStart in 2.63 seconds and UserPromptSubmit in 2.37 seconds; both loaded
+project context and the model confirmed receipt. The temporary 2.9.4 pilot was
+removed, with original files and rollback copies retained. The live memory
+server remains 2.9.2 and was not interrupted. This verifies the native runtime,
+not a separately driven Codex Desktop GUI interaction.
+
 ## Every release
 
 - `go test ./...`, `go vet ./...`, race tests and all Node tests pass locally.

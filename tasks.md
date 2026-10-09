@@ -1,32 +1,19 @@
 # Grasshopper status
 
-Current release: [2.9.3](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.3),
+Current release: [2.9.5](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.5),
 a client-only release on the marketplace and usegrasshopper.com; the macOS
 service runs 2.9.2. Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-Fix Windows Codex startup timeouts ([LAB-238](https://linear.app/mcook/issue/LAB-238/keep-windows-codex-startup-hooks-within-their-timeout)).
-Owner: Codex, macOS; checkout `~/Code/MylesMCook/grasshopper`, branch
-`codex/fix-native-windows-hook-shell`, based on `6eaef5a` (PR #51).
-2.9.4 passed CI and archive checks but failed native Codex execution because
-the turn's selected shell was PowerShell. The cmd-only launcher was withdrawn;
-the normal release workflow restored the 2.9.3 marketplace and site.
-2.9.5 restores a portable encoded launcher without Join-Path, preserving the
-two-second Git budget and eight-second hook limit. Both caller-shell forwarding
-checks passed. A backed-up local pilot with the verified 2.9.4 client and
-rendered 2.9.5 hooks completed native startup in 2.92 seconds and prompt
-submission in 3.56 seconds; the model confirmed injected project context.
-Full local checks, archive startup, hashes and snapshot rollback passed.
-Release, installation and trust approval remain in effect. Next: final
-independent PR review and CI, publish 2.9.5, replace the pilot with its verified
-package, and record native post-install acceptance. Server cutover is outside
-this client fix; the running service remains 2.9.2.
-
-2.9.3 is installed on the Windows PC, where a fresh Cursor IDE chat loaded
-project memory at startup. Next: move the Mac's Claude Code and Codex connectors
-to 2.9.3 when next used. Owner: Claude Code, Windows.
+Windows Codex timeout fix delivered as 2.9.5 through [PR #52](https://github.com/MylesMCook/grasshopper/pull/52)
+and tag `v2.9.5` at `df544d2`. Native startup and prompt hooks completed in
+2.63 and 2.37 seconds with project context reaching the model. Three hooks
+are enabled/trusted; seven release digests and 284 embedded hashes passed.
+2.9.4 is marked as affected. The temporary pilot is removed and rollback
+copies are retained. Owner: Codex, macOS; only rollout-record landing remains.
+Detailed evidence: [verification](docs/verification.md). The service stays 2.9.2.
 
 ## Decisions
 
@@ -40,4 +27,6 @@ to 2.9.3 when next used. Owner: Claude Code, Windows.
 
 ## Next
 
-Update the Linux connectors when next used; deferred: project archive and rename.
+Update the Mac and Linux connectors when next used; the Windows Claude Code and
+Cursor connector update remains separate from this Codex fix. Deferred: project
+archive and rename.
