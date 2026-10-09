@@ -176,6 +176,42 @@ without a `hooks` object, which Cursor rejects.
 Not verified: Cursor injecting the fixed hook's context into a fresh IDE chat.
 Cursor's headless CLI runs no sessionStart hooks, so it cannot test this.
 
+## 2.9.4 Windows Codex hook checks (October 9)
+
+The source fix based on `d006e65` gives both Git project lookups one shared
+two-second budget and removes the Windows launcher's `Join-Path` module import.
+The plugin's eight-second outer timeout is unchanged. Before the fix, a
+synthetic stalled Git executable made SessionStart and UserPromptSubmit each
+take over ten seconds. The native Windows (x64) regression now returns context
+in 2.02 seconds for each event with honest unresolved project scope.
+
+On macOS, the full client, CLI and bundle package tests, their vet checks,
+and the client race tests passed. On Windows, cross-compiled test executables
+ran the stalled-Git, same-project identity, bridge, prompt lifecycle and Cursor
+workspace-root regressions successfully. A native launcher test used Codex's
+cmd.exe outer quoting with spaces and an apostrophe in the plugin path; it
+preserved stdin, JSON output and exit code 7 without emitting progress messages.
+The received binaries and synthetic database fixture matched their source hashes.
+
+A scratch client reporting version `dev` also used the real Windows connection
+through the proposed Codex launcher. SessionStart, UserPromptSubmit and
+SubagentStart loaded project memory in 0.79–1.50 seconds; a repeated prompt
+returned the expected empty object in 0.41 seconds. This was direct hook replay,
+not a new Codex Desktop chat. The installed plugin remains 2.9.3, and no hook
+trust was changed during these checks. The installed Codex Desktop version is
+26.1002.7124.0 and its bundled CLI is 0.162.0-alpha.2. Installation and fresh
+desktop-chat acceptance remain pending.
+
+Before publication, `go test ./...` passed with the pinned real Granite model,
+`go vet ./...` passed, all 45 Node checks passed, and the memory, service and
+client race suites passed. The native macOS server archive verified all 52
+embedded hashes and started its extracted model/runtime. Three client archives
+and the marketplace archive built locally. A verified private snapshot restored
+under 2.9.4 and reopened under 2.9.2: owner sign-in, current and prior revision
+reads, context and semantic search passed with memory/revision/device counts
+unchanged. The source snapshot's digest stayed unchanged; the running service
+was not interrupted.
+
 ## Every release
 
 - `go test ./...`, `go vet ./...`, race tests and all Node tests pass locally.

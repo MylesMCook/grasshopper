@@ -83,8 +83,9 @@ var pluginVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // Codex's Windows hook runner wraps commands in cmd.exe quotes. Resolve the
 // plugin path inside PowerShell so installs under paths with spaces still work.
+// String expansion avoids importing the management module for Join-Path.
 func windowsHookCommand() string {
-	script := `& (Join-Path $env:PLUGIN_ROOT 'bin\grasshopper.exe') hook --harness codex; exit $LASTEXITCODE`
+	script := `& "$env:PLUGIN_ROOT/bin/grasshopper.exe" hook --harness codex; exit $LASTEXITCODE`
 	units := utf16.Encode([]rune(script))
 	data := make([]byte, len(units)*2)
 	for i, unit := range units {
