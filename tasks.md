@@ -9,20 +9,19 @@ service runs 2.9.2. Earlier release records are in Git history and
 
 Fix Windows Codex startup timeouts ([LAB-238](https://linear.app/mcook/issue/LAB-238/keep-windows-codex-startup-hooks-within-their-timeout)).
 Owner: Codex, macOS; checkout `~/Code/MylesMCook/grasshopper`, branch
-`codex/fix-windows-hook-timeout`, based on `d006e65`. Bound Git project
-detection and replace the PowerShell launcher with a native cmd.exe FOR wrapper.
-Before the fix, synthetic stalled Git made both startup and prompt hooks take
-over ten seconds; native Windows regression now returns in 2.02 seconds.
-Client, CLI and bundle tests, vet and client race checks passed on macOS.
-Native Windows launcher and client regression checks passed. A scratch build
-loaded real project memory for startup, prompt and subagent events in
-0.44–0.48 seconds; a repeated prompt was suppressed in 0.21 seconds.
-Release, Windows installation and hook trust were explicitly approved.
-Full tests with real Granite, vet, 45 Node checks, three race suites, native
-archive startup and private-snapshot restore/rollback passed.
-Next: independent PR review and CI, publish 2.9.4, update the
-Windows plugin and verify native hook discovery/execution. The installed
-plugin is still 2.9.3. Live server cutover is outside this client fix.
+`codex/fix-native-windows-hook-shell`, based on `6eaef5a` (PR #51).
+2.9.4 passed CI and archive checks but failed native Codex execution because
+the turn's selected shell was PowerShell. The cmd-only launcher was withdrawn;
+the normal release workflow restored the 2.9.3 marketplace and site.
+2.9.5 restores a portable encoded launcher without Join-Path, preserving the
+two-second Git budget and eight-second hook limit. Both caller-shell forwarding
+checks passed. A backed-up local pilot with the verified 2.9.4 client and
+rendered 2.9.5 hooks completed native startup in 3.38 seconds and prompt
+submission in 2.69 seconds; the model confirmed injected project context.
+Release, installation and trust approval remain in effect. Next: full checks,
+independent PR review and CI, publish 2.9.5, replace the pilot with its verified
+package, and record native post-install acceptance. Server cutover is outside
+this client fix; the running service remains 2.9.2.
 
 2.9.3 is installed on the Windows PC, where a fresh Cursor IDE chat loaded
 project memory at startup. Next: move the Mac's Claude Code and Codex connectors

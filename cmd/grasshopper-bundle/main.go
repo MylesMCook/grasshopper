@@ -6,6 +6,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,6 +20,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf16"
 )
 
 type input struct{ name, path string }
@@ -78,11 +81,17 @@ func goNotices(packages ...string) ([]input, error) {
 
 var pluginVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
-// Codex wraps the whole Windows command in cmd.exe quotes. FOR keeps the
-// entrypoint unquoted and the executable path quoted, without PowerShell startup
-// or CALL's second expansion of percent signs in the installed path.
+// Codex uses the turn's selected shell, which may be cmd.exe or PowerShell.
+// An encoded PowerShell command preserves the plugin path across both callers.
+// String expansion avoids importing the management module for Join-Path.
 func windowsHookCommand() string {
-	return `for %G in ("%PLUGIN_ROOT%/bin/grasshopper.exe") do @%G hook --harness codex`
+	script := `& "$env:PLUGIN_ROOT/bin/grasshopper.exe" hook --harness codex; exit $LASTEXITCODE`
+	units := utf16.Encode([]rune(script))
+	data := make([]byte, len(units)*2)
+	for i, unit := range units {
+		binary.LittleEndian.PutUint16(data[i*2:], unit)
+	}
+	return "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + base64.StdEncoding.EncodeToString(data)
 }
 
 // windowsHookCommandJSON escapes string contents for the hook JSON templates.
