@@ -129,7 +129,7 @@ func TestClientPluginsPackageThreeHarnessesOnePolicy(t *testing.T) {
 		t.Fatal("Codex MCP bridge missing")
 	}
 	for name, want := range map[string]string{
-		"codex/plugins/grasshopper/hooks/hooks.json":            windowsHookCommand(),
+		"codex/plugins/grasshopper/hooks/hooks.json":            windowsHookCommandJSON(),
 		"cursor/plugins/grasshopper/.cursor-plugin/plugin.json": `"mcpServers": "./mcp.json"`,
 	} {
 		reader, err := entries[name].Open()
@@ -141,8 +141,28 @@ func TestClientPluginsPackageThreeHarnessesOnePolicy(t *testing.T) {
 		if err != nil || !strings.Contains(string(content), want) {
 			t.Fatalf("missing %q in %s: %v", want, name, err)
 		}
-		if strings.HasPrefix(name, "codex/") && (!strings.Contains(string(content), `"UserPromptSubmit"`) || strings.Contains(string(content), "%PLUGIN_ROOT%")) {
-			t.Fatal("Codex Windows prompt fallback is missing or uses the broken percent-variable launcher")
+		if strings.HasPrefix(name, "codex/") {
+			var config struct {
+				Hooks map[string][]struct {
+					Hooks []struct {
+						CommandWindows string `json:"commandWindows"`
+						Timeout        uint64 `json:"timeout"`
+					} `json:"hooks"`
+				} `json:"hooks"`
+			}
+			if err := json.Unmarshal(content, &config); err != nil {
+				t.Fatal(err)
+			}
+			for _, event := range []string{"SessionStart", "UserPromptSubmit", "SubagentStart"} {
+				groups := config.Hooks[event]
+				if len(groups) != 1 || len(groups[0].Hooks) != 1 {
+					t.Fatalf("Windows %s hook is missing or duplicated", event)
+				}
+				hook := groups[0].Hooks[0]
+				if hook.CommandWindows != windowsHookCommand() || hook.Timeout != 8 {
+					t.Fatalf("Windows %s launcher or timeout changed: %+v", event, hook)
+				}
+			}
 		}
 	}
 	if entries["codex/.agents/plugins/marketplace.json"] == nil || entries["cursor/.cursor-plugin/marketplace.json"] == nil || entries["claude/.claude-plugin/marketplace.json"] == nil {

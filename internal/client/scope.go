@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -70,9 +72,11 @@ func ProjectIdentity(remote string) (string, error) {
 	return "git:" + host + "/" + path, nil
 }
 
-func gitValue(cwd string, args ...string) string {
+func gitValue(ctx context.Context, cwd string, args ...string) string {
 	arguments := append([]string{"-C", cwd}, args...)
-	output, err := exec.Command("git", arguments...).Output()
+	command := exec.CommandContext(ctx, "git", arguments...)
+	command.WaitDelay = 100 * time.Millisecond
+	output, err := command.Output()
 	if err != nil {
 		return ""
 	}
@@ -81,15 +85,25 @@ func gitValue(cwd string, args ...string) string {
 
 // ResolveScope prefers a local grasshopper.project-id, then the origin remote.
 // It returns an error when neither provides a durable project identity.
+// Both Git lookups share a two-second budget so a stalled process cannot
+// exhaust the startup hook's deadline before it requests memory context.
 func ResolveScope(cwd, device string) (Scope, error) {
 	if !filepath.IsAbs(cwd) {
 		return Scope{}, errors.New("workspace path must be absolute")
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	project := ""
-	if id := gitValue(cwd, "config", "--local", "--get", "grasshopper.project-id"); id != "" {
+	if id := gitValue(ctx, cwd, "config", "--local", "--get", "grasshopper.project-id"); id != "" {
 		project = "id:" + id
 	} else {
-		remote := gitValue(cwd, "remote", "get-url", "origin")
+		if err := ctx.Err(); err != nil {
+			return Scope{}, err
+		}
+		remote := gitValue(ctx, cwd, "remote", "get-url", "origin")
+		if err := ctx.Err(); err != nil {
+			return Scope{}, err
+		}
 		if remote == "" {
 			return Scope{}, errors.New("no Git remote or explicit project ID")
 		}

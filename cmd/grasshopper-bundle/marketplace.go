@@ -53,7 +53,7 @@ func marketplaceFiles(binaries map[string]string, version, output string) ([]inp
 		if err != nil {
 			return err
 		}
-		rendered := strings.NewReplacer("{{VERSION}}", version, "{{EXE}}", exe, "{{WINDOWS_HOOK_COMMAND}}", windowsHookCommand()).Replace(string(data))
+		rendered := strings.NewReplacer("{{VERSION}}", version, "{{EXE}}", exe, "{{WINDOWS_HOOK_COMMAND}}", windowsHookCommandJSON()).Replace(string(data))
 		if strings.Contains(rendered, "{{") {
 			return fmt.Errorf("unrendered template: %s", source)
 		}
