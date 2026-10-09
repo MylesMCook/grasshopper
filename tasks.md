@@ -9,14 +9,14 @@ service runs 2.9.2. Earlier release records are in Git history and
 
 Fix Windows Codex startup timeouts ([LAB-238](https://linear.app/mcook/issue/LAB-238/keep-windows-codex-startup-hooks-within-their-timeout)).
 Owner: Codex, macOS; checkout `~/Code/MylesMCook/grasshopper`, branch
-`codex/fix-windows-hook-timeout`, based on `d006e65`. Uncommitted: bound Git
-project detection and remove a PowerShell module import from the launcher.
+`codex/fix-windows-hook-timeout`, based on `d006e65`. Bound Git project
+detection and replace the PowerShell launcher with a native cmd.exe FOR wrapper.
 Before the fix, synthetic stalled Git made both startup and prompt hooks take
 over ten seconds; native Windows regression now returns in 2.02 seconds.
 Client, CLI and bundle tests, vet and client race checks passed on macOS.
 Native Windows launcher and client regression checks passed. A scratch build
 loaded real project memory for startup, prompt and subagent events in
-0.79–1.50 seconds; a repeated prompt was suppressed in 0.41 seconds.
+0.44–0.48 seconds; a repeated prompt was suppressed in 0.21 seconds.
 Release, Windows installation and hook trust were explicitly approved.
 Full tests with real Granite, vet, 45 Node checks, three race suites, native
 archive startup and private-snapshot restore/rollback passed.

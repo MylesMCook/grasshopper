@@ -33,7 +33,13 @@ func TestMain(m *testing.M) {
 }
 
 func TestWindowsHookPreservesInputAndExitStatus(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "plugin's path with spaces")
+	for _, name := range []string{"plugin's path with spaces", "plugin & (test) %HOOK_LITERAL%"} {
+		t.Run(name, func(t *testing.T) { testWindowsHookPath(t, name) })
+	}
+}
+
+func testWindowsHookPath(t *testing.T, name string) {
+	root := filepath.Join(t.TempDir(), name)
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -49,6 +55,7 @@ func TestWindowsHookPreservesInputAndExitStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PLUGIN_ROOT", root)
+	t.Setenv("HOOK_LITERAL", "must-not-replace-the-literal-path")
 	t.Setenv("GRASSHOPPER_TEST_HOOK_CLIENT", "1")
 	input := `{"hook_event_name":"SessionStart","cwd":"C:\\example with spaces"}`
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)

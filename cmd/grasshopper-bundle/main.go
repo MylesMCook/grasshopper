@@ -6,8 +6,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha256"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -20,7 +18,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unicode/utf16"
 )
 
 type input struct{ name, path string }
@@ -81,17 +78,17 @@ func goNotices(packages ...string) ([]input, error) {
 
 var pluginVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
-// Codex's Windows hook runner wraps commands in cmd.exe quotes. Resolve the
-// plugin path inside PowerShell so installs under paths with spaces still work.
-// String expansion avoids importing the management module for Join-Path.
+// Codex wraps the whole Windows command in cmd.exe quotes. FOR keeps the
+// entrypoint unquoted and the executable path quoted, without PowerShell startup
+// or CALL's second expansion of percent signs in the installed path.
 func windowsHookCommand() string {
-	script := `& "$env:PLUGIN_ROOT/bin/grasshopper.exe" hook --harness codex; exit $LASTEXITCODE`
-	units := utf16.Encode([]rune(script))
-	data := make([]byte, len(units)*2)
-	for i, unit := range units {
-		binary.LittleEndian.PutUint16(data[i*2:], unit)
-	}
-	return "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + base64.StdEncoding.EncodeToString(data)
+	return `for %G in ("%PLUGIN_ROOT%/bin/grasshopper.exe") do @%G hook --harness codex`
+}
+
+// windowsHookCommandJSON escapes string contents for the hook JSON templates.
+func windowsHookCommandJSON() string {
+	encoded, _ := json.Marshal(windowsHookCommand())
+	return string(encoded[1 : len(encoded)-1])
 }
 
 func clientPluginFiles(client, target, version, output string) ([]input, func(), error) {
@@ -153,7 +150,7 @@ func clientPluginFiles(client, target, version, output string) ([]input, func(),
 			if err != nil {
 				return err
 			}
-			rendered := strings.NewReplacer("{{VERSION}}", version, "{{EXE}}", exe, "{{WINDOWS_HOOK_COMMAND}}", windowsHookCommand()).Replace(string(contents))
+			rendered := strings.NewReplacer("{{VERSION}}", version, "{{EXE}}", exe, "{{WINDOWS_HOOK_COMMAND}}", windowsHookCommandJSON()).Replace(string(contents))
 			if strings.Contains(rendered, "{{") || !json.Valid([]byte(rendered)) {
 				return fmt.Errorf("invalid rendered plugin JSON: %s", path)
 			}

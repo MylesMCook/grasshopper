@@ -179,7 +179,8 @@ Cursor's headless CLI runs no sessionStart hooks, so it cannot test this.
 ## 2.9.4 Windows Codex hook checks (October 9)
 
 The source fix based on `d006e65` gives both Git project lookups one shared
-two-second budget and removes the Windows launcher's `Join-Path` module import.
+two-second budget and replaces the Windows PowerShell launcher with a native
+cmd.exe FOR command, avoiding cold PowerShell startup entirely.
 The plugin's eight-second outer timeout is unchanged. Before the fix, a
 synthetic stalled Git executable made SessionStart and UserPromptSubmit each
 take over ten seconds. The native Windows (x64) regression now returns context
@@ -189,14 +190,15 @@ On macOS, the full client, CLI and bundle package tests, their vet checks,
 and the client race tests passed. On Windows, cross-compiled test executables
 ran the stalled-Git, same-project identity, bridge, prompt lifecycle and Cursor
 workspace-root regressions successfully. A native launcher test used Codex's
-cmd.exe outer quoting with spaces and an apostrophe in the plugin path; it
-preserved stdin, JSON output and exit code 7 without emitting progress messages.
+cmd.exe outer quoting with spaces, apostrophes, ampersands, parentheses and
+literal percent signs in the plugin path; it preserved stdin, JSON output and
+exit code 7 within 0.37–0.40 seconds without emitting progress messages.
 The received binaries and synthetic database fixture matched their source hashes.
 
 A scratch client reporting version `dev` also used the real Windows connection
 through the proposed Codex launcher. SessionStart, UserPromptSubmit and
-SubagentStart loaded project memory in 0.79–1.50 seconds; a repeated prompt
-returned the expected empty object in 0.41 seconds. This was direct hook replay,
+SubagentStart loaded project memory in 0.44–0.48 seconds; a repeated prompt
+returned the expected empty object in 0.21 seconds. This was direct hook replay,
 not a new Codex Desktop chat. The installed plugin remains 2.9.3, and no hook
 trust was changed during these checks. The installed Codex Desktop version is
 26.1002.7124.0 and its bundled CLI is 0.162.0-alpha.2. Installation and fresh
