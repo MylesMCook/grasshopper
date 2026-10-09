@@ -178,6 +178,13 @@ Cursor's headless CLI runs no sessionStart hooks, so it cannot test this.
 
 ## 2.9.4 Windows Codex hook checks (October 9)
 
+2.9.4 was withdrawn as the stable release after installed native verification
+failed. The cmd.exe-only forwarding fixture passed, but Codex executes hooks
+through the turn's selected shell, which was PowerShell on the Windows PC.
+The FOR command failed in that shell and delivered no context. The 2.9.4
+release is marked as affected; the documented publication workflow restored
+the 2.9.3 marketplace and site while the correction was prepared.
+
 The source fix based on `d006e65` gives both Git project lookups one shared
 two-second budget and replaces the Windows PowerShell launcher with a native
 cmd.exe FOR command, avoiding cold PowerShell startup entirely.
@@ -213,6 +220,37 @@ under 2.9.4 and reopened under 2.9.2: owner sign-in, current and prior revision
 reads, context and semantic search passed with memory/revision/device counts
 unchanged. The source snapshot's digest stayed unchanged; the running service
 was not interrupted.
+
+## 2.9.5 native Windows correction (October 9)
+
+The launcher again uses an encoded PowerShell command that can be invoked
+from either cmd.exe or PowerShell, with string expansion instead of Join-Path.
+The two-second shared Git budget and the plugin's eight-second hook timeout
+are unchanged. Forwarding regressions now cover both caller shells, exact
+stdin, failure propagation and spaces, apostrophes, ampersands, parentheses,
+literal percent signs and exclamation marks in the installed path.
+Invocation errors terminate the launcher with a failing status; a missing
+client executable must not be reported as a successful empty hook.
+
+The synthetic forwarding fixture has a 30-second cleanup guard for cold
+Windows runtime startup; it does not assert production latency. Package tests
+still require the eight-second configured deadline, and native acceptance
+requires completed hook runs below eight seconds with context reaching the
+model. The stalled-Git regression still requires context within four seconds.
+
+Before publication, the verified installed 2.9.4 client was piloted with the
+locally rendered 2.9.5 hook definition, keeping the prior file for rollback.
+Codex Desktop 26.1002.7124.0's 0.162.0-alpha.2 native app-server discovered and
+trusted all three hooks. A fresh ephemeral turn completed SessionStart in
+2.92 seconds and UserPromptSubmit in 3.56 seconds, both with loaded project
+context; the model confirmed receipt. Native forwarding checks passed for both
+caller shells. Final release, installation and post-install acceptance remain
+pending.
+
+The missing-client test first reproduced a successful empty hook in both caller
+shells. After invocation errors were made terminating, both cases returned a
+visible failing status; the native context-delivery pilot above was rerun with
+that final launcher.
 
 ## Every release
 
