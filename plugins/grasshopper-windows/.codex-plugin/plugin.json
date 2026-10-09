@@ -17,5 +17,5 @@
   },
   "mcpServers": "./.mcp.json",
   "name": "grasshopper-windows",
-  "version": "2.9.4"
+  "version": "2.9.3"
 }
