@@ -53,7 +53,12 @@ func TestDeviceLabelsRenameWithoutChangingTheID(t *testing.T) {
 	if got := label(); got != nil {
 		t.Fatalf("an empty name should show the ID again: %q", *got)
 	}
+	// The limit counts characters, not bytes, matching the form and SQLite.
+	if err := w.SetDeviceLabel(ctx, "HPLT-1234", strings.Repeat("机", 64)); err != nil {
+		t.Fatalf("64 multibyte characters rejected: %v", err)
+	}
 	for _, bad := range []struct{ device, label, want string }{
+		{"HPLT-1234", strings.Repeat("机", 65), "invalid device name"},
 		{"no-such-device", "Name", "device_not_found"},
 		{"HPLT-1234", strings.Repeat("x", 65), "invalid device name"},
 		{"HPLT-1234", "line\nbreak", "invalid device name"},

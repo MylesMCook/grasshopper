@@ -615,13 +615,14 @@ async function decidePairing(request, decision) {
   } catch (error) { if (!error.session) say("Couldn't change this request. Try again."); }
   refreshDevices();
 }
-async function renameDevice(device, label) {
+async function renameDevice(device, label, panel) {
   if (saving) return;
   saving = true; render();
   try {
     const { status, data } = await api('/visualizer/api/devices', { device: device.device, label: label.trim() }, { method: 'PATCH' });
-    say(status >= 300 ? (status === 400 && typeof data === 'string' ? data : "Couldn't rename it. Try again.") : label.trim() ? `Named “${label.trim()}”.` : `Showing ${device.device}.`);
-    if (status < 300 && state.panel?.type === 'device') state.panel.nameDraft = null;
+    say(status >= 300 ? (status === 400 && data?.error ? `Not renamed. ${data.error.replace(/^invalid device name: /, '').replace(/^./, c => c.toUpperCase())}.` : "Couldn't rename it. Try again.") : label.trim() ? `Named “${label.trim()}”.` : `Showing ${device.device}.`);
+    // Clear only the draft that was saved, never one typed since or for another device.
+    if (status < 300 && panel.nameDraft === label) panel.nameDraft = null;
   } catch (error) { if (!error.session) say("Couldn't rename it. Try again."); }
   finally { saving = false; }
   refreshDevices();
@@ -969,7 +970,7 @@ function devicePanel(panel) {
   if (!device) return h('p', { class: 'label', text: 'This agent is no longer connected.' });
   const name = device.label || device.device;
   return [h('h2', { class: 'panel-title', text: name }),
-    section('Name', h('form', { class: 'edit', onsubmit: event => { event.preventDefault(); renameDevice(device, event.target.querySelector('input').value); } },
+    section('Name', h('form', { class: 'edit', onsubmit: event => { event.preventDefault(); renameDevice(device, event.target.querySelector('input').value, panel); } },
       h('input', { id: 'device-name', type: 'text', maxlength: '64', 'aria-label': 'Name', value: panel.nameDraft ?? device.label ?? '', placeholder: device.device, oninput: event => { panel.nameDraft = event.target.value; } }),
       h('p', { class: 'meta', text: `ID: ${device.device} · never changes. Leave the name empty to show the ID.` }),
       h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'btn', 'aria-disabled': saving }, 'Save name')))),

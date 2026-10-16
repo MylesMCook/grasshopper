@@ -213,6 +213,38 @@ test('the owner names a device; the name shows everywhere and the ID stays visib
   assert.match(ui.app.querySelector('h2.panel-title').textContent, /Studio Mac/);
 });
 
+test('a rejected device name says why, and a finished rename never clears another device', async () => {
+  const devices = [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: today }, { id: 8, device: 'pc', created_at: today, revoked_at: null, last_seen_at: today }];
+  const ui = await signedIn();
+  for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, devices); }
+  ui.hashChange('#page=agents');
+  await flush();
+  for (const request of ui.pending('/visualizer/api/pairings')) { request.done = true; request.reply(200, []); }
+  for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, devices); }
+  await flush();
+  ui.rows('mac').click();
+  await flush();
+  const type = value => { const field = ui.document.getElementById('device-name'); field.value = value; field.dispatch('input'); };
+  type('x'.repeat(10));
+  ui.find('Save name').click();
+  await flush();
+  let patch = ui.requests.find(request => request.method === 'PATCH' && !request.done);
+  // The server sends plain text, which api() reads as { error }.
+  patch.done = true; patch.reply(400, { error: 'invalid device name: use up to 64 characters on one line' });
+  await flush();
+  assert.match(ui.announce.textContent, /up to 64 characters/, 'the reason is shown, not only Try again');
+  type('Studio Mac');
+  ui.find('Save name').click();
+  await flush();
+  patch = ui.requests.find(request => request.method === 'PATCH' && !request.done);
+  ui.rows('pc').click();
+  await flush();
+  type('Gaming PC');
+  patch.done = true; patch.reply(204);
+  await flush();
+  assert.equal(ui.document.getElementById('device-name').value, 'Gaming PC', "another device's typing survives");
+});
+
 test('Keep confirms at the shown revision and a retry reuses its request ID', async () => {
   const ui = await signedIn();
   ui.find('Keep Use gh for PR status').click();

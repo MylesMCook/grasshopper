@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // ClientToken contains metadata only. Raw tokens are never stored in SQLite.
@@ -153,7 +154,7 @@ func (w *Writer) TouchClientToken(ctx context.Context, token string, now time.Ti
 // to the ID, removes the label so the ID shows again.
 func (w *Writer) SetDeviceLabel(ctx context.Context, device, label string) error {
 	label = strings.TrimSpace(label)
-	if len(label) > 64 || strings.IndexFunc(label, unicode.IsControl) >= 0 {
+	if utf8.RuneCountInString(label) > 64 || strings.IndexFunc(label, unicode.IsControl) >= 0 {
 		return errors.New("invalid device name: use up to 64 characters on one line")
 	}
 	var known bool
