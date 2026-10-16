@@ -489,6 +489,7 @@ async function write(path, body, { onDone, onConflict } = {}) {
     if (status === 200) { writes.delete(key); await onDone?.(data); refreshAfterWrite(); return true; }
     // Only a definite answer retires the request ID; a retry after 5xx reuses it.
     if ([400, 404, 409].includes(status)) writes.delete(key);
+    if (status === 409 && data?.error === 'duplicate_conflict') { say('Not saved. Another memory already has this text.'); return false; }
     if (status === 409) {
       if (onConflict) onConflict(data?.current);
       else {

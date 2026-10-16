@@ -351,6 +351,11 @@ func setupClientWithRoot(args []string, root string, run commandRunner) (resultE
 	if info, err := os.Stat(policy); err != nil || !info.Mode().IsRegular() {
 		return errors.New("client package policy/AGENTS.md is missing")
 	}
+	normalized, _, err := client.NormalizeServerAddress(*url)
+	if err != nil {
+		return fmt.Errorf("server address invalid: %w", err)
+	}
+	*url = normalized
 	config := client.Config{URL: *url, TokenFile: *tokenFile, PolicyPath: filepath.Join(filepath.Dir(configPath), "AGENTS.md"), Device: *device}
 	remote, err := client.NewRemote(config)
 	if err != nil {

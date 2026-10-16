@@ -140,11 +140,10 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	if harness == "claude" || event == "SubagentStart" {
 		// Include applicable AGENTS.md guidance for Claude and subagents;
 		// these hooks cannot assume it was inherited. Respect Claude's cap.
+		// Guidance that is too large or unreadable is pointed to, not inlined;
+		// it never costs the policy and memory context already loaded.
 		guidance, err := applicableGuidance(cwd, config.PolicyPath)
-		if err != nil {
-			return nil, err
-		}
-		if harness != "claude" || len(text)+len(guidance) <= 9000 {
+		if err == nil && (harness != "claude" || len(text)+len(guidance) <= 9000) {
 			text += "\n" + guidance
 		} else {
 			text += fmt.Sprintf("\nBefore substantive work, read the applicable AGENTS.md files from %s. Their full text exceeds the hook budget.\n", cwd)

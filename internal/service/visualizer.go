@@ -468,6 +468,8 @@ func ownerWriteResult(w http.ResponseWriter, r *http.Request, store *memory.Writ
 		ownerConflict(w, r, store, id, "revision_conflict")
 	case strings.HasPrefix(err.Error(), "idempotency_conflict"):
 		ownerConflict(w, r, store, id, "idempotency_conflict")
+	case strings.HasPrefix(err.Error(), "duplicate_conflict"):
+		ownerConflict(w, r, store, id, "duplicate_conflict")
 	case strings.HasPrefix(err.Error(), "revision_not_found"):
 		http.Error(w, "revision not found", http.StatusNotFound)
 	case strings.HasPrefix(err.Error(), "memory_not_found"):

@@ -410,7 +410,12 @@ func writeTx(ctx context.Context, tx *sql.Tx, input WriteInput, scopeKey, finger
 	if strings.TrimSpace(content) == "" || len(content) > 32768 {
 		return receipt, errors.New("content must be 1-32768 bytes")
 	}
+	// A correction keeps metadata it does not resend. A title derived from the
+	// old text was never chosen, so it follows the new text instead.
 	title := firstRunes(content, 80)
+	if current != nil && current.Title != firstRunes(current.Content, 80) {
+		title = current.Title
+	}
 	if input.Title != nil {
 		title = *input.Title
 	}
@@ -418,6 +423,9 @@ func writeTx(ctx context.Context, tx *sql.Tx, input WriteInput, scopeKey, finger
 		title = restored.Title
 	}
 	tags := ""
+	if current != nil {
+		tags = current.Tags
+	}
 	if input.Tags != nil {
 		tags = *input.Tags
 	}
@@ -428,6 +436,9 @@ func writeTx(ctx context.Context, tx *sql.Tx, input WriteInput, scopeKey, finger
 		return receipt, errors.New("metadata too large")
 	}
 	memoryType := "knowledge"
+	if current != nil {
+		memoryType = current.MemoryType
+	}
 	if input.MemoryType != nil {
 		memoryType = *input.MemoryType
 	}
@@ -460,6 +471,8 @@ func writeTx(ctx context.Context, tx *sql.Tx, input WriteInput, scopeKey, finger
 		if !errors.Is(queryErr, sql.ErrNoRows) {
 			return receipt, queryErr
 		}
+	} else if err = checkDuplicate(ctx, tx, scopeKey, memoryType, purpose, input.Confirmed, contentHash, current.ID); err != nil {
+		return receipt, err
 	}
 	now := time.Now().UTC().Format("2006-01-02T15:04:05.999999-07:00")
 	provenanceJSON, err := canonicalJSON(input.Provenance)
@@ -528,6 +541,20 @@ func writeTx(ctx context.Context, tx *sql.Tx, input WriteInput, scopeKey, finger
 		}
 	}
 	return acknowledge(ctx, tx, input.RequestID, fingerprint, Receipt{*id, revision, false})
+}
+
+// checkDuplicate refuses a change that would make a second active memory with
+// the same exact identity in a scope, which idx_memory_exact allows only once.
+func checkDuplicate(ctx context.Context, tx *sql.Tx, scopeKey, memoryType, purpose string, confirmed bool, contentHash string, except int64) error {
+	var other int64
+	err := tx.QueryRowContext(ctx, `SELECT id FROM chunks WHERE kind='memory' AND archived=0 AND memory_scope=? AND memory_scope!='legacy' AND memory_type=? AND purpose=? AND confirmed=? AND content_hash=? AND id<>?`, scopeKey, memoryType, purpose, confirmed, contentHash, except).Scan(&other)
+	if err == nil {
+		return fmt.Errorf("duplicate_conflict: memory %d already has this text", other)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	return err
 }
 
 // retireHandoffs archives the earlier active handoffs in a new handoff's exact
@@ -650,6 +677,16 @@ func archiveTx(ctx context.Context, tx *sql.Tx, input ArchiveInput, fingerprint 
 	if old.Revision != input.ExpectedRevision {
 		return receipt, fmt.Errorf("revision_conflict: current revision %d", old.Revision)
 	}
+	if old.Archived && !input.Archived {
+		var scopeKey, memoryType, purpose, contentHash string
+		var confirmed bool
+		if err = tx.QueryRowContext(ctx, "SELECT memory_scope,memory_type,purpose,confirmed,content_hash FROM chunks WHERE id=?", old.ID).Scan(&scopeKey, &memoryType, &purpose, &confirmed, &contentHash); err != nil {
+			return receipt, err
+		}
+		if err = checkDuplicate(ctx, tx, scopeKey, memoryType, purpose, confirmed, contentHash, old.ID); err != nil {
+			return receipt, err
+		}
+	}
 	if err = snapshot(ctx, tx, *old); err != nil {
 		return receipt, err
 	}
@@ -758,6 +795,22 @@ func (w *Writer) Move(ctx context.Context, input MoveInput, vector []float32, mo
 	}
 	copyInput := WriteInput{Scope: target, Content: old.Content, Title: &old.Title, Tags: &old.Tags, MemoryType: &old.MemoryType,
 		Purpose: old.Purpose, Confirmed: old.Confirmed, Provenance: old.Provenance, RequestID: input.RequestID + ":copy", Key: old.Key}
+	if old.Key != nil {
+		// A key is unique per scope, archived rows included. Moving onto an
+		// archived holder (often this memory's own earlier place) revives it as
+		// a new revision; an active holder is a different memory.
+		var holder, holderRevision int64
+		var holderArchived bool
+		queryErr := tx.QueryRowContext(ctx, "SELECT id,revision,archived FROM chunks WHERE kind='memory' AND memory_scope=? AND preference_key=?", targetKey, *old.Key).Scan(&holder, &holderRevision, &holderArchived)
+		switch {
+		case queryErr == nil && !holderArchived:
+			return receipt, errors.New("move_target_exists: a memory with this key already exists there")
+		case queryErr == nil:
+			copyInput.ID, copyInput.ExpectedRevision = &holder, &holderRevision
+		case !errors.Is(queryErr, sql.ErrNoRows):
+			return receipt, queryErr
+		}
+	}
 	copyFingerprint, err := digest(copyInput)
 	if err != nil {
 		return receipt, err
