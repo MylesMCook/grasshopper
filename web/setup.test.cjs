@@ -108,6 +108,27 @@ test('site build injects VERSION into selected server archive URLs and leaves no
   }
 });
 
+test('every public page links the grasshopper icons and the build ships them', () => {
+  const {execFileSync}=require('node:child_process');
+  execFileSync('sh',[`${__dirname}/build.sh`]);
+  for(const file of ['index.html','setup/index.html','view/index.html','404.html']) {
+    const html=readFileSync(`${__dirname}/dist/${file}`,'utf8');
+    assert.match(html,/<link rel="icon" href="\/favicon\.svg" type="image\/svg\+xml">/);
+    assert.match(html,/<link rel="icon" href="\/favicon-32\.png" sizes="32x32" type="image\/png">/);
+    assert.match(html,/<link rel="apple-touch-icon" href="\/apple-touch-icon\.png">/);
+  }
+  const svg=readFileSync(`${__dirname}/dist/favicon.svg`,'utf8');
+  assert.equal(svg,readFileSync(`${__dirname}/../internal/service/visualizer/favicon.svg`,'utf8'));
+  assert.match(svg,/fill="#89d8b8"/);
+  const png=Buffer.from([0x89,0x50,0x4e,0x47]);
+  for(const [file,size] of [['favicon-32.png',32],['apple-touch-icon.png',180]]) {
+    const data=readFileSync(`${__dirname}/dist/${file}`);
+    assert.ok(data.subarray(0,4).equals(png),file);
+    assert.equal(data.readUInt32BE(16),size);
+    assert.equal(data.readUInt32BE(20),size);
+  }
+});
+
 test('public navigation and privacy are consistent and later links stay below setup', () => {
   for(const file of ['index.html','setup/index.html','view/index.html']) {
     const html=readFileSync(`${__dirname}/public/${file}`,'utf8');

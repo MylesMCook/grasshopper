@@ -71,6 +71,14 @@ func TestVisualizerShellDoesNotContainMemoryAndAPIRequiresBearer(t *testing.T) {
 			t.Fatalf("unauthenticated read leaked memory: status=%d body=%q", resp.StatusCode, data)
 		}
 	}
+	resp, data := visualizerRequest(t, http.MethodGet, server.URL+"/visualizer/favicon.svg", "")
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/svg+xml" || !strings.Contains(string(data), `fill="#89d8b8"`) {
+		t.Fatalf("favicon: status=%d type=%q", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	resp, data = visualizerRequest(t, http.MethodGet, server.URL+"/visualizer/", "")
+	if !strings.Contains(string(data), `<link rel="icon" href="/visualizer/favicon.svg" type="image/svg+xml">`) || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "img-src 'self' data:") {
+		t.Fatalf("shell does not allow and link its favicon: csp=%q", resp.Header.Get("Content-Security-Policy"))
+	}
 	resp, _ = visualizerRequest(t, http.MethodPost, server.URL+"/visualizer/app.js", "")
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("asset accepted POST: %d", resp.StatusCode)

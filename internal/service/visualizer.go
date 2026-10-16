@@ -16,7 +16,7 @@ import (
 // The page is public so a browser can open it without putting a bearer token
 // in a URL or cookie. It contains no memory data; the API still requires auth.
 //
-//go:embed visualizer/index.html visualizer/*.js visualizer/style.css visualizer/*.woff2
+//go:embed visualizer/index.html visualizer/*.js visualizer/style.css visualizer/favicon.svg visualizer/*.woff2
 var visualizerFiles embed.FS
 
 func visualizerAsset(w http.ResponseWriter, r *http.Request, styleHashes []string) bool {
@@ -32,6 +32,8 @@ func visualizerAsset(w http.ResponseWriter, r *http.Request, styleHashes []strin
 		filename, contentType = "theme.js", "text/javascript; charset=utf-8"
 	case "/visualizer/style.css":
 		filename, contentType = "style.css", "text/css; charset=utf-8"
+	case "/visualizer/favicon.svg":
+		filename, contentType = "favicon.svg", "image/svg+xml"
 	case "/visualizer/newsreader-latin.woff2":
 		filename, contentType = "newsreader-latin.woff2", "font/woff2"
 	case "/visualizer/geist-mono-latin.woff2":
@@ -162,7 +164,7 @@ func staticCSP(styleHashes []string, document bool) string {
 			styleSource += " '" + hash + "'"
 		}
 	}
-	return "default-src 'none'; script-src 'self'; style-src " + styleSource + "; font-src 'self'; img-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	return "default-src 'none'; script-src 'self'; style-src " + styleSource + "; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 }
 
 // Device choices include active connections even before they have scoped
