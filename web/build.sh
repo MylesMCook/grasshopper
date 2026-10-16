@@ -15,7 +15,9 @@ cp "$root/web/public/favicon-32.png" "$root/web/public/apple-touch-icon.png" "$r
 cp "$root/internal/service/visualizer/favicon.svg" "$output/favicon.svg"
 cp "$root/internal/service/visualizer/theme-init.js" "$output/theme-init.js"
 cp "$root/internal/service/visualizer/theme.js" "$output/theme.js"
-cp "$root/docs/fonts/newsreader-latin.woff2" "$root/docs/fonts/geist-mono-latin.woff2" "$output/fonts/"
+cp "$root/docs/fonts/newsreader-latin.woff2" "$root/docs/fonts/paper-mono.woff2" "$root/docs/fonts/geist-mono-latin.woff2" "$output/fonts/"
+# The SIL Open Font License requires each notice to travel with its font.
+cp "$root/docs/fonts/OFL-newsreader.txt" "$root/docs/fonts/OFL-paper-mono.txt" "$root/docs/fonts/OFL-geist-mono.txt" "$output/fonts/"
 
 # Change the HTML asset hashes when _headers changes; otherwise Wrangler can
 # reuse the previous asset manifest and leave the old headers at the edge.

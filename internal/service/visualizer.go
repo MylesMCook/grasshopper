@@ -36,6 +36,8 @@ func visualizerAsset(w http.ResponseWriter, r *http.Request, styleHashes []strin
 		filename, contentType = "favicon.svg", "image/svg+xml"
 	case "/visualizer/newsreader-latin.woff2":
 		filename, contentType = "newsreader-latin.woff2", "font/woff2"
+	case "/visualizer/paper-mono.woff2":
+		filename, contentType = "paper-mono.woff2", "font/woff2"
 	case "/visualizer/geist-mono-latin.woff2":
 		filename, contentType = "geist-mono-latin.woff2", "font/woff2"
 	default:

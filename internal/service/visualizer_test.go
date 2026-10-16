@@ -53,7 +53,7 @@ func TestVisualizerShellDoesNotContainMemoryAndAPIRequiresBearer(t *testing.T) {
 		t.Fatalf("disabled visualizer API status: %d", resp.StatusCode)
 	}
 	server, _ := testServer(t, true)
-	for _, path := range []string{"/visualizer/", "/visualizer/app.js", "/visualizer/style.css", "/visualizer/newsreader-latin.woff2"} {
+	for _, path := range []string{"/visualizer/", "/visualizer/app.js", "/visualizer/style.css", "/visualizer/newsreader-latin.woff2", "/visualizer/paper-mono.woff2"} {
 		resp, data := visualizerRequest(t, http.MethodGet, server.URL+path, "")
 		if resp.StatusCode != http.StatusOK || len(data) == 0 || resp.Header.Get("Cache-Control") != "no-store" {
 			t.Fatalf("public shell asset %s: status=%d bytes=%d", path, resp.StatusCode, len(data))
