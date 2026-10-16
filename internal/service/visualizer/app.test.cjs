@@ -178,9 +178,60 @@ test('a project page shows suggestions, its own memories, everywhere memories an
   const labels = ui.app.querySelectorAll('h2.sec-label').map(node => node.textContent);
   assert.deepEqual(labels, ['New', 'grasshopper', 'All projects', new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })]);
   assert.ok(ui.find('Keep Use gh for PR status'), 'suggestions have Keep');
-  assert.ok(ui.find('Show 1 that also apply here'), 'everywhere memories are folded');
+  assert.ok(ui.rows('Prefers deterministic setups'), 'memories for every project show inline, because agents load them here');
+  assert.match(ui.text(), /2 memories apply here/, 'the count is what agents start with, not only this project');
   assert.match(ui.rows('Squash merge only').textContent, /Claude Code · today/);
   assert.match(ui.text(), /New1/, 'the sidebar counts suggestions');
+});
+
+test('Preview startup opens what an agent gets for this project', async () => {
+  const ui = await signedIn();
+  ui.find('Preview startup').click();
+  await flush();
+  const request = ui.pending('/visualizer/api/startup')[0];
+  assert.ok(request, 'the preview loads');
+  assert.deepEqual(request.body.scope, { project: PROJECT });
+  const back = ui.app.querySelectorAll('button').find(node => node.getAttribute('data-key') === 'back');
+  assert.match(back.textContent, /grasshopper/, 'Back names the page it returns to');
+});
+
+test('Preview startup asks before discarding an unsaved edit', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  let asked = 0;
+  ui.sandbox.window.confirm = () => { asked++; return false; };
+  ui.find('Preview startup').click();
+  await flush();
+  assert.equal(asked, 1, 'the owner is asked first');
+  assert.equal(ui.pending('/visualizer/api/startup').length, 0, 'declining keeps the edit');
+  assert.equal(ui.document.getElementById('edit-text').value, 'Squash merge only. Always.');
+});
+
+test('agent names read as products, including desktop and CLI variants', async () => {
+  const records = [memory(1, 'Desktop note', { provenance: { harness: 'claude-code-desktop', device: 'mac', source: 'x' } }),
+    memory(2, 'Cursor note', { provenance: { harness: 'cursor-agent', device: 'mac', source: 'x' } })];
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], review_count: 0, server: { version: '2.9.7' }, total: 2 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], total: 2 });
+  assert.match(ui.rows('Desktop note').textContent, /Claude Code · today/);
+  assert.match(ui.rows('Cursor note').textContent, /Cursor · today/);
+});
+
+test('Archived folds replaced handoffs so owner-archived memories stay visible', async () => {
+  const ui = await signedIn();
+  ui.hashChange('#page=archived');
+  await flush();
+  const replaced = id => memory(id, `Old handoff ${id}`, { purpose: 'handoff', confirmed: false, archived: true, provenance: { harness: 'codex', device: 'mac', source: 'Replaced by handoff 99' } });
+  const page = ui.pending('/visualizer/api/context').find(request => request.body?.view === 'archived');
+  page.done = true; page.reply(200, { records: [memory(10, 'Archived by hand', { archived: true }), replaced(11), replaced(12)], projects: [PROJECT], total: 3 });
+  await flush();
+  assert.ok(ui.rows('Archived by hand'), 'an owner-archived memory is listed');
+  assert.ok(!ui.rows('Old handoff 11'), 'replaced handoffs start folded');
+  ui.find('Show 2 replaced by newer ones').click();
+  assert.ok(ui.rows('Old handoff 11') && ui.rows('Old handoff 12'), 'they expand on request');
 });
 
 test('the owner names a device; the name shows everywhere and the ID stays visible', async () => {
