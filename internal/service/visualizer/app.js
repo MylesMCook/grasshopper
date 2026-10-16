@@ -262,7 +262,7 @@ async function refreshPage() {
     state.offline = null;
     if (page) { state.page = page; state.pageKey = key; }
     state.loading = false;
-    if (changed && !editing() && !selecting()) render();
+    redraw(changed);
   } catch (error) {
     if (error.session || generation !== state.generation || inFlight.page !== controller) return;
     state.loading = false;
@@ -312,7 +312,7 @@ async function refreshIndex() {
       state.index = { projects: page.projects || [], recency, records: page.records, review: page.review_count || 0, server: page.server, total: page.total ?? page.records.length };
     }
     if (chooseDefaultProject()) refreshPage();
-    if ((page || wasOffline) && !editing() && !selecting()) render();
+    redraw(Boolean(page || wasOffline));
   } catch (error) {
     if (!error.session && generation === state.generation && inFlight.index === controller) { state.offline = state.offline || new Date(); render(); }
   } finally {
@@ -334,11 +334,9 @@ async function refreshDevices() {
     ]);
     if (generation !== state.generation || inFlight.devices !== controller) return;
     if (pairings.status === 200 && devices.status === 200) {
-      // A change held back while typing stays pending until a poll can draw it.
-      const changed = state.devicesStale || !state.devicesLoaded || JSON.stringify([pairings.data, devices.data]) !== JSON.stringify([state.pairings, state.devices]);
+      const changed = !state.devicesLoaded || JSON.stringify([pairings.data, devices.data]) !== JSON.stringify([state.pairings, state.devices]);
       Object.assign(state, { pairings: pairings.data || [], devices: devices.data || [], devicesLoaded: true });
-      state.devicesStale = changed && editing();
-      if (changed && !editing()) render();
+      redraw(changed);
     }
   } catch { /* Agents are secondary; memories still work without them. */ }
   finally {
@@ -452,7 +450,7 @@ async function loadHistory(panel, more = false) {
   }
   panel.history = items;
   panel.olderFrom = stop - 1;
-  if (!editing()) render();
+  redraw(true);
 }
 
 function closePanel() {
@@ -480,6 +478,14 @@ function dirty() {
   return title !== panel.record.title || text !== panel.record.content;
 }
 function confirmLeave() { return window.confirm('Discard your unsaved changes?'); }
+// Background refreshes draw only when nothing is being typed or selected. A
+// change held back meanwhile stays pending, so the next refresh draws it even
+// when that refresh itself brings nothing new.
+function redraw(changed) {
+  if (!changed && !state.redrawPending) return;
+  state.redrawPending = editing() || selecting();
+  if (!state.redrawPending) render();
+}
 function selecting() { const selection = window.getSelection?.(); return Boolean(selection && !selection.isCollapsed); }
 
 // One owner write at a time. A 409 shows the newer version; nothing is overwritten.
