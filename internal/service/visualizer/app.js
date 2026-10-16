@@ -63,7 +63,7 @@ function whereLabel(scope = {}) {
 
 // The owner's name for a device, or its ID. The ID itself never changes.
 function deviceName(id) { return state.devices.find(device => device.device === id && device.label)?.label || id; }
-function by(record) { const harness = record?.provenance?.harness; return HARNESS[harness] || harness || 'unknown'; }
+function by(record) { const harness = record?.provenance?.harness || ''; return HARNESS[harness] || HARNESS[harness.split('-')[0]] || harness || 'unknown'; }
 
 function day(value) { const date = new Date(value || NaN); return Number.isNaN(date.getTime()) ? null : date; }
 function daysAgo(value, now = new Date()) {
@@ -651,8 +651,9 @@ async function disconnectDevice(device) {
   render();
 }
 
-async function openStartup() {
-  const panel = { type: 'startup', agent: state.startupAgent, project: state.startupProject, data: null, error: '' };
+async function openStartup(project = state.startupProject) {
+  if (dirty() && !confirmLeave()) return;
+  const panel = { type: 'startup', agent: state.startupAgent, project, data: null, error: '' };
   state.panel = panel; render();
   try {
     const { status, data } = await api('/visualizer/api/startup', { scope: panel.project ? { project: panel.project } : {}, budget: BUDGETS[panel.agent] });
@@ -704,7 +705,7 @@ function sidebar() {
     h('p', { class: 'brand', text: 'GRASSHOPPER' }),
     review ? h('div', { class: 'nav-group' }, navButton('New', { page: 'new' }, { current: route.page === 'new', count: String(review), extra: 'new' })) : null,
     h('div', { class: 'nav-group' },
-      navButton('All projects', { page: 'all' }, { current: route.page === 'all' }),
+      navButton('All projects', { page: 'all' }, { current: route.page === 'all', extra: 'all' }),
       shown.map(project => navButton(projectName(project), { page: 'project', project }, { current: route.page === 'project' && route.project === project })),
       projects.length > 5 ? h('button', { type: 'button', class: 'nav', 'data-key': 'nav:more', onclick: () => { state.moreProjects = !state.moreProjects; render(); } }, h('span', { text: state.moreProjects ? 'Fewer' : `${projects.length - 5} more` })) : null),
     h('div', { class: 'nav-group side-foot' },
@@ -786,10 +787,13 @@ function projectPage() {
     const own = kept.filter(record => record.scope?.project === project);
     const global = kept.filter(record => !record.scope?.project);
     const handoff = records.filter(record => record.purpose === 'handoff' && record.scope?.project === project).sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0];
-    return [head(projectName(project), `${own.length} ${own.length === 1 ? 'memory' : 'memories'}`), banner(),
+    // Agents load this project's and every project's kept memories, so count and show both.
+    const applying = own.length + global.length;
+    return [head(projectName(project), `${applying} ${applying === 1 ? 'memory applies' : 'memories apply'} here`), banner(),
+      h('button', { type: 'button', class: 'quiet', onclick: () => openStartup(project) }, 'Preview startup'),
       fresh.length ? section('New', fresh.map(record => suggestionRow(record, kept)), 'warn') : null,
       grouped(own) || section(projectName(project), own.length ? own.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing kept for this project yet.' })),
-      global.length ? section('All projects', state.showGlobal
+      global.length ? section('All projects', global.length <= 8 ? global.map(record => row(record)) : state.showGlobal
         ? [global.map(record => row(record)), h('button', { type: 'button', class: 'quiet more muted', onclick: () => { state.showGlobal = false; render(); } }, 'Hide')]
         : h('button', { type: 'button', class: 'quiet more', onclick: () => { state.showGlobal = true; render(); } }, `Show ${global.length} that also apply here`)) : null,
       handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null];
@@ -846,18 +850,23 @@ function searchPage() {
 
 function archivedPage() {
   return loadingOr(() => {
-    const records = state.page.records;
-    if (!records.length) return [head('Archived', '', { search: false }), h('p', { class: 'meta empty', text: 'Nothing archived.' })];
+    const all = state.page.records;
+    if (!all.length) return [head('Archived', '', { search: false }), h('p', { class: 'meta empty', text: 'Nothing archived.' })];
     const label = record => {
       const source = record.provenance?.source || '';
       return `${source.startsWith('Replaced by handoff') ? 'replaced' : source.startsWith('Moved to memory') ? 'moved' : 'archived'} ${relDate(record.updated_at)}`;
     };
+    // Replaced handoffs are history, not things the owner archived; fold them all behind one line.
+    const replaced = all.filter(record => (record.provenance?.source || '').startsWith('Replaced by handoff'));
+    const showReplaced = state.expanded.has('replaced');
+    const records = showReplaced ? all : all.filter(record => !replaced.includes(record));
     return [head('Archived', 'Agents never see these.', { search: false }), banner(),
       [null, ...sortedProjects()].map(project => {
         const items = records.filter(record => (record.scope?.project || null) === project);
         return items.length ? section(projectName(project), items.map(record => h('div', { class: 'row-inline' }, row(record, { meta: label(record) }),
           h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `restore:${record.id}`, 'aria-label': `Restore ${record.title}`, onclick: () => restore(record) }, 'Restore')))) : null;
-      })];
+      }),
+      replaced.length && !showReplaced ? section('Earlier handoffs', h('button', { type: 'button', class: 'quiet more', 'data-key': 'show-replaced', onclick: () => { state.expanded.add('replaced'); render(); } }, `Show ${replaced.length} replaced by newer ones`)) : null];
   });
 }
 
@@ -893,7 +902,7 @@ function settingsPage() {
         h('label', { class: 'field' }, 'Agent', h('select', { onchange: event => { state.startupAgent = event.target.value; } }, Object.keys(BUDGETS).map(name => h('option', { value: name, selected: state.startupAgent === name ? true : null }, name)))),
         h('label', { class: 'field' }, 'Project', h('select', { onchange: event => { state.startupProject = event.target.value; } },
           h('option', { value: '' }, 'No project'), sortedProjects().map(project => h('option', { value: project, selected: state.startupProject === project ? true : null }, projectName(project)))))),
-      h('div', {}, h('button', { type: 'button', class: 'btn', onclick: openStartup }, 'Preview')))),
+      h('div', {}, h('button', { type: 'button', class: 'btn', onclick: () => openStartup() }, 'Preview')))),
     section('Export', h('div', { class: 'stack' },
       h('p', { class: 'label', text: 'Every memory as a JSON file.' }),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: state.exportArchived, onchange: event => { state.exportArchived = event.target.checked; } }), 'Include archived'),
@@ -1012,7 +1021,7 @@ function startupPanel(panel) {
 }
 
 function panelBody(panel) {
-  const back = { memory: currentPlace(), device: 'Agents', startup: 'Settings' }[panel.type];
+  const back = { memory: currentPlace(), device: 'Agents', startup: currentPlace() }[panel.type];
   return [h('div', { class: 'panel-top' },
     h('button', { type: 'button', class: 'quiet back', 'data-key': 'back', onclick: closePanel }, h('span', { 'aria-hidden': 'true', text: '←' }), ` ${back}`),
     h('button', { type: 'button', class: 'icon-btn close-x', 'aria-label': 'Close', onclick: closePanel }, '×')),
