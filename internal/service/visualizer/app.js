@@ -1032,8 +1032,12 @@ function mainView() {
 function keyOf(node) { return node.getAttribute?.('data-key') || node.getAttribute?.('aria-label') || node.id || node.textContent; }
 function focusByKey(key) {
   const candidates = [...(root.querySelectorAll?.('button, input, textarea, select, a, [tabindex]') || [])];
-  // An exact data-key wins over a label, id or text that happens to read the same.
-  const match = candidates.find(node => node.getAttribute?.('data-key') === key) || candidates.find(node => keyOf(node) === key);
+  // An exact data-key wins; after that a native control wins over a focusable
+  // region (such as main, labelled with a memory title) that reads the same.
+  const native = node => /^(BUTTON|INPUT|TEXTAREA|SELECT|A)$/.test(node.tagName);
+  const match = candidates.find(node => node.getAttribute?.('data-key') === key)
+    || candidates.find(node => native(node) && keyOf(node) === key)
+    || candidates.find(node => keyOf(node) === key);
   match?.focus?.();
   // A match inside hidden content cannot take focus; report that so the caller falls back.
   return Boolean(match) && document.activeElement === match;

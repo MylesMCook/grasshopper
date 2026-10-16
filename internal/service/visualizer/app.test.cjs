@@ -581,3 +581,14 @@ test('focus restore prefers an exact data-key, even when a title matches it', as
   await flush();
   assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'save', 'focus stays on Save, not the panel named "save"');
 });
+
+test('focus restore prefers a native control over a region that shares its name', async () => {
+  const ui = await signedIn({ narrow: true });
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], title: 'Edit' });
+  ui.app.querySelectorAll('button').find(node => node.textContent === 'Edit').focus();
+  vm.runInContext('render()', ui.sandbox);
+  const focused = ui.document.activeElement;
+  assert.equal(focused?.tagName, 'BUTTON', 'focus stays on a button, not the region titled "Edit"');
+  assert.equal(focused.textContent, 'Edit');
+});
