@@ -269,6 +269,38 @@ removed, with original files and rollback copies retained. The live memory
 server remains 2.9.2 and was not interrupted. This verifies the native runtime,
 not a separately driven Codex Desktop GUI interaction.
 
+## 2.9.6 rollout (October 16)
+
+2.9.6 aligns the public site and memory view with the design system: the
+grasshopper favicon and app icon (#54), accessibility fixes from the design
+audit (#55), and Paper Mono with design-system tokens (#56). Local checks
+before merge: `go test ./...`, `go vet ./...`, race tests, 30 site and 33
+memory view Node tests. Playwright renders of every site page at 1280 and
+390px in both themes showed no overflow or contrast failures, and the memory
+view's components rendered pixel-identical to the design system.
+
+The release workflow passed every job on its first run and deployed the site.
+Live, every page and asset returned 200 with its content type, including
+`fonts/paper-mono.woff2` and the three OFL notices; `/mcp` and `/visualizer/`
+returned 404; the setup page linked the 2.9.6 archive and quickstart command
+for each operating system, and Paper Mono and Newsreader loaded with no console
+errors.
+
+The macOS server archive matched `SHA256SUMS` and all 53 embedded hashes, with
+the model and runtime byte-identical to 2.9.2. Rehearsal on copies of the live
+database: 2.9.6 passed authenticated health, anonymous rejection, a record read
+at its current and earlier revision, owner context, search and the new assets;
+the same copy reopened under 2.9.2 with every core check passing; packaged
+`--quickstart` started, signed in with a session cookie and shut down cleanly.
+
+Cutover: an encrypted off-machine backup verified first, the service stopped,
+a verified snapshot was taken (270 records, 569 revisions, 360 receipts,
+5 credentials), the server, backup and migrate binaries were swapped and the
+service restarted. It reports 2.9.6 on loopback and over the private route and
+passes the same checks; a second encrypted off-machine backup after the cutover
+has identical counts. The 2.9.2 binaries, service definition and snapshot are
+kept for rollback. Clients were not updated in this release.
+
 ## Every release
 
 - `go test ./...`, `go vet ./...`, race tests and all Node tests pass locally.
