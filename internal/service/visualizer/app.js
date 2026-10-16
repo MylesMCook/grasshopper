@@ -460,7 +460,8 @@ function closePanel() {
   render();
 }
 
-function editing() { return state.panel?.mode === 'edit'; }
+// Typing in a memory or a device name; routine refreshes wait so text and caret stay put.
+function editing() { return state.panel?.mode === 'edit' || document.activeElement?.id === 'device-name'; }
 // The text being edited, if it differs from the saved memory.
 function draftOf(panel) {
   if (!panel?.record || (panel.mode !== 'edit' && panel.mode !== 'conflict')) return null;
@@ -975,7 +976,7 @@ function devicePanel(panel) {
   const name = device.label || device.device;
   return [h('h2', { class: 'panel-title', text: name }),
     section('Name', h('form', { class: 'edit', onsubmit: event => { event.preventDefault(); renameDevice(device, event.target.querySelector('input').value, panel); } },
-      h('input', { id: 'device-name', type: 'text', maxlength: '64', 'aria-label': 'Name', value: panel.nameDraft ?? device.label ?? '', placeholder: device.device, oninput: event => { panel.nameDraft = event.target.value; } }),
+      h('input', { id: 'device-name', type: 'text', 'aria-label': 'Name', value: panel.nameDraft ?? device.label ?? '', placeholder: device.device, oninput: event => { panel.nameDraft = event.target.value; } }),
       h('p', { class: 'meta', text: `ID: ${device.device} · never changes. Leave the name empty to show the ID.` }),
       h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'btn', 'aria-disabled': saving }, 'Save name')))),
     section('Status', h('p', { class: 'val' }, h('i', { class: recentlySeen(device) ? 'dot on' : 'dot', 'aria-hidden': 'true' }), recentlySeen(device) ? 'Active' : 'Idle',

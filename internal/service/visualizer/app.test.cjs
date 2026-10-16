@@ -253,6 +253,25 @@ test('a rejected device name says why, and a finished rename never clears anothe
   assert.equal(ui.document.getElementById('device-name').value, 'Gaming PC', "another device's typing survives");
 });
 
+test('a refresh waits while the device name field has focus, so the caret stays put', async () => {
+  const ui = await signedIn();
+  ui.hashChange('#page=agents');
+  await flush();
+  ui.rows('mac').click();
+  await flush();
+  const field = ui.document.getElementById('device-name');
+  assert.equal(field.getAttribute('maxlength'), null, 'the server, which counts characters, sets the limit');
+  field.focus();
+  field.value = 'Studio';
+  field.dispatch('input');
+  for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 5000 || timer.delay === 30000) { ui.timers.delete(id); timer.fn(); }
+  await flush();
+  for (const request of ui.pending('/visualizer/api/pairings')) { request.done = true; request.reply(200, []); }
+  for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: new Date(Date.now() + 60000).toISOString() }]); }
+  await flush();
+  assert.equal(ui.document.getElementById('device-name'), field, 'the field was not replaced mid-edit');
+});
+
 test('Keep confirms at the shown revision and a retry reuses its request ID', async () => {
   const ui = await signedIn();
   ui.find('Keep Use gh for PR status').click();
