@@ -676,7 +676,7 @@ function sidebar() {
     h('p', { class: 'brand', text: 'GRASSHOPPER' }),
     review ? h('div', { class: 'nav-group' }, navButton('New', { page: 'new' }, { current: route.page === 'new', count: String(review), extra: 'new' })) : null,
     h('div', { class: 'nav-group' },
-      navButton('All projects', { page: 'all' }, { current: route.page === 'all' }),
+      navButton('All projects', { page: 'all' }, { current: route.page === 'all', extra: 'all' }),
       shown.map(project => navButton(projectName(project), { page: 'project', project }, { current: route.page === 'project' && route.project === project })),
       projects.length > 5 ? h('button', { type: 'button', class: 'nav', 'data-key': 'nav:more', onclick: () => { state.moreProjects = !state.moreProjects; render(); } }, h('span', { text: state.moreProjects ? 'Fewer' : `${projects.length - 5} more` })) : null),
     h('div', { class: 'nav-group side-foot' },
