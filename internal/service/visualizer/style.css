@@ -163,6 +163,7 @@ html:has(.undo),.app:has(~ .undo) .panel,.app:has(~ .undo) .side { scroll-paddin
 @media (forced-colors:active) {
   .row[aria-current="true"],.seg button[aria-pressed="true"] { forced-color-adjust:none; background:Highlight; color:HighlightText; }
   .row[aria-current="true"] .t,.row[aria-current="true"] .m { color:HighlightText; }
+  .seg button[aria-pressed="true"]:focus-visible { outline-color:HighlightText; }
   .undo,.confirm,.conflict,.strip { border:1px solid CanvasText; }
   .dot { forced-color-adjust:none; background:Canvas; border:1px solid CanvasText; }
   .dot.on { background:CanvasText; }

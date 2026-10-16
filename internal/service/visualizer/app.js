@@ -584,6 +584,8 @@ function armUndo() {
   if (pending) timers.undo = setTimeout(() => { if (state.undo === pending) { state.undo = null; render(); } }, 10000);
 }
 function holdUndo() { clearTimeout(timers.undo); timers.undo = null; }
+// True while the Undo bar has keyboard focus or the pointer.
+function undoHeld() { const bar = root.querySelector?.('.undo'); return Boolean(bar && (bar.contains?.(document.activeElement) || bar.matches?.(':hover'))); }
 async function undo() {
   const pending = state.undo;
   if (!pending) return;
@@ -593,7 +595,7 @@ async function undo() {
     onDone: () => { say(`Restored “${pending.record.title}”.`); if (state.undo === pending) state.undo = null; }
   });
   // On failure the Undo stays for another ten seconds so it can be retried.
-  if (!done && state.undo === pending) armUndo();
+  if (!done && state.undo === pending && !undoHeld()) armUndo();
 }
 
 async function decidePairing(request, decision) {
@@ -1024,7 +1026,8 @@ function keyOf(node) { return node.getAttribute?.('data-key') || node.getAttribu
 function focusByKey(key) {
   const match = [...(root.querySelectorAll?.('button, input, textarea, select, a, [tabindex]') || [])].find(node => keyOf(node) === key);
   match?.focus?.();
-  return Boolean(match);
+  // A match inside hidden content cannot take focus; report that so the caller falls back.
+  return Boolean(match) && document.activeElement === match;
 }
 // A redraw must not strand keyboard focus on a removed control.
 function restoreFocus(key) { if (!focusByKey(key)) document.getElementById('main')?.focus?.(); }

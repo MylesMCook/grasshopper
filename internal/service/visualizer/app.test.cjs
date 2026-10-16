@@ -29,8 +29,8 @@ class Node {
     // As in a browser, a submit button submits its form.
     if (this.tagName === 'BUTTON' && this.attributes.type === 'submit') for (let node = this.parent; node; node = node.parent) if (node.tagName === 'FORM') { node.dispatch('submit'); break; }
   }
-  // As in a browser, a disabled control cannot take focus.
-  focus() { if (!this.disabled) this.ownerDocument.activeElement = this; }
+  // As in a browser, a disabled or hidden control cannot take focus.
+  focus() { for (let node = this; node; node = node.parent) if (node.hidden) return; if (!this.disabled) this.ownerDocument.activeElement = this; }
   contains(node) { for (let current = node; current; current = current.parent) if (current === this) return true; return false; }
   *walk() { for (const child of this.children) if (typeof child !== 'string') { yield child; yield* child.walk(); } }
   matches(selector) {
@@ -484,4 +484,44 @@ test('focus rings stay visible on filled controls and in forced colors', () => {
   const forced = css.slice(css.indexOf('@media (forced-colors:active)'));
   assert.ok(forced.length < css.length, 'a forced-colors block exists');
   for (const selector of ['.row[aria-current="true"]', '.seg button[aria-pressed="true"]', '.undo', '.confirm', '.conflict', '.strip', '.dot']) assert.ok(forced.includes(selector), selector);
+});
+
+test('a conflict after a focused Save moves focus somewhere visible', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  const save = ui.find('Save');
+  save.focus();
+  save.click();
+  await flush();
+  const theirs = { ...projectRecords[0], revision: 2, content: 'Squash or rebase.', provenance: { harness: 'codex-desktop', device: 'mac', source: 'x' } };
+  await ui.answer('/visualizer/api/update', 409, { error: 'revision_conflict', current: theirs });
+  const focused = ui.document.activeElement;
+  assert.ok(focused && [...ui.app.walk()].includes(focused), 'focus is on a control in the current page, not a replaced one');
+  for (let node = focused; node; node = node.parent) assert.equal(node.hidden, false, 'focus is not inside the hidden edit form');
+});
+
+test('a failed Undo keeps waiting while it still has focus', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Archive').click();
+  await ui.answer('/visualizer/api/archive', 200, { id: 1, revision: 2 });
+  const waiting = () => [...ui.timers.values()].filter(timer => timer.delay === 10000).length;
+  const button = ui.find('Undo');
+  button.focus();
+  ui.app.querySelector('div.undo').dispatch('focusin');
+  assert.equal(waiting(), 0);
+  button.click();
+  await flush();
+  await ui.answer('/visualizer/api/archive', 500, { error: 'unavailable' });
+  assert.ok(ui.app.querySelector('div.undo'), 'Undo is still offered');
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'undo', 'focus is back on Undo');
+  assert.equal(waiting(), 0, 'the timer stays paused while Undo has focus');
+});
+
+test('the pressed segment keeps a contrasting focus ring in forced colors', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
+  const forced = css.slice(css.indexOf('@media (forced-colors:active)'));
+  assert.match(forced, /\.seg button\[aria-pressed="true"\]:focus-visible\s*\{[^}]*outline-color:HighlightText/);
 });
