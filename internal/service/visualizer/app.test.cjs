@@ -183,6 +183,36 @@ test('a project page shows suggestions, its own memories, everywhere memories an
   assert.match(ui.text(), /New1/, 'the sidebar counts suggestions');
 });
 
+test('the owner names a device; the name shows everywhere and the ID stays visible', async () => {
+  const ui = await signedIn();
+  ui.hashChange('#page=agents');
+  await flush();
+  ui.rows('mac').click();
+  await flush();
+  assert.match(ui.text(), /ID: mac/, 'the panel always shows the device ID');
+  const field = ui.document.getElementById('device-name');
+  field.value = 'Studio Mac';
+  field.dispatch('input');
+  // A routine refresh with a newer last-seen time must not wipe the typing.
+  for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 5000 || timer.delay === 30000) { ui.timers.delete(id); timer.fn(); }
+  await flush();
+  for (const request of ui.pending('/visualizer/api/pairings')) { request.done = true; request.reply(200, []); }
+  for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: new Date(Date.now() + 60000).toISOString() }]); }
+  await flush();
+  assert.equal(ui.document.getElementById('device-name').value, 'Studio Mac', 'typing survives a refresh');
+  ui.find('Save name').click();
+  await flush();
+  const patch = ui.requests.find(request => request.url === '/visualizer/api/devices' && request.method === 'PATCH');
+  assert.deepEqual(patch.body, { device: 'mac', label: 'Studio Mac' });
+  patch.done = true; patch.reply(204);
+  await flush();
+  for (const request of ui.pending('/visualizer/api/pairings')) { request.done = true; request.reply(200, []); }
+  for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, [{ id: 7, device: 'mac', label: 'Studio Mac', created_at: today, revoked_at: null, last_seen_at: today }]); }
+  await flush();
+  assert.ok(ui.rows('Studio Mac'), 'the Agents list shows the name');
+  assert.match(ui.app.querySelector('h2.panel-title').textContent, /Studio Mac/);
+});
+
 test('Keep confirms at the shown revision and a retry reuses its request ID', async () => {
   const ui = await signedIn();
   ui.find('Keep Use gh for PR status').click();

@@ -19,6 +19,8 @@ type ClientToken struct {
 	// LastSeenAt is when the device last authenticated, to the minute. Nil
 	// means it has not connected since activity tracking began.
 	LastSeenAt *string `json:"last_seen_at"`
+	// Label is the owner's display name for the device. Nil shows the ID.
+	Label *string `json:"label"`
 }
 
 // EnsureClientTokenSchema adds the token table in a transaction without
@@ -44,6 +46,12 @@ func (w *Writer) EnsureClientTokenSchema(ctx context.Context) error {
 	// client_tokens columns exactly, still open a database this one has used.
 	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS client_token_activity (
 		token_id INTEGER PRIMARY KEY REFERENCES client_tokens(id), last_seen_at TEXT NOT NULL)`); err != nil {
+		return err
+	}
+	// Display names are keyed by device ID, so they survive token rotation and
+	// never change the ID stored in tokens, scopes or provenance.
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS device_labels (
+		device TEXT PRIMARY KEY, label TEXT NOT NULL CHECK(length(label) BETWEEN 1 AND 64))`); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -87,8 +95,9 @@ func (r *Reader) ClientTokenDevice(ctx context.Context, token string) (string, e
 
 // ListClientTokens returns token metadata without hashes or raw tokens.
 func (r *Reader) ListClientTokens(ctx context.Context) ([]ClientToken, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT t.id,t.device,t.created_at,t.revoked_at,a.last_seen_at FROM client_tokens t
-		LEFT JOIN client_token_activity a ON a.token_id=t.id ORDER BY t.revoked_at IS NOT NULL, t.id DESC`)
+	rows, err := r.db.QueryContext(ctx, `SELECT t.id,t.device,t.created_at,t.revoked_at,a.last_seen_at,l.label FROM client_tokens t
+		LEFT JOIN client_token_activity a ON a.token_id=t.id LEFT JOIN device_labels l ON l.device=t.device
+		ORDER BY t.revoked_at IS NOT NULL, t.id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -96,8 +105,8 @@ func (r *Reader) ListClientTokens(ctx context.Context) ([]ClientToken, error) {
 	result := []ClientToken{}
 	for rows.Next() {
 		var item ClientToken
-		var revoked, seen sql.NullString
-		if err := rows.Scan(&item.ID, &item.Device, &item.CreatedAt, &revoked, &seen); err != nil {
+		var revoked, seen, label sql.NullString
+		if err := rows.Scan(&item.ID, &item.Device, &item.CreatedAt, &revoked, &seen, &label); err != nil {
 			return nil, err
 		}
 		if revoked.Valid {
@@ -105,6 +114,9 @@ func (r *Reader) ListClientTokens(ctx context.Context) ([]ClientToken, error) {
 		}
 		if seen.Valid {
 			item.LastSeenAt = &seen.String
+		}
+		if label.Valid {
+			item.Label = &label.String
 		}
 		result = append(result, item)
 	}
@@ -134,5 +146,27 @@ func (w *Writer) TouchClientToken(ctx context.Context, token string, now time.Ti
 	_, err := w.db.ExecContext(ctx, `INSERT INTO client_token_activity(token_id,last_seen_at)
 		SELECT id,? FROM client_tokens WHERE token_hash=? AND revoked_at IS NULL
 		ON CONFLICT(token_id) DO UPDATE SET last_seen_at=excluded.last_seen_at WHERE last_seen_at<>excluded.last_seen_at`, stamp, hash[:])
+	return err
+}
+
+// SetDeviceLabel names a known device for display. An empty name, or one equal
+// to the ID, removes the label so the ID shows again.
+func (w *Writer) SetDeviceLabel(ctx context.Context, device, label string) error {
+	label = strings.TrimSpace(label)
+	if len(label) > 64 || strings.IndexFunc(label, unicode.IsControl) >= 0 {
+		return errors.New("invalid device name: use up to 64 characters on one line")
+	}
+	var known bool
+	if err := w.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM client_tokens WHERE device=?)`, device).Scan(&known); err != nil {
+		return err
+	}
+	if !known {
+		return errors.New("device_not_found")
+	}
+	if label == "" || label == device {
+		_, err := w.db.ExecContext(ctx, `DELETE FROM device_labels WHERE device=?`, device)
+		return err
+	}
+	_, err := w.db.ExecContext(ctx, `INSERT INTO device_labels(device,label) VALUES(?,?) ON CONFLICT(device) DO UPDATE SET label=excluded.label`, device, label)
 	return err
 }

@@ -28,6 +28,10 @@ five agent tools do not change; this page decides what the owner sees.
   on laptops, and becomes a page on phones. It shows the full text, Edit,
   Move to…, Archive, then Applies to, Saved by and History.
 
+- The owner can name a device in its panel. The name shows wherever the
+  device appears; its ID, used in tokens, scopes and provenance, never changes
+  and stays visible in the panel. An empty name shows the ID again.
+
 ## Scenarios
 
 ```gherkin
@@ -58,6 +62,13 @@ Feature: Owner reviews and manages memories
     Then a copy with the same text, purpose and source applies everywhere
     And the original is archived with a note naming the copy
     And retrying the same move does not create a second copy
+
+  Scenario: The owner names a device without changing its ID
+    Given a paired machine with the ID "HPLT-1234"
+    When the owner names it "Work laptop"
+    Then Agents and memories scoped to it show "Work laptop"
+    And its panel still shows "ID: HPLT-1234"
+    And a replacement credential for that machine keeps the name
 
   Scenario: Agents show when each machine last connected
     Given a paired machine authenticated two minutes ago
