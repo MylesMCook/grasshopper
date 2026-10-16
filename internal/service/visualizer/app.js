@@ -334,8 +334,10 @@ async function refreshDevices() {
     ]);
     if (generation !== state.generation || inFlight.devices !== controller) return;
     if (pairings.status === 200 && devices.status === 200) {
-      const changed = !state.devicesLoaded || JSON.stringify([pairings.data, devices.data]) !== JSON.stringify([state.pairings, state.devices]);
+      // A change held back while typing stays pending until a poll can draw it.
+      const changed = state.devicesStale || !state.devicesLoaded || JSON.stringify([pairings.data, devices.data]) !== JSON.stringify([state.pairings, state.devices]);
       Object.assign(state, { pairings: pairings.data || [], devices: devices.data || [], devicesLoaded: true });
+      state.devicesStale = changed && editing();
       if (changed && !editing()) render();
     }
   } catch { /* Agents are secondary; memories still work without them. */ }

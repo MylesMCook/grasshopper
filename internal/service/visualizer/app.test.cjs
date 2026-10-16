@@ -31,6 +31,7 @@ class Node {
   }
   // As in a browser, a disabled or hidden control cannot take focus.
   focus() { for (let node = this; node; node = node.parent) if (node.hidden) return; if (!this.disabled) this.ownerDocument.activeElement = this; }
+  blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null; }
   contains(node) { for (let current = node; current; current = current.parent) if (current === this) return true; return false; }
   *walk() { for (const child of this.children) if (typeof child !== 'string') { yield child; yield* child.walk(); } }
   matches(selector) {
@@ -270,6 +271,20 @@ test('a refresh waits while the device name field has focus, so the caret stays 
   for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: new Date(Date.now() + 60000).toISOString() }]); }
   await flush();
   assert.equal(ui.document.getElementById('device-name'), field, 'the field was not replaced mid-edit');
+  // A change held back while typing shows on the next poll after focus leaves, even if that poll is unchanged.
+  const renamed = [{ id: 7, device: 'mac', label: 'Renamed elsewhere', created_at: today, revoked_at: null, last_seen_at: today }];
+  const poll = async () => {
+    for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 5000 || timer.delay === 30000) { ui.timers.delete(id); timer.fn(); }
+    await flush();
+    for (const request of ui.pending('/visualizer/api/pairings')) { request.done = true; request.reply(200, []); }
+    for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, renamed); }
+    await flush();
+  };
+  await poll();
+  assert.ok(!ui.rows('Renamed elsewhere'), 'held back while typing');
+  field.blur();
+  await poll();
+  assert.ok(ui.rows('Renamed elsewhere'), 'shown once typing ends');
 });
 
 test('Keep confirms at the shown revision and a retry reuses its request ID', async () => {
