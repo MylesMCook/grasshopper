@@ -54,7 +54,7 @@ function response(status, data, headers = {}) {
 }
 async function flush() { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); }
 
-function setup({ hash = '', session = false, hidden = false } = {}) {
+function setup({ hash = '', session = false, hidden = false, narrow = false } = {}) {
   const requests = [];
   const timers = new Map();
   let timerID = 0;
@@ -79,7 +79,9 @@ function setup({ hash = '', session = false, hidden = false } = {}) {
       addEventListener(name, action) { (windowListeners[name] ||= []).push(action); },
       confirm: () => true, getSelection: () => null,
       history: { pushState(_s, _t, url) { history.push(url); location.hash = url.startsWith('#') ? url : ''; }, replaceState(_s, _t, url) { location.hash = url.startsWith('#') ? url : ''; } },
-      grasshopperTheme: { saved: () => 'system', set() {} }
+      grasshopperTheme: { saved: () => 'system', set() {} },
+      // narrow: true lays out as a laptop, where the open memory replaces the list.
+      matchMedia: () => ({ matches: narrow, addEventListener() {} })
     },
     navigator: { clipboard: { writeText: async () => {} } },
     setTimeout(fn, delay) { timers.set(++timerID, { fn, delay }); return timerID; },
@@ -127,8 +129,8 @@ const projectRecords = [
 ];
 
 // An active session on a project page, with its first loads answered.
-async function signedIn() {
-  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+async function signedIn(options = {}) {
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}`, ...options });
   await flush();
   await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT], review_count: 1, server: { version: '2.9.0', memories: 4, archived: 0 }, total: 4 }, { ETag: '"index-1"' });
   await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT], total: 4 }, { ETag: '"page-1"' });
@@ -565,4 +567,17 @@ test('the selected row keeps a contrasting focus ring in forced colors', () => {
   const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
   const forced = css.slice(css.indexOf('@media (forced-colors:active)'));
   assert.match(forced, /\.row\[aria-current="true"\]:focus-visible\s*\{[^}]*outline-color:CanvasText/);
+});
+
+test('focus restore prefers an exact data-key, even when a title matches it', async () => {
+  const ui = await signedIn({ narrow: true });
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], title: 'save' });
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  const save = ui.find('Save');
+  save.focus();
+  save.click();
+  await flush();
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'save', 'focus stays on Save, not the panel named "save"');
 });

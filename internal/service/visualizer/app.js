@@ -1031,7 +1031,9 @@ function mainView() {
 // its confirmation) never trade focus.
 function keyOf(node) { return node.getAttribute?.('data-key') || node.getAttribute?.('aria-label') || node.id || node.textContent; }
 function focusByKey(key) {
-  const match = [...(root.querySelectorAll?.('button, input, textarea, select, a, [tabindex]') || [])].find(node => keyOf(node) === key);
+  const candidates = [...(root.querySelectorAll?.('button, input, textarea, select, a, [tabindex]') || [])];
+  // An exact data-key wins over a label, id or text that happens to read the same.
+  const match = candidates.find(node => node.getAttribute?.('data-key') === key) || candidates.find(node => keyOf(node) === key);
   match?.focus?.();
   // A match inside hidden content cannot take focus; report that so the caller falls back.
   return Boolean(match) && document.activeElement === match;
