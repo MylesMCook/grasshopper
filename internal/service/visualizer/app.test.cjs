@@ -191,6 +191,8 @@ test('Preview startup opens what an agent gets for this project', async () => {
   const request = ui.pending('/visualizer/api/startup')[0];
   assert.ok(request, 'the preview loads');
   assert.deepEqual(request.body.scope, { project: PROJECT });
+  const back = ui.app.querySelectorAll('button').find(node => node.getAttribute('data-key') === 'back');
+  assert.match(back.textContent, /grasshopper/, 'Back names the page it returns to');
 });
 
 test('Preview startup asks before discarding an unsaved edit', async () => {

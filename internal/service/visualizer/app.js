@@ -988,7 +988,7 @@ function startupPanel(panel) {
 }
 
 function panelBody(panel) {
-  const back = { memory: currentPlace(), device: 'Agents', startup: 'Settings' }[panel.type];
+  const back = { memory: currentPlace(), device: 'Agents', startup: currentPlace() }[panel.type];
   return [h('div', { class: 'panel-top' },
     h('button', { type: 'button', class: 'quiet back', 'data-key': 'back', onclick: closePanel }, h('span', { 'aria-hidden': 'true', text: '←' }), ` ${back}`),
     h('button', { type: 'button', class: 'icon-btn close-x', 'aria-label': 'Close', onclick: closePanel }, '×')),
