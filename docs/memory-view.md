@@ -24,6 +24,11 @@ five agent tools do not change; this page decides what the owner sees.
   margin by where they apply, or by date for the latest handoff. Each memory is
   one line with "source · date" on the right. Large lists group by This week,
   the month, then Earlier, with "Show N more".
+- A project page shows what its agents start with: its own memories, the
+  memories for every project (folded only past 8), and the latest handoff. The
+  subtitle counts them, and "Preview startup" opens the exact startup context.
+- Archived lists what the owner archived. Handoffs replaced by newer ones fold
+  into one "Show N replaced by newer ones" line at the end.
 - Opening a memory adds a right-hand panel on wide screens, replaces the list
   on laptops, and becomes a page on phones. It shows the full text, Edit,
   Move to…, Archive, then Applies to, Saved by and History.
@@ -58,6 +63,19 @@ Feature: Owner reviews and manages memories
     Then a copy with the same text, purpose and source applies everywhere
     And the original is archived with a note naming the copy
     And retrying the same move does not create a second copy
+
+  Scenario: A project page shows what agents start with
+    Given 2 memories apply to every project and none only to "grasshopper"
+    When the owner opens "grasshopper"
+    Then both every-project memories are listed without unfolding
+    And the subtitle says "2 memories apply here"
+    And "Preview startup" opens the startup context for "grasshopper"
+
+  Scenario: Replaced handoffs do not bury archived memories
+    Given the owner archived one memory and 12 handoffs were replaced
+    When the owner opens Archived
+    Then the archived memory is listed with Restore
+    And the replaced handoffs fold into "Show 12 replaced by newer ones"
 
   Scenario: Agents show when each machine last connected
     Given a paired machine authenticated two minutes ago
