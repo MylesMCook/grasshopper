@@ -623,8 +623,9 @@ async function disconnectDevice(device) {
   render();
 }
 
-async function openStartup() {
-  const panel = { type: 'startup', agent: state.startupAgent, project: state.startupProject, data: null, error: '' };
+async function openStartup(project = state.startupProject) {
+  if (dirty() && !confirmLeave()) return;
+  const panel = { type: 'startup', agent: state.startupAgent, project, data: null, error: '' };
   state.panel = panel; render();
   try {
     const { status, data } = await api('/visualizer/api/startup', { scope: panel.project ? { project: panel.project } : {}, budget: BUDGETS[panel.agent] });
@@ -761,7 +762,7 @@ function projectPage() {
     // Agents load this project's and every project's kept memories, so count and show both.
     const applying = own.length + global.length;
     return [head(projectName(project), `${applying} ${applying === 1 ? 'memory applies' : 'memories apply'} here`), banner(),
-      h('button', { type: 'button', class: 'quiet', onclick: () => { state.startupProject = project; openStartup(); } }, 'Preview startup'),
+      h('button', { type: 'button', class: 'quiet', onclick: () => openStartup(project) }, 'Preview startup'),
       fresh.length ? section('New', fresh.map(record => suggestionRow(record, kept)), 'warn') : null,
       grouped(own) || section(projectName(project), own.length ? own.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing kept for this project yet.' })),
       global.length ? section('All projects', global.length <= 8 ? global.map(record => row(record)) : state.showGlobal
@@ -873,7 +874,7 @@ function settingsPage() {
         h('label', { class: 'field' }, 'Agent', h('select', { onchange: event => { state.startupAgent = event.target.value; } }, Object.keys(BUDGETS).map(name => h('option', { value: name, selected: state.startupAgent === name ? true : null }, name)))),
         h('label', { class: 'field' }, 'Project', h('select', { onchange: event => { state.startupProject = event.target.value; } },
           h('option', { value: '' }, 'No project'), sortedProjects().map(project => h('option', { value: project, selected: state.startupProject === project ? true : null }, projectName(project)))))),
-      h('div', {}, h('button', { type: 'button', class: 'btn', onclick: openStartup }, 'Preview')))),
+      h('div', {}, h('button', { type: 'button', class: 'btn', onclick: () => openStartup() }, 'Preview')))),
     section('Export', h('div', { class: 'stack' },
       h('p', { class: 'label', text: 'Every memory as a JSON file.' }),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: state.exportArchived, onchange: event => { state.exportArchived = event.target.checked; } }), 'Include archived'),

@@ -193,6 +193,20 @@ test('Preview startup opens what an agent gets for this project', async () => {
   assert.deepEqual(request.body.scope, { project: PROJECT });
 });
 
+test('Preview startup asks before discarding an unsaved edit', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  let asked = 0;
+  ui.sandbox.window.confirm = () => { asked++; return false; };
+  ui.find('Preview startup').click();
+  await flush();
+  assert.equal(asked, 1, 'the owner is asked first');
+  assert.equal(ui.pending('/visualizer/api/startup').length, 0, 'declining keeps the edit');
+  assert.equal(ui.document.getElementById('edit-text').value, 'Squash merge only. Always.');
+});
+
 test('agent names read as products, including desktop and CLI variants', async () => {
   const records = [memory(1, 'Desktop note', { provenance: { harness: 'claude-code-desktop', device: 'mac', source: 'x' } }),
     memory(2, 'Cursor note', { provenance: { harness: 'cursor-agent', device: 'mac', source: 'x' } })];
