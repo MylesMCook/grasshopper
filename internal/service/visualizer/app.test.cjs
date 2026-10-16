@@ -206,6 +206,14 @@ test('the owner names a device; the name shows everywhere and the ID stays visib
   assert.deepEqual(patch.body, { device: 'mac', label: 'Studio Mac' });
   patch.done = true; patch.reply(204);
   await flush();
+  // Before the device list refreshes, the field already holds the new name, so a second Save cannot undo it.
+  assert.equal(ui.document.getElementById('device-name').value, 'Studio Mac');
+  ui.find('Save name').click();
+  await flush();
+  const again = ui.requests.filter(request => request.method === 'PATCH').pop();
+  assert.equal(again.body.label, 'Studio Mac');
+  again.done = true; again.reply(204);
+  await flush();
   for (const request of ui.pending('/visualizer/api/pairings')) { request.done = true; request.reply(200, []); }
   for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, [{ id: 7, device: 'mac', label: 'Studio Mac', created_at: today, revoked_at: null, last_seen_at: today }]); }
   await flush();

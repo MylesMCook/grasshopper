@@ -621,8 +621,12 @@ async function renameDevice(device, label, panel) {
   try {
     const { status, data } = await api('/visualizer/api/devices', { device: device.device, label: label.trim() }, { method: 'PATCH' });
     say(status >= 300 ? (status === 400 && data?.error ? `Not renamed. ${data.error.replace(/^invalid device name: /, '').replace(/^./, c => c.toUpperCase())}.` : "Couldn't rename it. Try again.") : label.trim() ? `Named “${label.trim()}”.` : `Showing ${device.device}.`);
-    // Clear only the draft that was saved, never one typed since or for another device.
-    if (status < 300 && panel.nameDraft === label) panel.nameDraft = null;
+    if (status < 300) {
+      // Show the saved name at once, on every token of this device, so the form never offers the old one.
+      for (const item of state.devices) if (item.device === device.device) item.label = label.trim() || null;
+      // Clear only the draft that was saved, never one typed since or for another device.
+      if (panel.nameDraft === label) panel.nameDraft = null;
+    }
   } catch (error) { if (!error.session) say("Couldn't rename it. Try again."); }
   finally { saving = false; }
   refreshDevices();
