@@ -7,13 +7,14 @@ service runs 2.9.2. Earlier release records are in Git history and
 
 ## Active
 
-Windows Codex timeout fix delivered as 2.9.5 through [PR #52](https://github.com/MylesMCook/grasshopper/pull/52)
-and tag `v2.9.5` at `df544d2`. Native startup and prompt hooks completed in
-2.63 and 2.37 seconds with project context reaching the model. Three hooks
-are enabled/trusted; seven release digests and 284 embedded hashes passed.
-2.9.4 is marked as affected. The temporary pilot is removed and rollback
-copies are retained. Owner: Codex, macOS; runtime and release acceptance complete.
-Detailed evidence: [verification](docs/verification.md). The service stays 2.9.2.
+2.9.6 aligns the public site and memory view with the Grasshopper design system:
+the grasshopper favicon ([PR #54](https://github.com/MylesMCook/grasshopper/pull/54), merged),
+memory view and site accessibility fixes from the design audit
+([PR #55](https://github.com/MylesMCook/grasshopper/pull/55), merged), and Paper Mono as the
+mono face with design-system tokens on branch `design-system-alignment`.
+Owner: Claude Code, macOS. Checks, race tests and browser renders pass locally;
+CI, review, the tag and the site deploy are next. The service stays 2.9.2 until
+the owner approves a cutover.
 
 ## Decisions
 
@@ -22,6 +23,8 @@ Detailed evidence: [verification](docs/verification.md). The service stays 2.9.2
   and confirmation, keeps only the latest handoff per project, and labels
   memories by where they apply. Project archive and rename are deferred.
 - Public files never name the owner's machines or employer devices.
+- Paper Mono (SIL OFL 1.1) is the mono face on the site and memory view; Geist
+  Mono stays as its fallback. Tokens follow the design system's names (`--fs-*`).
 - Cursor users who also run Claude Code rely on Cursor importing the Claude Code
   plugin; the client answers imported hooks in both formats.
 

@@ -301,3 +301,13 @@ test('opening the Claude alternative updates the scroll cue before any user scro
   pre.scrollLeft=600;toggle();assert.equal(cue,false);
   pre.scrollWidth=0;pre.clientWidth=0;pre.scrollLeft=0;toggle();assert.equal(cue,false);
 });
+
+test('the site build ships every font the stylesheet loads, with Paper Mono leading the mono stack', () => {
+  const { execFileSync } = require('node:child_process');
+  execFileSync('sh', [`${__dirname}/build.sh`]);
+  const css = readFileSync(`${__dirname}/dist/site.css`, 'utf8');
+  const fonts = [...css.matchAll(/url\("(fonts\/[^"]+)"\)/g)].map(match => match[1]);
+  assert.ok(fonts.includes('fonts/paper-mono.woff2'));
+  for (const font of fonts) assert.ok(readFileSync(`${__dirname}/dist/${font}`).length > 0, font);
+  assert.match(css, /--font-mono:"Paper Mono","Geist Mono",/);
+});
