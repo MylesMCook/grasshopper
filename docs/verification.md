@@ -274,7 +274,7 @@ not a separately driven Codex Desktop GUI interaction.
 2.9.6 aligns the public site and memory view with the design system: the
 grasshopper favicon and app icon (#54), accessibility fixes from the design
 audit (#55), and Paper Mono with design-system tokens (#56). Local checks
-before merge: `go test ./...`, `go vet ./...`, race tests, 30 site and 33
+before merge: `go test ./...`, `go vet ./...`, race tests, 31 site and 33
 memory view Node tests. Playwright renders of every site page at 1280 and
 390px in both themes showed no overflow or contrast failures, and the memory
 view's components rendered pixel-identical to the design system.
@@ -300,6 +300,43 @@ service restarted. It reports 2.9.6 on loopback and over the private route and
 passes the same checks; a second encrypted off-machine backup after the cutover
 has identical counts. The 2.9.2 binaries, service definition and snapshot are
 kept for rollback. Clients were not updated in this release.
+
+## 2.9.7 rollout (October 16)
+
+2.9.7 fixes nine findings from a repo audit (#58), each with a test that failed
+before its fix: corrections keep metadata they do not resend, a keyed memory
+moved back revives its original, duplicate text is a typed conflict, paired
+tokens cannot list owner context, pairing checks the Host, sign-in at the
+session cap drops the oldest session, oversized AGENTS.md no longer drops hook
+context, `configure`/`setup` save the `/mcp` address, and config writes refuse
+symlinks. Local checks before merge: `go test ./...`, `go vet ./...`, race
+tests, 34 memory view and 31 site Node tests; CI passed on macOS, Linux and
+Windows, and a Copilot review and re-review left no open findings.
+
+The release workflow passed every job on its first run and deployed the site;
+the setup page links the 2.9.7 archives. The macOS server archive matched
+`SHA256SUMS` and all 53 embedded hashes, with the model and runtime
+byte-identical to 2.9.6. Rehearsal on a copy of the live database: 2.9.7 passed
+authenticated health, anonymous rejection, a record read at its current and
+earlier revision, owner context, search and assets; the same copy reopened
+under 2.9.6 with every check passing; packaged `--quickstart` started, signed
+in with a session cookie and shut down cleanly.
+
+Cutover: an encrypted off-machine backup verified first, the service stopped,
+a verified snapshot was taken (271 records, 571 revisions, 361 receipts,
+5 credentials), the server, backup and migrate binaries were swapped and the
+service restarted. It reports 2.9.7 on loopback and over the private route and
+passes the same checks with identical counts; a second encrypted off-machine
+backup verified. The 2.9.6 binaries, service definition and snapshot are kept
+for rollback.
+
+Clients: on the Mac, Claude Code (client archive) and Codex (marketplace) moved
+to 2.9.7. On a Windows work machine, Claude Code and Codex moved from 2.9.6 and
+2.9.5 to 2.9.7 from the marketplace. The Windows PC had no connector; Claude
+Code and Codex were installed from the marketplace and connected through device
+approval. `grasshopper check` on all three reports server 2.9.7, verified
+registration and current connectors. The Linux machine was not reachable and
+updates when next used.
 
 ## Every release
 
