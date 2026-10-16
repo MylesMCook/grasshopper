@@ -311,3 +311,16 @@ test('the site build ships every font the stylesheet loads, with Paper Mono lead
   for (const font of fonts) assert.ok(readFileSync(`${__dirname}/dist/${font}`).length > 0, font);
   assert.match(css, /--font-mono:"Paper Mono","Geist Mono",/);
 });
+
+test('every font the site serves ships with its license notice', () => {
+  const { execFileSync } = require('node:child_process');
+  const { readdirSync } = require('node:fs');
+  execFileSync('sh', [`${__dirname}/build.sh`]);
+  const shipped = readdirSync(`${__dirname}/dist/fonts`);
+  const fonts = shipped.filter(name => name.endsWith('.woff2'));
+  assert.ok(fonts.length >= 3);
+  for (const font of fonts) {
+    const notice = `OFL-${font.replace(/\.woff2$/, '').replace(/-latin$/, '')}.txt`;
+    assert.ok(shipped.includes(notice), `${font} needs ${notice}`);
+  }
+});

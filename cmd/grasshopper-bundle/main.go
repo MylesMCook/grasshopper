@@ -25,6 +25,14 @@ import (
 
 type input struct{ name, path string }
 
+// fontNotices carries the SIL OFL notice of every font the memory view
+// embeds; the license requires it to travel with the font.
+var fontNotices = []input{
+	{"docs/fonts/OFL-newsreader.txt", "docs/fonts/OFL-newsreader.txt"},
+	{"docs/fonts/OFL-geist-mono.txt", "docs/fonts/OFL-geist-mono.txt"},
+	{"docs/fonts/OFL-paper-mono.txt", "docs/fonts/OFL-paper-mono.txt"},
+}
+
 // goNotices includes licenses for transitive Go modules and rejects modules
 // without a LICENSE or COPYING file.
 func goNotices(packages ...string) ([]input, error) {
@@ -365,10 +373,9 @@ func run() error {
 		{"README.md", "README.md"},
 		{"docs/embedding-model.md", "docs/embedding-model.md"},
 		{"docs/operations.md", "docs/operations.md"},
-		{"docs/fonts/OFL-newsreader.txt", "docs/fonts/OFL-newsreader.txt"},
-		{"docs/fonts/OFL-geist-mono.txt", "docs/fonts/OFL-geist-mono.txt"},
 		{"packaging/macos/com.example.grasshopper.plist", "packaging/macos/com.example.grasshopper.plist"},
 	}
+	files = append(files, fontNotices...)
 	notices, err := goNotices()
 	if err != nil {
 		return err
