@@ -416,8 +416,11 @@ func writeTx(ctx context.Context, tx *sql.Tx, input WriteInput, scopeKey, finger
 	if current != nil && current.Title != firstRunes(current.Content, 80) {
 		title = current.Title
 	}
-	if input.Title != nil {
+	if input.Title != nil && strings.TrimSpace(*input.Title) != "" {
 		title = *input.Title
+	} else if input.Title != nil {
+		// An explicitly cleared title is derived from the text again.
+		title = firstRunes(content, 80)
 	}
 	if restored != nil {
 		title = restored.Title

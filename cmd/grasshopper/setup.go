@@ -174,6 +174,11 @@ type savedFile struct {
 }
 
 func snapshotFile(path string) (savedFile, error) {
+	// Refuse a symlink or other non-regular file before anything changes, so
+	// rollback never mistakes a dangling link for an absent file and removes it.
+	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
+		return savedFile{}, fmt.Errorf("%s is not a regular file; edit it by hand or replace it with a regular file", path)
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return savedFile{path: path}, nil

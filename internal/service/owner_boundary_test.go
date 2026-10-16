@@ -50,3 +50,19 @@ func TestPairingRejectsAForeignHost(t *testing.T) {
 		}
 	}
 }
+
+func TestClearingATitleInTheMemoryViewDerivesItFromTheText(t *testing.T) {
+	server, store := testServer(t, true)
+	saved := agentSave(t, store, "title-reset", "Custom title", "Merge with squash only.", "decision", true)
+	status, body := ownerJSON(t, server, "/visualizer/api/update", map[string]any{
+		"id": saved.ID, "expected_revision": saved.Revision, "title": "",
+		"content": "Merge with squash only.", "purpose": "decision", "request_id": "title-reset-1",
+	})
+	if status != http.StatusOK {
+		t.Fatalf("update status=%d body=%s", status, body)
+	}
+	current, err := store.RecordByID(context.Background(), saved.ID, nil)
+	if err != nil || current == nil || current.Title != "Merge with squash only." {
+		t.Fatalf("a cleared title kept %q: %v", current.Title, err)
+	}
+}

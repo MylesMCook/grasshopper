@@ -56,3 +56,26 @@ func TestConfigureSavesTheMCPAddressForABareServerLink(t *testing.T) {
 		t.Fatalf("saved address %q: %v", loaded.URL, err)
 	}
 }
+
+func TestSetupLeavesADanglingCursorSymlinkInPlace(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need extra privileges on Windows")
+	}
+	root, token, config, cursorDir := setupFixture(t)
+	server := setupServer(t, true)
+	if err := os.MkdirAll(cursorDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(cursorDir, "mcp.json")
+	if err := os.Symlink(filepath.Join(root, "dotfiles", "mcp.json"), link); err != nil {
+		t.Fatal(err)
+	}
+	run := func(string, ...string) ([]byte, error) { return nil, nil }
+	err := setupClientWithRoot([]string{"--url", server.URL + "/mcp", "--token-file", token, "--device", "test", "--agents", "cursor", "--config", config, "--cursor-dir", cursorDir}, root, run)
+	if err == nil {
+		t.Fatal("setup replaced a symlinked Cursor config")
+	}
+	if info, lerr := os.Lstat(link); lerr != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("setup removed the symlink (setup error: %v): %v", err, lerr)
+	}
+}
