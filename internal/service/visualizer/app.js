@@ -57,10 +57,12 @@ function projectName(key) {
 }
 
 function whereLabel(scope = {}) {
-  const extra = [scope.device && `${scope.device} only`, scope.platform && `${PLATFORM[scope.platform] || scope.platform} only`].filter(Boolean);
+  const extra = [scope.device && `${deviceName(scope.device)} only`, scope.platform && `${PLATFORM[scope.platform] || scope.platform} only`].filter(Boolean);
   return [projectName(scope.project), ...extra].join(' · ');
 }
 
+// The owner's name for a device, or its ID. The ID itself never changes.
+function deviceName(id) { return state.devices.find(device => device.device === id && device.label)?.label || id; }
 function by(record) { const harness = record?.provenance?.harness || ''; return HARNESS[harness] || HARNESS[harness.split('-')[0]] || harness || 'unknown'; }
 
 function day(value) { const date = new Date(value || NaN); return Number.isNaN(date.getTime()) ? null : date; }
@@ -613,10 +615,27 @@ async function decidePairing(request, decision) {
   } catch (error) { if (!error.session) say("Couldn't change this request. Try again."); }
   refreshDevices();
 }
+async function renameDevice(device, label, panel) {
+  if (saving) return;
+  saving = true; render();
+  try {
+    const { status, data } = await api('/visualizer/api/devices', { device: device.device, label: label.trim() }, { method: 'PATCH' });
+    say(status >= 300 ? (status === 400 && data?.error ? `Not renamed. ${data.error.replace(/^invalid device name: /, '').replace(/^./, c => c.toUpperCase())}.` : "Couldn't rename it. Try again.") : label.trim() ? `Named “${label.trim()}”.` : `Showing ${device.device}.`);
+    if (status < 300) {
+      // Show the saved name at once, on every token of this device, so the form never offers the old one.
+      for (const item of state.devices) if (item.device === device.device) item.label = label.trim() || null;
+      // Clear only the draft that was saved, never one typed since or for another device.
+      if (panel.nameDraft === label) panel.nameDraft = null;
+    }
+  } catch (error) { if (!error.session) say("Couldn't rename it. Try again."); }
+  finally { saving = false; }
+  refreshDevices();
+  render();
+}
 async function disconnectDevice(device) {
   try {
     const { status } = await api('/visualizer/api/devices', { id: device.id }, { method: 'DELETE' });
-    say(status >= 300 ? "Couldn't disconnect it. Try again." : `${device.device} disconnected.`);
+    say(status >= 300 ? "Couldn't disconnect it. Try again." : `${device.label || device.device} disconnected.`);
     if (status < 300) state.panel = null;
   } catch (error) { if (!error.session) say("Couldn't disconnect it. Try again."); }
   refreshDevices();
@@ -690,7 +709,7 @@ function sidebar() {
 }
 
 function row(record, { meta } = {}) {
-  const only = [record.scope?.device && `${record.scope.device} only`, record.scope?.platform && `${PLATFORM[record.scope.platform] || record.scope.platform} only`].filter(Boolean).join(' · ');
+  const only = [record.scope?.device && `${deviceName(record.scope.device)} only`, record.scope?.platform && `${PLATFORM[record.scope.platform] || record.scope.platform} only`].filter(Boolean).join(' · ');
   const right = meta ?? [by(record), relDate(record.updated_at), only].filter(Boolean).join(' · ');
   return h('button', { type: 'button', class: `row${record.purpose === 'handoff' ? ' handoff' : ''}`, 'data-key': `open:${record.id}`, 'aria-current': state.panel?.id === record.id ? 'true' : null,
     title: fullDate(record.updated_at), onclick: () => openMemory(record.id) },
@@ -856,7 +875,7 @@ function agentsPage() {
     linked && state.devicesLoaded && !waiting.some(request => request.request_id === linked)
       ? h('p', { class: 'label muted', text: 'That connection request has expired or was already handled. Ask the agent to connect again.' }) : null,
     section('Connected', connected.length ? connected.map(device => h('button', { type: 'button', class: 'row', 'data-key': `device:${device.id}`, 'aria-current': state.panel?.type === 'device' && state.panel.id === device.id ? 'true' : null, onclick: () => { state.panel = { type: 'device', id: device.id, confirm: false }; render(); } },
-      h('span', { class: 't' }, h('i', { class: recentlySeen(device) ? 'dot on' : 'dot', 'aria-hidden': 'true' }), device.device),
+      h('span', { class: 't' }, h('i', { class: recentlySeen(device) ? 'dot on' : 'dot', 'aria-hidden': 'true' }), device.label || device.device),
       h('span', { class: 'm', text: ago(device.last_seen_at) }))) : h('p', { class: 'meta empty', text: 'No agents connected yet.' })),
     section('Add one', h('div', { class: 'stack' },
       h('p', { class: 'label', text: 'In a new agent session, say:' }),
@@ -948,7 +967,7 @@ function memoryPanel(panel) {
     similar ? section('Similar', [row(similar), h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: () => keepAndReplace(record, similar) }, 'Keep and replace it')], 'warn') : null,
     section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), h('span', { class: 'meta', text: record.scope?.project || 'Every project' }))),
     section(isNew ? 'Noticed by' : 'Saved by', h('p', { class: 'val' }, by(record) === 'you' ? 'You' : by(record),
-      h('span', { class: 'meta', text: [fullDate(record.updated_at), source.device].filter(Boolean).join(' · ') }),
+      h('span', { class: 'meta', text: [fullDate(record.updated_at), source.device && deviceName(source.device)].filter(Boolean).join(' · ') }),
       source.source ? h('span', { class: 'meta', text: `“${source.source}”` }) : null)),
     record.purpose === 'handoff' && !record.archived ? section('Kept until', h('p', { class: 'val' }, 'The next handoff', h('span', { class: 'meta', text: 'Then it moves to Archived.' }))) : null,
     record.revision > 1 ? section('History', panel.history === null ? h('p', { class: 'meta', text: 'Loading…' }) : [
@@ -962,7 +981,12 @@ function memoryPanel(panel) {
 function devicePanel(panel) {
   const device = state.devices.find(item => item.id === panel.id);
   if (!device) return h('p', { class: 'label', text: 'This agent is no longer connected.' });
-  return [h('h2', { class: 'panel-title', text: device.device }),
+  const name = device.label || device.device;
+  return [h('h2', { class: 'panel-title', text: name }),
+    section('Name', h('form', { class: 'edit', onsubmit: event => { event.preventDefault(); renameDevice(device, event.target.querySelector('input').value, panel); } },
+      h('input', { id: 'device-name', type: 'text', maxlength: '64', 'aria-label': 'Name', value: panel.nameDraft ?? device.label ?? '', placeholder: device.device, oninput: event => { panel.nameDraft = event.target.value; } }),
+      h('p', { class: 'meta', text: `ID: ${device.device} · never changes. Leave the name empty to show the ID.` }),
+      h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'btn', 'aria-disabled': saving }, 'Save name')))),
     section('Status', h('p', { class: 'val' }, h('i', { class: recentlySeen(device) ? 'dot on' : 'dot', 'aria-hidden': 'true' }), recentlySeen(device) ? 'Active' : 'Idle',
       h('span', { class: 'meta', text: device.last_seen_at ? `Last seen ${ago(device.last_seen_at)}` : 'Not seen since 2.9.0' }))),
     section('Connected', h('p', { class: 'val', text: fullDate(device.created_at) })),
@@ -970,7 +994,7 @@ function devicePanel(panel) {
     // repeated Enter on the opener cannot disconnect.
     panel.confirm
       ? h('div', { class: 'confirm', role: 'group', 'aria-labelledby': 'disconnect-question' },
-        h('p', { class: 'label', id: 'disconnect-question', tabindex: '-1', text: `Disconnect ${device.device}? Its agents stop reading and saving right away.` }),
+        h('p', { class: 'label', id: 'disconnect-question', tabindex: '-1', text: `Disconnect ${name}? Its agents stop reading and saving right away.` }),
         h('div', { class: 'actions' },
           h('button', { type: 'button', class: 'btn danger', 'data-key': `disconnect-confirm:${device.id}`, onclick: () => disconnectDevice(device) }, 'Disconnect'),
           h('button', { type: 'button', class: 'quiet muted', 'data-key': `disconnect-cancel:${device.id}`, onclick: () => { panel.confirm = false; render(); focusByKey(`disconnect-open:${device.id}`); } }, 'Cancel')))

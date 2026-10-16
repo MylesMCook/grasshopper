@@ -125,7 +125,9 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	if len(token) < 32 || strings.IndexFunc(token, unicode.IsSpace) >= 0 {
 		return nil, errors.New("token must contain at least 32 non-whitespace characters")
 	}
-	upgradeCtx, upgradeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// Startup schema checks wait for the single database connection; slow
+	// disks (CI, Windows) can take several seconds, and failing here stops the server.
+	upgradeCtx, upgradeCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer upgradeCancel()
 	if err := backend.Store.EnsureClientTokenSchema(upgradeCtx); err != nil {
 		return nil, err

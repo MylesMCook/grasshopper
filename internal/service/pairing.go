@@ -257,6 +257,26 @@ func (p *pairingManager) adminDevices(w http.ResponseWriter, r *http.Request) {
 		}
 		p.audit.event("device_revoked", r, auditFields{id: input.ID})
 		w.WriteHeader(http.StatusNoContent)
+	case http.MethodPatch:
+		var input struct {
+			Device string `json:"device"`
+			Label  string `json:"label"`
+		}
+		if readPairingJSON(w, r, &input) != nil || input.Device == "" {
+			http.Error(w, "invalid device", http.StatusBadRequest)
+			return
+		}
+		switch err := p.store.SetDeviceLabel(r.Context(), input.Device, input.Label); {
+		case err == nil:
+			p.audit.event("device_renamed", r, auditFields{})
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasPrefix(err.Error(), "device_not_found"):
+			http.Error(w, "device not found", http.StatusNotFound)
+		case strings.HasPrefix(err.Error(), "invalid device name"):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			http.Error(w, "rename unavailable", http.StatusServiceUnavailable)
+		}
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

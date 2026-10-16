@@ -234,6 +234,76 @@ test('Archived folds replaced handoffs so owner-archived memories stay visible',
   assert.ok(ui.rows('Old handoff 11') && ui.rows('Old handoff 12'), 'they expand on request');
 });
 
+test('the owner names a device; the name shows everywhere and the ID stays visible', async () => {
+  const ui = await signedIn();
+  ui.hashChange('#page=agents');
+  await flush();
+  ui.rows('mac').click();
+  await flush();
+  assert.match(ui.text(), /ID: mac/, 'the panel always shows the device ID');
+  const field = ui.document.getElementById('device-name');
+  field.value = 'Studio Mac';
+  field.dispatch('input');
+  // A routine refresh with a newer last-seen time must not wipe the typing.
+  for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 5000 || timer.delay === 30000) { ui.timers.delete(id); timer.fn(); }
+  await flush();
+  for (const request of ui.pending('/visualizer/api/pairings')) { request.done = true; request.reply(200, []); }
+  for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: new Date(Date.now() + 60000).toISOString() }]); }
+  await flush();
+  assert.equal(ui.document.getElementById('device-name').value, 'Studio Mac', 'typing survives a refresh');
+  ui.find('Save name').click();
+  await flush();
+  const patch = ui.requests.find(request => request.url === '/visualizer/api/devices' && request.method === 'PATCH');
+  assert.deepEqual(patch.body, { device: 'mac', label: 'Studio Mac' });
+  patch.done = true; patch.reply(204);
+  await flush();
+  // Before the device list refreshes, the field already holds the new name, so a second Save cannot undo it.
+  assert.equal(ui.document.getElementById('device-name').value, 'Studio Mac');
+  ui.find('Save name').click();
+  await flush();
+  const again = ui.requests.filter(request => request.method === 'PATCH').pop();
+  assert.equal(again.body.label, 'Studio Mac');
+  again.done = true; again.reply(204);
+  await flush();
+  for (const request of ui.pending('/visualizer/api/pairings')) { request.done = true; request.reply(200, []); }
+  for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, [{ id: 7, device: 'mac', label: 'Studio Mac', created_at: today, revoked_at: null, last_seen_at: today }]); }
+  await flush();
+  assert.ok(ui.rows('Studio Mac'), 'the Agents list shows the name');
+  assert.match(ui.app.querySelector('h2.panel-title').textContent, /Studio Mac/);
+});
+
+test('a rejected device name says why, and a finished rename never clears another device', async () => {
+  const devices = [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: today }, { id: 8, device: 'pc', created_at: today, revoked_at: null, last_seen_at: today }];
+  const ui = await signedIn();
+  for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, devices); }
+  ui.hashChange('#page=agents');
+  await flush();
+  for (const request of ui.pending('/visualizer/api/pairings')) { request.done = true; request.reply(200, []); }
+  for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, devices); }
+  await flush();
+  ui.rows('mac').click();
+  await flush();
+  const type = value => { const field = ui.document.getElementById('device-name'); field.value = value; field.dispatch('input'); };
+  type('x'.repeat(10));
+  ui.find('Save name').click();
+  await flush();
+  let patch = ui.requests.find(request => request.method === 'PATCH' && !request.done);
+  // The server sends plain text, which api() reads as { error }.
+  patch.done = true; patch.reply(400, { error: 'invalid device name: use up to 64 characters on one line' });
+  await flush();
+  assert.match(ui.announce.textContent, /up to 64 characters/, 'the reason is shown, not only Try again');
+  type('Studio Mac');
+  ui.find('Save name').click();
+  await flush();
+  patch = ui.requests.find(request => request.method === 'PATCH' && !request.done);
+  ui.rows('pc').click();
+  await flush();
+  type('Gaming PC');
+  patch.done = true; patch.reply(204);
+  await flush();
+  assert.equal(ui.document.getElementById('device-name').value, 'Gaming PC', "another device's typing survives");
+});
+
 test('Keep confirms at the shown revision and a retry reuses its request ID', async () => {
   const ui = await signedIn();
   ui.find('Keep Use gh for PR status').click();
