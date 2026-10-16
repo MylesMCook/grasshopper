@@ -525,3 +525,44 @@ test('the pressed segment keeps a contrasting focus ring in forced colors', () =
   const forced = css.slice(css.indexOf('@media (forced-colors:active)'));
   assert.match(forced, /\.seg button\[aria-pressed="true"\]:focus-visible\s*\{[^}]*outline-color:HighlightText/);
 });
+
+test('a save that finishes after opening another memory leaves focus where it is', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  ui.find('Save').click();
+  await flush();
+  ui.rows('Use gh for PR status').click();
+  await ui.answer('/visualizer/api/record', 200, projectRecords[1]);
+  const here = ui.find('Edit');
+  here.focus();
+  await ui.answer('/visualizer/api/update', 200, { id: 1, revision: 2 });
+  assert.equal(ui.document.activeElement?.textContent, 'Edit', 'the finished save did not pull focus to a panel title');
+  assert.match(ui.text(), /Use gh for PR status/);
+});
+
+test('leaving Undo while its request is pending keeps it available for a retry', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Archive').click();
+  await ui.answer('/visualizer/api/archive', 200, { id: 1, revision: 2 });
+  const waiting = () => [...ui.timers.values()].filter(timer => timer.delay === 10000).length;
+  const button = ui.find('Undo');
+  button.focus();
+  ui.app.querySelector('div.undo').dispatch('focusin');
+  button.click();
+  await flush();
+  ui.document.activeElement = null;
+  ui.app.querySelector('div.undo').dispatch('focusout');
+  assert.equal(waiting(), 0, 'no expiry while the Undo request is pending');
+  await ui.answer('/visualizer/api/archive', 500, { error: 'unavailable' });
+  assert.ok(ui.app.querySelector('div.undo'), 'Undo is still offered after the failure');
+  assert.equal(waiting(), 1, 'the timer restarts once the request fails and the bar is not held');
+});
+
+test('the selected row keeps a contrasting focus ring in forced colors', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
+  const forced = css.slice(css.indexOf('@media (forced-colors:active)'));
+  assert.match(forced, /\.row\[aria-current="true"\]:focus-visible\s*\{[^}]*outline-color:CanvasText/);
+});

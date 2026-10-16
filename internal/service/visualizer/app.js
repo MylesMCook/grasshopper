@@ -560,7 +560,8 @@ function saveEdit(panel) {
   panel.error = ''; panel.errorField = '';
   const expected = panel.theirs ? panel.theirs.revision : record.revision;
   return write('/visualizer/api/update', { id: record.id, expected_revision: expected, title, content, purpose: record.purpose }, {
-    onDone: () => { Object.assign(panel, { mode: 'view', draft: null, theirs: null }); say('Saved.'); render(); document.getElementById('panel-title')?.focus?.(); loadMemory(panel); },
+    // If another memory was opened while this saved, leave that panel and its focus alone.
+    onDone: () => { Object.assign(panel, { mode: 'view', draft: null, theirs: null }); say('Saved.'); if (state.panel !== panel) return; render(); document.getElementById('panel-title')?.focus?.(); loadMemory(panel); },
     onConflict: current => { if (current) Object.assign(panel, { mode: 'conflict', theirs: current }); }
   });
 }
@@ -580,6 +581,8 @@ function offerUndo(record, revision, verb) {
 // focus nor the pointer, so nobody loses it while reaching for it.
 function armUndo() {
   clearTimeout(timers.undo);
+  // While an Undo request is in flight the bar never expires.
+  if (state.undoBusy) return;
   const pending = state.undo;
   if (pending) timers.undo = setTimeout(() => { if (state.undo === pending) { state.undo = null; render(); } }, 10000);
 }
@@ -591,9 +594,13 @@ async function undo() {
   if (!pending) return;
   if (saving) { say('Another change is still saving. Try Undo again in a moment.'); return; }
   clearTimeout(timers.undo);
-  const done = await write('/visualizer/api/archive', { id: pending.record.id, expected_revision: pending.revision, archived: false }, {
-    onDone: () => { say(`Restored “${pending.record.title}”.`); if (state.undo === pending) state.undo = null; }
-  });
+  state.undoBusy = true;
+  let done;
+  try {
+    done = await write('/visualizer/api/archive', { id: pending.record.id, expected_revision: pending.revision, archived: false }, {
+      onDone: () => { say(`Restored “${pending.record.title}”.`); if (state.undo === pending) state.undo = null; }
+    });
+  } finally { state.undoBusy = false; }
   // On failure the Undo stays for another ten seconds so it can be retried.
   if (!done && state.undo === pending && !undoHeld()) armUndo();
 }
