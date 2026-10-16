@@ -1,20 +1,16 @@
 # Grasshopper status
 
-Current release: [2.9.5](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.5),
-a client-only release on the marketplace and usegrasshopper.com; the macOS
-service runs 2.9.2. Earlier release records are in Git history and
+Current release: [2.9.6](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.6),
+on the marketplace and usegrasshopper.com; the macOS service runs 2.9.6.
+Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-2.9.6 aligns the public site and memory view with the Grasshopper design system:
-the grasshopper favicon ([PR #54](https://github.com/MylesMCook/grasshopper/pull/54), merged),
-memory view and site accessibility fixes from the design audit
-([PR #55](https://github.com/MylesMCook/grasshopper/pull/55), merged), and Paper Mono as the
-mono face with design-system tokens on branch `design-system-alignment`.
-Owner: Claude Code, macOS. Checks, race tests and browser renders pass locally;
-CI, review, the tag and the site deploy are next. The service stays 2.9.2 until
-the owner approves a cutover.
+2.9.6 is released, deployed and running live: design-system alignment of the
+site and memory view (#54, #55, #56). Owner: Claude Code, macOS. Verification
+and rollback copies: [verification](docs/verification.md). Clients stay on their
+current versions until next used.
 
 ## Decisions
 
