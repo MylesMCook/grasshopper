@@ -12,6 +12,15 @@ site and memory view (#54, #55, #56). Owner: Claude Code, macOS. Verification
 and rollback copies: [verification](docs/verification.md). Clients stay on their
 current versions until next used.
 
+Branch `fix-audit-findings` (Claude Code, macOS, unreleased) fixes nine findings
+from the October 16 repo audit, each with a test that failed first: corrections
+keep title, tags and type; moving a keyed memory back revives it; duplicate text
+is a typed `duplicate_conflict`; paired tokens cannot list owner context;
+pairing checks the Host; sign-in evicts the oldest of 256 sessions; oversized
+AGENTS.md no longer drops hook context; `configure`/`setup` save the `/mcp`
+address; config writes refuse symlinks and fsync. It touches server, storage
+and client code, so its release needs the full rehearsal.
+
 ## Decisions
 
 - Small UI and copy polish ships in one batch at most weekly (see AGENTS.md).

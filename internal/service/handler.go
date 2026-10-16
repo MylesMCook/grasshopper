@@ -368,9 +368,10 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	})
 	audit.event("startup", nil, auditFields{})
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Browser owner APIs and MCP accept only local access or the explicitly
-		// configured private proxy. Never reflect the supplied Host in errors.
-		if r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/visualizer/api/") {
+		// Browser owner APIs, pairing and MCP accept only local access or the
+		// explicitly configured private proxy, so a rebound DNS name cannot reach
+		// them from a web page. Never reflect the supplied Host in errors.
+		if r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/visualizer/api/") || strings.HasPrefix(r.URL.Path, "/pair/") {
 			host := r.Host
 			if parsed, _, err := net.SplitHostPort(host); err == nil {
 				host = parsed
@@ -487,6 +488,11 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		// Context also accepts an owner browser session after an exact Origin
 		// check. MCP continues to require a bearer token.
 		authorized := bearerValid(r)
+		if r.URL.Path == "/visualizer/api/context" {
+			// The owner's list view names every device and archived memory;
+			// paired device bearers use MCP context instead.
+			authorized = masterBearerValid(r)
+		}
 		if !authorized && backend.Visualizer && r.URL.Path == "/visualizer/api/context" {
 			if cookie, err := r.Cookie(visualizerCookieName); err == nil && sessions.valid(r, cookie.Value, tokenHash[:]) {
 				if !originsMatch(r.Header.Get("Origin"), visualizerOrigin(r, backend.AllowedProxyHost)) {

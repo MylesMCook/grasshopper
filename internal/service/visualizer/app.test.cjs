@@ -504,6 +504,19 @@ test('a conflict after a focused Save moves focus somewhere visible', async () =
   for (let node = focused; node; node = node.parent) assert.equal(node.hidden, false, 'focus is not inside the hidden edit form');
 });
 
+test('saving text another memory already has keeps the edit and says why', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Use gh for PR status.';
+  ui.find('Save').click();
+  await flush();
+  await ui.answer('/visualizer/api/update', 409, { error: 'duplicate_conflict', current: projectRecords[0] });
+  assert.match(ui.announce.textContent, /Another memory already has this text/);
+  assert.equal(ui.document.getElementById('edit-text').value, 'Use gh for PR status.', 'the draft is kept');
+  assert.ok(!ui.app.querySelector('div.conflict'), 'no conflict view for a duplicate');
+});
+
 test('a failed Undo keeps waiting while it still has focus', async () => {
   const ui = await signedIn();
   await openSquash(ui);

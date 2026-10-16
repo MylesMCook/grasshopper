@@ -168,15 +168,23 @@ func connectionReport(path string) map[string]string {
 	return report("connected", connectedNextStep)
 }
 
-// privateFile writes beside the target and renames after closing, so a
-// failed write cannot leave a partial configuration at the target path.
+// privateFile writes beside the target and renames after syncing, so a
+// failed write cannot leave a partial configuration at the target path. It
+// refuses a symlink or other non-regular target rather than replacing it.
 func privateFile(path string, data []byte) error {
+	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file; edit it by hand or replace it with a regular file", path)
+	}
 	file, err := os.CreateTemp(filepath.Dir(path), ".grasshopper-*")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(file.Name())
 	if _, err := file.Write(data); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
 		file.Close()
 		return err
 	}
@@ -227,6 +235,10 @@ func configureWithReport(args []string, report bool) error {
 	policy, err := os.ReadFile(*policySource)
 	if err != nil {
 		return err
+	}
+	// A bare server or memory-view link saves as its /mcp endpoint.
+	if *url, _, err = client.NormalizeServerAddress(*url); err != nil {
+		return fmt.Errorf("client connection invalid: %w", err)
 	}
 	config := client.Config{URL: *url, TokenFile: *tokenFile, PolicyPath: filepath.Join(filepath.Dir(configPath), "AGENTS.md"), Device: *device}
 	if _, err := client.NewRemote(config); err != nil {

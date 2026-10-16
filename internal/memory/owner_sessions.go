@@ -26,7 +26,8 @@ func (w *Writer) EnsureOwnerSessionSchema(ctx context.Context) error {
 }
 
 // AddOwnerSession removes expired sessions and caps persistent state at 256
-// browsers. A full table fails sign-in explicitly rather than evicting sessions.
+// browsers. At the cap the session closest to expiry is dropped, so browsers
+// that never signed out cannot lock the owner out of signing in.
 func (w *Writer) AddOwnerSession(ctx context.Context, value string, expires time.Time) error {
 	tx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -41,7 +42,9 @@ func (w *Writer) AddOwnerSession(ctx context.Context, value string, expires time
 		return err
 	}
 	if count >= 256 {
-		return errors.New("owner session capacity reached")
+		if _, err := tx.ExecContext(ctx, `DELETE FROM owner_sessions WHERE rowid IN (SELECT rowid FROM owner_sessions ORDER BY expires_at LIMIT ?)`, count-255); err != nil {
+			return err
+		}
 	}
 	hash := sha256.Sum256([]byte(value))
 	if _, err := tx.ExecContext(ctx, `INSERT INTO owner_sessions(session_hash,expires_at) VALUES(?,?)`, hash[:], expires.Unix()); err != nil {

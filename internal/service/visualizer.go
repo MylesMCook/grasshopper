@@ -355,12 +355,9 @@ func visualizerUpdate(store *memory.Writer, save ownerSave, audit *auditLog) htt
 			input.Title, input.Content, input.Purpose = prior.Title, prior.Content, prior.Purpose
 			provenance = prior.Provenance
 		}
-		var title *string
-		if strings.TrimSpace(input.Title) != "" {
-			title = &input.Title
-		}
+		// The owner always sends the title; an empty one means derive it.
 		receipt, _, err := save(r.Context(), memory.WriteInput{
-			Scope: current.Scope, Content: input.Content, Title: title, Tags: &current.Tags, MemoryType: &current.MemoryType,
+			Scope: current.Scope, Content: input.Content, Title: &input.Title, Tags: &current.Tags, MemoryType: &current.MemoryType,
 			Purpose: input.Purpose, Confirmed: true, Provenance: provenance, RequestID: input.RequestID,
 			Key: current.Key, ID: &input.ID, ExpectedRevision: &input.ExpectedRevision,
 		})
@@ -468,6 +465,8 @@ func ownerWriteResult(w http.ResponseWriter, r *http.Request, store *memory.Writ
 		ownerConflict(w, r, store, id, "revision_conflict")
 	case strings.HasPrefix(err.Error(), "idempotency_conflict"):
 		ownerConflict(w, r, store, id, "idempotency_conflict")
+	case strings.HasPrefix(err.Error(), "duplicate_conflict"):
+		ownerConflict(w, r, store, id, "duplicate_conflict")
 	case strings.HasPrefix(err.Error(), "revision_not_found"):
 		http.Error(w, "revision not found", http.StatusNotFound)
 	case strings.HasPrefix(err.Error(), "memory_not_found"):
