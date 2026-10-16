@@ -25,15 +25,19 @@ let saving = false;
 
 // ---------- small helpers ----------
 
+// A busy control uses aria-disabled rather than disabled: it keeps keyboard
+// focus across redraws and simply gets no click handler.
 function h(tag, props, ...children) {
   const node = document.createElement(tag);
+  const busy = props?.['aria-disabled'] === true;
   for (const [key, value] of Object.entries(props || {})) {
     if (value === undefined || value === null || value === false) continue;
     if (key === 'class') node.className = value;
     else if (key === 'text') node.textContent = value;
+    else if (key === 'onclick' && busy) continue;
     else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
     else if (key === 'value' || key === 'checked' || key === 'disabled' || key === 'hidden') node[key] = value;
-    else node.setAttribute(key, value === true ? '' : String(value));
+    else node.setAttribute(key, value === true ? (key.startsWith('aria-') ? 'true' : '') : String(value));
   }
   for (const child of children.flat(Infinity)) if (child !== null && child !== undefined && child !== false) node.append(child);
   return node;
@@ -541,14 +545,23 @@ function saveEdit(panel) {
   const record = panel.record;
   const title = (document.getElementById('edit-title')?.value ?? panel.draft?.title ?? record.title).trim();
   const content = document.getElementById('edit-text')?.value ?? panel.draft?.content ?? record.content;
+  if (saving) { say('Another change is still saving.'); return false; }
   panel.draft = { title, content };
-  if (!content.trim()) { panel.error = 'Write some text before saving.'; render(); return false; }
   const bytes = text => new TextEncoder().encode(text).length;
-  if (bytes(title) > 512 || bytes(content) > 32768) { panel.error = 'Keep the title under 512 bytes and the text under 32,768.'; render(); return false; }
-  panel.error = '';
+  const invalid = !content.trim() ? ['edit-text', 'Write some text before saving.']
+    : bytes(title) > 512 ? ['edit-title', 'Keep the title under 512 bytes.']
+    : bytes(content) > 32768 ? ['edit-text', 'Keep the text under 32,768 bytes.'] : null;
+  if (invalid) {
+    [panel.errorField, panel.error] = invalid;
+    render();
+    document.getElementById(panel.errorField)?.focus?.();
+    return false;
+  }
+  panel.error = ''; panel.errorField = '';
   const expected = panel.theirs ? panel.theirs.revision : record.revision;
   return write('/visualizer/api/update', { id: record.id, expected_revision: expected, title, content, purpose: record.purpose }, {
-    onDone: () => { Object.assign(panel, { mode: 'view', draft: null, theirs: null }); say('Saved.'); loadMemory(panel); },
+    // If another memory was opened while this saved, leave that panel and its focus alone.
+    onDone: () => { Object.assign(panel, { mode: 'view', draft: null, theirs: null }); say('Saved.'); if (state.panel !== panel) return; render(); document.getElementById('panel-title')?.focus?.(); loadMemory(panel); },
     onConflict: current => { if (current) Object.assign(panel, { mode: 'conflict', theirs: current }); }
   });
 }
@@ -561,20 +574,35 @@ function move(record, project) {
 }
 
 function offerUndo(record, revision, verb) {
-  clearTimeout(timers.undo);
   state.undo = { record, revision, verb };
-  timers.undo = setTimeout(() => { state.undo = null; render(); }, 10000);
+  armUndo();
 }
+// Undo stays for ten seconds, counted only while it has neither keyboard
+// focus nor the pointer, so nobody loses it while reaching for it.
+function armUndo() {
+  clearTimeout(timers.undo);
+  // While an Undo request is in flight the bar never expires.
+  if (state.undoBusy) return;
+  const pending = state.undo;
+  if (pending) timers.undo = setTimeout(() => { if (state.undo === pending) { state.undo = null; render(); } }, 10000);
+}
+function holdUndo() { clearTimeout(timers.undo); timers.undo = null; }
+// True while the Undo bar has keyboard focus or the pointer.
+function undoHeld() { const bar = root.querySelector?.('.undo'); return Boolean(bar && (bar.contains?.(document.activeElement) || bar.matches?.(':hover'))); }
 async function undo() {
   const pending = state.undo;
   if (!pending) return;
   if (saving) { say('Another change is still saving. Try Undo again in a moment.'); return; }
   clearTimeout(timers.undo);
-  const done = await write('/visualizer/api/archive', { id: pending.record.id, expected_revision: pending.revision, archived: false }, {
-    onDone: () => { say(`Restored “${pending.record.title}”.`); if (state.undo === pending) state.undo = null; }
-  });
+  state.undoBusy = true;
+  let done;
+  try {
+    done = await write('/visualizer/api/archive', { id: pending.record.id, expected_revision: pending.revision, archived: false }, {
+      onDone: () => { say(`Restored “${pending.record.title}”.`); if (state.undo === pending) state.undo = null; }
+    });
+  } finally { state.undoBusy = false; }
   // On failure the Undo stays for another ten seconds so it can be retried.
-  if (!done && state.undo === pending) timers.undo = setTimeout(() => { if (state.undo === pending) { state.undo = null; render(); } }, 10000);
+  if (!done && state.undo === pending && !undoHeld()) armUndo();
 }
 
 async function decidePairing(request, decision) {
@@ -619,7 +647,7 @@ async function exportAll() {
 }
 
 async function copyText(text, button) {
-  try { await navigator.clipboard.writeText(text); button.textContent = 'Copied'; } catch { button.textContent = 'Select and copy'; }
+  try { await navigator.clipboard.writeText(text); button.textContent = 'Copied'; say('Copied.'); } catch { button.textContent = 'Select and copy'; say("Couldn't copy. Select the text and copy it."); }
   setTimeout(() => { button.textContent = 'Copy'; }, 1500);
 }
 
@@ -631,7 +659,7 @@ function currentPlace() {
 }
 
 function navButton(label, route, { current = false, count = '', extra = '' } = {}) {
-  return h('button', { type: 'button', class: `nav ${extra}`.trim(), 'aria-current': current ? 'page' : null, onclick: () => go(route) },
+  return h('button', { type: 'button', class: `nav ${extra}`.trim(), 'data-key': `nav:${routeHash(route)}`, 'aria-current': current ? 'page' : null, onclick: () => go(route) },
     h('span', { text: label }), count ? h('span', { class: 'count', text: count }) : null);
 }
 
@@ -642,16 +670,18 @@ function sidebar() {
   const review = state.index?.review || 0;
   const devices = state.devices.filter(device => !device.revoked_at);
   const waiting = state.pairings.filter(request => request.status === 'pending').length;
+  const active = devices.filter(device => recentlySeen(device)).length;
   return h('nav', { class: 'side', 'aria-label': 'Memory view' },
     h('p', { class: 'brand', text: 'GRASSHOPPER' }),
     review ? h('div', { class: 'nav-group' }, navButton('New', { page: 'new' }, { current: route.page === 'new', count: String(review), extra: 'new' })) : null,
     h('div', { class: 'nav-group' },
       navButton('All projects', { page: 'all' }, { current: route.page === 'all' }),
       shown.map(project => navButton(projectName(project), { page: 'project', project }, { current: route.page === 'project' && route.project === project })),
-      projects.length > 5 ? h('button', { type: 'button', class: 'nav', onclick: () => { state.moreProjects = !state.moreProjects; render(); } }, h('span', { text: state.moreProjects ? 'Fewer' : `${projects.length - 5} more` })) : null),
+      projects.length > 5 ? h('button', { type: 'button', class: 'nav', 'data-key': 'nav:more', onclick: () => { state.moreProjects = !state.moreProjects; render(); } }, h('span', { text: state.moreProjects ? 'Fewer' : `${projects.length - 5} more` })) : null),
     h('div', { class: 'nav-group side-foot' },
-      h('button', { type: 'button', class: 'nav', 'aria-current': route.page === 'agents' ? 'page' : null, onclick: () => go({ page: 'agents' }) },
-        h('span', {}, h('span', { class: 'dots', 'aria-hidden': 'true' }, devices.slice(0, 6).map(device => h('i', { class: recentlySeen(device) ? 'dot on' : 'dot' }))), 'Agents'),
+      h('button', { type: 'button', class: 'nav', 'data-key': 'nav:#page=agents', 'aria-current': route.page === 'agents' ? 'page' : null, onclick: () => go({ page: 'agents' }) },
+        h('span', {}, h('span', { class: 'dots', 'aria-hidden': 'true' }, devices.slice(0, 6).map(device => h('i', { class: recentlySeen(device) ? 'dot on' : 'dot' }))), 'Agents',
+          devices.length ? h('span', { class: 'visually-hidden', text: `, ${active} of ${devices.length} active` }) : null),
         waiting ? h('span', { class: 'count warn', text: `${waiting} waiting` }) : null),
       navButton('Archived', { page: 'archived' }, { current: route.page === 'archived' }),
       navButton('Settings', { page: 'settings' }, { current: route.page === 'settings' })));
@@ -674,8 +704,8 @@ function suggestionRow(record, kept) {
   const meta = [by(record), relDate(record.updated_at), similar ? 'similar' : ''].filter(Boolean).join(' · ');
   return h('div', { class: 'row-inline' }, row(record, { meta }),
     h('span', { class: 'actions tight' },
-      h('button', { type: 'button', class: 'quiet', disabled: saving, 'data-key': `keep:${record.id}`, 'aria-label': `Keep ${record.title}`, onclick: () => keep(record) }, 'Keep'),
-      h('button', { type: 'button', class: 'quiet muted', disabled: saving, 'data-key': `discard:${record.id}`, 'aria-label': `Discard ${record.title}`, onclick: () => discard(record) }, 'Discard')));
+      h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `keep:${record.id}`, 'aria-label': `Keep ${record.title}`, onclick: () => keep(record) }, 'Keep'),
+      h('button', { type: 'button', class: 'quiet muted', 'aria-disabled': saving, 'data-key': `discard:${record.id}`, 'aria-label': `Discard ${record.title}`, onclick: () => discard(record) }, 'Discard')));
 }
 
 function grouped(records) {
@@ -762,7 +792,7 @@ function newPage() {
     const kept = state.index?.records || [];
     return [h('div', { class: 'head' },
       h('div', {}, h('h1', { id: 'page-title', text: 'New' }), h('p', { class: 'meta sub', text: `${records.length} waiting · agents load them at startup only after you keep them` })),
-      h('button', { type: 'button', class: 'quiet', disabled: saving, onclick: keepAll }, 'Keep all')), banner(),
+      h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: keepAll }, 'Keep all')), banner(),
     [null, ...sortedProjects()].map(project => {
       const items = records.filter(record => (record.scope?.project || null) === project);
       return items.length ? section(projectName(project), items.map(record => suggestionRow(record, kept))) : null;
@@ -797,7 +827,7 @@ function archivedPage() {
       [null, ...sortedProjects()].map(project => {
         const items = records.filter(record => (record.scope?.project || null) === project);
         return items.length ? section(projectName(project), items.map(record => h('div', { class: 'row-inline' }, row(record, { meta: label(record) }),
-          h('button', { type: 'button', class: 'quiet', disabled: saving, 'data-key': `restore:${record.id}`, 'aria-label': `Restore ${record.title}`, onclick: () => restore(record) }, 'Restore')))) : null;
+          h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `restore:${record.id}`, 'aria-label': `Restore ${record.title}`, onclick: () => restore(record) }, 'Restore')))) : null;
       })];
   });
 }
@@ -820,7 +850,7 @@ function agentsPage() {
       h('span', { class: 'm', text: ago(device.last_seen_at) }))) : h('p', { class: 'meta empty', text: 'No agents connected yet.' })),
     section('Add one', h('div', { class: 'stack' },
       h('p', { class: 'label', text: 'In a new agent session, say:' }),
-      h('div', { class: 'strip' }, h('code', { text: 'Connect Grasshopper' }), h('button', { type: 'button', class: 'btn', onclick: event => copyText('Connect Grasshopper', event.currentTarget) }, 'Copy')),
+      h('div', { class: 'strip' }, h('code', { text: 'Connect Grasshopper' }), h('button', { type: 'button', class: 'btn', 'aria-label': 'Copy Connect Grasshopper', onclick: event => copyText('Connect Grasshopper', event.currentTarget) }, 'Copy')),
       h('a', { class: 'label', href: 'https://usegrasshopper.com/setup/', target: '_blank', rel: 'noopener' }, 'Setup guide')))];
 }
 
@@ -850,6 +880,11 @@ function settingsPage() {
       h('span', { class: 'meta', text: `${server.memories} ${server.memories === 1 ? 'memory' : 'memories'} · ${server.archived} archived · ${server.model ? 'meaning search on' : 'exact-word search only'}` }))) : null];
 }
 
+function invalidProps(panel, id) {
+  const invalid = Boolean(panel.error) && panel.errorField === id;
+  return { 'aria-invalid': invalid ? 'true' : 'false', 'aria-describedby': invalid ? 'edit-error' : null };
+}
+
 function editForm(panel) {
   const record = panel.record;
   const draft = panel.draft || { title: record.title, content: record.content };
@@ -859,15 +894,15 @@ function editForm(panel) {
     h('div', {}, h('p', { class: 'who', text: `${by(panel.theirs)} · ${relDate(panel.theirs.updated_at)}` }), h('p', { class: 'reading', text: panel.theirs.content })),
     h('div', {}, h('p', { class: 'who', text: 'Yours' }), h('p', { class: 'reading', text: draft.content })),
     h('div', { class: 'actions' },
-      h('button', { type: 'button', class: 'btn', disabled: saving, onclick: () => saveEdit(panel) }, 'Keep yours'),
+      h('button', { type: 'button', class: 'btn', 'aria-disabled': saving, onclick: () => saveEdit(panel) }, 'Keep yours'),
       h('button', { type: 'button', class: 'quiet', onclick: () => keepTheirs(panel) }, 'Keep theirs'))));
   out.push(h('form', { class: 'edit', hidden: panel.mode === 'conflict', onsubmit: event => { event.preventDefault(); saveEdit(panel); } },
-    h('label', { class: 'field' }, 'Title', h('input', { id: 'edit-title', type: 'text', value: draft.title })),
-    h('label', { class: 'field' }, 'Text', h('textarea', { id: 'edit-text', rows: '6', value: draft.content })),
-    panel.error ? h('p', { class: 'error', role: 'alert', text: panel.error }) : null,
+    h('label', { class: 'field' }, 'Title', h('input', { id: 'edit-title', type: 'text', value: draft.title, ...invalidProps(panel, 'edit-title') })),
+    h('label', { class: 'field' }, 'Text', h('textarea', { id: 'edit-text', rows: '6', value: draft.content, ...invalidProps(panel, 'edit-text') })),
+    panel.error ? h('p', { class: 'error', id: 'edit-error', role: 'alert', text: panel.error }) : null,
     h('div', { class: 'actions' },
-      h('button', { type: 'submit', class: 'btn', disabled: saving }, saving ? 'Saving…' : 'Save'),
-      h('button', { type: 'button', class: 'quiet muted', onclick: () => { if (!dirty() || confirmLeave()) { Object.assign(panel, { mode: 'view', error: '', draft: null }); render(); } } }, 'Cancel')),
+      h('button', { type: 'submit', class: 'btn', 'data-key': 'save', 'aria-disabled': saving }, saving ? 'Saving…' : 'Save'),
+      h('button', { type: 'button', class: 'quiet muted', onclick: () => { if (!dirty() || confirmLeave()) { Object.assign(panel, { mode: 'view', error: '', errorField: '', draft: null }); render(); } } }, 'Cancel')),
     h('p', { class: 'meta', text: 'Your edit becomes the current version. The old one stays in History.' })));
   return out;
 }
@@ -881,26 +916,26 @@ function memoryPanel(panel) {
   if (panel.mode === 'move') {
     return [h('h2', { class: 'panel-title', text: record.title }), h('p', { class: 'label', text: 'Move to' }),
       h('div', { class: 'picker' }, (record.scope?.project ? [null] : sortedProjects().filter(project => /^id:.+|^git:[^/]+\/.+/.test(project))).map(project =>
-        h('button', { type: 'button', class: 'pick', disabled: saving, onclick: () => move(record, project) }, projectName(project)))),
+        h('button', { type: 'button', class: 'pick', 'aria-disabled': saving, onclick: () => move(record, project) }, projectName(project)))),
       h('button', { type: 'button', class: 'quiet muted', onclick: () => { panel.mode = 'view'; render(); } }, 'Cancel')];
   }
   const isNew = !record.confirmed && record.purpose !== 'handoff' && !record.archived;
   const similar = isNew ? similarTo(record, [...(state.index?.records || []), ...(state.page?.records || [])]) : null;
   const movable = record.purpose !== 'handoff' && !record.scope?.device && !record.scope?.platform;
   const actions = record.archived
-    ? [h('button', { type: 'button', class: 'btn', disabled: saving, onclick: () => restore(record) }, 'Restore')]
+    ? [h('button', { type: 'button', class: 'btn', 'aria-disabled': saving, onclick: () => restore(record) }, 'Restore')]
     : isNew
-      ? [h('button', { type: 'button', class: 'btn', disabled: saving, onclick: () => keep(record) }, 'Keep'),
+      ? [h('button', { type: 'button', class: 'btn', 'aria-disabled': saving, onclick: () => keep(record) }, 'Keep'),
         h('button', { type: 'button', class: 'quiet', onclick: () => startEdit(panel) }, 'Edit'),
-        h('button', { type: 'button', class: 'quiet muted', disabled: saving, onclick: () => discard(record) }, 'Discard')]
+        h('button', { type: 'button', class: 'quiet muted', 'aria-disabled': saving, onclick: () => discard(record) }, 'Discard')]
       : [h('button', { type: 'button', class: 'quiet', onclick: () => startEdit(panel) }, 'Edit'),
         movable ? h('button', { type: 'button', class: 'quiet', onclick: () => { panel.mode = 'move'; render(); } }, 'Move to…') : null,
-        h('button', { type: 'button', class: 'quiet danger', disabled: saving, onclick: () => archive(record) }, 'Archive')];
+        h('button', { type: 'button', class: 'quiet danger', 'aria-disabled': saving, onclick: () => archive(record) }, 'Archive')];
   const source = record.provenance || {};
   return [h('h2', { class: 'panel-title', id: 'panel-title', tabindex: '-1', text: record.title || `Memory #${record.id}` }),
     h('p', { class: 'reading full', text: record.content }),
     h('div', { class: 'actions' }, actions),
-    similar ? section('Similar', [row(similar), h('button', { type: 'button', class: 'quiet', disabled: saving, onclick: () => keepAndReplace(record, similar) }, 'Keep and replace it')], 'warn') : null,
+    similar ? section('Similar', [row(similar), h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: () => keepAndReplace(record, similar) }, 'Keep and replace it')], 'warn') : null,
     section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), h('span', { class: 'meta', text: record.scope?.project || 'Every project' }))),
     section(isNew ? 'Noticed by' : 'Saved by', h('p', { class: 'val' }, by(record) === 'you' ? 'You' : by(record),
       h('span', { class: 'meta', text: [fullDate(record.updated_at), source.device].filter(Boolean).join(' · ') }),
@@ -910,7 +945,7 @@ function memoryPanel(panel) {
       h('div', { class: 'row static' }, h('span', { class: 't', text: record.title }), h('span', { class: 'm', text: `${by(record)} · ${relDate(record.updated_at)} · current` })),
       panel.history.map(older => h('div', { class: 'row-inline' },
         h('div', { class: 'row static' }, h('span', { class: 't muted', text: older.title || older.content.slice(0, 80) }), h('span', { class: 'm', text: `${by(older)} · ${relDate(older.updated_at)}` })),
-        record.archived ? null : h('button', { type: 'button', class: 'quiet', disabled: saving, 'data-key': `restore-version:${older.revision}`, 'aria-label': `Restore version from ${relDate(older.updated_at)}`, onclick: () => restoreRevision(record, older) }, 'Restore'))),
+        record.archived ? null : h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `restore-version:${older.revision}`, 'aria-label': `Restore version from ${relDate(older.updated_at)}`, onclick: () => restoreRevision(record, older) }, 'Restore'))),
       panel.olderFrom >= 1 ? h('button', { type: 'button', class: 'quiet more', onclick: () => loadHistory(panel, true) }, 'Show older versions') : null]) : null];
 }
 
@@ -921,12 +956,15 @@ function devicePanel(panel) {
     section('Status', h('p', { class: 'val' }, h('i', { class: recentlySeen(device) ? 'dot on' : 'dot', 'aria-hidden': 'true' }), recentlySeen(device) ? 'Active' : 'Idle',
       h('span', { class: 'meta', text: device.last_seen_at ? `Last seen ${ago(device.last_seen_at)}` : 'Not seen since 2.9.0' }))),
     section('Connected', h('p', { class: 'val', text: fullDate(device.created_at) })),
+    // Focus goes to the question, never the destructive button, so a held or
+    // repeated Enter on the opener cannot disconnect.
     panel.confirm
-      ? h('div', { class: 'confirm' }, h('p', { class: 'label', text: `Disconnect ${device.device}? Its agents stop reading and saving right away.` }),
+      ? h('div', { class: 'confirm', role: 'group', 'aria-labelledby': 'disconnect-question' },
+        h('p', { class: 'label', id: 'disconnect-question', tabindex: '-1', text: `Disconnect ${device.device}? Its agents stop reading and saving right away.` }),
         h('div', { class: 'actions' },
-          h('button', { type: 'button', class: 'btn danger', onclick: () => disconnectDevice(device) }, 'Disconnect'),
-          h('button', { type: 'button', class: 'quiet muted', onclick: () => { panel.confirm = false; render(); } }, 'Cancel')))
-      : h('div', { class: 'actions' }, h('button', { type: 'button', class: 'quiet danger', onclick: () => { panel.confirm = true; render(); } }, 'Disconnect'))];
+          h('button', { type: 'button', class: 'btn danger', 'data-key': `disconnect-confirm:${device.id}`, onclick: () => disconnectDevice(device) }, 'Disconnect'),
+          h('button', { type: 'button', class: 'quiet muted', 'data-key': `disconnect-cancel:${device.id}`, onclick: () => { panel.confirm = false; render(); focusByKey(`disconnect-open:${device.id}`); } }, 'Cancel')))
+      : h('div', { class: 'actions' }, h('button', { type: 'button', class: 'quiet danger', 'data-key': `disconnect-open:${device.id}`, onclick: () => { panel.confirm = true; render(); document.getElementById('disconnect-question')?.focus?.(); } }, 'Disconnect'))];
 }
 
 function startupPanel(panel) {
@@ -942,7 +980,7 @@ function startupPanel(panel) {
 function panelBody(panel) {
   const back = { memory: currentPlace(), device: 'Agents', startup: 'Settings' }[panel.type];
   return [h('div', { class: 'panel-top' },
-    h('button', { type: 'button', class: 'quiet back', onclick: closePanel }, `← ${back}`),
+    h('button', { type: 'button', class: 'quiet back', 'data-key': 'back', onclick: closePanel }, h('span', { 'aria-hidden': 'true', text: '←' }), ` ${back}`),
     h('button', { type: 'button', class: 'icon-btn close-x', 'aria-label': 'Close', onclick: closePanel }, '×')),
   panel.type === 'memory' ? memoryPanel(panel) : panel.type === 'device' ? devicePanel(panel) : startupPanel(panel)];
 }
@@ -958,14 +996,14 @@ narrowLayout?.addEventListener?.('change', () => { if (state.active) render(); }
 
 function signInView() {
   return h('main', { class: 'signin', id: 'main', tabindex: '-1' },
-    h('form', { class: 'signin-box', autocomplete: 'off', onsubmit: event => { event.preventDefault(); const input = event.target.querySelector('#token'); const token = input.value; input.value = ''; signIn(token); } },
+    h('form', { class: 'signin-box', autocomplete: 'off', onsubmit: event => { event.preventDefault(); if (state.signingIn) return; const input = event.target.querySelector('#token'); const token = input.value; input.value = ''; signIn(token); } },
       h('p', { class: 'brand', text: 'GRASSHOPPER' }),
       h('h1', { text: 'Sign in' }),
       state.route.connect ? h('p', { class: 'label', text: 'An agent is asking to connect. Sign in to check its code.' }) : null,
       state.signedOutNote ? h('p', { class: 'label muted', role: 'status', text: state.signedOutNote }) : null,
       h('label', { class: 'field' }, 'Access token', h('input', { id: 'token', type: 'password', autocomplete: 'off', spellcheck: 'false', 'aria-invalid': state.signInError ? 'true' : 'false', 'aria-describedby': state.signInError ? 'token-error' : null })),
       state.signInError ? h('p', { class: 'error', id: 'token-error', role: 'alert', text: state.signInError }) : null,
-      h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'btn', disabled: state.signingIn }, state.signingIn ? 'Signing in…' : 'Sign in')),
+      h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'btn', 'data-key': 'sign-in', 'aria-disabled': state.signingIn }, state.signingIn ? 'Signing in…' : 'Sign in')),
       h('details', {}, h('summary', {}, "Where's my token?"),
         h('dl', {},
           h('dt', { text: 'macOS' }), h('dd', { text: '~/Library/Application Support/Grasshopper/access-token' }),
@@ -988,6 +1026,25 @@ function mainView() {
   }
 }
 
+// Controls are matched across redraws by data-key first, so a control whose
+// label changes (Save to Saving…) or two that share a label (Disconnect and
+// its confirmation) never trade focus.
+function keyOf(node) { return node.getAttribute?.('data-key') || node.getAttribute?.('aria-label') || node.id || node.textContent; }
+function focusByKey(key) {
+  const candidates = [...(root.querySelectorAll?.('button, input, textarea, select, a, [tabindex]') || [])];
+  // An exact data-key wins; after that a native control wins over a focusable
+  // region (such as main, labelled with a memory title) that reads the same.
+  const native = node => /^(BUTTON|INPUT|TEXTAREA|SELECT|A)$/.test(node.tagName);
+  const match = candidates.find(node => node.getAttribute?.('data-key') === key)
+    || candidates.find(node => native(node) && keyOf(node) === key)
+    || candidates.find(node => keyOf(node) === key);
+  match?.focus?.();
+  // A match inside hidden content cannot take focus; report that so the caller falls back.
+  return Boolean(match) && document.activeElement === match;
+}
+// A redraw must not strand keyboard focus on a removed control.
+function restoreFocus(key) { if (!focusByKey(key)) document.getElementById('main')?.focus?.(); }
+
 function render() {
   if (state.checking) return;
   // Keep typing in the edit form across redraws.
@@ -995,10 +1052,9 @@ function render() {
     state.panel.draft = { title: document.getElementById('edit-title').value, content: document.getElementById('edit-text').value };
   }
   const focused = document.activeElement;
-  const keyOf = node => node.getAttribute?.('data-key') || node.getAttribute?.('aria-label') || node.id || node.textContent;
   const focusKey = focused && focused !== document.body ? keyOf(focused) : '';
   document.title = state.active ? `${state.panel?.record?.title || currentPlace()} · Grasshopper` : 'Grasshopper';
-  if (!state.active) { root.replaceChildren(signInView()); return; }
+  if (!state.active) { root.replaceChildren(signInView()); if (focusKey) restoreFocus(focusKey); return; }
   // Scrolling areas keep their position across a redraw.
   const scrolled = ['side', 'panel'].map(name => [name, root.querySelector?.(`.${name}`)?.scrollTop || 0]);
   const narrow = Boolean(narrowLayout?.matches) && Boolean(state.panel);
@@ -1006,20 +1062,20 @@ function render() {
   const review = state.index?.review || 0;
   root.replaceChildren(...[h('div', { class: `app${panel ? ' has-panel' : ''}${state.menu ? ' menu-open' : ''}` },
     h('header', { class: 'topbar' }, h('span', { class: 'brand', text: 'GRASSHOPPER' }),
-      h('button', { type: 'button', class: 'menu-btn', 'aria-expanded': String(state.menu), onclick: () => { state.menu = !state.menu; render(); } },
-        `${currentPlace()} ${state.menu ? '▴' : '▾'}`, review ? h('span', { class: 'warn', text: ` · ${review} new` }) : null)),
+      h('button', { type: 'button', class: 'menu-btn', 'data-key': 'menu', 'aria-expanded': String(state.menu), onclick: () => { state.menu = !state.menu; render(); } },
+        `${currentPlace()} `, h('span', { 'aria-hidden': 'true', text: state.menu ? '▴' : '▾' }), review ? h('span', { class: 'warn', text: ` · ${review} new` }) : null)),
     sidebar(),
     narrow
       ? h('main', { id: 'main', tabindex: '-1', class: 'panel panel-main', 'aria-label': state.panel.record?.title || 'Memory' }, panelBody(state.panel))
       : h('main', { id: 'main', tabindex: '-1', class: state.offline ? 'offline' : null }, h('div', { class: 'page' }, mainView())),
     panel),
-  state.undo ? h('div', { class: 'undo', role: 'status' }, h('span', { text: `${state.undo.verb} “${state.undo.record.title}”` }), h('button', { type: 'button', class: 'quiet', onclick: undo }, 'Undo')) : null].filter(Boolean));
+  state.undo ? h('div', { class: 'undo', role: 'status',
+    onfocusin: holdUndo, onmouseenter: holdUndo,
+    onfocusout: event => { if (!event.currentTarget.matches?.(':hover')) armUndo(); },
+    onmouseleave: event => { if (!event.currentTarget.contains?.(document.activeElement)) armUndo(); } },
+  h('span', { text: `${state.undo.verb} “${state.undo.record.title}”` }), h('button', { type: 'button', class: 'quiet', 'data-key': 'undo', onclick: undo }, 'Undo')) : null].filter(Boolean));
   for (const [name, top] of scrolled) { const node = root.querySelector?.(`.${name}`); if (node && top) node.scrollTop = top; }
-  // A redraw must not strand keyboard focus on a removed control.
-  if (focusKey) {
-    const match = [...(root.querySelectorAll?.('button, input, textarea, select, a') || [])].find(node => keyOf(node) === focusKey);
-    (match || document.getElementById('main'))?.focus?.();
-  }
+  if (focusKey) restoreFocus(focusKey);
   // An approval link moves focus to its request once, not on every redraw.
   if (state.route.connect && !state.approvalFocused) {
     const request = document.getElementById('focused-request');

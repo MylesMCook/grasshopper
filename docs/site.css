@@ -114,3 +114,4 @@ details code,.note code { background:var(--surface); padding:1px 5px; }
   .top nav { gap:var(--space-1) var(--space-3); margin-left:0; }
   .command pre { white-space:pre-wrap; word-break:break-all; }
 }
+@media (forced-colors:active) { .command { border:1px solid CanvasText; } }

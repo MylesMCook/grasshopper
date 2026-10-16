@@ -29,14 +29,16 @@ class Node {
     // As in a browser, a submit button submits its form.
     if (this.tagName === 'BUTTON' && this.attributes.type === 'submit') for (let node = this.parent; node; node = node.parent) if (node.tagName === 'FORM') { node.dispatch('submit'); break; }
   }
-  focus() { this.ownerDocument.activeElement = this; }
+  // As in a browser, a disabled or hidden control cannot take focus.
+  focus() { for (let node = this; node; node = node.parent) if (node.hidden) return; if (!this.disabled) this.ownerDocument.activeElement = this; }
   contains(node) { for (let current = node; current; current = current.parent) if (current === this) return true; return false; }
   *walk() { for (const child of this.children) if (typeof child !== 'string') { yield child; yield* child.walk(); } }
   matches(selector) {
     return selector.split(',').map(part => part.trim()).some(part => {
-      const match = part.match(/^([a-z0-9]*)(#[\w-]+)?((?:\.[\w-]+)*)$/i);
+      const match = part.match(/^([a-z0-9]*)(#[\w-]+)?((?:\.[\w-]+)*)(?:\[([\w-]+)\])?$/i);
       if (!match) return false;
-      const [, tag, id, classes] = match;
+      const [, tag, id, classes, attribute] = match;
+      if (attribute && !(attribute in this.attributes)) return false;
       if (tag && this.tagName !== tag.toUpperCase()) return false;
       if (id && this.id !== id.slice(1)) return false;
       const own = this.className.split(/\s+/);
@@ -52,7 +54,7 @@ function response(status, data, headers = {}) {
 }
 async function flush() { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); }
 
-function setup({ hash = '', session = false, hidden = false } = {}) {
+function setup({ hash = '', session = false, hidden = false, narrow = false } = {}) {
   const requests = [];
   const timers = new Map();
   let timerID = 0;
@@ -77,7 +79,9 @@ function setup({ hash = '', session = false, hidden = false } = {}) {
       addEventListener(name, action) { (windowListeners[name] ||= []).push(action); },
       confirm: () => true, getSelection: () => null,
       history: { pushState(_s, _t, url) { history.push(url); location.hash = url.startsWith('#') ? url : ''; }, replaceState(_s, _t, url) { location.hash = url.startsWith('#') ? url : ''; } },
-      grasshopperTheme: { saved: () => 'system', set() {} }
+      grasshopperTheme: { saved: () => 'system', set() {} },
+      // narrow: true lays out as a laptop, where the open memory replaces the list.
+      matchMedia: () => ({ matches: narrow, addEventListener() {} })
     },
     navigator: { clipboard: { writeText: async () => {} } },
     setTimeout(fn, delay) { timers.set(++timerID, { fn, delay }); return timerID; },
@@ -125,8 +129,8 @@ const projectRecords = [
 ];
 
 // An active session on a project page, with its first loads answered.
-async function signedIn() {
-  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+async function signedIn(options = {}) {
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}`, ...options });
   await flush();
   await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT], review_count: 1, server: { version: '2.9.0', memories: 4, archived: 0 }, total: 4 }, { ETag: '"index-1"' });
   await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT], total: 4 }, { ETag: '"page-1"' });
@@ -134,6 +138,7 @@ async function signedIn() {
   await ui.answer('/visualizer/api/devices', 200, [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: today }]);
   return ui;
 }
+function agentsLink(ui) { return ui.app.querySelectorAll('button.nav').find(node => node.getAttribute('data-key') === 'nav:#page=agents'); }
 async function openSquash(ui) {
   ui.rows('Squash merge only').click();
   await ui.answer('/visualizer/api/record', 200, projectRecords[0]);
@@ -158,6 +163,11 @@ test('signing in rejects an empty token, reports a wrong one, and sends the bear
   assert.equal(ui.app.querySelector('#token').value, '', 'the field never keeps a token');
   ui.app.querySelector('#token').value = TOKEN;
   ui.app.querySelector('form.signin-box').dispatch('submit');
+  await flush();
+  ui.app.querySelector('#token').value = 'typed-while-signing-in';
+  ui.app.querySelector('form.signin-box').dispatch('submit');
+  assert.equal(ui.app.querySelector('#token').value, 'typed-while-signing-in', 'a second submit while signing in is ignored');
+  assert.equal(ui.pending('/visualizer/api/session').length, 1);
   const sent = await ui.answer('/visualizer/api/session', 200, {});
   assert.equal(sent.headers.Authorization, `Bearer ${TOKEN}`);
   assert.ok(ui.pending('/visualizer/api/context').length, 'signing in loads memories');
@@ -289,7 +299,7 @@ test('an approval link opens Agents, focuses its request once, and approves with
 
 test('agents show when each machine was last seen', async () => {
   const ui = await signedIn();
-  ui.find('Agents').click();
+  agentsLink(ui).click();
   await flush();
   assert.match(ui.text(), /macactive now/);
 });
@@ -374,4 +384,211 @@ test('a rate-limited sign-in says to wait', async () => {
   ui.app.querySelector('form.signin-box').dispatch('submit');
   await ui.answer('/visualizer/api/session', 429);
   assert.match(ui.text(), /Too many attempts\. Wait five minutes/);
+});
+
+test('opening the Disconnect confirmation never puts focus on the destructive button', async () => {
+  const ui = await signedIn();
+  agentsLink(ui).click();
+  await flush();
+  ui.rows('mac').click();
+  const opener = ui.app.querySelector('aside.panel').querySelectorAll('button').find(node => node.textContent === 'Disconnect');
+  opener.focus();
+  opener.click();
+  const confirm = ui.app.querySelectorAll('button.btn').find(node => node.textContent === 'Disconnect');
+  assert.ok(confirm, 'the confirmation shows its Disconnect button');
+  assert.notEqual(ui.document.activeElement, confirm, 'a held Enter must not disconnect');
+  assert.equal(ui.document.activeElement?.id, 'disconnect-question', 'focus moves to the question');
+  for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 5000) { ui.timers.delete(id); timer.fn(); }
+  await ui.answer('/visualizer/api/pairings', 200, []);
+  await ui.answer('/visualizer/api/devices', 200, [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: null }]);
+  assert.equal(ui.document.activeElement?.id, 'disconnect-question', 'a poll redraw keeps focus on the question');
+  ui.find('Cancel').click();
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'disconnect-open:7', 'Cancel returns focus to the opener');
+  assert.equal(ui.pending('/visualizer/api/devices').filter(request => request.method === 'DELETE').length, 0);
+});
+
+test('a focused Save keeps focus while saving and cannot be pressed twice', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  const save = ui.find('Save');
+  save.focus();
+  save.click();
+  await flush();
+  const focused = ui.document.activeElement;
+  assert.equal(focused?.getAttribute('data-key'), 'save', 'focus stays on Save while it reads Saving…');
+  assert.equal(focused.textContent, 'Saving…');
+  assert.equal(focused.getAttribute('aria-disabled'), 'true');
+  focused.click();
+  await flush();
+  assert.equal(ui.requests.filter(request => request.url === '/visualizer/api/update').length, 1, 'one save, not two');
+  await ui.answer('/visualizer/api/update', 200, { id: 1, revision: 2 });
+  assert.equal(ui.document.activeElement?.id, 'panel-title', 'a finished save leaves focus in the panel');
+});
+
+test('the Agents link says how many agents are active', async () => {
+  const ui = await signedIn();
+  const agents = ui.app.querySelectorAll('button.nav').find(node => node.textContent.startsWith('Agents'));
+  assert.match(agents.textContent, /Agents, 1 of 1 active/);
+  assert.equal(agents.getAttribute('data-key'), 'nav:#page=agents');
+});
+
+test('an edit error is tied to its field and takes focus', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = '   ';
+  ui.find('Save').click();
+  const error = ui.document.getElementById('edit-error');
+  assert.equal(error?.textContent, 'Write some text before saving.');
+  const field = ui.document.getElementById('edit-text');
+  assert.equal(field.getAttribute('aria-invalid'), 'true');
+  assert.equal(field.getAttribute('aria-describedby'), 'edit-error');
+  assert.equal(ui.document.getElementById('edit-title').getAttribute('aria-invalid'), 'false');
+  assert.equal(ui.document.activeElement, field);
+});
+
+test('Undo waits while it has focus or the pointer, then times out again', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Archive').click();
+  await ui.answer('/visualizer/api/archive', 200, { id: 1, revision: 2 });
+  const waiting = () => [...ui.timers.values()].filter(timer => timer.delay === 10000).length;
+  assert.equal(waiting(), 1);
+  const bar = ui.app.querySelector('div.undo');
+  bar.dispatch('focusin');
+  assert.equal(waiting(), 0, 'focus pauses the timer');
+  bar.dispatch('focusout');
+  assert.equal(waiting(), 1, 'leaving restarts it');
+  bar.dispatch('mouseenter');
+  assert.equal(waiting(), 0, 'hover pauses the timer');
+  bar.dispatch('mouseleave');
+  assert.equal(waiting(), 1);
+});
+
+test('decorative arrows are hidden from assistive technology', async () => {
+  const ui = await signedIn();
+  const menu = ui.app.querySelector('button.menu-btn');
+  assert.ok(menu.querySelectorAll('span').some(node => node.getAttribute('aria-hidden') === 'true' && node.textContent === '▾'));
+  await openSquash(ui);
+  const back = ui.app.querySelector('button.back');
+  assert.ok(back.querySelectorAll('span').some(node => node.getAttribute('aria-hidden') === 'true' && node.textContent === '←'));
+  agentsLink(ui).click();
+  await flush();
+  assert.ok(ui.find('Copy Connect Grasshopper'), 'Copy names what it copies');
+});
+
+test('focus rings stay visible on filled controls and in forced colors', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
+  assert.match(css, /\.undo :focus-visible\s*\{[^}]*outline-color:var\(--on-primary\)/);
+  assert.match(css, /\.seg button\[aria-pressed="true"\]:focus-visible\s*\{[^}]*outline-color:var\(--on-primary\)/);
+  const forced = css.slice(css.indexOf('@media (forced-colors:active)'));
+  assert.ok(forced.length < css.length, 'a forced-colors block exists');
+  for (const selector of ['.row[aria-current="true"]', '.seg button[aria-pressed="true"]', '.undo', '.confirm', '.conflict', '.strip', '.dot']) assert.ok(forced.includes(selector), selector);
+});
+
+test('a conflict after a focused Save moves focus somewhere visible', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  const save = ui.find('Save');
+  save.focus();
+  save.click();
+  await flush();
+  const theirs = { ...projectRecords[0], revision: 2, content: 'Squash or rebase.', provenance: { harness: 'codex-desktop', device: 'mac', source: 'x' } };
+  await ui.answer('/visualizer/api/update', 409, { error: 'revision_conflict', current: theirs });
+  const focused = ui.document.activeElement;
+  assert.ok(focused && [...ui.app.walk()].includes(focused), 'focus is on a control in the current page, not a replaced one');
+  for (let node = focused; node; node = node.parent) assert.equal(node.hidden, false, 'focus is not inside the hidden edit form');
+});
+
+test('a failed Undo keeps waiting while it still has focus', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Archive').click();
+  await ui.answer('/visualizer/api/archive', 200, { id: 1, revision: 2 });
+  const waiting = () => [...ui.timers.values()].filter(timer => timer.delay === 10000).length;
+  const button = ui.find('Undo');
+  button.focus();
+  ui.app.querySelector('div.undo').dispatch('focusin');
+  assert.equal(waiting(), 0);
+  button.click();
+  await flush();
+  await ui.answer('/visualizer/api/archive', 500, { error: 'unavailable' });
+  assert.ok(ui.app.querySelector('div.undo'), 'Undo is still offered');
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'undo', 'focus is back on Undo');
+  assert.equal(waiting(), 0, 'the timer stays paused while Undo has focus');
+});
+
+test('the pressed segment keeps a contrasting focus ring in forced colors', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
+  const forced = css.slice(css.indexOf('@media (forced-colors:active)'));
+  assert.match(forced, /\.seg button\[aria-pressed="true"\]:focus-visible\s*\{[^}]*outline-color:HighlightText/);
+});
+
+test('a save that finishes after opening another memory leaves focus where it is', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  ui.find('Save').click();
+  await flush();
+  ui.rows('Use gh for PR status').click();
+  await ui.answer('/visualizer/api/record', 200, projectRecords[1]);
+  const here = ui.find('Edit');
+  here.focus();
+  await ui.answer('/visualizer/api/update', 200, { id: 1, revision: 2 });
+  assert.equal(ui.document.activeElement?.textContent, 'Edit', 'the finished save did not pull focus to a panel title');
+  assert.match(ui.text(), /Use gh for PR status/);
+});
+
+test('leaving Undo while its request is pending keeps it available for a retry', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Archive').click();
+  await ui.answer('/visualizer/api/archive', 200, { id: 1, revision: 2 });
+  const waiting = () => [...ui.timers.values()].filter(timer => timer.delay === 10000).length;
+  const button = ui.find('Undo');
+  button.focus();
+  ui.app.querySelector('div.undo').dispatch('focusin');
+  button.click();
+  await flush();
+  ui.document.activeElement = null;
+  ui.app.querySelector('div.undo').dispatch('focusout');
+  assert.equal(waiting(), 0, 'no expiry while the Undo request is pending');
+  await ui.answer('/visualizer/api/archive', 500, { error: 'unavailable' });
+  assert.ok(ui.app.querySelector('div.undo'), 'Undo is still offered after the failure');
+  assert.equal(waiting(), 1, 'the timer restarts once the request fails and the bar is not held');
+});
+
+test('the selected row keeps a contrasting focus ring in forced colors', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
+  const forced = css.slice(css.indexOf('@media (forced-colors:active)'));
+  assert.match(forced, /\.row\[aria-current="true"\]:focus-visible\s*\{[^}]*outline-color:CanvasText/);
+});
+
+test('focus restore prefers an exact data-key, even when a title matches it', async () => {
+  const ui = await signedIn({ narrow: true });
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], title: 'save' });
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  const save = ui.find('Save');
+  save.focus();
+  save.click();
+  await flush();
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'save', 'focus stays on Save, not the panel named "save"');
+});
+
+test('focus restore prefers a native control over a region that shares its name', async () => {
+  const ui = await signedIn({ narrow: true });
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], title: 'Edit' });
+  ui.app.querySelectorAll('button').find(node => node.textContent === 'Edit').focus();
+  vm.runInContext('render()', ui.sandbox);
+  const focused = ui.document.activeElement;
+  assert.equal(focused?.tagName, 'BUTTON', 'focus stays on a button, not the region titled "Edit"');
+  assert.equal(focused.textContent, 'Edit');
 });

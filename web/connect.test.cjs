@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const vm = require('node:vm');
 
 function submit(value, saved = null, send = true, blockedStorage = false) {
-  const address = { value, focus() { this.focused = true; } };
+  const address = { value, attributes: {}, focus() { this.focused = true; }, setAttribute(name, val) { this.attributes[name] = String(val); }, removeAttribute(name) { delete this.attributes[name]; } };
   let forget;
   let removed;
   const error = { hidden: true, textContent: '' };
@@ -61,4 +61,14 @@ test('Forget this address removes remembered state, clears errors and focuses th
 
 test('Forget this address still clears the visible field when storage is blocked', () => {
   const ui=submit('', 'https://synthetic.example.com', false, true);ui.forget();assert.equal(ui.address.value,'');assert.equal(ui.error.hidden,true);assert.equal(ui.address.focused,true);
+});
+
+test('an address error is tied to the field and moves focus to it', () => {
+  const ui = submit('not a url');
+  assert.equal(ui.address.attributes['aria-invalid'], 'true');
+  assert.equal(ui.address.attributes['aria-describedby'], 'server-error');
+  assert.equal(ui.address.focused, true);
+  ui.forget();
+  assert.equal(ui.address.attributes['aria-invalid'], undefined);
+  assert.equal(ui.address.attributes['aria-describedby'], undefined);
 });

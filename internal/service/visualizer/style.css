@@ -28,7 +28,7 @@ button { cursor:pointer; }
 .quiet { min-height:44px; padding:var(--space-2) 0; border:0; background:transparent; color:var(--link); text-decoration:underline; text-underline-offset:3px; font-size:var(--text-label); }
 .quiet.muted { color:var(--muted); }
 .quiet.danger { color:var(--danger); }
-button:disabled { opacity:.5; cursor:default; }
+button:disabled,button[aria-disabled="true"] { opacity:.5; cursor:default; }
 input[type="text"],input[type="password"],input[type="search"],textarea,select { width:100%; min-height:44px; padding:var(--space-2) var(--space-3); background:var(--background); border:1px solid var(--border); }
 input::placeholder,textarea::placeholder { color:var(--muted); opacity:1; }
 textarea { resize:vertical; font:var(--text-reading)/1.55 Newsreader,Georgia,serif; }
@@ -97,6 +97,9 @@ button.row:hover .t { text-decoration:underline; text-underline-offset:3px; text
 .seg { display:inline-flex; border:1px solid var(--border); margin-top:6px; }
 .seg button { min-height:44px; padding:0 var(--space-3); border:0; background:transparent; font-size:var(--text-label); color:var(--muted); border-radius:0; }
 .seg button[aria-pressed="true"] { background:var(--primary); color:var(--on-primary); }
+/* Segments touch, so their ring sits inside; on the filled one it uses the fill's text color. */
+.seg button:focus-visible { outline-offset:-6px; }
+.seg button[aria-pressed="true"]:focus-visible { outline-color:var(--on-primary); }
 .pairing { display:grid; gap:var(--space-2); padding:var(--space-2) 0; }
 .pairing.focused { outline:2px solid var(--focus); outline-offset:6px; }
 .code { font-size:var(--text-title); letter-spacing:.14em; font-variant-numeric:tabular-nums; }
@@ -118,6 +121,10 @@ button.row:hover .t { text-decoration:underline; text-underline-offset:3px; text
 .who { font-size:var(--text-meta); color:var(--muted); margin-bottom:var(--space-1); }
 .undo { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(var(--space-4) + env(safe-area-inset-bottom,0px)); display:flex; align-items:center; gap:var(--space-4); padding:var(--space-1) var(--space-2) var(--space-1) var(--space-3); background:var(--primary); color:var(--on-primary); font-size:var(--text-label); max-width:calc(100% - 32px); z-index:5; }
 .undo .quiet { color:var(--on-primary); }
+/* The ring stays inside the filled bar, in the bar's text color. */
+.undo :focus-visible { outline-color:var(--on-primary); outline-offset:0; }
+/* While Undo shows, focused rows scroll clear of it. */
+html:has(.undo),.app:has(~ .undo) .panel,.app:has(~ .undo) .side { scroll-padding-bottom:calc(var(--space-6) + var(--space-4) + env(safe-area-inset-bottom,0px)); }
 
 /* Sign in. */
 .signin { min-height:100vh; display:grid; place-items:center; padding-inline:var(--space-3); }
@@ -151,3 +158,14 @@ button.row:hover .t { text-decoration:underline; text-underline-offset:3px; text
   .search { width:100%; }
 }
 @media (prefers-reduced-motion:no-preference) { .row,.pick { transition:background-color .12s; } }
+/* Forced colors drop fills, so selection, pressed state, panels and status
+   get system colors and borders instead. */
+@media (forced-colors:active) {
+  .row[aria-current="true"],.seg button[aria-pressed="true"] { forced-color-adjust:none; background:Highlight; color:HighlightText; }
+  .row[aria-current="true"] .t,.row[aria-current="true"] .m { color:HighlightText; }
+  .seg button[aria-pressed="true"]:focus-visible { outline-color:HighlightText; }
+  .row[aria-current="true"]:focus-visible { outline-color:CanvasText; }
+  .undo,.confirm,.conflict,.strip { border:1px solid CanvasText; }
+  .dot { forced-color-adjust:none; background:Canvas; border:1px solid CanvasText; }
+  .dot.on { background:CanvasText; }
+}
