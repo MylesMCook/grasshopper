@@ -1,19 +1,18 @@
 # Grasshopper status
 
-Current release: [2.9.7](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.7),
-on the marketplace and usegrasshopper.com; the macOS service runs 2.9.7.
+Current release: [2.9.8](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.8),
+on the marketplace and usegrasshopper.com; the macOS service runs 2.9.8.
 Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-2.9.8 (in release; Claude Code, macOS, branch `release-2.9.8`) ships memory view
-improvements: project pages show what agents start with and link the startup
-preview (#61), agent names read as products, Archived folds replaced handoffs,
-a sidebar hairline under All projects, and owner-chosen device names that never
-change device IDs (#62, #63). Device names add a `device_labels` table, so the
-release needs the full rehearsal; live cutover waits for owner approval. 2.9.7
-runs live. Remaining audit findings 10 to 20 are not started.
+2.9.8 is released, deployed and running live: memory view project pages show
+what agents start with, device names, folded replaced handoffs (#61, #62, #63).
+Owner: Claude Code, macOS. Mac, Windows PC and Windows work machine connectors
+are on 2.9.8; the Linux machine updates when next used. Verification and
+rollback copies: [verification](docs/verification.md). Remaining audit findings
+10 to 20 are not started.
 
 ## Decisions
 
