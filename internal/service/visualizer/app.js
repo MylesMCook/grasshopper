@@ -719,7 +719,7 @@ function sidebar() {
 
 function row(record, { meta } = {}) {
   const only = [record.scope?.device && `${deviceName(record.scope.device)} only`, record.scope?.platform && `${PLATFORM[record.scope.platform] || record.scope.platform} only`].filter(Boolean).join(' · ');
-  const right = meta ?? [by(record), relDate(record.updated_at), only].filter(Boolean).join(' · ');
+  const right = meta ?? [record.purpose, by(record), relDate(record.updated_at), only].filter(Boolean).join(' · ');
   return h('button', { type: 'button', class: `row${record.purpose === 'handoff' ? ' handoff' : ''}`, 'data-key': `open:${record.id}`, 'aria-current': state.panel?.id === record.id ? 'true' : null,
     title: fullDate(record.updated_at), onclick: () => openMemory(record.id) },
   h('span', { class: 't', text: record.title || `Memory #${record.id}` }), h('span', { class: 'm', text: right }));
@@ -947,20 +947,6 @@ function editForm(panel) {
 
 function startEdit(panel) { panel.mode = 'edit'; render(); document.getElementById('edit-text')?.focus?.(); }
 
-// One plain sentence: who saved it, what it is, and when agents use it.
-function aboutMemory(record) {
-  const rel = relDate(record.updated_at);
-  const when = rel === 'today' || rel === 'yesterday' ? rel : `on ${rel}`;
-  const who = by(record) === 'you' ? 'You' : by(record);
-  const only = [record.scope?.device && deviceName(record.scope.device), record.scope?.platform && (PLATFORM[record.scope.platform] || record.scope.platform)].filter(Boolean).join(' and ');
-  const where = `${record.scope?.project ? projectName(record.scope.project) : 'any project'}${only ? `, on ${only} only` : ''}`;
-  if (record.archived) return `Archived ${when}. Agents don't load it at startup.`;
-  if (record.purpose === 'handoff') return `Where ${who === 'You' ? 'you' : who} left off in ${where}, ${rel}. The next session there can start with it.`;
-  if (!record.confirmed) return `${who} noticed this ${when}. Agents don't load it until you keep it.`;
-  const kind = ['preference', 'decision', 'lesson'].includes(record.purpose) ? record.purpose : 'memory';
-  return `${who} saved this ${kind} ${when}. Agents can load it when a session starts in ${where}.`;
-}
-
 function memoryPanel(panel) {
   const record = panel.record;
   if (!record) return h('p', { class: panel.error ? 'label' : 'meta loading', text: panel.error || 'Loading…' });
@@ -985,11 +971,13 @@ function memoryPanel(panel) {
         h('button', { type: 'button', class: 'quiet danger', 'aria-disabled': saving, onclick: () => archive(record) }, 'Archive')];
   const source = record.provenance || {};
   return [h('h2', { class: 'panel-title', id: 'panel-title', tabindex: '-1', text: record.title || `Memory #${record.id}` }),
-    h('p', { class: 'label muted about', text: aboutMemory(record) }),
     h('p', { class: 'reading full', text: record.content }),
     h('div', { class: 'actions' }, actions),
     similar ? section('Similar', [row(similar), h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: () => keepAndReplace(record, similar) }, 'Keep and replace it')], 'warn') : null,
-    section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), h('span', { class: 'meta', text: record.scope?.project || 'Every project' }))),
+    section('Kind', h('p', { class: 'val', text: record.purpose.charAt(0).toUpperCase() + record.purpose.slice(1) })),
+    section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), record.scope?.project ? h('span', { class: 'meta', text: record.scope.project }) : null)),
+    // What agents do with it. "At startup" means it can load; Preview startup shows the size limit's cuts.
+    section('Agents', h('p', { class: 'val', text: record.archived ? 'Not at startup' : isNew ? 'Not until you keep it' : 'At startup' })),
     section(isNew ? 'Noticed by' : 'Saved by', h('p', { class: 'val' }, by(record) === 'you' ? 'You' : by(record),
       h('span', { class: 'meta', text: [fullDate(record.updated_at), source.device && deviceName(source.device)].filter(Boolean).join(' · ') }),
       source.source ? h('span', { class: 'meta', text: `“${source.source}”` }) : null)),

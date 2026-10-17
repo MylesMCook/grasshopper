@@ -117,7 +117,6 @@ button.row:hover .t { text-decoration:underline; text-underline-offset:3px; text
 .panel { border-left:1px solid var(--divider); padding:var(--space-5) var(--space-4) var(--space-6); position:sticky; top:0; height:100vh; overflow:auto; min-width:0; }
 .panel-top { display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); margin-bottom:var(--space-3); }
 .panel-title { font-size:var(--fs-title); line-height:1.2; margin-bottom:var(--space-3); }
-.about { margin:calc(var(--space-2) * -1) 0 var(--space-3); max-width:var(--measure-reading); }
 /* Script-focused titles hide the ring only when the browser would not show it. */
 .panel-title:focus:not(:focus-visible) { outline:none; }
 .panel .reading.full { margin-bottom:var(--space-3); }
