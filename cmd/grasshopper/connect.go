@@ -307,6 +307,9 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 		if status == http.StatusNotFound || status == http.StatusUnauthorized {
 			return errors.New("this server needs a Grasshopper version with viewer pairing; no credential was saved")
 		}
+		if status == http.StatusTooManyRequests {
+			return connectProblem("pairing_queue_full", "Too many connection requests are waiting. Approve or deny them on the memory view's Agents page, or wait five minutes, then try again. No credential was saved.")
+		}
 		if err != nil || status != http.StatusCreated {
 			return connectProblem("unreachable_server", "The private server cannot be reached. No credential was saved; try again when it is online.")
 		}

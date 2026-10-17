@@ -37,6 +37,9 @@ func ProjectIdentity(remote string) (string, error) {
 			return "", errors.New("invalid Git remote")
 		}
 		scheme = parsed.Scheme
+		if scheme == "git+ssh" || scheme == "ssh+git" {
+			scheme = "ssh"
+		}
 		if scheme != "https" && scheme != "http" && scheme != "ssh" && scheme != "git" {
 			return "", errors.New("local remotes require explicit project ID")
 		}
@@ -44,7 +47,12 @@ func ProjectIdentity(remote string) (string, error) {
 	} else {
 		at := strings.LastIndex(clean, "@")
 		if at < 0 {
-			return "", errors.New("local remotes require explicit project ID")
+			// scp form without a user ("github.com:Owner/Repo") names a host with a
+			// dot before the colon; drive letters and local paths do not.
+			colon := strings.Index(clean, ":")
+			if colon < 1 || !strings.Contains(clean[:colon], ".") || strings.ContainsAny(clean[:colon], "/\\") {
+				return "", errors.New("local remotes require explicit project ID")
+			}
 		}
 		colon := strings.Index(clean[at+1:], ":")
 		if colon < 0 {

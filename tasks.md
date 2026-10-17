@@ -11,8 +11,11 @@ Earlier release records are in Git history and
 Applies to, Agents and Saved by, and rows lead with their kind (#66). Owner:
 Claude Code, macOS. Mac, Windows PC and Windows work machine connectors are on
 2.9.9; the Linux machine updates when next used. Verification and rollback
-copies: [verification](docs/verification.md). Remaining audit findings 10 to 20
-are not started.
+copies: [verification](docs/verification.md). Audit follow-ups on branch
+`audit-followups` (unreleased): hooks survive unreadable input, the bridge
+survives a bad line, a full pairing queue is named, and scp and git+ssh remotes
+resolve. Search speed, export blocking and history vectors are deferred until
+the store grows.
 
 ## Decisions
 
@@ -28,5 +31,4 @@ are not started.
 
 ## Next
 
-Update the Linux connector when next used. Deferred: project archive and rename,
-and audit findings 10 to 20.
+Update the Linux connector when next used. Deferred: project archive and rename.
