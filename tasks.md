@@ -1,18 +1,17 @@
 # Grasshopper status
 
-Current release: [2.9.9](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.9),
-on the marketplace and usegrasshopper.com; the macOS service runs 2.9.9.
+Current release: [2.9.10](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.10),
+on the marketplace and usegrasshopper.com; the macOS service runs 2.9.10.
 Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-2.9.10 (in release; Claude Code, macOS, branch `release-2.9.10`) ships the audit
-follow-ups (#69): hooks survive unreadable input, the bridge survives a bad line,
-a full pairing queue is named, and scp and git+ssh remotes resolve. Client-bridge
-changes, so the release needs the full rehearsal; owner approved the cutover and
-connector updates. 2.9.9 runs live. Search speed, export blocking and history
-vectors are deferred until the store grows.
+2.9.10 is released, deployed and running live with the audit follow-ups (#69).
+Owner: Claude Code, macOS. Mac, Windows PC and Windows work machine connectors
+are on 2.9.10; the Linux machine updates when next used. Verification and
+rollback copies: [verification](docs/verification.md). Search speed, export
+blocking and history vectors are deferred until the store grows.
 
 ## Decisions
 

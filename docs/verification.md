@@ -398,6 +398,36 @@ Windows PC and a Windows work machine moved their Claude Code and Codex
 connectors to 2.9.9; `grasshopper check` on each reports server 2.9.9 and
 current connectors. The Linux machine updates when next used.
 
+## 2.9.10 rollout (October 17)
+
+2.9.10 ships the audit follow-ups (#69): hooks answer unreadable input with
+nothing to add and exit cleanly, the MCP bridge survives a blank or unreadable
+line, connect names a full pairing queue, and scp remotes without a user and
+git+ssh URLs resolve to the usual project identity. Local checks: `go test
+./...`, `go vet ./...`, race tests on the client package; CI passed on macOS,
+Linux and Windows, and a Copilot review left no open findings.
+
+The release workflow passed every job on its first run and deployed the site;
+`setup.js` links the 2.9.10 archives, and the clients' numeric version check
+orders 2.9.10 after 2.9.9. The macOS server archive matched `SHA256SUMS` and
+all 53 embedded hashes, with the model and runtime byte-identical to 2.9.9.
+Rehearsal on a copy of the live database: 2.9.10 passed every server check;
+2.9.9 reopened the same copy with every check passing; packaged `--quickstart`
+started, signed in and shut down cleanly.
+
+Cutover: an encrypted off-machine backup verified first, the service stopped,
+a verified snapshot was taken (271 records, 571 revisions, 361 receipts,
+6 credentials), the binaries were swapped and the service restarted. It reports
+2.9.10 on loopback and over the private route with identical counts; a second
+encrypted off-machine backup verified. The 2.9.9 binaries, service definition
+and snapshot are kept for rollback.
+
+Clients: the Mac, the Windows PC and a Windows work machine moved their Claude
+Code and Codex connectors to 2.9.10, and `grasshopper check` on each reports
+server 2.9.10 and current connectors. A 140 KB prompt piped into the Codex hook
+returned `{}` with exit code 0 on the Mac and on the Windows PC. The Linux
+machine updates when next used.
+
 ## Every release
 
 - `go test ./...`, `go vet ./...`, race tests and all Node tests pass locally.
