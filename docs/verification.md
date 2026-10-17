@@ -373,6 +373,31 @@ from the marketplace) moved from 2.9.7 to 2.9.8. `grasshopper check` on all
 three reports server 2.9.8, verified registration and current connectors. The
 Linux machine was not reachable and updates when next used.
 
+## 2.9.9 rollout (October 17)
+
+2.9.9 shows each opened memory as facts: Kind, Applies to, Agents (At startup,
+Not until you keep it, Not at startup) and Saved by, and every row's detail
+starts with its kind (#66). Archived wording says agents don't load archived
+memories at startup instead of saying agents never see them. Memory-view only:
+42 memory view and 31 site Node tests, `go test ./...`, CI on macOS, Linux and
+Windows, and a Copilot review whose findings were fixed and tested.
+
+The release workflow passed every job on its first run and deployed the site;
+`setup.js` links the 2.9.9 archives. The macOS server archive matched
+`SHA256SUMS` and all embedded hashes, with the model and runtime byte-identical
+to 2.9.8. On a copy of the live database it passed every server check and
+served the new memory panel.
+
+Cutover: an encrypted off-machine backup verified first, the service stopped,
+a verified snapshot was taken (271 records, 571 revisions, 361 receipts,
+6 credentials), the server, backup and migrate binaries were swapped and the
+service restarted. It reports 2.9.9 on loopback and over the private route with
+identical counts; a second encrypted off-machine backup verified. The 2.9.8
+binaries, service definition and snapshot are kept for rollback. The Mac, the
+Windows PC and a Windows work machine moved their Claude Code and Codex
+connectors to 2.9.9; `grasshopper check` on each reports server 2.9.9 and
+current connectors. The Linux machine updates when next used.
+
 ## Every release
 
 - `go test ./...`, `go vet ./...`, race tests and all Node tests pass locally.
