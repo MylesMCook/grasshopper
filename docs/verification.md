@@ -338,6 +338,41 @@ approval. `grasshopper check` on all three reports server 2.9.7, verified
 registration and current connectors. The Linux machine was not reachable and
 updates when next used.
 
+## 2.9.8 rollout (October 17)
+
+2.9.8 ships memory view improvements: project pages show what agents start
+with and link the startup preview (#61); agent names read as products; Archived
+folds replaced handoffs; a hairline under All projects; owner-chosen device
+names stored in a new `device_labels` table that never change device IDs (#62);
+and a device name field that background refreshes leave alone while typing
+(#63). Startup schema checks now allow 15 seconds on slow disks. Local checks
+before merge: `go test ./...`, `go vet ./...`, race tests, 42 memory view and
+31 site Node tests; CI passed on macOS, Linux and Windows, and each PR had a
+Copilot review with findings fixed and tested (the last two #62 commits merged
+under an owner-approved exception, recorded on that PR).
+
+The release workflow passed every job on its first run and deployed the site;
+`setup.js` links the 2.9.8 archives. The macOS server archive matched
+`SHA256SUMS` and all 53 embedded hashes, with the model and runtime
+byte-identical to 2.9.7. Rehearsal on a copy of the live database: 2.9.8 passed
+every server check and renamed a device; 2.9.7 reopened that renamed copy, with
+`device_labels` present, and passed every check; packaged `--quickstart`
+started, signed in and shut down cleanly.
+
+Cutover: an encrypted off-machine backup verified first, the service stopped,
+a verified snapshot was taken (271 records, 571 revisions, 361 receipts,
+6 credentials), the server, backup and migrate binaries were swapped and the
+service restarted. It reports 2.9.8 on loopback and over the private route,
+passes the same checks with identical counts and has the `device_labels`
+table; a second encrypted off-machine backup verified. The 2.9.7 binaries,
+service definition and snapshot are kept for rollback.
+
+Clients: the Mac (Claude Code from the client archive, Codex from the
+marketplace), the Windows PC and a Windows work machine (Claude Code and Codex
+from the marketplace) moved from 2.9.7 to 2.9.8. `grasshopper check` on all
+three reports server 2.9.8, verified registration and current connectors. The
+Linux machine was not reachable and updates when next used.
+
 ## Every release
 
 - `go test ./...`, `go vet ./...`, race tests and all Node tests pass locally.
