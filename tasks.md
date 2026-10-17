@@ -7,11 +7,13 @@ Earlier release records are in Git history and
 
 ## Active
 
-2.9.7 is released, deployed and running live with the nine audit fixes (#58).
-Owner: Claude Code, macOS. Mac, Windows PC and Windows work machine connectors
-are on 2.9.7; the Linux machine updates when next used. Verification and
-rollback copies: [verification](docs/verification.md). Remaining audit findings
-10 to 20 (smaller bugs, missing tests, dead code) are not started.
+2.9.8 (in release; Claude Code, macOS, branch `release-2.9.8`) ships memory view
+improvements: project pages show what agents start with and link the startup
+preview (#61), agent names read as products, Archived folds replaced handoffs,
+a sidebar hairline under All projects, and owner-chosen device names that never
+change device IDs (#62, #63). Device names add a `device_labels` table, so the
+release needs the full rehearsal; live cutover waits for owner approval. 2.9.7
+runs live. Remaining audit findings 10 to 20 are not started.
 
 ## Decisions
 
