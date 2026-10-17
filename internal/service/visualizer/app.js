@@ -947,6 +947,20 @@ function editForm(panel) {
 
 function startEdit(panel) { panel.mode = 'edit'; render(); document.getElementById('edit-text')?.focus?.(); }
 
+// One plain sentence: who saved it, what it is, and when agents use it.
+function aboutMemory(record) {
+  const rel = relDate(record.updated_at);
+  const when = rel === 'today' || rel === 'yesterday' ? rel : `on ${rel}`;
+  const who = by(record) === 'you' ? 'You' : by(record);
+  const only = [record.scope?.device && deviceName(record.scope.device), record.scope?.platform && (PLATFORM[record.scope.platform] || record.scope.platform)].filter(Boolean).join(' and ');
+  const where = `${record.scope?.project ? projectName(record.scope.project) : 'any project'}${only ? `, on ${only} only` : ''}`;
+  if (record.archived) return `Archived ${when}. Agents never see it.`;
+  if (record.purpose === 'handoff') return `Where ${who === 'You' ? 'you' : who} left off in ${where}, ${rel}. The next session there starts with it.`;
+  if (!record.confirmed) return `${who} noticed this ${when}. Agents don't load it until you keep it.`;
+  const kind = ['preference', 'decision', 'lesson'].includes(record.purpose) ? record.purpose : 'memory';
+  return `${who} saved this ${kind} ${when}. Agents load it when a session starts in ${where}.`;
+}
+
 function memoryPanel(panel) {
   const record = panel.record;
   if (!record) return h('p', { class: panel.error ? 'label' : 'meta loading', text: panel.error || 'Loading…' });
@@ -971,6 +985,7 @@ function memoryPanel(panel) {
         h('button', { type: 'button', class: 'quiet danger', 'aria-disabled': saving, onclick: () => archive(record) }, 'Archive')];
   const source = record.provenance || {};
   return [h('h2', { class: 'panel-title', id: 'panel-title', tabindex: '-1', text: record.title || `Memory #${record.id}` }),
+    h('p', { class: 'label muted about', text: aboutMemory(record) }),
     h('p', { class: 'reading full', text: record.content }),
     h('div', { class: 'actions' }, actions),
     similar ? section('Similar', [row(similar), h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: () => keepAndReplace(record, similar) }, 'Keep and replace it')], 'warn') : null,

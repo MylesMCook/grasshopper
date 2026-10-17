@@ -30,7 +30,8 @@ five agent tools do not change; this page decides what the owner sees.
 - Archived lists what the owner archived. Handoffs replaced by newer ones fold
   into one "Show N replaced by newer ones" line at the end.
 - Opening a memory adds a right-hand panel on wide screens, replaces the list
-  on laptops, and becomes a page on phones. It shows the full text, Edit,
+  on laptops, and becomes a page on phones. Under the title, one sentence says
+  who saved it, what it is and when agents use it; then the full text, Edit,
   Move to…, Archive, then Applies to, Saved by and History.
 
 - The owner can name a device in its panel. The name shows wherever the
