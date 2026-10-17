@@ -31,6 +31,7 @@ class Node {
   }
   // As in a browser, a disabled or hidden control cannot take focus.
   focus() { for (let node = this; node; node = node.parent) if (node.hidden) return; if (!this.disabled) this.ownerDocument.activeElement = this; }
+  blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null; }
   contains(node) { for (let current = node; current; current = current.parent) if (current === this) return true; return false; }
   *walk() { for (const child of this.children) if (typeof child !== 'string') { yield child; yield* child.walk(); } }
   matches(selector) {
@@ -302,6 +303,61 @@ test('a rejected device name says why, and a finished rename never clears anothe
   patch.done = true; patch.reply(204);
   await flush();
   assert.equal(ui.document.getElementById('device-name').value, 'Gaming PC', "another device's typing survives");
+});
+
+test('a refresh waits while the device name field has focus, so the caret stays put', async () => {
+  const ui = await signedIn();
+  ui.hashChange('#page=agents');
+  await flush();
+  ui.rows('mac').click();
+  await flush();
+  const field = ui.document.getElementById('device-name');
+  assert.equal(field.getAttribute('maxlength'), null, 'the server, which counts characters, sets the limit');
+  field.focus();
+  field.value = 'Studio';
+  field.dispatch('input');
+  for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 5000 || timer.delay === 30000) { ui.timers.delete(id); timer.fn(); }
+  await flush();
+  for (const request of ui.pending('/visualizer/api/pairings')) { request.done = true; request.reply(200, []); }
+  for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: new Date(Date.now() + 60000).toISOString() }]); }
+  await flush();
+  assert.equal(ui.document.getElementById('device-name'), field, 'the field was not replaced mid-edit');
+  // A change held back while typing shows on the next poll after focus leaves, even if that poll is unchanged.
+  const renamed = [{ id: 7, device: 'mac', label: 'Renamed elsewhere', created_at: today, revoked_at: null, last_seen_at: today }];
+  const poll = async () => {
+    for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 5000 || timer.delay === 30000) { ui.timers.delete(id); timer.fn(); }
+    await flush();
+    for (const request of ui.pending('/visualizer/api/pairings')) { request.done = true; request.reply(200, []); }
+    for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, renamed); }
+    await flush();
+  };
+  await poll();
+  assert.ok(!ui.rows('Renamed elsewhere'), 'held back while typing');
+  field.blur();
+  await poll();
+  assert.ok(ui.rows('Renamed elsewhere'), 'shown once typing ends');
+});
+
+test('an index change held back while typing a device name shows after focus leaves', async () => {
+  const ui = await signedIn();
+  ui.hashChange('#page=agents');
+  await flush();
+  ui.rows('mac').click();
+  await flush();
+  const field = ui.document.getElementById('device-name');
+  field.focus();
+  const fire = async delay => { for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === delay) { ui.timers.delete(id); timer.fn(); } await flush(); };
+  await fire(15000);
+  for (const request of ui.pending('/visualizer/api/context')) { request.done = true; request.reply(200, { records: projectRecords, projects: [PROJECT], review_count: 3, server: { version: '2.9.0' }, total: 4 }); }
+  await flush();
+  assert.doesNotMatch(ui.text(), /New3/, 'held back while typing');
+  field.blur();
+  // The next refresh brings nothing new, yet draws what was held back.
+  await fire(5000); await fire(30000);
+  for (const request of ui.pending('/visualizer/api/pairings')) { request.done = true; request.reply(200, []); }
+  for (const request of ui.pending('/visualizer/api/devices')) { request.done = true; request.reply(200, [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: today }]); }
+  await flush();
+  assert.match(ui.text(), /New3/);
 });
 
 test('Keep confirms at the shown revision and a retry reuses its request ID', async () => {
