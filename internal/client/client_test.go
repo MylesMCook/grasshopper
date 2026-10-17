@@ -390,7 +390,8 @@ func TestClaudeGlobalGuidanceParts(t *testing.T) {
 
 func TestProjectIdentityAndUnresolvedScope(t *testing.T) {
 	want := "git:github.com/Owner/Repo"
-	for _, remote := range []string{"git@GitHub.com:Owner/Repo.git", "https://user:secret@github.com/Owner/Repo.git?secret=yes", "ssh://git@github.com:22/Owner/Repo.git"} {
+	for _, remote := range []string{"git@GitHub.com:Owner/Repo.git", "https://user:secret@github.com/Owner/Repo.git?secret=yes", "ssh://git@github.com:22/Owner/Repo.git",
+		"github.com:Owner/Repo.git", "git+ssh://git@github.com/Owner/Repo.git", "ssh+git://github.com/Owner/Repo"} {
 		got, err := ProjectIdentity(remote)
 		if err != nil || got != want {
 			t.Fatalf("%q became %q: %v", remote, got, err)
@@ -399,7 +400,7 @@ func TestProjectIdentityAndUnresolvedScope(t *testing.T) {
 	if first, _ := ProjectIdentity("https://github.com/Owner/Repo"); first == "git:github.com/owner/repo" {
 		t.Fatal("repository path was lowercased")
 	}
-	for _, remote := range []string{"/local/path", "C:\\work", "file:///repo", ""} {
+	for _, remote := range []string{"/local/path", "C:\\work", "C:/work", "file:///repo", "relative/dir:name", ""} {
 		if _, err := ProjectIdentity(remote); err == nil {
 			t.Errorf("accepted local remote %q", remote)
 		}

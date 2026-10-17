@@ -32,9 +32,17 @@ func Bridge(ctx context.Context, configPath string, stdin io.Reader, stdout io.W
 	scanner.Buffer(make([]byte, 4096), 131073)
 	for scanner.Scan() {
 		body := append([]byte(nil), scanner.Bytes()...)
+		if len(bytes.TrimSpace(body)) == 0 {
+			continue
+		}
 		id, _, _, _, err := rpcID(body)
 		if err != nil {
-			return err
+			// One bad line (a batch, a stray fragment) gets a JSON-RPC parse
+			// error; the bridge keeps serving the agent's session.
+			if _, err := fmt.Fprintln(stdout, `{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: send one JSON-RPC request per line"}}`); err != nil {
+				return err
+			}
+			continue
 		}
 		requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		response, acknowledged, err := remote.Request(requestCtx, body)

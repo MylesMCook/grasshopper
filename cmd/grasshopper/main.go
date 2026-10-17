@@ -91,6 +91,10 @@ Use grasshopper COMMAND --help for options, or --version for the version.`)
 		}
 		input, err := client.ParseHookInput(os.Stdin)
 		if err != nil {
+			// An oversized or malformed prompt must not fail the agent's hook;
+			// answer "nothing to add" and say why on stderr.
+			fmt.Fprintf(os.Stderr, "Grasshopper hook skipped: %v\n", err)
+			_, err = fmt.Fprintln(os.Stdout, "{}")
 			return err
 		}
 		var output map[string]any
