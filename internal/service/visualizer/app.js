@@ -719,7 +719,8 @@ function sidebar() {
 
 function row(record, { meta } = {}) {
   const only = [record.scope?.device && `${deviceName(record.scope.device)} only`, record.scope?.platform && `${PLATFORM[record.scope.platform] || record.scope.platform} only`].filter(Boolean).join(' · ');
-  const right = meta ?? [record.purpose, by(record), relDate(record.updated_at), only].filter(Boolean).join(' · ');
+  // The kind leads every row's detail, whatever else the list adds.
+  const right = [record.purpose, meta ?? [by(record), relDate(record.updated_at), only].filter(Boolean).join(' · ')].filter(Boolean).join(' · ');
   return h('button', { type: 'button', class: `row${record.purpose === 'handoff' ? ' handoff' : ''}`, 'data-key': `open:${record.id}`, 'aria-current': state.panel?.id === record.id ? 'true' : null,
     title: fullDate(record.updated_at), onclick: () => openMemory(record.id) },
   h('span', { class: 't', text: record.title || `Memory #${record.id}` }), h('span', { class: 'm', text: right }));

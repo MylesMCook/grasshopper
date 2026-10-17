@@ -377,6 +377,8 @@ test('an opened memory lists its kind, where it applies, what agents do with it,
   await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], archived: true });
   assert.equal(facts().Agents, 'Not at startup');
   assert.match(ui.rows('Squash merge only').textContent, /decision · Claude Code · today/, 'rows start their detail with the kind');
+  assert.match(ui.rows('Use gh for PR status').textContent, /observation · Codex · today/, 'suggestions too');
+  assert.match(ui.rows('Shipped 2.8.5. Next: redesign.').textContent, /handoff · Codex/, 'handoffs too');
 });
 
 test('Keep confirms at the shown revision and a retry reuses its request ID', async () => {
