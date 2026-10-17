@@ -7,12 +7,12 @@ Earlier release records are in Git history and
 
 ## Active
 
-2.9.8 is released, deployed and running live: memory view project pages show
-what agents start with, device names, folded replaced handoffs (#61, #62, #63).
-Owner: Claude Code, macOS. Mac, Windows PC and Windows work machine connectors
-are on 2.9.8; the Linux machine updates when next used. Verification and
-rollback copies: [verification](docs/verification.md). Remaining audit findings
-10 to 20 are not started.
+2.9.9 (in release; Claude Code, macOS, branch `release-2.9.9`) shows each
+opened memory as facts: Kind, Applies to, Agents (At startup, Not until you
+keep it, Not at startup) and Saved by, and leads every row's detail with its
+kind (#66). Archived wording no longer says agents never see archived memories.
+Memory-view only; owner approved release, live cutover and connector updates.
+2.9.8 runs live. Remaining audit findings 10 to 20 are not started.
 
 ## Decisions
 
