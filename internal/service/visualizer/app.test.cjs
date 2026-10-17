@@ -360,6 +360,27 @@ test('an index change held back while typing a device name shows after focus lea
   assert.match(ui.text(), /New3/);
 });
 
+test('an opened memory lists its kind, where it applies, what agents do with it, and who saved it', async () => {
+  const ui = await signedIn();
+  const panel = () => ui.app.querySelector('aside');
+  const facts = () => Object.fromEntries(panel().querySelectorAll('section').map(sec => [sec.querySelector('h2').textContent, sec.querySelector('p')?.textContent]));
+  await openSquash(ui);
+  assert.ok(!ui.app.querySelector('p.about'), 'no prose sentence');
+  const labels = panel().querySelectorAll('h2.sec-label').map(node => node.textContent);
+  assert.deepEqual(labels.slice(0, 4), ['Kind', 'Applies to', 'Agents', 'Saved by'], 'facts in a fixed order');
+  assert.equal(facts().Kind, 'Decision');
+  assert.equal(facts().Agents, 'At startup');
+  ui.rows('Use gh for PR status').click();
+  await ui.answer('/visualizer/api/record', 200, projectRecords[1]);
+  assert.equal(facts().Agents, 'Not until you keep it');
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], archived: true });
+  assert.equal(facts().Agents, 'Not at startup');
+  assert.match(ui.rows('Squash merge only').textContent, /decision · Claude Code · today/, 'rows start their detail with the kind');
+  assert.match(ui.rows('Use gh for PR status').textContent, /observation · Codex · today/, 'suggestions too');
+  assert.match(ui.rows('Shipped 2.8.5. Next: redesign.').textContent, /handoff · Codex/, 'handoffs too');
+});
+
 test('Keep confirms at the shown revision and a retry reuses its request ID', async () => {
   const ui = await signedIn();
   ui.find('Keep Use gh for PR status').click();

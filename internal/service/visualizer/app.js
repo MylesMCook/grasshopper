@@ -719,7 +719,8 @@ function sidebar() {
 
 function row(record, { meta } = {}) {
   const only = [record.scope?.device && `${deviceName(record.scope.device)} only`, record.scope?.platform && `${PLATFORM[record.scope.platform] || record.scope.platform} only`].filter(Boolean).join(' · ');
-  const right = meta ?? [by(record), relDate(record.updated_at), only].filter(Boolean).join(' · ');
+  // The kind leads every row's detail, whatever else the list adds.
+  const right = [record.purpose, meta ?? [by(record), relDate(record.updated_at), only].filter(Boolean).join(' · ')].filter(Boolean).join(' · ');
   return h('button', { type: 'button', class: `row${record.purpose === 'handoff' ? ' handoff' : ''}`, 'data-key': `open:${record.id}`, 'aria-current': state.panel?.id === record.id ? 'true' : null,
     title: fullDate(record.updated_at), onclick: () => openMemory(record.id) },
   h('span', { class: 't', text: record.title || `Memory #${record.id}` }), h('span', { class: 'm', text: right }));
@@ -860,7 +861,7 @@ function archivedPage() {
     const replaced = all.filter(record => (record.provenance?.source || '').startsWith('Replaced by handoff'));
     const showReplaced = state.expanded.has('replaced');
     const records = showReplaced ? all : all.filter(record => !replaced.includes(record));
-    return [head('Archived', 'Agents never see these.', { search: false }), banner(),
+    return [head('Archived', "Agents don't load these at startup.", { search: false }), banner(),
       [null, ...sortedProjects()].map(project => {
         const items = records.filter(record => (record.scope?.project || null) === project);
         return items.length ? section(projectName(project), items.map(record => h('div', { class: 'row-inline' }, row(record, { meta: label(record) }),
@@ -974,7 +975,10 @@ function memoryPanel(panel) {
     h('p', { class: 'reading full', text: record.content }),
     h('div', { class: 'actions' }, actions),
     similar ? section('Similar', [row(similar), h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: () => keepAndReplace(record, similar) }, 'Keep and replace it')], 'warn') : null,
-    section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), h('span', { class: 'meta', text: record.scope?.project || 'Every project' }))),
+    section('Kind', h('p', { class: 'val', text: record.purpose.charAt(0).toUpperCase() + record.purpose.slice(1) })),
+    section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), record.scope?.project ? h('span', { class: 'meta', text: record.scope.project }) : null)),
+    // What agents do with it. "At startup" means it can load; Preview startup shows the size limit's cuts.
+    section('Agents', h('p', { class: 'val', text: record.archived ? 'Not at startup' : isNew ? 'Not until you keep it' : 'At startup' })),
     section(isNew ? 'Noticed by' : 'Saved by', h('p', { class: 'val' }, by(record) === 'you' ? 'You' : by(record),
       h('span', { class: 'meta', text: [fullDate(record.updated_at), source.device && deviceName(source.device)].filter(Boolean).join(' · ') }),
       source.source ? h('span', { class: 'meta', text: `“${source.source}”` }) : null)),
