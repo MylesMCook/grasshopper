@@ -860,7 +860,7 @@ function archivedPage() {
     const replaced = all.filter(record => (record.provenance?.source || '').startsWith('Replaced by handoff'));
     const showReplaced = state.expanded.has('replaced');
     const records = showReplaced ? all : all.filter(record => !replaced.includes(record));
-    return [head('Archived', 'Agents never see these.', { search: false }), banner(),
+    return [head('Archived', "Agents don't load these at startup.", { search: false }), banner(),
       [null, ...sortedProjects()].map(project => {
         const items = records.filter(record => (record.scope?.project || null) === project);
         return items.length ? section(projectName(project), items.map(record => h('div', { class: 'row-inline' }, row(record, { meta: label(record) }),
@@ -954,11 +954,11 @@ function aboutMemory(record) {
   const who = by(record) === 'you' ? 'You' : by(record);
   const only = [record.scope?.device && deviceName(record.scope.device), record.scope?.platform && (PLATFORM[record.scope.platform] || record.scope.platform)].filter(Boolean).join(' and ');
   const where = `${record.scope?.project ? projectName(record.scope.project) : 'any project'}${only ? `, on ${only} only` : ''}`;
-  if (record.archived) return `Archived ${when}. Agents never see it.`;
-  if (record.purpose === 'handoff') return `Where ${who === 'You' ? 'you' : who} left off in ${where}, ${rel}. The next session there starts with it.`;
+  if (record.archived) return `Archived ${when}. Agents don't load it at startup.`;
+  if (record.purpose === 'handoff') return `Where ${who === 'You' ? 'you' : who} left off in ${where}, ${rel}. The next session there can start with it.`;
   if (!record.confirmed) return `${who} noticed this ${when}. Agents don't load it until you keep it.`;
   const kind = ['preference', 'decision', 'lesson'].includes(record.purpose) ? record.purpose : 'memory';
-  return `${who} saved this ${kind} ${when}. Agents load it when a session starts in ${where}.`;
+  return `${who} saved this ${kind} ${when}. Agents can load it when a session starts in ${where}.`;
 }
 
 function memoryPanel(panel) {

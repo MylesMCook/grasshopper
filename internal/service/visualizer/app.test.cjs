@@ -364,20 +364,20 @@ test('an opened memory says in one sentence who saved it, what it is and when ag
   const ui = await signedIn();
   const about = () => ui.app.querySelector('p.about')?.textContent;
   await openSquash(ui);
-  assert.equal(about(), 'Claude Code saved this decision today. Agents load it when a session starts in grasshopper.');
+  assert.equal(about(), 'Claude Code saved this decision today. Agents can load it when a session starts in grasshopper.');
   ui.rows('Use gh for PR status').click();
   await ui.answer('/visualizer/api/record', 200, projectRecords[1]);
   assert.equal(about(), "Codex noticed this today. Agents don't load it until you keep it.");
   ui.rows('Shipped 2.8.5. Next: redesign.').click();
   await ui.answer('/visualizer/api/record', 200, projectRecords[3]);
-  assert.equal(about(), 'Where Codex left off in grasshopper, today. The next session there starts with it.');
+  assert.equal(about(), 'Where Codex left off in grasshopper, today. The next session there can start with it.');
   ui.find('Show 1 that also apply here')?.click();
   ui.rows('Prefers deterministic setups').click();
   await ui.answer('/visualizer/api/record', 200, { ...projectRecords[2], scope: { device: 'mac' } });
-  assert.equal(about(), 'Codex saved this preference today. Agents load it when a session starts in any project, on mac only.');
+  assert.equal(about(), 'Codex saved this preference today. Agents can load it when a session starts in any project, on mac only.');
   ui.rows('Squash merge only').click();
   await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], archived: true });
-  assert.equal(about(), 'Archived today. Agents never see it.');
+  assert.equal(about(), "Archived today. Agents don't load it at startup.");
 });
 
 test('Keep confirms at the shown revision and a retry reuses its request ID', async () => {
