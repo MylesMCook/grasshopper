@@ -1124,3 +1124,28 @@ test('a long earlier version can be read in full before restoring it', async () 
   assert.ok(ui.app.querySelector('aside').querySelector('details'), 'a long version expands');
   assert.match(ui.app.querySelector('aside').textContent, /The changed instruction is at the end\./);
 });
+
+test('an opened long version stays open across a refresh', async () => {
+  const ui = await signedIn();
+  const older = `${'Older rule text. '.repeat(15)}End.`;
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2, content: 'Current text.' });
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], content: older });
+  const details = ui.app.querySelector('aside').querySelector('details');
+  details.attributes.open = '';
+  details.dispatch('toggle');
+  for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 15000) { ui.timers.delete(id); timer.fn(); }
+  await flush();
+  for (const request of ui.pending('/visualizer/api/context')) { request.done = true; request.reply(200, { records: projectRecords, projects: [PROJECT], review_count: 2, server: { version: '2.10.0' }, total: 4 }); }
+  await flush();
+  assert.notEqual(ui.app.querySelector('aside').querySelector('details').getAttribute('open'), null);
+});
+
+test('cancelling Add memory over an open memory forgets that memory in the address', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  assert.match(ui.location.hash, /memory=1/);
+  ui.find('Add memory').click();
+  ui.find('Cancel').click();
+  assert.doesNotMatch(ui.location.hash, /memory=1/);
+});

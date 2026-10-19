@@ -16,7 +16,7 @@ const state = {
   index: null, page: null, pageKey: '', etags: {}, offline: null, loading: false,
   devices: [], pairings: [], devicesLoaded: false,
   panel: null, expanded: new Set(), showGlobal: false, moreProjects: false, menu: false,
-  undo: null, startupAgent: 'Codex', startupProject: '', exportArchived: false, exportStatus: ''
+  undo: null, openVersions: new Set(), startupAgent: 'Codex', startupProject: '', exportArchived: false, exportStatus: ''
 };
 const timers = { page: null, index: null, devices: null, undo: null };
 const inFlight = { page: null, index: null, devices: null };
@@ -86,9 +86,13 @@ function daysAgo(value, now = new Date()) {
   return Math.round((local(now) - local(date)) / 86400000);
 }
 function excerpt(text, size = 160) { return text.length > size ? `${text.slice(0, size).trimEnd()}…` : text; }
-// A version's text: short ones whole, long ones as an excerpt that opens to the full text.
-function versionText(text, cls) {
-  return text.length > 160 ? h('details', { class: cls }, h('summary', { text: excerpt(text) }), h('p', { class: 'reading full', text })) : h('span', { class: cls, text });
+// A version's text: short ones whole, long ones as an excerpt that opens to the
+// full text. Which ones are open survives redraws, keyed by memory and revision.
+function versionText(text, cls, key) {
+  if (text.length <= 160) return h('span', { class: cls, text });
+  return h('details', { class: cls, open: state.openVersions.has(key), ontoggle: event => {
+    if (event.currentTarget.getAttribute('open') !== null) state.openVersions.add(key); else state.openVersions.delete(key);
+  } }, h('summary', { 'data-key': `version:${key}`, text: excerpt(text) }), h('p', { class: 'reading full', text }));
 }
 function shortDate(value) { const date = day(value); return date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''; }
 function relDate(value, now = new Date()) {
@@ -1004,6 +1008,7 @@ function editForm(panel) {
 // A new memory is an empty one in edit mode, so drafts, redraws and leaving work as for an edit.
 function startCreate(project, draft = null) {
   if (dirty() && !confirmLeave()) return;
+  if (state.route.memory) { state.route.memory = null; setURL(true); }
   state.panel = { type: 'memory', id: null, key: newRequestID(), record: { title: '', content: '', scope: {} }, mode: 'edit', project: durable(project) ? project : '', error: '', draft };
   render();
   document.getElementById('edit-title')?.focus?.();
@@ -1061,9 +1066,9 @@ function memoryPanel(panel) {
     // Shown only when an earlier version differs; a keep or archive repeats the text.
     panel.history?.length || (panel.history && panel.olderFrom >= 1) ? section('History', [
       // Each version shows its text, and its title only where that differs, so Restore is never blind.
-      h('div', { class: 'row static' }, versionText(record.content, 't'), h('span', { class: 'm', text: `${by(record)} · ${relDate(record.updated_at)} · current` })),
+      h('div', { class: 'row static' }, versionText(record.content, 't', `${record.id}:${record.revision}`), h('span', { class: 'm', text: `${by(record)} · ${relDate(record.updated_at)} · current` })),
       panel.history.map(older => h('div', { class: 'row-inline' },
-        h('div', { class: 'row static' }, versionText(older.content, 't muted'),
+        h('div', { class: 'row static' }, versionText(older.content, 't muted', `${record.id}:${older.revision}`),
           h('span', { class: 'm', text: [by(older), relDate(older.updated_at), older.title !== record.title && `titled “${older.title}”`].filter(Boolean).join(' · ') })),
         record.archived ? null : h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `restore-version:${older.revision}`, 'aria-label': `Restore version from ${relDate(older.updated_at)}`, onclick: () => restoreRevision(record, older) }, 'Restore'))),
       panel.olderFrom >= 1 ? h('button', { type: 'button', class: 'quiet more', onclick: () => loadHistory(panel, true) }, 'Show older versions') : null]) : null];
@@ -1156,10 +1161,10 @@ function mainView() {
 // its confirmation) never trade focus.
 function keyOf(node) { return node.getAttribute?.('data-key') || node.getAttribute?.('aria-label') || node.id || node.textContent; }
 function focusByKey(key) {
-  const candidates = [...(root.querySelectorAll?.('button, input, textarea, select, a, [tabindex]') || [])];
+  const candidates = [...(root.querySelectorAll?.('button, input, textarea, select, a, summary, [tabindex]') || [])];
   // An exact data-key wins; after that a native control wins over a focusable
   // region (such as main, labelled with a memory title) that reads the same.
-  const native = node => /^(BUTTON|INPUT|TEXTAREA|SELECT|A)$/.test(node.tagName);
+  const native = node => /^(BUTTON|INPUT|TEXTAREA|SELECT|A|SUMMARY)$/.test(node.tagName);
   const match = candidates.find(node => node.getAttribute?.('data-key') === key)
     || candidates.find(node => native(node) && keyOf(node) === key)
     || candidates.find(node => keyOf(node) === key);
