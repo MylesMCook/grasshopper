@@ -24,7 +24,8 @@ five agent tools do not change; this page decides what the owner sees.
   phones it becomes a menu at the top.
 - The main column: the page title, search, and sections labelled in a left
   margin by where they apply, or by date for the latest handoff. Each memory is
-  one line with "source · date" on the right. Large lists group by This week,
+  its title with "source · date" underneath, the same whether or not a memory
+  is open, so the list never shifts. Large lists group by This week,
   the month, then Earlier, with "Show N more"; each group's label keeps the
   place ("grasshopper · This week"). New lists projects by name, so deciding
   one never moves the rest.
