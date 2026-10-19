@@ -113,7 +113,8 @@ an already merged PR.
   diff, and resolve known issues before requesting a review of a ready PR.
 - Prefer one external reviewer per ready PR. Copilot, Gemini and Cursor
   Bugbot are the current options when connected and available; leave Claude
-  reviews unused until the owner requests them.
+  reviews unused until the owner requests them. Request Bugbot by commenting
+  `bugbot run` on the PR; its guidance and limits live in `.cursor/`.
 - When external reviewers are unavailable or quota-blocked, an explicitly
   requested independent Codex subagent review may satisfy the repository review
   requirement. The reviewer must not be an author of the changes. Record the

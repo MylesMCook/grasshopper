@@ -1,0 +1,18 @@
+# Bugbot runs only when explicitly requested (comment `bugbot run` on a ready
+# PR). The owner sets "Run only when mentioned" in the Cursor dashboard; this
+# file limits what a run does. Bugbot reads it from the base branch.
+version: 1
+
+triggers:
+  drafts: false
+  frequency: oncePerPr
+
+review:
+  effort: default
+  incremental: true
+
+prSummary:
+  mode: disabled
+
+autofix:
+  mode: disabled
