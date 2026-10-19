@@ -428,6 +428,41 @@ server 2.9.10 and current connectors. A 140 KB prompt piped into the Codex hook
 returned `{}` with exit code 0 on the Mac and on the Windows PC. The Linux
 machine updates when next used.
 
+## 2.10.0 rollout (October 19)
+
+2.10.0 ships the memory view audit and dogfood fixes, Add memory, moves
+between projects, a stable sidebar, and search relevance (#72): meaning hits
+need a calibrated cutoff and must stand out from the store, and exact-word
+search ignores filler words. Local checks: `go test ./...`, `go vet ./...`,
+race tests on memory, service and client, 70 memory-view and 31 site Node
+tests, and the real Granite tests (recall thresholds met; nonsense searches
+find something in at most a third of corpora). CI passed on macOS, Linux and
+Windows for the final head. Copilot reviewed four revisions; all 18 findings
+were fixed with tests and the last minor round had a final diff inspection.
+The memory view was dogfooded in Chromium on a synthetic loopback server at
+desktop, laptop and phone widths, light and dark.
+
+The release workflow passed every job on its first run and deployed the site;
+`setup.js` links the 2.10.0 archives and the marketplace branch moved to
+2.10.0. The macOS server and client archives matched `SHA256SUMS`, all 53
+embedded hashes passed, and the model and runtime are byte-identical to 2.9.10.
+Packaged `--quickstart` started, signed in and shut down cleanly. Rehearsal on
+a copy of the live database: 2.10.0 passed sign-in, counts, current and earlier
+revisions, and search ("publish" 4 results, nonsense none; 2.9.10 returned 39
+for both); 2.9.10 reopened the same copy with every check passing.
+
+Cutover: an encrypted off-machine backup verified first, the service stopped,
+a verified snapshot was taken (272 records, 573 revisions, 364 receipts,
+7 credentials), the binaries were swapped and the service restarted. It reports
+2.10.0 on loopback and over the private route with identical counts; a second
+encrypted off-machine backup verified. The 2.9.10 binaries, service definition
+and snapshot are kept for rollback.
+
+Clients: the Mac moved its Claude Code and Codex connectors to 2.10.0, and
+`grasshopper check` reports server 2.10.0 and both connectors current. A live
+nonsense search through the Claude Code connector returned nothing. The Windows
+PC, the Windows work machine and the Linux machine update when next used.
+
 ## Every release
 
 - `go test ./...`, `go vet ./...`, race tests and all Node tests pass locally.

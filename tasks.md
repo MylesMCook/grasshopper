@@ -1,19 +1,18 @@
 # Grasshopper status
 
-Current release: [2.9.10](https://github.com/MylesMCook/grasshopper/releases/tag/v2.9.10),
-on the marketplace and usegrasshopper.com; the macOS service runs 2.9.10.
+Current release: [2.10.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.0),
+on the marketplace and usegrasshopper.com; the macOS service runs 2.10.0.
 Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-2.10.0 is in release: the memory view audit and dogfood fixes, Add memory,
-moves between projects, a stable sidebar, and search that no longer returns
-every memory (calibrated meaning cutoff, filler words ignored). Owner: Claude
-Code, macOS, branch `memory-view-audit-fixes`. Server, storage and search code
-changed, so the full package, rehearsal and rollback checks apply before the
-live cutover. Search speed, export blocking and history vectors are deferred
-until the store grows.
+2.10.0 is released, deployed and running live (#72). Owner: Claude Code,
+macOS. The Mac's Claude Code and Codex connectors are on 2.10.0; the Windows
+PC, Windows work machine and Linux machine update when next used. Verification
+and rollback copies: [verification](docs/verification.md). Cursor Bugbot
+setup for requested reviews only is in #73. Search speed, export blocking and
+history vectors are deferred until the store grows.
 
 ## Decisions
 
@@ -29,4 +28,4 @@ until the store grows.
 
 ## Next
 
-Update the Linux connector when next used. Deferred: project archive and rename.
+Update the Windows and Linux connectors when next used; merge #73. Deferred: project archive and rename.
