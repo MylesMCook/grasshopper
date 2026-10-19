@@ -177,12 +177,33 @@ test('signing in rejects an empty token, reports a wrong one, and sends the bear
 test('a project page shows suggestions, its own memories, everywhere memories and the latest handoff', async () => {
   const ui = await signedIn();
   const labels = ui.app.querySelectorAll('h2.sec-label').map(node => node.textContent);
-  assert.deepEqual(labels, ['New', 'grasshopper', 'All projects', new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })]);
+  assert.deepEqual(labels, [new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), 'New', 'grasshopper', 'All projects'], 'the latest handoff leads');
   assert.ok(ui.find('Keep Use gh for PR status'), 'suggestions have Keep');
   assert.ok(ui.rows('Prefers deterministic setups'), 'memories for every project show inline, because agents load them here');
   assert.match(ui.text(), /2 memories apply here/, 'the count is what agents start with, not only this project');
   assert.match(ui.rows('Squash merge only').textContent, /Claude Code · today/);
   assert.match(ui.text(), /New1/, 'the sidebar counts suggestions');
+});
+
+test('a project with nothing of its own lists what applies from every project, without an empty section', async () => {
+  const records = Array.from({ length: 9 }, (_, i) => memory(i + 1, `Everywhere ${i + 1}`, { scope: {} }));
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], review_count: 0, server: { version: '2.9.10' }, total: 9 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], total: 9 });
+  assert.deepEqual(ui.app.querySelectorAll('h2.sec-label').map(node => node.textContent), ['All projects']);
+  assert.doesNotMatch(ui.text(), /Nothing kept for this project/);
+  assert.ok(ui.rows('Everywhere 9'), 'not folded behind Show more when nothing else is listed');
+});
+
+test('a scope restricted to a device does not repeat its platform', async () => {
+  const records = [memory(1, 'Device note', { scope: { device: 'mac', platform: 'macos' } })];
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [], review_count: 0, server: { version: '2.9.10' }, total: 1 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [], total: 1 });
+  assert.match(ui.rows('Device note').textContent, /mac only/);
+  assert.doesNotMatch(ui.rows('Device note').textContent, /macOS only/);
 });
 
 test('Preview startup opens what an agent gets for this project', async () => {
@@ -360,25 +381,43 @@ test('an index change held back while typing a device name shows after focus lea
   assert.match(ui.text(), /New3/);
 });
 
-test('an opened memory lists its kind, where it applies, what agents do with it, and who saved it', async () => {
+test('an opened memory lists where it applies, whether it loads at startup, and who saved it', async () => {
   const ui = await signedIn();
   const panel = () => ui.app.querySelector('aside');
   const facts = () => Object.fromEntries(panel().querySelectorAll('section').map(sec => [sec.querySelector('h2').textContent, sec.querySelector('p')?.textContent]));
   await openSquash(ui);
   assert.ok(!ui.app.querySelector('p.about'), 'no prose sentence');
   const labels = panel().querySelectorAll('h2.sec-label').map(node => node.textContent);
-  assert.deepEqual(labels.slice(0, 4), ['Kind', 'Applies to', 'Agents', 'Saved by'], 'facts in a fixed order');
-  assert.equal(facts().Kind, 'Decision');
-  assert.equal(facts().Agents, 'At startup');
+  assert.deepEqual(labels.slice(0, 3), ['Applies to', 'Startup', 'Saved by'], 'facts in a fixed order, with no kind');
+  assert.equal(facts().Startup, 'Loads');
   ui.rows('Use gh for PR status').click();
   await ui.answer('/visualizer/api/record', 200, projectRecords[1]);
-  assert.equal(facts().Agents, 'Not until you keep it');
+  assert.equal(facts().Startup, 'Not until you keep it');
   ui.rows('Squash merge only').click();
   await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], archived: true });
-  assert.equal(facts().Agents, 'Not at startup');
-  assert.match(ui.rows('Squash merge only').textContent, /decision · Claude Code · today/, 'rows start their detail with the kind');
-  assert.match(ui.rows('Use gh for PR status').textContent, /observation · Codex · today/, 'suggestions too');
-  assert.match(ui.rows('Shipped 2.8.5. Next: redesign.').textContent, /handoff · Codex/, 'handoffs too');
+  assert.equal(facts().Startup, 'Not loaded');
+  assert.equal(ui.rows('Squash merge only').textContent, 'Squash merge onlyClaude Code · today', 'rows show only source and date');
+  assert.equal(ui.rows('Use gh for PR status').textContent, 'Use gh for PR statusCodex · today', 'suggestions too');
+  assert.match(ui.rows('Shipped 2.8.5. Next: redesign.').textContent, /handoff · Codex/, 'handoffs still say what they are');
+});
+
+test("the owner's own saves show no internal provenance", async () => {
+  const ui = await signedIn();
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], provenance: { harness: 'memory-view', device: 'owner browser', source: 'Owner action in the memory view' } });
+  const panel = ui.app.querySelector('aside').textContent;
+  assert.match(panel, /Saved byYou/);
+  assert.doesNotMatch(panel, /owner browser|Owner action/);
+});
+
+test('history shows the text each version would restore', async () => {
+  const ui = await signedIn();
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2, content: 'Squash merge only. Always.' });
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], content: 'Rebase is fine too.' });
+  const history = ui.app.querySelector('aside').querySelectorAll('section').find(sec => sec.querySelector('h2').textContent === 'History').textContent;
+  assert.match(history, /Squash merge only\. Always\..*current/, 'the current text');
+  assert.match(history, /Rebase is fine too\./, 'an older text that differs only in content');
 });
 
 test('Keep confirms at the shown revision and a retry reuses its request ID', async () => {
@@ -802,4 +841,63 @@ test('focus restore prefers a native control over a region that shares its name'
   const focused = ui.document.activeElement;
   assert.equal(focused?.tagName, 'BUTTON', 'focus stays on a button, not the region titled "Edit"');
   assert.equal(focused.textContent, 'Edit');
+});
+
+test('Add memory saves a kept memory for the project on screen, then opens it', async () => {
+  const ui = await signedIn();
+  ui.find('Add memory').click();
+  assert.equal(ui.document.activeElement, ui.document.getElementById('edit-title'), 'focus starts at the title');
+  assert.equal(ui.document.getElementById('edit-project').querySelectorAll('option').find(node => node.getAttribute('selected') !== null)?.value, PROJECT, 'it applies to the project on screen by default');
+  ui.document.getElementById('edit-title').value = 'Short answers';
+  ui.document.getElementById('edit-text').value = 'Prefer short answers.';
+  ui.document.getElementById('edit-project').value = PROJECT;
+  ui.find('Save').click();
+  const create = await ui.answer('/visualizer/api/create', 200, { id: 9, revision: 1 });
+  assert.deepEqual({ ...create.body, request_id: undefined }, { project: PROJECT, title: 'Short answers', content: 'Prefer short answers.', request_id: undefined });
+  const opened = ui.pending('/visualizer/api/record')[0];
+  assert.equal(opened?.body.id, 9, 'the new memory opens');
+});
+
+test('Add memory can apply to every project, and asks before dropping typed text', async () => {
+  const ui = await signedIn();
+  ui.find('Add memory').click();
+  const where = ui.document.getElementById('edit-project');
+  where.value = '';
+  where.dispatch('change');
+  ui.document.getElementById('edit-text').value = 'Prefer short answers.';
+  let asked = 0;
+  ui.sandbox.window.confirm = () => { asked++; return false; };
+  ui.find('Cancel').click();
+  assert.equal(asked, 1, 'typed text is not dropped silently');
+  ui.find('Save').click();
+  const create = await ui.answer('/visualizer/api/create', 200, { id: 9, revision: 1 });
+  assert.equal(create.body.project, null);
+});
+
+test('Move to offers every other project as well as All projects', async () => {
+  const OTHER = 'git:github.com/example/tempus';
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT, OTHER, 'legacy-folder'], review_count: 1, server: { version: '2.9.10' }, total: 4 });
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT, OTHER], total: 4 });
+  await openSquash(ui);
+  ui.find('Move to…').click();
+  assert.deepEqual(ui.app.querySelectorAll('button.pick').map(node => node.textContent), ['All projects', 'tempus'], 'not its own project, not a folder name');
+  ui.app.querySelectorAll('button.pick').find(node => node.textContent === 'tempus').click();
+  await flush();
+  assert.equal(ui.requests.find(request => request.url === '/visualizer/api/move').body.project, OTHER);
+});
+
+test('in an edit, Cmd or Ctrl+Enter saves and Escape cancels', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  const form = ui.app.querySelector('form.edit');
+  form.dispatch('keydown', { key: 'Escape' });
+  assert.ok(ui.find('Edit') && !ui.app.querySelector('form.edit'), 'Escape leaves an unchanged edit');
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  ui.app.querySelector('form.edit').dispatch('keydown', { key: 'Enter', metaKey: true });
+  await flush();
+  assert.equal(ui.pending('/visualizer/api/update')[0]?.body.content, 'Squash merge only. Always.');
 });

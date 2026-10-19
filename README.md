@@ -105,8 +105,9 @@ Sign in on your server as the owner. The sidebar has **New** (what agents saved
 that you have not kept yet; agents load it at startup only after you keep it.
 Handoffs are the exception: the latest one loads without being kept),
 **All projects**, your projects, **Agents**, **Archived** and **Settings**.
-Open a memory to edit it, move it between a project and All projects, or
-archive it; earlier versions stay in its history. Each project keeps only its
+**Add memory** saves a rule of your own for a project or All projects. Open a
+memory to edit it, move it to another project or All projects, or archive it;
+earlier versions stay in its history. Each project keeps only its
 latest handoff, and older ones move to Archived. Projects change what you see,
 not who can access it.
 

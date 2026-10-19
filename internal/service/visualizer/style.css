@@ -34,7 +34,8 @@ button:disabled,button[aria-disabled="true"] { opacity:var(--disabled); cursor:d
 /* Every text-like input type, at zero specificity so component rules still win. */
 :where(input:not([type="checkbox"],[type="radio"],[type="hidden"],[type="submit"],[type="button"],[type="reset"],[type="range"],[type="color"],[type="file"],[type="image"])),textarea,select { width:100%; min-height:var(--target); padding:var(--space-2) var(--space-3); background:var(--background); border:1px solid var(--border); }
 input::placeholder,textarea::placeholder { color:var(--muted); opacity:1; }
-textarea { resize:vertical; font:var(--fs-reading)/1.55 var(--font-serif); }
+/* The text box grows with the memory, up to most of the screen. */
+textarea { resize:vertical; font:var(--fs-reading)/1.55 var(--font-serif); field-sizing:content; min-height:calc(3lh + 2 * var(--space-2)); max-height:70vh; }
 .field { display:grid; gap:var(--space-2); font-size:var(--fs-label); font-weight:500; }
 .check { display:flex; align-items:center; gap:var(--space-2); min-height:var(--target); font-size:var(--fs-label); }
 .check input { width:18px; height:18px; accent-color:var(--primary); }
@@ -58,7 +59,7 @@ textarea { resize:vertical; font:var(--fs-reading)/1.55 var(--font-serif); }
 
 /* Layout: permanent sidebar | list | opened item. */
 .app { display:grid; grid-template-columns:var(--sidebar) minmax(0,1fr); min-height:100vh; }
-.app.has-panel { grid-template-columns:var(--sidebar) minmax(0,1fr) minmax(var(--panel-min),var(--panel-max)); }
+.app.has-panel { grid-template-columns:var(--sidebar) minmax(0,calc(var(--page-max) + 2 * var(--space-5))) minmax(var(--panel-min),var(--panel-max)); }
 .side { display:flex; flex-direction:column; gap:var(--space-4); padding:var(--space-4) var(--space-3); border-right:1px solid var(--divider); position:sticky; top:0; height:100vh; overflow:auto; }
 .nav-group { display:grid; }
 .nav.all { border-bottom:1px solid var(--divider); margin-bottom:var(--space-1); }
@@ -70,10 +71,15 @@ textarea { resize:vertical; font:var(--fs-reading)/1.55 var(--font-serif); }
 .count { font-size:var(--fs-meta); font-variant-numeric:tabular-nums; }
 .side-foot { margin-top:auto; }
 .topbar { display:none; }
-main { min-width:0; padding:var(--space-5) var(--space-5) var(--space-6); outline:none; }
+main { min-width:0; padding:var(--space-5) var(--space-5) var(--space-6); }
+/* Main takes focus only so the next Tab starts there; it is not a control. */
+main:focus { outline:none; }
 .page { max-width:var(--page-max); }
 .head { display:flex; justify-content:space-between; align-items:flex-end; gap:var(--space-3); flex-wrap:wrap; margin-bottom:var(--space-4); }
 .head .sub { margin-top:var(--space-2); }
+/* The page's own links sit on its summary line and wrap whole. */
+.head .sub { display:flex; flex-wrap:wrap; align-items:center; column-gap:var(--space-3); }
+.head .sub .quiet { font-size:inherit; }
 .search { width:min(100%,260px); }
 .banner { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--space-2) var(--space-3); padding:var(--space-2) var(--space-3); border:1px solid var(--danger); color:var(--danger); font-size:var(--fs-label); margin-bottom:var(--space-4); }
 .banner .quiet { color:var(--danger); min-height:32px; }
@@ -85,13 +91,13 @@ main { min-width:0; padding:var(--space-5) var(--space-5) var(--space-6); outlin
 .sec { display:grid; grid-template-columns:var(--margin-label) minmax(0,1fr); gap:var(--space-4); padding-block:var(--space-3); border-top:1px solid var(--divider); }
 .sec-label { font:400 var(--fs-meta)/1.5 var(--font-mono); color:var(--muted); padding-top:13px; overflow-wrap:anywhere; }
 .list { display:grid; min-width:0; }
-.row { display:flex; justify-content:space-between; align-items:baseline; gap:var(--space-3); width:calc(100% + 16px); min-height:var(--target); margin-inline:-8px; padding:var(--space-2); border:0; background:transparent; text-align:left; color:var(--foreground); border-radius:var(--radius-content); }
+.row { display:flex; justify-content:space-between; align-items:baseline; gap:var(--space-3); width:calc(100% + 8px); min-height:var(--target); margin-inline:-8px 0; padding:var(--space-2); border:0; background:transparent; text-align:left; color:var(--foreground); border-radius:var(--radius-content); }
 .row .t { font:var(--fs-reading)/1.4 var(--font-serif); min-width:0; overflow-wrap:anywhere; }
 .row .m { font-size:var(--fs-meta); color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
 button.row:hover .t { text-decoration:underline; text-underline-offset:3px; text-decoration-thickness:1px; }
 /* The open row has a 3:1 edge as well as its fill. */
 .row[aria-current="true"] { background:var(--surface); box-shadow:inset 0 0 0 1px var(--border); }
-.row.handoff .t,.row .t.muted { color:var(--muted); }
+.row .t.muted { color:var(--muted); }
 .row.static { cursor:default; }
 .has-panel .row { flex-direction:column; align-items:flex-start; gap:2px; }
 .row-inline { display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); }
@@ -116,6 +122,7 @@ button.row:hover .t { text-decoration:underline; text-underline-offset:3px; text
 /* Opened item. */
 .panel { border-left:1px solid var(--divider); padding:var(--space-5) var(--space-4) var(--space-6); position:sticky; top:0; height:100vh; overflow:auto; min-width:0; }
 .panel-top { display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); margin-bottom:var(--space-3); }
+.close-x { margin-left:auto; }
 .panel-title { font-size:var(--fs-title); line-height:1.2; margin-bottom:var(--space-3); }
 /* Script-focused titles hide the ring only when the browser would not show it. */
 .panel-title:focus:not(:focus-visible) { outline:none; }
@@ -154,7 +161,7 @@ html:has(.undo),.app:has(~ .undo) .panel,.app:has(~ .undo) .side { scroll-paddin
   .close-x { display:none; }
 }
 @media (max-width:759px) {
-  .app,.app.has-panel { grid-template-columns:1fr; }
+  .app,.app.has-panel { grid-template-columns:1fr; align-content:start; }
   .side { display:none; position:static; height:auto; border-right:0; border-bottom:1px solid var(--divider); }
   .app.menu-open .side { display:flex; }
   .app.menu-open .side .brand { display:none; }

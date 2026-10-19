@@ -56,10 +56,13 @@ function projectName(key) {
   return clash && parts.length > 1 ? parts.slice(-2).join('/') : short;
 }
 
-function whereLabel(scope = {}) {
-  const extra = [scope.device && `${deviceName(scope.device)} only`, scope.platform && `${PLATFORM[scope.platform] || scope.platform} only`].filter(Boolean);
-  return [projectName(scope.project), ...extra].join(' · ');
+// A device already implies its platform, so only one restriction shows.
+function onlyLabel(scope = {}) {
+  return scope.device ? `${deviceName(scope.device)} only` : scope.platform ? `${PLATFORM[scope.platform] || scope.platform} only` : '';
 }
+// New memories and moves need a project ID that survives clones and machines.
+function durable(project) { return /^id:.+|^git:[^/]+\/.+/.test(project); }
+function whereLabel(scope = {}) { return [projectName(scope.project), onlyLabel(scope)].filter(Boolean).join(' · '); }
 
 // The owner's name for a device, or its ID. The ID itself never changes.
 function deviceName(id) { return state.devices.find(device => device.device === id && device.label)?.label || id; }
@@ -72,6 +75,7 @@ function daysAgo(value, now = new Date()) {
   const local = d => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
   return Math.round((local(now) - local(date)) / 86400000);
 }
+function excerpt(text, size = 160) { return text.length > size ? `${text.slice(0, size).trimEnd()}…` : text; }
 function shortDate(value) { const date = day(value); return date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''; }
 function relDate(value, now = new Date()) {
   const days = daysAgo(value, now);
@@ -393,6 +397,7 @@ async function signIn(token) {
 
 // Reopens a memory with text that was being edited when the session ended.
 async function restoreDraft(kept) {
+  if (!kept.id) { startCreate(kept.project); state.panel.draft = { title: kept.title, content: kept.content }; render(); return; }
   await openMemory(kept.id, false);
   if (state.panel?.id === kept.id && state.panel.record) {
     Object.assign(state.panel, { mode: 'edit', draft: { title: kept.title, content: kept.content } });
@@ -467,7 +472,7 @@ function draftOf(panel) {
   if (!panel?.record || (panel.mode !== 'edit' && panel.mode !== 'conflict')) return null;
   const title = document.getElementById('edit-title')?.value ?? panel.draft?.title ?? panel.record.title;
   const content = document.getElementById('edit-text')?.value ?? panel.draft?.content ?? panel.record.content;
-  return title !== panel.record.title || content !== panel.record.content ? { id: panel.record.id, title, content } : null;
+  return title !== panel.record.title || content !== panel.record.content ? { id: panel.record.id, title, content, project: panel.project } : null;
 }
 function dirty() {
   const panel = state.panel;
@@ -570,6 +575,12 @@ function saveEdit(panel) {
     return false;
   }
   panel.error = ''; panel.errorField = '';
+  if (!record.id) {
+    const project = document.getElementById('edit-project')?.value ?? panel.project;
+    return write('/visualizer/api/create', { project: project || null, title, content }, {
+      onDone: receipt => { say('Saved.'); if (state.panel === panel) { state.panel = null; openMemory(receipt.id); } }
+    });
+  }
   const expected = panel.theirs ? panel.theirs.revision : record.revision;
   return write('/visualizer/api/update', { id: record.id, expected_revision: expected, title, content, purpose: record.purpose }, {
     // If another memory was opened while this saved, leave that panel and its focus alone.
@@ -710,7 +721,7 @@ function sidebar() {
       projects.length > 5 ? h('button', { type: 'button', class: 'nav', 'data-key': 'nav:more', onclick: () => { state.moreProjects = !state.moreProjects; render(); } }, h('span', { text: state.moreProjects ? 'Fewer' : `${projects.length - 5} more` })) : null),
     h('div', { class: 'nav-group side-foot' },
       h('button', { type: 'button', class: 'nav', 'data-key': 'nav:#page=agents', 'aria-current': route.page === 'agents' ? 'page' : null, onclick: () => go({ page: 'agents' }) },
-        h('span', {}, h('span', { class: 'dots', 'aria-hidden': 'true' }, devices.slice(0, 6).map(device => h('i', { class: recentlySeen(device) ? 'dot on' : 'dot' }))), 'Agents',
+        h('span', {}, devices.length ? h('span', { class: 'dots', 'aria-hidden': 'true' }, devices.slice(0, 6).map(device => h('i', { class: recentlySeen(device) ? 'dot on' : 'dot' }))) : null, 'Agents',
           devices.length ? h('span', { class: 'visually-hidden', text: `, ${active} of ${devices.length} active` }) : null),
         waiting ? h('span', { class: 'count warn', text: `${waiting} waiting` }) : null),
       navButton('Archived', { page: 'archived' }, { current: route.page === 'archived' }),
@@ -718,10 +729,8 @@ function sidebar() {
 }
 
 function row(record, { meta } = {}) {
-  const only = [record.scope?.device && `${deviceName(record.scope.device)} only`, record.scope?.platform && `${PLATFORM[record.scope.platform] || record.scope.platform} only`].filter(Boolean).join(' · ');
-  // The kind leads every row's detail, whatever else the list adds.
-  const right = [record.purpose, meta ?? [by(record), relDate(record.updated_at), only].filter(Boolean).join(' · ')].filter(Boolean).join(' · ');
-  return h('button', { type: 'button', class: `row${record.purpose === 'handoff' ? ' handoff' : ''}`, 'data-key': `open:${record.id}`, 'aria-current': state.panel?.id === record.id ? 'true' : null,
+  const right = [record.purpose === 'handoff' && 'handoff', meta ?? [by(record), relDate(record.updated_at), onlyLabel(record.scope)].filter(Boolean).join(' · ')].filter(Boolean).join(' · ');
+  return h('button', { type: 'button', class: 'row', 'data-key': `open:${record.id}`, 'aria-current': state.panel?.id === record.id ? 'true' : null,
     title: fullDate(record.updated_at), onclick: () => openMemory(record.id) },
   h('span', { class: 't', text: record.title || `Memory #${record.id}` }), h('span', { class: 'm', text: right }));
 }
@@ -752,7 +761,7 @@ function grouped(records) {
 
 function head(title, sub, { search = true } = {}) {
   return h('div', { class: 'head' },
-    h('div', {}, h('h1', { id: 'page-title', text: title }), sub ? h('p', { class: 'meta sub', text: sub }) : null),
+    h('div', {}, h('h1', { id: 'page-title', text: title }), sub ? h('p', { class: 'meta sub' }, sub) : null),
     search ? h('form', { class: 'search', role: 'search', onsubmit: event => {
       event.preventDefault();
       const query = event.target.querySelector('input').value.trim();
@@ -790,14 +799,14 @@ function projectPage() {
     const handoff = records.filter(record => record.purpose === 'handoff' && record.scope?.project === project).sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0];
     // Agents load this project's and every project's kept memories, so count and show both.
     const applying = own.length + global.length;
-    return [head(projectName(project), `${applying} ${applying === 1 ? 'memory applies' : 'memories apply'} here`), banner(),
-      h('button', { type: 'button', class: 'quiet', onclick: () => openStartup(project) }, 'Preview startup'),
+    return [head(projectName(project), [`${applying} ${applying === 1 ? 'memory applies' : 'memories apply'} here`, h('button', { type: 'button', class: 'quiet', onclick: () => startCreate(project) }, 'Add memory'), h('button', { type: 'button', class: 'quiet', onclick: () => openStartup(project) }, 'Preview startup')]), banner(),
+      handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null,
       fresh.length ? section('New', fresh.map(record => suggestionRow(record, kept)), 'warn') : null,
-      grouped(own) || section(projectName(project), own.length ? own.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing kept for this project yet.' })),
-      global.length ? section('All projects', global.length <= 8 ? global.map(record => row(record)) : state.showGlobal
+      // An empty project section only matters when nothing else applies here.
+      own.length || !global.length ? grouped(own) || section(projectName(project), own.length ? own.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing kept for this project yet.' })) : null,
+      global.length ? section('All projects', global.length <= 8 || !own.length ? global.map(record => row(record)) : state.showGlobal
         ? [global.map(record => row(record)), h('button', { type: 'button', class: 'quiet more muted', onclick: () => { state.showGlobal = false; render(); } }, 'Hide')]
-        : h('button', { type: 'button', class: 'quiet more', onclick: () => { state.showGlobal = true; render(); } }, `Show ${global.length} that also apply here`)) : null,
-      handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null];
+        : h('button', { type: 'button', class: 'quiet more', onclick: () => { state.showGlobal = true; render(); } }, `Show ${global.length} that also apply here`)) : null];
   });
 }
 
@@ -808,10 +817,10 @@ function allPage() {
     const fresh = records.filter(record => !record.confirmed && record.purpose !== 'handoff');
     const kept = records.filter(record => record.confirmed && record.purpose !== 'handoff');
     const handoff = records.filter(record => record.purpose === 'handoff').sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0];
-    return [head('All projects', 'Memories that apply to every project'), banner(),
+    return [head('All projects', ['Memories that apply to every project', h('button', { type: 'button', class: 'quiet', onclick: () => startCreate('') }, 'Add memory')]), banner(),
+      handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null,
       fresh.length ? section('New', fresh.map(record => suggestionRow(record, kept)), 'warn') : null,
-      grouped(kept) || section('All projects', kept.length ? kept.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing applies to every project yet.' })),
-      handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null];
+      grouped(kept) || section('All projects', kept.length ? kept.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing applies to every project yet.' }))];
   });
 }
 
@@ -927,7 +936,7 @@ function invalidProps(panel, id) {
 function editForm(panel) {
   const record = panel.record;
   const draft = panel.draft || { title: record.title, content: record.content };
-  const out = [];
+  const out = record.id ? [] : [h('h2', { class: 'panel-title', text: 'Add memory' })];
   if (panel.mode === 'conflict') out.push(h('div', { class: 'conflict', role: 'alert' },
     h('p', { class: 'label warn', text: `${by(panel.theirs) === 'you' ? 'Someone' : by(panel.theirs)} changed this while you were editing. Nothing was overwritten.` }),
     h('div', {}, h('p', { class: 'who', text: `${by(panel.theirs)} · ${relDate(panel.theirs.updated_at)}` }), h('p', { class: 'reading', text: panel.theirs.content })),
@@ -935,17 +944,32 @@ function editForm(panel) {
     h('div', { class: 'actions' },
       h('button', { type: 'button', class: 'btn', 'aria-disabled': saving, onclick: () => saveEdit(panel) }, 'Keep yours'),
       h('button', { type: 'button', class: 'quiet', onclick: () => keepTheirs(panel) }, 'Keep theirs'))));
-  out.push(h('form', { class: 'edit', hidden: panel.mode === 'conflict', onsubmit: event => { event.preventDefault(); saveEdit(panel); } },
+  const cancel = () => { if (!dirty() || confirmLeave()) { if (record.id) Object.assign(panel, { mode: 'view', error: '', errorField: '', draft: null }); else state.panel = null; render(); } };
+  out.push(h('form', { class: 'edit', hidden: panel.mode === 'conflict', onsubmit: event => { event.preventDefault(); saveEdit(panel); },
+    // Cmd/Ctrl+Enter saves and Escape cancels, as in most editors.
+    onkeydown: event => {
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); saveEdit(panel); }
+      else if (event.key === 'Escape') { event.preventDefault(); cancel(); }
+    } },
     h('label', { class: 'field' }, 'Title', h('input', { id: 'edit-title', type: 'text', value: draft.title, ...invalidProps(panel, 'edit-title') })),
     h('label', { class: 'field' }, 'Text', h('textarea', { id: 'edit-text', rows: '6', value: draft.content, ...invalidProps(panel, 'edit-text') })),
+    record.id ? null : h('label', { class: 'field' }, 'Applies to', h('select', { id: 'edit-project', onchange: event => { panel.project = event.target.value; } },
+      [null, ...sortedProjects().filter(durable)].map(project => h('option', { value: project || '', selected: (panel.project || '') === (project || '') ? true : null }, projectName(project))))),
     panel.error ? h('p', { class: 'error', id: 'edit-error', role: 'alert', text: panel.error }) : null,
     h('div', { class: 'actions' },
       h('button', { type: 'submit', class: 'btn', 'data-key': 'save', 'aria-disabled': saving }, saving ? 'Saving…' : 'Save'),
-      h('button', { type: 'button', class: 'quiet muted', onclick: () => { if (!dirty() || confirmLeave()) { Object.assign(panel, { mode: 'view', error: '', errorField: '', draft: null }); render(); } } }, 'Cancel')),
-    h('p', { class: 'meta', text: 'Your edit becomes the current version. The old one stays in History.' })));
+      h('button', { type: 'button', class: 'quiet muted', onclick: cancel }, 'Cancel')),
+    record.id ? h('p', { class: 'meta', text: 'Your edit becomes the current version. The old one stays in History.' }) : null));
   return out;
 }
 
+// A new memory is an empty one in edit mode, so drafts, redraws and leaving work as for an edit.
+function startCreate(project) {
+  if (dirty() && !confirmLeave()) return;
+  state.panel = { type: 'memory', id: null, record: { title: '', content: '', scope: {} }, mode: 'edit', project: durable(project) ? project : '', error: '', draft: null };
+  render();
+  document.getElementById('edit-title')?.focus?.();
+}
 function startEdit(panel) { panel.mode = 'edit'; render(); document.getElementById('edit-text')?.focus?.(); }
 
 function memoryPanel(panel) {
@@ -954,13 +978,14 @@ function memoryPanel(panel) {
   if (panel.mode === 'edit' || panel.mode === 'conflict') return editForm(panel);
   if (panel.mode === 'move') {
     return [h('h2', { class: 'panel-title', text: record.title }), h('p', { class: 'label', text: 'Move to' }),
-      h('div', { class: 'picker' }, (record.scope?.project ? [null] : sortedProjects().filter(project => /^id:.+|^git:[^/]+\/.+/.test(project))).map(project =>
+      h('div', { class: 'picker' }, [null, ...sortedProjects().filter(durable)].filter(project => project !== (record.scope?.project ?? null)).map(project =>
         h('button', { type: 'button', class: 'pick', 'aria-disabled': saving, onclick: () => move(record, project) }, projectName(project)))),
       h('button', { type: 'button', class: 'quiet muted', onclick: () => { panel.mode = 'view'; render(); } }, 'Cancel')];
   }
   const isNew = !record.confirmed && record.purpose !== 'handoff' && !record.archived;
   const similar = isNew ? similarTo(record, [...(state.index?.records || []), ...(state.page?.records || [])]) : null;
-  const movable = record.purpose !== 'handoff' && !record.scope?.device && !record.scope?.platform;
+  // Moving changes only the project; a device or platform restriction stays.
+  const movable = record.purpose !== 'handoff';
   const actions = record.archived
     ? [h('button', { type: 'button', class: 'btn', 'aria-disabled': saving, onclick: () => restore(record) }, 'Restore')]
     : isNew
@@ -975,18 +1000,21 @@ function memoryPanel(panel) {
     h('p', { class: 'reading full', text: record.content }),
     h('div', { class: 'actions' }, actions),
     similar ? section('Similar', [row(similar), h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: () => keepAndReplace(record, similar) }, 'Keep and replace it')], 'warn') : null,
-    section('Kind', h('p', { class: 'val', text: record.purpose.charAt(0).toUpperCase() + record.purpose.slice(1) })),
     section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), record.scope?.project ? h('span', { class: 'meta', text: record.scope.project }) : null)),
-    // What agents do with it. "At startup" means it can load; Preview startup shows the size limit's cuts.
-    section('Agents', h('p', { class: 'val', text: record.archived ? 'Not at startup' : isNew ? 'Not until you keep it' : 'At startup' })),
-    section(isNew ? 'Noticed by' : 'Saved by', h('p', { class: 'val' }, by(record) === 'you' ? 'You' : by(record),
-      h('span', { class: 'meta', text: [fullDate(record.updated_at), source.device && deviceName(source.device)].filter(Boolean).join(' · ') }),
-      source.source ? h('span', { class: 'meta', text: `“${source.source}”` }) : null)),
+    // "Loads" means it can load; Preview startup shows the size limit's cuts.
+    section('Startup', h('p', { class: 'val', text: record.archived ? 'Not loaded' : isNew ? 'Not until you keep it' : 'Loads' })),
+    // The owner's own saves carry fixed internal provenance, so only the date shows.
+    section(isNew ? 'Noticed by' : 'Saved by', by(record) === 'you' ? h('p', { class: 'val' }, 'You', h('span', { class: 'meta', text: fullDate(record.updated_at) }))
+      : h('p', { class: 'val' }, by(record),
+        h('span', { class: 'meta', text: [fullDate(record.updated_at), source.device && deviceName(source.device)].filter(Boolean).join(' · ') }),
+        source.source ? h('span', { class: 'meta', text: `“${source.source}”` }) : null)),
     record.purpose === 'handoff' && !record.archived ? section('Kept until', h('p', { class: 'val' }, 'The next handoff', h('span', { class: 'meta', text: 'Then it moves to Archived.' }))) : null,
     record.revision > 1 ? section('History', panel.history === null ? h('p', { class: 'meta', text: 'Loading…' }) : [
-      h('div', { class: 'row static' }, h('span', { class: 't', text: record.title }), h('span', { class: 'm', text: `${by(record)} · ${relDate(record.updated_at)} · current` })),
+      // Each version shows its text, and its title only where that differs, so Restore is never blind.
+      h('div', { class: 'row static' }, h('span', { class: 't', text: excerpt(record.content) }), h('span', { class: 'm', text: `${by(record)} · ${relDate(record.updated_at)} · current` })),
       panel.history.map(older => h('div', { class: 'row-inline' },
-        h('div', { class: 'row static' }, h('span', { class: 't muted', text: older.title || older.content.slice(0, 80) }), h('span', { class: 'm', text: `${by(older)} · ${relDate(older.updated_at)}` })),
+        h('div', { class: 'row static' }, h('span', { class: 't muted', text: excerpt(older.content) }),
+          h('span', { class: 'm', text: [by(older), relDate(older.updated_at), older.title !== record.title && `titled “${older.title}”`].filter(Boolean).join(' · ') })),
         record.archived ? null : h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `restore-version:${older.revision}`, 'aria-label': `Restore version from ${relDate(older.updated_at)}`, onclick: () => restoreRevision(record, older) }, 'Restore'))),
       panel.olderFrom >= 1 ? h('button', { type: 'button', class: 'quiet more', onclick: () => loadHistory(panel, true) }, 'Show older versions') : null]) : null];
 }

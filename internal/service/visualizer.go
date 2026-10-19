@@ -372,7 +372,33 @@ func visualizerUpdate(store *memory.Writer, save ownerSave, audit *auditLog) htt
 	}
 }
 
-// visualizerMove moves a memory between a project and every project. The
+// visualizerCreate saves a new memory the owner writes, already kept, for
+// every project or one durable project. Owner-written memories are
+// preferences: rules the owner wants agents to follow.
+func visualizerCreate(store *memory.Writer, save ownerSave, audit *auditLog) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Project   *string `json:"project"`
+			Title     string  `json:"title"`
+			Content   string  `json:"content"`
+			RequestID string  `json:"request_id"`
+		}
+		if !decodeVisualizerRead(w, r, &input, 65536) {
+			return
+		}
+		// An empty title means derive it, as in an edit.
+		receipt, _, err := save(r.Context(), memory.WriteInput{
+			Scope: memory.Scope{Project: input.Project}, Content: input.Content, Title: &input.Title,
+			Purpose: "preference", Confirmed: true, Provenance: ownerProvenance, RequestID: input.RequestID,
+		})
+		if err == nil {
+			audit.event("owner_write", r, auditFields{action: "create", id: receipt.ID, revision: receipt.Revision, requestID: input.RequestID})
+		}
+		ownerWriteResult(w, r, store, 0, receipt, err)
+	}
+}
+
+// visualizerMove moves a memory to another project or every project. The
 // writer copies it (same text, purpose, confirmation and original source) and
 // archives the original in one transaction, so a failed or stale move changes
 // nothing and a retry with the same request ID replays.
@@ -471,7 +497,7 @@ func ownerWriteResult(w http.ResponseWriter, r *http.Request, store *memory.Writ
 		http.Error(w, "revision not found", http.StatusNotFound)
 	case strings.HasPrefix(err.Error(), "memory_not_found"):
 		http.Error(w, "memory not found", http.StatusNotFound)
-	case strings.HasPrefix(err.Error(), "content must be"), strings.HasPrefix(err.Error(), "invalid purpose"),
+	case strings.HasPrefix(err.Error(), "content must be"), strings.HasPrefix(err.Error(), "invalid purpose"), strings.HasPrefix(err.Error(), "project must use"),
 		strings.HasPrefix(err.Error(), "metadata too large"), strings.HasPrefix(err.Error(), "request_id must"):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
