@@ -33,6 +33,8 @@ button { cursor:pointer; }
 button:disabled,button[aria-disabled="true"] { opacity:var(--disabled); cursor:default; }
 /* Every text-like input type, at zero specificity so component rules still win. */
 :where(input:not([type="checkbox"],[type="radio"],[type="hidden"],[type="submit"],[type="button"],[type="reset"],[type="range"],[type="color"],[type="file"],[type="image"])),textarea,select { width:100%; min-height:var(--target); padding:var(--space-2) var(--space-3); background:var(--background); border:1px solid var(--border); }
+/* The native select arrow hugs the edge, so draw one inset like the text. */
+select { appearance:none; padding-right:calc(var(--space-3) + 20px); background-image:linear-gradient(45deg,transparent 50%,var(--foreground) 50%),linear-gradient(135deg,var(--foreground) 50%,transparent 50%); background-position:calc(100% - var(--space-3) - 5px) 50%,calc(100% - var(--space-3)) 50%; background-size:5px 5px; background-repeat:no-repeat; }
 input::placeholder,textarea::placeholder { color:var(--muted); opacity:1; }
 /* The text box grows with the memory, up to most of the screen. */
 textarea { resize:vertical; font:var(--fs-reading)/1.55 var(--font-serif); field-sizing:content; min-height:calc(3lh + 2 * var(--space-2)); max-height:70vh; }
@@ -183,4 +185,5 @@ html:has(.undo),.app:has(~ .undo) .panel,.app:has(~ .undo) .side { scroll-paddin
   .undo,.confirm,.conflict,.strip { border:1px solid CanvasText; }
   .dot { forced-color-adjust:none; background:Canvas; border:1px solid CanvasText; }
   .dot.on { background:CanvasText; }
+  select { appearance:auto; background-image:none; padding-right:var(--space-3); }
 }

@@ -76,6 +76,8 @@ figcaption { margin-top:var(--space-2); font-size:var(--fs-meta); color:var(--mu
 .pickers { display:flex; flex-wrap:wrap; gap:var(--space-3) var(--space-5); margin-bottom:var(--space-4); }
 .picker { display:grid; gap:var(--space-2); font-size:var(--fs-meta); color:var(--muted); }
 .picker select { min-height:var(--target); min-width:180px; padding:var(--space-2) var(--space-3); border:1px solid var(--border); border-radius:var(--radius-control); background:var(--background); color:var(--foreground); font:inherit; font-size:var(--fs-label); }
+/* The native select arrow hugs the edge, so draw one inset like the text. */
+.picker select { appearance:none; padding-right:calc(var(--space-3) + 20px); background-image:linear-gradient(45deg,transparent 50%,var(--foreground) 50%),linear-gradient(135deg,var(--foreground) 50%,transparent 50%); background-position:calc(100% - var(--space-3) - 5px) 50%,calc(100% - var(--space-3)) 50%; background-size:5px 5px; background-repeat:no-repeat; }
 .steps { max-width:var(--steps-max); }
 .steps .sec { grid-template-columns:120px minmax(0,1fr); }
 .steps .sec-label { font-size:var(--fs-label); color:var(--foreground); padding-top:2px; }
@@ -119,4 +121,4 @@ details code,.note code { background:var(--surface); padding:1px 5px; }
   .top nav { gap:var(--space-1) var(--space-3); margin-left:0; }
   .command pre { white-space:pre-wrap; word-break:break-all; }
 }
-@media (forced-colors:active) { .command { border:1px solid CanvasText; } }
+@media (forced-colors:active) { .command { border:1px solid CanvasText; } .picker select { appearance:auto; background-image:none; padding-right:var(--space-3); } }
