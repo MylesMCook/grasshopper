@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -117,5 +118,52 @@ func TestOwnerMovesAMemoryBetweenProjects(t *testing.T) {
 	}
 	if original, _ := store.RecordByID(ctx, saved.ID, nil); original == nil || !original.Archived {
 		t.Fatalf("original was not archived: %+v", original)
+	}
+}
+
+// The owner changes a device or platform restriction as well as the project.
+// A request that leaves device or platform out keeps them as they were.
+func TestOwnerChangesWhereADeviceMemoryApplies(t *testing.T) {
+	server, store := testServer(t, true)
+	ctx := context.Background()
+	deviceSave := func(request string) memory.Receipt {
+		device, platform := "mac-mini", "macos"
+		receipt, err := store.Write(ctx, memory.WriteInput{Scope: memory.Scope{Device: &device, Platform: &platform}, Title: ptr("Worktrees " + request), Content: "Use primary checkouts " + request + ".", Purpose: "preference", Confirmed: true,
+			Provenance: memory.Provenance{Harness: "codex-desktop", Device: "mac-mini", Source: "device rule"}, RequestID: request}, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return receipt
+	}
+	moveTo := func(saved memory.Receipt, body map[string]any) (int, *memory.Record) {
+		body["id"], body["expected_revision"], body["request_id"] = saved.ID, saved.Revision, "move-"+strings.ReplaceAll(fmt.Sprint(body), " ", "")
+		status, reply := ownerJSON(t, server, "/visualizer/api/move", body)
+		if status != http.StatusOK {
+			return status, nil
+		}
+		var id int64
+		_ = json.Unmarshal(reply["id"], &id)
+		record, _ := store.RecordByID(ctx, id, nil)
+		return status, record
+	}
+
+	everywhere := deviceSave("a")
+	if status, copied := moveTo(everywhere, map[string]any{"project": nil, "device": nil, "platform": nil}); status != http.StatusOK || copied.Scope.Device != nil || copied.Scope.Platform != nil || copied.Provenance.Harness != "codex-desktop" {
+		t.Fatalf("lifting the restriction: status=%d %+v", status, copied)
+	}
+	other := deviceSave("b")
+	if status, copied := moveTo(other, map[string]any{"project": nil, "device": "work-laptop", "platform": "windows"}); status != http.StatusOK || *copied.Scope.Device != "work-laptop" || *copied.Scope.Platform != "windows" {
+		t.Fatalf("another device: status=%d %+v", status, copied)
+	}
+	kept := deviceSave("c")
+	if status, copied := moveTo(kept, map[string]any{"project": "id:elsewhere"}); status != http.StatusOK || copied.Scope.Device == nil || *copied.Scope.Device != "mac-mini" || *copied.Scope.Project != "id:elsewhere" {
+		t.Fatalf("omitted device must stay: status=%d %+v", status, copied)
+	}
+	same := deviceSave("d")
+	if status, _ := moveTo(same, map[string]any{"project": nil, "device": "mac-mini", "platform": "macos"}); status != http.StatusBadRequest {
+		t.Fatalf("same place: status=%d", status)
+	}
+	if status, _ := moveTo(same, map[string]any{"project": nil, "device": nil, "platform": "beos"}); status != http.StatusBadRequest {
+		t.Fatalf("invalid platform: status=%d", status)
 	}
 }
