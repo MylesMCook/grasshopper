@@ -1,17 +1,18 @@
 # Grasshopper status
 
-Current release: [2.10.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.2),
-on the marketplace and usegrasshopper.com; the macOS service runs 2.10.2.
+Current release: [2.10.3](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.3),
+on the marketplace and usegrasshopper.com; the macOS service runs 2.10.3.
 Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-2.10.3 is in release: handoffs can be moved, and History lists earlier
-versions as full-width blocks. Owner: Claude Code, macOS, branch
-`move-handoffs-history`. Server code changed, so the full rehearsal applies.
-2.10.2 runs live; the Windows PC, Windows work machine and Linux machine
-update when next used.
+2.10.3 is released, deployed and running live (#79). Owner: Claude Code,
+macOS. The Mac's connectors are on 2.10.3 (`grasshopper check`); the Windows
+PC, Windows work machine and Linux machine update when next used.
+`TestWindowsHookPreservesInputAndExitStatus` timed out once on a Windows
+release runner in 2.10.2; watch for flakiness. Verification and rollback
+copies: [verification](docs/verification.md).
 
 ## Decisions
 
