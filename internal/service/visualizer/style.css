@@ -124,6 +124,15 @@ button.row:hover .t { text-decoration:underline; text-underline-offset:3px; text
 .pairing.focused { outline:2px solid var(--focus); outline-offset:6px; }
 .code { font-size:var(--fs-title); letter-spacing:.14em; font-variant-numeric:tabular-nums; }
 
+/* History: a full-width list of earlier versions, each a short block. */
+.sec.stacked,.panel .sec.stacked { grid-template-columns:minmax(0,1fr); gap:var(--space-2); }
+.version { display:grid; gap:var(--space-1); padding-block:var(--space-3); border-top:1px solid var(--divider); }
+.version:first-child { border-top:0; padding-top:0; }
+.version-head { display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); }
+.version-title { font-size:var(--fs-label); }
+.version-text { font:var(--fs-body)/1.55 var(--font-serif); color:var(--muted); white-space:pre-wrap; overflow-wrap:anywhere; }
+.version-text.clamp { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; line-clamp:3; overflow:hidden; }
+
 /* Opened item. */
 .panel { border-left:1px solid var(--divider); padding:var(--space-5) var(--space-4) var(--space-6); position:sticky; top:0; height:100vh; overflow:auto; min-width:0; }
 .panel-top { display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); margin-bottom:var(--space-3); }

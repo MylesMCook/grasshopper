@@ -7,11 +7,11 @@ Earlier release records are in Git history and
 
 ## Active
 
-2.10.2 is released, deployed and running live (#77). Owner: Claude Code,
-macOS. The Mac's connectors are on 2.10.2; the Windows PC, Windows work machine
-and Linux machine update when next used. `TestWindowsHookPreservesInputAndExitStatus`
-timed out once on a Windows release runner; watch for flakiness. Verification
-and rollback copies: [verification](docs/verification.md).
+2.10.3 is in release: handoffs can be moved, and History lists earlier
+versions as full-width blocks. Owner: Claude Code, macOS, branch
+`move-handoffs-history`. Server code changed, so the full rehearsal applies.
+2.10.2 runs live; the Windows PC, Windows work machine and Linux machine
+update when next used.
 
 ## Decisions
 

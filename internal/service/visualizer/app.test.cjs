@@ -417,8 +417,9 @@ test('history shows the text each version would restore', async () => {
   await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2, content: 'Squash merge only. Always.' });
   await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], content: 'Rebase is fine too.' });
   const history = ui.app.querySelector('aside').querySelectorAll('section').find(sec => sec.querySelector('h2').textContent === 'History').textContent;
-  assert.match(history, /Squash merge only\. Always\..*current/, 'the current text');
+  assert.doesNotMatch(history, /Squash merge only\. Always\./, 'the current text is shown above, not repeated');
   assert.match(history, /Rebase is fine too\./, 'an older text that differs only in content');
+  assert.ok(ui.find('Restore version from today'), 'each earlier version can be restored');
 });
 
 test('Keep confirms at the shown revision and a retry reuses its request ID', async () => {
@@ -1121,7 +1122,10 @@ test('a long earlier version can be read in full before restoring it', async () 
   ui.rows('Squash merge only').click();
   await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2, content: 'Current text.' });
   await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], content: older });
-  assert.ok(ui.app.querySelector('aside').querySelector('details'), 'a long version expands');
+  const more = ui.find('Show all');
+  assert.equal(more?.getAttribute('aria-expanded'), 'false', 'a long version starts short');
+  more.click();
+  assert.equal(ui.find('Show less')?.getAttribute('aria-expanded'), 'true');
   assert.match(ui.app.querySelector('aside').textContent, /The changed instruction is at the end\./);
 });
 
@@ -1131,14 +1135,12 @@ test('an opened long version stays open across a refresh', async () => {
   ui.rows('Squash merge only').click();
   await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2, content: 'Current text.' });
   await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], content: older });
-  const details = ui.app.querySelector('aside').querySelector('details');
-  details.attributes.open = '';
-  details.dispatch('toggle');
+  ui.find('Show all').click();
   for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 15000) { ui.timers.delete(id); timer.fn(); }
   await flush();
   for (const request of ui.pending('/visualizer/api/context')) { request.done = true; request.reply(200, { records: projectRecords, projects: [PROJECT], review_count: 2, server: { version: '2.10.0' }, total: 4 }); }
   await flush();
-  assert.notEqual(ui.app.querySelector('aside').querySelector('details').getAttribute('open'), null);
+  assert.ok(ui.find('Show less'), 'still open');
 });
 
 test('cancelling Add memory over an open memory forgets that memory in the address', async () => {
@@ -1174,10 +1176,10 @@ test('Move to changes or lifts a device or OS restriction', async () => {
   assert.deepEqual([moved.body.project, moved.body.device, moved.body.platform], [null, null, null], 'applies on every device');
 });
 
-test('a handoff says why it has no Move to', async () => {
+test('a handoff can be moved like any memory', async () => {
   const ui = await signedIn();
   ui.rows('Shipped 2.8.5. Next: redesign.').click();
   await ui.answer('/visualizer/api/record', 200, projectRecords[3]);
-  assert.ok(!ui.find('Move to…'));
-  assert.match(ui.app.querySelector('aside').textContent, /Handoffs stay where the agent saved them\./);
+  assert.ok(ui.find('Move to…'));
+  assert.doesNotMatch(ui.app.querySelector('aside').textContent, /Handoffs stay/);
 });
