@@ -23,7 +23,9 @@ five agent tools do not change; this page decides what the owner sees.
 - The main column: the page title, search, and sections labelled in a left
   margin by where they apply, or by date for the latest handoff. Each memory is
   one line with "source · date" on the right. Large lists group by This week,
-  the month, then Earlier, with "Show N more".
+  the month, then Earlier, with "Show N more"; each group's label keeps the
+  place ("grasshopper · This week"). New lists projects by name, so deciding
+  one never moves the rest.
 - A project page shows what its agents start with: the latest handoff first,
   then its own memories and the memories for every project (folded only past 8,
   and never when the project has none of its own). An empty project section
@@ -36,8 +38,14 @@ five agent tools do not change; this page decides what the owner sees.
   Move to…, Archive, then Applies to, Startup (Loads, Not until you keep it,
   Not loaded), Saved by and History. Each row's detail is "Codex · Oct 6";
   handoffs start with "handoff". A device restriction hides the platform it
-  implies. History shows each version's text, and its title where that differs.
+  implies. History shows each version's text, and its title where that differs,
+  and appears only when an earlier version differs. Escape closes the panel and
+  focus returns to the row that opened it. Archive and restore keep the
+  memory's author; the audit log records the owner's action.
   The owner's own saves show "You" and the date, without internal provenance.
+- Move to is a dropdown of All projects and durable projects by name, starting
+  at where the memory applies now; Move does nothing until another place is
+  picked.
 - Add memory and Edit share one form. The text box grows with the text;
   Cmd/Ctrl+Enter saves and Escape cancels. A memory the owner adds is kept at
   once and saved as a preference for the chosen project or All projects.

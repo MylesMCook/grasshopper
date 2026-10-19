@@ -52,6 +52,7 @@ func TestGraniteFrozenHybridRecall(t *testing.T) {
 		t.Fatal(err)
 	}
 	top1, top3, total := 0, 0, 0
+	nonsenseHits, nonsenseTotal := 0, 0
 	longTop1, longTop3, longTotal := 0, 0, 0
 	for _, corpus := range fixture.Corpora {
 		database := filepath.Join(t.TempDir(), "recall.db")
@@ -121,9 +122,28 @@ func TestGraniteFrozenHybridRecall(t *testing.T) {
 				}
 			}
 		}
+		// Nonsense should find nothing in most corpora and scopes.
+		for _, nonsense := range []string{"zzqx nothing", "asdf qwerty", "purple elephant trombone", "xyzzy plugh", "banana", "the weather in paris"} {
+			vector, err := b.EmbedQuery(nonsense)
+			if err != nil {
+				t.Fatal(err)
+			}
+			page, err := w.Search(ctx, corpus.Queries[0].Scope, nonsense, vector, ModelName, 10, 65536)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nonsenseTotal++
+			if len(page.Records) > 0 {
+				nonsenseHits++
+				t.Logf("%q found %d", nonsense, len(page.Records))
+			}
+		}
 		if err := w.Close(); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if nonsenseHits*3 > nonsenseTotal {
+		t.Errorf("nonsense found something in %d of %d searches; require at most a third", nonsenseHits, nonsenseTotal)
 	}
 	if total != 160 || top1 < 122 || top3 < 143 {
 		t.Errorf("hybrid recall: top1=%d/%d top3=%d/%d; require 122/160 and 143/160", top1, total, top3, total)

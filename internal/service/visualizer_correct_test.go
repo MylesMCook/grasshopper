@@ -413,3 +413,20 @@ func TestOwnerRevisionRestoreSharesEmbeddingFailureAndSearchContract(t *testing.
 		t.Fatalf("restored embedding unavailable: %+v %v", page, err)
 	}
 }
+
+// Archiving and restoring change only whether a memory loads, so the memory
+// keeps the agent that wrote it; the audit log records the owner's action.
+func TestOwnerArchiveAndRestoreKeepTheAuthor(t *testing.T) {
+	server, store := testServer(t, true)
+	saved := agentSave(t, store, "keep-author", "Use gh", "Check PR status with gh.", "observation", false)
+	if status, _ := ownerJSON(t, server, "/visualizer/api/archive", map[string]any{"id": saved.ID, "expected_revision": saved.Revision, "archived": true, "request_id": "author-archive"}); status != http.StatusOK {
+		t.Fatalf("archive status=%d", status)
+	}
+	if status, _ := ownerJSON(t, server, "/visualizer/api/archive", map[string]any{"id": saved.ID, "expected_revision": saved.Revision + 1, "archived": false, "request_id": "author-restore"}); status != http.StatusOK {
+		t.Fatalf("restore status=%d", status)
+	}
+	record, err := store.RecordByID(context.Background(), saved.ID, nil)
+	if err != nil || record == nil || record.Archived || record.Provenance.Harness != "codex-desktop" || record.Revision != saved.Revision+2 {
+		t.Fatalf("restored memory lost its author: %+v %v", record, err)
+	}
+}

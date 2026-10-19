@@ -113,6 +113,7 @@ function setup({ hash = '', session = false, hidden = false, narrow = false } = 
       await flush();
       return request;
     },
+    keydown(key) { const event = { key, defaultPrevented: false, target: document.activeElement, preventDefault() { this.defaultPrevented = true; } }; for (const action of documentListeners.keydown || []) action(event); return event; },
     setHidden(value) { document.hidden = value; for (const action of documentListeners.visibilitychange || []) action(); },
     hashChange(value) { location.hash = value; for (const action of windowListeners.hashchange || []) action(); }
   };
@@ -476,7 +477,8 @@ test('Move to All projects posts a null project', async () => {
   const ui = await signedIn();
   await openSquash(ui);
   ui.find('Move to…').click();
-  ui.app.querySelectorAll('button.pick').find(node => node.textContent === 'All projects').click();
+  ui.document.getElementById('move-to').value = '';
+  ui.find('Move').click();
   await flush();
   const moved = ui.requests.find(request => request.url === '/visualizer/api/move');
   assert.deepEqual({ ...moved.body, request_id: undefined }, { id: 1, expected_revision: 1, project: null, request_id: undefined });
@@ -607,11 +609,19 @@ test('a conflict on Keep refreshes the open memory, and an uncertain failure kee
   assert.equal(ui.requests.filter(request => request.url === '/visualizer/api/update')[2].body.expected_revision, 3);
 });
 
-test('a project memory can only move to All projects', async () => {
+test('Move to starts at where the memory applies now and saves nothing until that changes', async () => {
   const ui = await signedIn();
   await openSquash(ui);
   ui.find('Move to…').click();
-  assert.deepEqual(ui.app.querySelectorAll('button.pick').map(node => node.textContent), ['All projects']);
+  const where = ui.document.getElementById('move-to');
+  assert.equal(where.querySelectorAll('option').find(node => node.getAttribute('selected') !== null)?.value, PROJECT);
+  where.value = PROJECT;
+  ui.find('Move').click();
+  await flush();
+  assert.equal(ui.pending('/visualizer/api/move').length, 0);
+  assert.match(ui.text(), /Pick another place/);
+  ui.app.querySelector('form.edit').dispatch('keydown', { key: 'Escape' });
+  assert.ok(ui.find('Move to…'), 'Escape goes back to the memory');
 });
 
 test('a rate-limited sign-in says to wait', async () => {
@@ -882,8 +892,9 @@ test('Move to offers every other project as well as All projects', async () => {
   await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT, OTHER], total: 4 });
   await openSquash(ui);
   ui.find('Move to…').click();
-  assert.deepEqual(ui.app.querySelectorAll('button.pick').map(node => node.textContent), ['All projects', 'tempus'], 'not its own project, not a folder name');
-  ui.app.querySelectorAll('button.pick').find(node => node.textContent === 'tempus').click();
+  assert.deepEqual(ui.document.getElementById('move-to').querySelectorAll('option').map(node => node.textContent), ['All projects', 'grasshopper', 'tempus'], 'by name, never a folder name');
+  ui.document.getElementById('move-to').value = OTHER;
+  ui.find('Move').click();
   await flush();
   assert.equal(ui.requests.find(request => request.url === '/visualizer/api/move').body.project, OTHER);
 });
@@ -900,4 +911,47 @@ test('in an edit, Cmd or Ctrl+Enter saves and Escape cancels', async () => {
   ui.app.querySelector('form.edit').dispatch('keydown', { key: 'Enter', metaKey: true });
   await flush();
   assert.equal(ui.pending('/visualizer/api/update')[0]?.body.content, 'Squash merge only. Always.');
+});
+
+test('large lists keep saying where they apply', async () => {
+  const records = Array.from({ length: 9 }, (_, i) => memory(i + 1, `Project rule ${i + 1}`));
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], review_count: 0, server: { version: '2.9.10' }, total: 9 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], total: 9 });
+  assert.deepEqual(ui.app.querySelectorAll('h2.sec-label').map(node => node.textContent), ['grasshopper · This week']);
+});
+
+test('New lists projects by name, so deciding one never reshuffles the rest', async () => {
+  const OTHER = 'git:github.com/example/apples';
+  const older = new Date(Date.now() - 86400000).toISOString();
+  const records = [memory(1, 'Grasshopper idea', { confirmed: false, purpose: 'observation' }), memory(2, 'Apples idea', { confirmed: false, purpose: 'observation', scope: { project: OTHER }, updated_at: older })];
+  const ui = setup({ session: true, hash: '#page=new' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT, OTHER], review_count: 2, server: { version: '2.9.10' }, total: 2 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT, OTHER], total: 2 });
+  assert.deepEqual(ui.app.querySelectorAll('h2.sec-label').map(node => node.textContent), ['apples', 'grasshopper']);
+});
+
+test('History appears only when an earlier version differs', async () => {
+  const ui = await signedIn();
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2 });
+  await ui.answer('/visualizer/api/record', 200, projectRecords[0]);
+  assert.ok(!ui.app.querySelector('aside').querySelectorAll('h2').some(node => node.textContent === 'History'), 'a kept suggestion has nothing to restore');
+});
+
+test('Escape closes an open memory and focus returns to its row', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.keydown('Escape');
+  assert.equal(ui.app.querySelector('aside'), null, 'the panel closed');
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'open:1', 'focus is back on the row');
+  await openSquash(ui);
+  ui.find('Close').click();
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'open:1', 'Close returns focus too');
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.keydown('Escape');
+  assert.ok(ui.app.querySelector('aside'), 'an edit is left to its own Escape');
 });

@@ -470,7 +470,14 @@ func visualizerArchive(store *memory.Writer, audit *auditLog) http.HandlerFunc {
 			http.Error(w, "memory not found", http.StatusNotFound)
 			return
 		}
-		receipt, err := store.Archive(r.Context(), memory.ArchiveInput{Scope: current.Scope, ID: input.ID, ExpectedRevision: input.ExpectedRevision, Archived: input.Archived, RequestID: input.RequestID, Provenance: ownerProvenance})
+		// Archiving changes only whether a memory loads, so it keeps its author
+		// (the audit log records the owner). The requested revision, not the
+		// mutable current one, keeps an identical retry's fingerprint stable.
+		provenance := ownerProvenance
+		if prior, err := store.RecordByID(r.Context(), input.ID, &input.ExpectedRevision); err == nil && prior != nil {
+			provenance = prior.Provenance
+		}
+		receipt, err := store.Archive(r.Context(), memory.ArchiveInput{Scope: current.Scope, ID: input.ID, ExpectedRevision: input.ExpectedRevision, Archived: input.Archived, RequestID: input.RequestID, Provenance: provenance})
 		if err == nil {
 			action := "archive"
 			if !input.Archived {

@@ -109,7 +109,7 @@ button.row:hover .t { text-decoration:underline; text-underline-offset:3px; text
 .val .meta { display:block; margin-top:2px; }
 .strip { display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); background:var(--surface); padding:var(--space-1) var(--space-1) var(--space-1) var(--space-3); max-width:var(--strip-max); }
 .strip .btn { min-height:36px; padding:var(--space-1) var(--space-3); }
-.seg { display:inline-flex; border:1px solid var(--border); margin-top:6px; }
+.seg { display:inline-flex; justify-self:start; border:1px solid var(--border); margin-top:6px; }
 .seg button { min-height:var(--target); padding:0 var(--space-3); border:0; background:transparent; font-size:var(--fs-label); color:var(--muted); border-radius:0; }
 .seg button[aria-pressed="true"] { background:var(--primary); color:var(--on-primary); }
 /* Segments touch, so their ring sits inside; on the filled one it uses the fill's text color. */
@@ -132,9 +132,6 @@ button.row:hover .t { text-decoration:underline; text-underline-offset:3px; text
 .icon-btn { width:var(--target); height:var(--target); display:grid; place-items:center; border:0; background:transparent; color:var(--muted); font-size:20px; line-height:1; }
 .back { display:none; }
 .edit { display:grid; gap:var(--space-3); }
-.picker { display:grid; margin:var(--space-2) 0; }
-.pick { display:flex; min-height:var(--target); align-items:center; padding:0 var(--space-2); margin-inline:calc(-1 * var(--space-2)); border:0; background:transparent; text-align:left; font-size:var(--fs-label); }
-.pick:hover { background:var(--surface); }
 .conflict,.confirm { display:grid; gap:var(--space-3); padding:var(--space-3); background:var(--surface); margin-bottom:var(--space-3); }
 .who { font-size:var(--fs-meta); color:var(--muted); margin-bottom:var(--space-1); }
 .undo { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(var(--space-4) + env(safe-area-inset-bottom,0px)); display:flex; align-items:center; gap:var(--space-4); padding:var(--space-1) var(--space-2) var(--space-1) var(--space-3); background:var(--primary); color:var(--on-primary); font-size:var(--fs-label); max-width:calc(100% - 32px); z-index:var(--z-undo); }
@@ -157,7 +154,7 @@ html:has(.undo),.app:has(~ .undo) .panel,.app:has(~ .undo) .side { scroll-paddin
   .app.has-panel { grid-template-columns:var(--sidebar) minmax(0,1fr); }
   .app.has-panel main { display:none; }
   .panel { border-left:0; position:static; height:auto; padding:var(--space-5) var(--space-5) var(--space-6); max-width:var(--command-max); }
-  .back { display:inline-flex; }
+  .back { display:inline-flex; gap:var(--space-1); }
   .close-x { display:none; }
 }
 @media (max-width:759px) {
@@ -175,7 +172,7 @@ html:has(.undo),.app:has(~ .undo) .panel,.app:has(~ .undo) .side { scroll-paddin
   .row-inline { flex-wrap:wrap; }
   .search { width:100%; }
 }
-@media (prefers-reduced-motion:no-preference) { .row,.pick { transition:background-color .12s; } }
+@media (prefers-reduced-motion:no-preference) { .row { transition:background-color .12s; } }
 /* Forced colors drop fills, so selection, pressed state, panels and status
    get system colors and borders instead. */
 @media (forced-colors:active) {

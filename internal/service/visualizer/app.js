@@ -62,6 +62,13 @@ function onlyLabel(scope = {}) {
 }
 // New memories and moves need a project ID that survives clones and machines.
 function durable(project) { return /^id:.+|^git:[^/]+\/.+/.test(project); }
+function byName(projects) { return [...projects].sort((a, b) => projectName(a).localeCompare(projectName(b))); }
+// Where a memory can apply: every project, then durable projects by name (and
+// the current one, even if older). Add memory and Move to share it.
+function placeSelect(id, selected, onchange) {
+  return h('select', { id, onchange }, [null, ...byName((state.index?.projects || []).filter(project => durable(project) || project === selected))].map(project =>
+    h('option', { value: project || '', selected: (selected || '') === (project || '') ? true : null }, projectName(project))));
+}
 function whereLabel(scope = {}) { return [projectName(scope.project), onlyLabel(scope)].filter(Boolean).join(' · '); }
 
 // The owner's name for a device, or its ID. The ID itself never changes.
@@ -460,13 +467,23 @@ async function loadHistory(panel, more = false) {
 
 function closePanel() {
   if (dirty() && !confirmLeave()) return;
+  // Focus goes back to the row that opened the panel, so a keyboard user keeps their place.
+  const opener = { memory: 'open:', device: 'device:' }[state.panel?.type];
+  const id = state.panel?.id;
   state.panel = null;
   if (state.route.memory) { state.route.memory = null; setURL(true); }
   render();
+  if (opener) focusByKey(opener + id);
 }
+// Escape closes an open panel. Fields and the edit form keep their own Escape.
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || event.defaultPrevented || !state.panel || editing() || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName || '')) return;
+  event.preventDefault();
+  closePanel();
+});
 
-// Typing in a memory or a device name; routine refreshes wait so text and caret stay put.
-function editing() { return state.panel?.mode === 'edit' || document.activeElement?.id === 'device-name'; }
+// Typing in a memory or a device name, or choosing where to move one; routine refreshes wait so text, caret and choice stay put.
+function editing() { return state.panel?.mode === 'edit' || state.panel?.mode === 'move' || document.activeElement?.id === 'device-name'; }
 // The text being edited, if it differs from the saved memory.
 function draftOf(panel) {
   if (!panel?.record || (panel.mode !== 'edit' && panel.mode !== 'conflict')) return null;
@@ -748,13 +765,14 @@ function suggestionRow(record, kept) {
       h('button', { type: 'button', class: 'quiet muted', 'aria-disabled': saving, 'data-key': `discard:${record.id}`, 'aria-label': `Discard ${record.title}`, onclick: () => discard(record) }, 'Discard')));
 }
 
-function grouped(records) {
+// Each group's label still names where its memories apply.
+function grouped(records, place) {
   if (records.length <= 8) return null;
   return recencyGroups(records).map(group => {
     const limit = group.label === 'This week' ? Infinity : 3;
     const visible = state.expanded.has(group.label) ? group.records : group.records.slice(0, limit);
     const rest = group.records.length - visible.length;
-    return section(group.label, [visible.map(record => row(record)),
+    return section(`${place} · ${group.label}`, [visible.map(record => row(record)),
       rest > 0 ? h('button', { type: 'button', class: 'quiet more', onclick: () => { state.expanded.add(group.label); render(); } }, `Show ${rest} more`) : null]);
   });
 }
@@ -803,7 +821,7 @@ function projectPage() {
       handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null,
       fresh.length ? section('New', fresh.map(record => suggestionRow(record, kept)), 'warn') : null,
       // An empty project section only matters when nothing else applies here.
-      own.length || !global.length ? grouped(own) || section(projectName(project), own.length ? own.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing kept for this project yet.' })) : null,
+      own.length || !global.length ? grouped(own, projectName(project)) || section(projectName(project), own.length ? own.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing kept for this project yet.' })) : null,
       global.length ? section('All projects', global.length <= 8 || !own.length ? global.map(record => row(record)) : state.showGlobal
         ? [global.map(record => row(record)), h('button', { type: 'button', class: 'quiet more muted', onclick: () => { state.showGlobal = false; render(); } }, 'Hide')]
         : h('button', { type: 'button', class: 'quiet more', onclick: () => { state.showGlobal = true; render(); } }, `Show ${global.length} that also apply here`)) : null];
@@ -820,7 +838,7 @@ function allPage() {
     return [head('All projects', ['Memories that apply to every project', h('button', { type: 'button', class: 'quiet', onclick: () => startCreate('') }, 'Add memory')]), banner(),
       handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null,
       fresh.length ? section('New', fresh.map(record => suggestionRow(record, kept)), 'warn') : null,
-      grouped(kept) || section('All projects', kept.length ? kept.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing applies to every project yet.' }))];
+      grouped(kept, 'All projects') || section('All projects', kept.length ? kept.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing applies to every project yet.' }))];
   });
 }
 
@@ -836,7 +854,8 @@ function newPage() {
     return [h('div', { class: 'head' },
       h('div', {}, h('h1', { id: 'page-title', text: 'New' }), h('p', { class: 'meta sub', text: `${records.length} waiting · agents load them at startup only after you keep them` })),
       h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: keepAll }, 'Keep all')), banner(),
-    [null, ...sortedProjects()].map(project => {
+    // By name, not recency: keeping one must not move the rest.
+    [null, ...byName(state.index?.projects || [])].map(project => {
       const items = records.filter(record => (record.scope?.project || null) === project);
       return items.length ? section(projectName(project), items.map(record => suggestionRow(record, kept))) : null;
     })];
@@ -953,8 +972,7 @@ function editForm(panel) {
     } },
     h('label', { class: 'field' }, 'Title', h('input', { id: 'edit-title', type: 'text', value: draft.title, ...invalidProps(panel, 'edit-title') })),
     h('label', { class: 'field' }, 'Text', h('textarea', { id: 'edit-text', rows: '6', value: draft.content, ...invalidProps(panel, 'edit-text') })),
-    record.id ? null : h('label', { class: 'field' }, 'Applies to', h('select', { id: 'edit-project', onchange: event => { panel.project = event.target.value; } },
-      [null, ...sortedProjects().filter(durable)].map(project => h('option', { value: project || '', selected: (panel.project || '') === (project || '') ? true : null }, projectName(project))))),
+    record.id ? null : h('label', { class: 'field' }, 'Applies to', placeSelect('edit-project', panel.project, event => { panel.project = event.target.value; })),
     panel.error ? h('p', { class: 'error', id: 'edit-error', role: 'alert', text: panel.error }) : null,
     h('div', { class: 'actions' },
       h('button', { type: 'submit', class: 'btn', 'data-key': 'save', 'aria-disabled': saving }, saving ? 'Saving…' : 'Save'),
@@ -977,10 +995,20 @@ function memoryPanel(panel) {
   if (!record) return h('p', { class: panel.error ? 'label' : 'meta loading', text: panel.error || 'Loading…' });
   if (panel.mode === 'edit' || panel.mode === 'conflict') return editForm(panel);
   if (panel.mode === 'move') {
-    return [h('h2', { class: 'panel-title', text: record.title }), h('p', { class: 'label', text: 'Move to' }),
-      h('div', { class: 'picker' }, [null, ...sortedProjects().filter(durable)].filter(project => project !== (record.scope?.project ?? null)).map(project =>
-        h('button', { type: 'button', class: 'pick', 'aria-disabled': saving, onclick: () => move(record, project) }, projectName(project)))),
-      h('button', { type: 'button', class: 'quiet muted', onclick: () => { panel.mode = 'view'; render(); } }, 'Cancel')];
+    const here = record.scope?.project || '';
+    const back = () => { Object.assign(panel, { mode: 'view', error: '' }); render(); };
+    return [h('h2', { class: 'panel-title', text: record.title }),
+      h('form', { class: 'edit', onsubmit: event => {
+        event.preventDefault();
+        const to = document.getElementById('move-to')?.value ?? here;
+        if (to === here) { panel.error = 'Pick another place.'; render(); return; }
+        move(record, to || null);
+      }, onkeydown: event => { if (event.key === 'Escape') { event.preventDefault(); back(); } } },
+      h('label', { class: 'field' }, 'Move to', placeSelect('move-to', here)),
+      panel.error ? h('p', { class: 'error', role: 'alert', text: panel.error }) : null,
+      h('div', { class: 'actions' },
+        h('button', { type: 'submit', class: 'btn', 'aria-disabled': saving }, 'Move'),
+        h('button', { type: 'button', class: 'quiet muted', onclick: back }, 'Cancel')))];
   }
   const isNew = !record.confirmed && record.purpose !== 'handoff' && !record.archived;
   const similar = isNew ? similarTo(record, [...(state.index?.records || []), ...(state.page?.records || [])]) : null;
@@ -999,7 +1027,7 @@ function memoryPanel(panel) {
   return [h('h2', { class: 'panel-title', id: 'panel-title', tabindex: '-1', text: record.title || `Memory #${record.id}` }),
     h('p', { class: 'reading full', text: record.content }),
     h('div', { class: 'actions' }, actions),
-    similar ? section('Similar', [row(similar), h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: () => keepAndReplace(record, similar) }, 'Keep and replace it')], 'warn') : null,
+    similar ? section('Similar', [row(similar), h('button', { type: 'button', class: 'quiet more', 'aria-disabled': saving, onclick: () => keepAndReplace(record, similar) }, 'Keep and replace it')], 'warn') : null,
     section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), record.scope?.project ? h('span', { class: 'meta', text: record.scope.project }) : null)),
     // "Loads" means it can load; Preview startup shows the size limit's cuts.
     section('Startup', h('p', { class: 'val', text: record.archived ? 'Not loaded' : isNew ? 'Not until you keep it' : 'Loads' })),
@@ -1009,7 +1037,8 @@ function memoryPanel(panel) {
         h('span', { class: 'meta', text: [fullDate(record.updated_at), source.device && deviceName(source.device)].filter(Boolean).join(' · ') }),
         source.source ? h('span', { class: 'meta', text: `“${source.source}”` }) : null)),
     record.purpose === 'handoff' && !record.archived ? section('Kept until', h('p', { class: 'val' }, 'The next handoff', h('span', { class: 'meta', text: 'Then it moves to Archived.' }))) : null,
-    record.revision > 1 ? section('History', panel.history === null ? h('p', { class: 'meta', text: 'Loading…' }) : [
+    // Shown only when an earlier version differs; a keep or archive repeats the text.
+    panel.history?.length || panel.olderFrom >= 1 ? section('History', [
       // Each version shows its text, and its title only where that differs, so Restore is never blind.
       h('div', { class: 'row static' }, h('span', { class: 't', text: excerpt(record.content) }), h('span', { class: 'm', text: `${by(record)} · ${relDate(record.updated_at)} · current` })),
       panel.history.map(older => h('div', { class: 'row-inline' },
