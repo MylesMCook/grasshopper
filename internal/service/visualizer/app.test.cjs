@@ -1073,3 +1073,44 @@ test('a long history stays drawn while it reloads after a save', async () => {
   await ui.answer('/visualizer/api/record', 200, { ...long, revision: 8, content: 'Version 8.' });
   assert.match(ui.app.querySelector('aside').textContent, /Version 8\./, 'the panel still draws');
 });
+
+test('a project without a durable ID does not offer Add memory', async () => {
+  const LEGACY = 'old-folder-name';
+  const records = [memory(1, 'Old rule', { scope: { project: LEGACY } })];
+  const ui = setup({ session: true, hash: `#page=project&project=${LEGACY}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [LEGACY], review_count: 0, server: { version: '2.10.0' }, total: 1 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [LEGACY], total: 1 });
+  assert.ok(!ui.find('Add memory'), 'it could only save to every project');
+});
+
+test('the open project stays in the sidebar after its last memory leaves', async () => {
+  const OTHER = 'git:github.com/example/emptied';
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(OTHER)}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT], review_count: 0, server: { version: '2.10.0' }, total: 4 });
+  assert.ok(navNames(ui).includes('emptied'));
+});
+
+test('a failed move retries to the same place with the same request', async () => {
+  const OTHER = 'git:github.com/example/tempus';
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT, OTHER], review_count: 1, server: { version: '2.10.0' }, total: 4 });
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT, OTHER], total: 4 });
+  await openSquash(ui);
+  ui.find('Move to…').click();
+  const where = ui.document.getElementById('move-to');
+  where.value = OTHER;
+  where.dispatch('change');
+  ui.find('Move').click();
+  await flush();
+  const first = ui.pending('/visualizer/api/move')[0];
+  first.done = true; first.fail();
+  await flush();
+  ui.find('Move').click();
+  await flush();
+  const retry = ui.pending('/visualizer/api/move')[0];
+  assert.equal(retry?.body.project, OTHER);
+  assert.equal(retry.body.request_id, first.body.request_id);
+});

@@ -164,7 +164,11 @@ func (r *Reader) searchKeys(ctx context.Context, keys []string, query string, ve
 		})
 		if len(hits) > 0 && len(scanned) >= 5 {
 			sort.Float64s(scanned)
-			best, median := hits[0].similarity, scanned[len(scanned)/2]
+			middle := len(scanned) / 2
+			best, median := hits[0].similarity, scanned[middle]
+			if len(scanned)%2 == 0 {
+				median = (scanned[middle-1] + scanned[middle]) / 2
+			}
 			kept := hits[:0]
 			if best-median >= standoutGap {
 				for _, hit := range hits {
@@ -238,23 +242,22 @@ func init() {
 func prepareFTSQuery(query string) string {
 	terms := []string{}
 	seen := map[string]bool{}
+	words := strings.FieldsFunc(query, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) })
+	// Filler words, whole or split from camel case, match nearly every memory;
+	// keep them only when the query has nothing else.
+	keepFiller := true
+	for _, word := range words {
+		if !fillerWords[strings.ToLower(word)] {
+			keepFiller = false
+			break
+		}
+	}
 	add := func(term string) {
 		term = strings.ToLower(term)
-		if term != "" && !seen[term] {
+		if term != "" && !seen[term] && (keepFiller || !fillerWords[term]) {
 			seen[term] = true
 			terms = append(terms, "\""+term+"\"")
 		}
-	}
-	words := strings.FieldsFunc(query, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) })
-	// Filler words match nearly every memory; keep them only if nothing else is left.
-	meaningful := words[:0:0]
-	for _, word := range words {
-		if !fillerWords[strings.ToLower(word)] {
-			meaningful = append(meaningful, word)
-		}
-	}
-	if len(meaningful) > 0 {
-		words = meaningful
 	}
 	for _, word := range words {
 		add(word)

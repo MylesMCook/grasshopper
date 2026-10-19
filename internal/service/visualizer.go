@@ -476,6 +476,11 @@ func visualizerArchive(store *memory.Writer, audit *auditLog) http.HandlerFunc {
 		provenance := ownerProvenance
 		if prior, err := store.RecordByID(r.Context(), input.ID, &input.ExpectedRevision); err == nil && prior != nil {
 			provenance = prior.Provenance
+			// A note that a handoff was replaced or a memory moved described the
+			// earlier archive, not this owner action.
+			if strings.HasPrefix(provenance.Source, "Replaced by handoff") || strings.HasPrefix(provenance.Source, "Moved to memory") {
+				provenance.Source = ownerProvenance.Source
+			}
 		}
 		receipt, err := store.Archive(r.Context(), memory.ArchiveInput{Scope: current.Scope, ID: input.ID, ExpectedRevision: input.ExpectedRevision, Archived: input.Archived, RequestID: input.RequestID, Provenance: provenance})
 		if err == nil {

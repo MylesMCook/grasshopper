@@ -10,6 +10,7 @@ func TestExactWordSearchIgnoresFillerWords(t *testing.T) {
 		"How often are backups made": `"often" OR "backups" OR "made"`,
 		"the":                        `"the"`,
 		"goVet":                      `"govet" OR "go" OR "vet"`,
+		"isReady":                    `"isready" OR "ready"`,
 	} {
 		if got := prepareFTSQuery(query); got != want {
 			t.Errorf("%q: got %s, want %s", query, got, want)

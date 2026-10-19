@@ -430,3 +430,22 @@ func TestOwnerArchiveAndRestoreKeepTheAuthor(t *testing.T) {
 		t.Fatalf("restored memory lost its author: %+v %v", record, err)
 	}
 }
+
+// Restoring a replaced handoff keeps its author but not the note that it was
+// replaced, so archiving it again files it with what the owner archived.
+func TestOwnerRestoreClearsLifecycleNotes(t *testing.T) {
+	server, store := testServer(t, true)
+	first := agentSave(t, store, "handoff-1", "First", "First handoff.", "handoff", false)
+	agentSave(t, store, "handoff-2", "Second", "Second handoff.", "handoff", false)
+	replaced, err := store.RecordByID(context.Background(), first.ID, nil)
+	if err != nil || replaced == nil || !replaced.Archived || !strings.HasPrefix(replaced.Provenance.Source, "Replaced by handoff") {
+		t.Fatalf("setup: %+v %v", replaced, err)
+	}
+	if status, _ := ownerJSON(t, server, "/visualizer/api/archive", map[string]any{"id": first.ID, "expected_revision": replaced.Revision, "archived": false, "request_id": "restore-replaced"}); status != http.StatusOK {
+		t.Fatalf("restore status=%d", status)
+	}
+	restored, _ := store.RecordByID(context.Background(), first.ID, nil)
+	if restored.Provenance.Harness != "codex-desktop" || strings.HasPrefix(restored.Provenance.Source, "Replaced by handoff") {
+		t.Fatalf("restored provenance: %+v", restored.Provenance)
+	}
+}

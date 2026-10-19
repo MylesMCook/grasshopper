@@ -734,7 +734,10 @@ function sidebar() {
   const route = state.route;
   const projects = sortedProjects();
   // The five most recent, plus the open project; the rest by name, to scan.
-  const top = projects.filter((project, i) => i < 5 || (route.page === 'project' && route.project === project));
+  const open = route.page === 'project' ? route.project : '';
+  const top = projects.filter((project, i) => i < 5 || project === open);
+  // The open project stays even after its last memory leaves the index.
+  if (open && !top.includes(open)) top.push(open);
   const rest = byName(projects.filter(project => !top.includes(project)));
   const shown = state.moreProjects ? [...top, ...rest] : top;
   const review = state.index?.review || 0;
@@ -830,7 +833,7 @@ function projectPage() {
     const handoff = records.filter(record => record.purpose === 'handoff' && record.scope?.project === project).sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0];
     // Agents load this project's and every project's kept memories, so count and show both.
     const applying = own.length + global.length;
-    return [head(projectName(project), [`${applying} ${applying === 1 ? 'memory applies' : 'memories apply'} here`, h('button', { type: 'button', class: 'quiet', onclick: () => startCreate(project) }, 'Add memory'), h('button', { type: 'button', class: 'quiet', onclick: () => openStartup(project) }, 'Preview startup')]), banner(),
+    return [head(projectName(project), [`${applying} ${applying === 1 ? 'memory applies' : 'memories apply'} here`, durable(project) ? h('button', { type: 'button', class: 'quiet', onclick: () => startCreate(project) }, 'Add memory') : null, h('button', { type: 'button', class: 'quiet', onclick: () => openStartup(project) }, 'Preview startup')]), banner(),
       handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null,
       fresh.length ? section('New', fresh.map(record => suggestionRow(record, kept)), 'warn') : null,
       // An empty project section only matters when nothing else applies here.
@@ -1009,15 +1012,16 @@ function memoryPanel(panel) {
   if (panel.mode === 'edit' || panel.mode === 'conflict') return editForm(panel);
   if (panel.mode === 'move') {
     const here = record.scope?.project || '';
-    const back = () => { Object.assign(panel, { mode: 'view', error: '' }); render(); };
+    const back = () => { Object.assign(panel, { mode: 'view', error: '', moveTo: undefined }); render(); };
     return [h('h2', { class: 'panel-title', text: record.title }),
       h('form', { class: 'edit', onsubmit: event => {
         event.preventDefault();
-        const to = document.getElementById('move-to')?.value ?? here;
+        const to = panel.moveTo ?? document.getElementById('move-to')?.value ?? here;
         if (to === here) { panel.error = 'Pick another place.'; render(); return; }
         move(record, to || null);
       }, onkeydown: event => { if (event.key === 'Escape') { event.preventDefault(); back(); } } },
-      h('label', { class: 'field' }, 'Move to', placeSelect('move-to', here)),
+      // The choice lives on the panel, so a redraw while saving or a retry keeps it.
+      h('label', { class: 'field' }, 'Move to', placeSelect('move-to', panel.moveTo ?? here, event => { panel.moveTo = event.target.value; })),
       panel.error ? h('p', { class: 'error', role: 'alert', text: panel.error }) : null,
       h('div', { class: 'actions' },
         h('button', { type: 'submit', class: 'btn', 'aria-disabled': saving }, 'Move'),
