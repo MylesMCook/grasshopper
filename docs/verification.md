@@ -446,7 +446,8 @@ reopened under 2.10.1. Cutover: verified off-machine backup, stop, snapshot
 (274 records, 577 revisions, 366 receipts, 7 credentials), binary swap,
 restart; loopback and the private route report 2.10.2 with identical counts
 and a second backup verified. 2.10.1 is kept for rollback. The Mac's Claude
-Code and Codex connectors are on 2.10.2.
+Code and Codex connectors moved to 2.10.2, and `grasshopper check` reports
+server 2.10.2 and both connectors current.
 
 ## 2.10.1 rollout (October 19)
 
