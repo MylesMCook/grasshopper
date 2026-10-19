@@ -1,17 +1,17 @@
 # Grasshopper status
 
-Current release: [2.10.1](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.1),
-on the marketplace and usegrasshopper.com; the macOS service runs 2.10.1.
+Current release: [2.10.2](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.2),
+on the marketplace and usegrasshopper.com; the macOS service runs 2.10.2.
 Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-2.10.2 is in release: the memory panel no longer scrolls sideways on long
-history, sits against the right edge again, and handoffs say why they have no
-Move to. Owner: Claude Code, macOS, branch `panel-layout-fix`. 2.10.1 runs
-live; the Windows PC, Windows work machine and Linux machine update when next
-used.
+2.10.2 is released, deployed and running live (#77). Owner: Claude Code,
+macOS. The Mac's connectors are on 2.10.2; the Windows PC, Windows work machine
+and Linux machine update when next used. `TestWindowsHookPreservesInputAndExitStatus`
+timed out once on a Windows release runner; watch for flakiness. Verification
+and rollback copies: [verification](docs/verification.md).
 
 ## Decisions
 
