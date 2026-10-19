@@ -428,6 +428,28 @@ server 2.9.10 and current connectors. A 140 KB prompt piped into the Codex hook
 returned `{}` with exit code 0 on the Mac and on the Windows PC. The Linux
 machine updates when next used.
 
+## 2.10.3 rollout (October 19)
+
+2.10.3 lets handoffs move like any memory, shows History as full-width blocks
+of earlier versions, and keeps list rows the same with or without an open
+memory (#79). Local checks passed (`go test ./...`, `go vet ./...`, race tests
+on memory, service and client, 72 memory-view and 31 site Node tests); PR CI
+passed on all three systems and Bugbot found no issues in the handoff and
+History change, with the later row-layout CSS given a final diff inspection.
+In Chromium, row positions and heights matched with the panel closed and open,
+and a device-only handoff moved to every device.
+
+The release workflow passed every job and deployed the site. The macOS
+archives matched `SHA256SUMS` with all 53 embedded hashes passing; packaged
+`--quickstart` signed in. On a live-database copy 2.10.3 passed every check and
+moved a real device-only handoff to every device with its author kept; 2.10.2
+then reopened the copy. Cutover: verified off-machine backup, stop, snapshot
+(274 records, 577 revisions, 366 receipts, 7 credentials), binary swap,
+restart; loopback and the private route report 2.10.3 with identical counts
+and a second backup verified. 2.10.2 is kept for rollback. The Mac's connectors
+moved to 2.10.3, and `grasshopper check` reports server 2.10.3 and both
+connectors current.
+
 ## 2.10.2 rollout (October 19)
 
 2.10.2 fixes the memory panel layout (#77): long history no longer scrolls the
