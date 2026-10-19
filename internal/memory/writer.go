@@ -728,21 +728,23 @@ func archiveTx(ctx context.Context, tx *sql.Tx, input ArchiveInput, fingerprint 
 	return acknowledge(ctx, tx, input.RequestID, fingerprint, Receipt{input.ID, old.Revision + 1, false})
 }
 
-// MoveInput moves a memory to another project or to every project.
+// MoveInput moves a memory to another place: the full target project, device
+// and platform, where nil means every project, device or platform.
 type MoveInput struct {
 	ID               int64      `json:"id"`
 	ExpectedRevision int64      `json:"expected_revision"`
 	Project          *string    `json:"project"`
+	Device           *string    `json:"device"`
+	Platform         *string    `json:"platform"`
 	RequestID        string     `json:"request_id"`
 	Provenance       Provenance `json:"provenance"`
 }
 
 // Move saves a copy of a memory at the other scope, with the same text,
 // purpose, confirmation and original provenance, and archives the original
-// with a note naming the copy, in one transaction. Only the project changes;
-// device and platform scope stay as they are. A stale revision, a handoff, the
-// memory's own project, or a target that already holds the same memory changes
-// nothing. Retries with the same request ID replay.
+// with a note naming the copy, in one transaction. A stale revision, a handoff,
+// the memory's own place, or a target that already holds the same memory
+// changes nothing. Retries with the same request ID replay.
 func (w *Writer) Move(ctx context.Context, input MoveInput, vector []float32, model string) (receipt Receipt, err error) {
 	if err = validateProvenance(input.Provenance); err != nil {
 		return receipt, err
@@ -784,18 +786,16 @@ func (w *Writer) Move(ctx context.Context, input MoveInput, vector []float32, mo
 	if old.Archived || old.Revision != input.ExpectedRevision {
 		return receipt, fmt.Errorf("revision_conflict: current revision %d", old.Revision)
 	}
-	target := old.Scope
-	target.Project = input.Project
-	samePlace := (old.Scope.Project == nil) == (target.Project == nil) && (target.Project == nil || *old.Scope.Project == *target.Project)
-	if samePlace || old.Scope.Legacy || old.Purpose == "handoff" {
-		return receipt, errors.New("invalid move target: move to another project or every project")
-	}
+	target := Scope{Project: input.Project, Device: input.Device, Platform: input.Platform}
 	if err = target.durableProject(); err != nil {
 		return receipt, fmt.Errorf("invalid move target: %w", err)
 	}
 	targetKey, err := target.Key()
 	if err != nil {
 		return receipt, fmt.Errorf("invalid move target: %w", err)
+	}
+	if targetKey == scopeJSON || old.Scope.Legacy || old.Purpose == "handoff" {
+		return receipt, errors.New("invalid move target: move to another place")
 	}
 	copyInput := WriteInput{Scope: target, Content: old.Content, Title: &old.Title, Tags: &old.Tags, MemoryType: &old.MemoryType,
 		Purpose: old.Purpose, Confirmed: old.Confirmed, Provenance: old.Provenance, RequestID: input.RequestID + ":copy", Key: old.Key}

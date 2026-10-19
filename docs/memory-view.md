@@ -45,9 +45,10 @@ five agent tools do not change; this page decides what the owner sees.
   focus returns to the row that opened it. Archive and restore keep the
   memory's author; the audit log records the owner's action.
   The owner's own saves show "You" and the date, without internal provenance.
-- Move to is a dropdown of All projects and durable projects by name, starting
-  at where the memory applies now; Move does nothing until another place is
-  picked.
+- Move to sets where a memory applies: a project (All projects or a durable
+  project by name), a device (every device or a connected one) and an OS
+  (every OS, macOS, Windows or Linux), starting at where it applies now. Move
+  does nothing until something changes.
 - Add memory and Edit share one form. The text box grows with the text;
   Cmd/Ctrl+Enter saves and Escape cancels. A memory the owner adds is kept at
   once and saved as a preference for the chosen project or All projects.
@@ -86,7 +87,13 @@ Feature: Owner reviews and manages memories
     Then a copy with the same text, purpose and source applies there
     And the original is archived with a note naming the copy
     And retrying the same move does not create a second copy
-    And a device or platform restriction stays as it was
+    And a device or OS restriction stays unless the owner changes it
+
+  Scenario: A device rule moves to every device
+    Given a kept memory that applies only on "mac-mini" and macOS
+    When the owner moves it to every device and every OS
+    Then a copy applies everywhere with the same text and author
+    And the device-only original is archived with a note naming the copy
 
   Scenario: The owner adds a memory
     Given the owner is on project "grasshopper"

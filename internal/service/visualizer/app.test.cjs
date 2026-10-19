@@ -481,7 +481,7 @@ test('Move to All projects posts a null project', async () => {
   ui.find('Move').click();
   await flush();
   const moved = ui.requests.find(request => request.url === '/visualizer/api/move');
-  assert.deepEqual({ ...moved.body, request_id: undefined }, { id: 1, expected_revision: 1, project: null, request_id: undefined });
+  assert.deepEqual({ ...moved.body, request_id: undefined }, { id: 1, expected_revision: 1, project: null, device: null, platform: null, request_id: undefined });
 });
 
 test('only a list already on screen is asked with its ETag, and 304 keeps it', async () => {
@@ -1148,4 +1148,28 @@ test('cancelling Add memory over an open memory forgets that memory in the addre
   ui.find('Add memory').click();
   ui.find('Cancel').click();
   assert.doesNotMatch(ui.location.hash, /memory=1/);
+});
+
+test('Move to changes or lifts a device or OS restriction', async () => {
+  const records = [memory(1, 'Worktrees are noise', { scope: { device: 'mac', platform: 'macos' } })];
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], review_count: 0, server: { version: '2.10.1' }, total: 1 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], total: 1 });
+  await ui.answer('/visualizer/api/pairings', 200, []);
+  await ui.answer('/visualizer/api/devices', 200, [{ id: 7, device: 'mac', label: 'Studio Mac', created_at: today, revoked_at: null, last_seen_at: today }, { id: 8, device: 'pc', created_at: today, revoked_at: null, last_seen_at: today }]);
+  ui.rows('Worktrees are noise').click();
+  await ui.answer('/visualizer/api/record', 200, records[0]);
+  ui.find('Move to…').click();
+  const selected = id => ui.document.getElementById(id).querySelectorAll('option').find(node => node.getAttribute('selected') !== null)?.value;
+  assert.equal(selected('move-device'), 'mac', 'starts at the current device');
+  assert.equal(selected('move-platform'), 'macos');
+  assert.deepEqual(ui.document.getElementById('move-device').querySelectorAll('option').map(node => node.textContent), ['Every device', 'Studio Mac', 'pc']);
+  const choose = (id, value) => { const field = ui.document.getElementById(id); field.value = value; field.dispatch('change'); };
+  choose('move-device', '');
+  choose('move-platform', '');
+  ui.find('Move').click();
+  await flush();
+  const moved = ui.pending('/visualizer/api/move')[0];
+  assert.deepEqual([moved.body.project, moved.body.device, moved.body.platform], [null, null, null], 'applies on every device');
 });

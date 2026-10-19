@@ -403,17 +403,19 @@ func visualizerCreate(store *memory.Writer, save ownerSave, audit *auditLog) htt
 	}
 }
 
-// visualizerMove moves a memory to another project or every project. The
+// visualizerMove moves a memory to another project, device or platform. The
 // writer copies it (same text, purpose, confirmation and original source) and
 // archives the original in one transaction, so a failed or stale move changes
 // nothing and a retry with the same request ID replays.
 func visualizerMove(store *memory.Writer, move func(context.Context, memory.MoveInput, string) (memory.Receipt, error), audit *auditLog) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
-			ID               int64   `json:"id"`
-			ExpectedRevision int64   `json:"expected_revision"`
-			Project          *string `json:"project"`
-			RequestID        string  `json:"request_id"`
+			ID               int64           `json:"id"`
+			ExpectedRevision int64           `json:"expected_revision"`
+			Project          *string         `json:"project"`
+			Device           json.RawMessage `json:"device"`
+			Platform         json.RawMessage `json:"platform"`
+			RequestID        string          `json:"request_id"`
 		}
 		if !decodeVisualizerRead(w, r, &input) {
 			return
@@ -431,7 +433,14 @@ func visualizerMove(store *memory.Writer, move func(context.Context, memory.Move
 			ownerConflict(w, r, store, input.ID, "revision_conflict")
 			return
 		}
-		receipt, err := move(r.Context(), memory.MoveInput{ID: input.ID, ExpectedRevision: input.ExpectedRevision, Project: input.Project, RequestID: input.RequestID, Provenance: ownerProvenance}, source.Content)
+		// A device or platform left out of the request stays as the memory has it.
+		device, deviceErr := restriction(input.Device, source.Scope.Device)
+		platform, platformErr := restriction(input.Platform, source.Scope.Platform)
+		if deviceErr != nil || platformErr != nil {
+			http.Error(w, "invalid move request", http.StatusBadRequest)
+			return
+		}
+		receipt, err := move(r.Context(), memory.MoveInput{ID: input.ID, ExpectedRevision: input.ExpectedRevision, Project: input.Project, Device: device, Platform: platform, RequestID: input.RequestID, Provenance: ownerProvenance}, source.Content)
 		switch {
 		case err == nil:
 			audit.event("owner_write", r, auditFields{action: "move", id: receipt.ID, revision: receipt.Revision, requestID: input.RequestID})
@@ -448,6 +457,16 @@ func visualizerMove(store *memory.Writer, move func(context.Context, memory.Move
 			ownerWriteResult(w, r, store, input.ID, receipt, err)
 		}
 	}
+}
+
+// restriction reads an optional device or platform: absent keeps current, null
+// clears it, and a string sets it.
+func restriction(raw json.RawMessage, current *string) (*string, error) {
+	if len(raw) == 0 {
+		return current, nil
+	}
+	var value *string
+	return value, json.Unmarshal(raw, &value)
 }
 
 // visualizerArchive hides or restores a memory at an expected revision.

@@ -72,6 +72,10 @@ function placeSelect(id, selected, onchange) {
   return h('select', { id, onchange }, [null, ...byName(projects)].map(project =>
     h('option', { value: project || '', selected: (selected || '') === (project || '') ? true : null }, projectName(project))));
 }
+// A select of [value, label] pairs with one selected.
+function optionSelect(id, options, selected, onchange) {
+  return h('select', { id, onchange }, options.map(([value, label]) => h('option', { value, selected: value === (selected || '') ? true : null }, label)));
+}
 function whereLabel(scope = {}) { return [projectName(scope.project), onlyLabel(scope)].filter(Boolean).join(' · '); }
 
 // The owner's name for a device, or its ID. The ID itself never changes.
@@ -623,10 +627,12 @@ function saveEdit(panel) {
   });
 }
 function keepTheirs(panel) { Object.assign(panel, { mode: 'view', draft: null, theirs: null }); loadMemory(panel); }
-function move(record, project) {
-  return write('/visualizer/api/move', { id: record.id, expected_revision: record.revision, project: project || null }, {
-    onDone: receipt => { say(`Moved to ${projectName(project)}.`); openMemory(receipt.id); },
-    onConflict: () => { say(`Not moved. ${projectName(project)} may already have it, or it changed. Showing the latest.`); if (state.panel) { state.panel.mode = 'view'; loadMemory(state.panel); } }
+// Moves to a full place: project, device and platform, where empty means every one.
+function move(record, to) {
+  const scope = { project: to.project || null, device: to.device || null, platform: to.platform || null };
+  return write('/visualizer/api/move', { id: record.id, expected_revision: record.revision, ...scope }, {
+    onDone: receipt => { say(`Moved to ${whereLabel(scope)}.`); openMemory(receipt.id); },
+    onConflict: () => { say(`Not moved. ${whereLabel(scope)} may already have it, or it changed. Showing the latest.`); if (state.panel) { state.panel.mode = 'view'; loadMemory(state.panel); } }
   });
 }
 
@@ -1020,17 +1026,24 @@ function memoryPanel(panel) {
   if (!record) return h('p', { class: panel.error ? 'label' : 'meta loading', text: panel.error || 'Loading…' });
   if (panel.mode === 'edit' || panel.mode === 'conflict') return editForm(panel);
   if (panel.mode === 'move') {
-    const here = record.scope?.project || '';
+    const now = { project: record.scope?.project || '', device: record.scope?.device || '', platform: record.scope?.platform || '' };
     const back = () => { Object.assign(panel, { mode: 'view', error: '', moveTo: undefined }); render(); };
+    // Choices live on the panel, so a redraw while saving or a retry keeps them.
+    const chosen = (key, id) => panel.moveTo && key in panel.moveTo ? panel.moveTo[key] : document.getElementById(id)?.value ?? now[key];
+    const pick = key => event => { panel.moveTo = { ...panel.moveTo, [key]: event.target.value }; };
+    const devices = [...new Set(state.devices.filter(device => !device.revoked_at).map(device => device.device))];
+    if (now.device && !devices.includes(now.device)) devices.push(now.device);
     return [h('h2', { class: 'panel-title', text: record.title }),
       h('form', { class: 'edit', onsubmit: event => {
         event.preventDefault();
-        const to = panel.moveTo ?? document.getElementById('move-to')?.value ?? here;
-        if (to === here) { panel.error = 'Pick another place.'; render(); return; }
-        move(record, to || null);
+        const to = { project: chosen('project', 'move-to'), device: chosen('device', 'move-device'), platform: chosen('platform', 'move-platform') };
+        if (to.project === now.project && to.device === now.device && to.platform === now.platform) { panel.error = 'Pick another place.'; render(); return; }
+        move(record, to);
       }, onkeydown: event => { if (event.key === 'Escape') { event.preventDefault(); back(); } } },
-      // The choice lives on the panel, so a redraw while saving or a retry keeps it.
-      h('label', { class: 'field' }, 'Move to', placeSelect('move-to', panel.moveTo ?? here, event => { panel.moveTo = event.target.value; })),
+      h('label', { class: 'field' }, 'Project', placeSelect('move-to', panel.moveTo?.project ?? now.project, pick('project'))),
+      h('div', { class: 'two' },
+        h('label', { class: 'field' }, 'Device', optionSelect('move-device', [['', 'Every device'], ...devices.map(device => [device, deviceName(device)])], panel.moveTo?.device ?? now.device, pick('device'))),
+        h('label', { class: 'field' }, 'OS', optionSelect('move-platform', [['', 'Every OS'], ...Object.entries(PLATFORM)], panel.moveTo?.platform ?? now.platform, pick('platform')))),
       panel.error ? h('p', { class: 'error', role: 'alert', text: panel.error }) : null,
       h('div', { class: 'actions' },
         h('button', { type: 'submit', class: 'btn', 'aria-disabled': saving }, 'Move'),

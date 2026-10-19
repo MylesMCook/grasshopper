@@ -7,12 +7,11 @@ Earlier release records are in Git history and
 
 ## Active
 
-2.10.0 is released, deployed and running live (#72). Owner: Claude Code,
-macOS. The Mac's Claude Code and Codex connectors are on 2.10.0; the Windows
-PC, Windows work machine and Linux machine update when next used. Verification
-and rollback copies: [verification](docs/verification.md). Cursor Bugbot
-setup for requested reviews only is in #73. Search speed, export blocking and
-history vectors are deferred until the store grows.
+2.10.1 is in release: Move to also changes or lifts a memory's device and OS
+restriction. Owner: Claude Code, macOS, branch `device-scope-edit`. Server and
+storage code changed, so the full package, rehearsal and rollback checks
+apply. 2.10.0 runs live; the Windows PC, Windows work machine and Linux
+machine update when next used.
 
 ## Decisions
 
