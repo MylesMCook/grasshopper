@@ -742,9 +742,10 @@ type MoveInput struct {
 
 // Move saves a copy of a memory at the other scope, with the same text,
 // purpose, confirmation and original provenance, and archives the original
-// with a note naming the copy, in one transaction. A stale revision, a handoff,
-// the memory's own place, or a target that already holds the same memory
-// changes nothing. Retries with the same request ID replay.
+// with a note naming the copy, in one transaction. A moved handoff becomes the
+// target's current handoff, so the one there is archived as replaced. A stale
+// revision, the memory's own place, or a target that already holds the same
+// memory changes nothing. Retries with the same request ID replay.
 func (w *Writer) Move(ctx context.Context, input MoveInput, vector []float32, model string) (receipt Receipt, err error) {
 	if err = validateProvenance(input.Provenance); err != nil {
 		return receipt, err
@@ -794,7 +795,7 @@ func (w *Writer) Move(ctx context.Context, input MoveInput, vector []float32, mo
 	if err != nil {
 		return receipt, fmt.Errorf("invalid move target: %w", err)
 	}
-	if targetKey == scopeJSON || old.Scope.Legacy || old.Purpose == "handoff" {
+	if targetKey == scopeJSON || old.Scope.Legacy {
 		return receipt, errors.New("invalid move target: move to another place")
 	}
 	copyInput := WriteInput{Scope: target, Content: old.Content, Title: &old.Title, Tags: &old.Tags, MemoryType: &old.MemoryType,

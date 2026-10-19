@@ -167,3 +167,36 @@ func TestOwnerChangesWhereADeviceMemoryApplies(t *testing.T) {
 		t.Fatalf("invalid platform: status=%d", status)
 	}
 }
+
+// A moved handoff becomes the current handoff where it lands; the handoff
+// that was there is archived as replaced, and both can be restored.
+func TestOwnerMovesAHandoff(t *testing.T) {
+	server, store := testServer(t, true)
+	ctx := context.Background()
+	handoff := func(request, device, content string) memory.Receipt {
+		receipt, err := store.Write(ctx, memory.WriteInput{Scope: memory.Scope{Device: &device}, Title: ptr(content), Content: content, Purpose: "handoff",
+			Provenance: memory.Provenance{Harness: "claude-code-desktop", Device: device, Source: "session"}, RequestID: request}, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return receipt
+	}
+	laptop := handoff("h-laptop", "work-hp", "Codex on this laptop: Store app only.")
+	desk := handoff("h-desk", "mac-mini", "Released 2.10.2.")
+	status, body := ownerJSON(t, server, "/visualizer/api/move", map[string]any{"id": laptop.ID, "expected_revision": laptop.Revision, "project": nil, "device": "mac-mini", "platform": nil, "request_id": "move-handoff"})
+	if status != http.StatusOK {
+		t.Fatalf("move handoff status=%d body=%v", status, body)
+	}
+	var id int64
+	_ = json.Unmarshal(body["id"], &id)
+	copied, _ := store.RecordByID(ctx, id, nil)
+	if copied == nil || copied.Archived || copied.Purpose != "handoff" || *copied.Scope.Device != "mac-mini" || copied.Provenance.Harness != "claude-code-desktop" {
+		t.Fatalf("moved handoff: %+v", copied)
+	}
+	if replaced, _ := store.RecordByID(ctx, desk.ID, nil); !replaced.Archived || !strings.HasPrefix(replaced.Provenance.Source, "Replaced by handoff") {
+		t.Fatalf("the handoff already there should be replaced: %+v", replaced)
+	}
+	if original, _ := store.RecordByID(ctx, laptop.ID, nil); !original.Archived {
+		t.Fatalf("original stays active: %+v", original)
+	}
+}

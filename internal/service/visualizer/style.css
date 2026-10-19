@@ -94,17 +94,15 @@ main:focus { outline:none; }
 .sec-label { font:400 var(--fs-meta)/1.5 var(--font-mono); color:var(--muted); padding-top:13px; overflow-wrap:anywhere; }
 /* One column that never grows past its section, however long a version is. */
 .list { display:grid; grid-template-columns:minmax(0,1fr); min-width:0; }
-.row { display:flex; justify-content:space-between; align-items:baseline; gap:var(--space-3); width:calc(100% + 8px); min-height:var(--target); margin-inline:-8px 0; padding:var(--space-2); border:0; background:transparent; text-align:left; color:var(--foreground); border-radius:var(--radius-content); }
+/* Title over its detail, the same with or without an open memory, so nothing shifts. */
+.row { display:flex; flex-direction:column; align-items:flex-start; gap:2px; width:calc(100% + 8px); min-height:var(--target); margin-inline:-8px 0; padding:var(--space-2); border:0; background:transparent; text-align:left; color:var(--foreground); border-radius:var(--radius-content); }
 .row .t { font:var(--fs-reading)/1.4 var(--font-serif); min-width:0; overflow-wrap:anywhere; }
-.row .m { font-size:var(--fs-meta); color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
-/* In the panel the detail sits under the text, so it may wrap. */
-.panel .row .m { white-space:normal; overflow-wrap:anywhere; }
+.row .m { font-size:var(--fs-meta); color:var(--muted); overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
 button.row:hover .t { text-decoration:underline; text-underline-offset:3px; text-decoration-thickness:1px; }
 /* The open row has a 3:1 edge as well as its fill. */
 .row[aria-current="true"] { background:var(--surface); box-shadow:inset 0 0 0 1px var(--border); }
 .row .t.muted { color:var(--muted); }
 .row.static { cursor:default; }
-.has-panel .row { flex-direction:column; align-items:flex-start; gap:2px; }
 .row-inline { display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); }
 .row-inline > .row { flex:1; min-width:0; }
 .more { justify-self:start; }
@@ -123,6 +121,15 @@ button.row:hover .t { text-decoration:underline; text-underline-offset:3px; text
 .pairing { display:grid; gap:var(--space-2); padding:var(--space-2) 0; }
 .pairing.focused { outline:2px solid var(--focus); outline-offset:6px; }
 .code { font-size:var(--fs-title); letter-spacing:.14em; font-variant-numeric:tabular-nums; }
+
+/* History: a full-width list of earlier versions, each a short block. */
+.sec.stacked,.panel .sec.stacked { grid-template-columns:minmax(0,1fr); gap:var(--space-2); }
+.version { display:grid; gap:var(--space-1); padding-block:var(--space-3); border-top:1px solid var(--divider); }
+.version:first-child { border-top:0; padding-top:0; }
+.version-head { display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); }
+.version-title { font-size:var(--fs-label); }
+.version-text { font:var(--fs-body)/1.55 var(--font-serif); color:var(--muted); white-space:pre-wrap; overflow-wrap:anywhere; }
+.version-text.clamp { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; line-clamp:3; overflow:hidden; }
 
 /* Opened item. */
 .panel { border-left:1px solid var(--divider); padding:var(--space-5) var(--space-4) var(--space-6); position:sticky; top:0; height:100vh; overflow:auto; min-width:0; }
@@ -173,7 +180,6 @@ html:has(.undo),.app:has(~ .undo) .panel,.app:has(~ .undo) .side { scroll-paddin
   h1 { font-size:2rem; }
   .sec,.panel .sec { grid-template-columns:1fr; gap:0; }
   .sec-label { padding-top:var(--space-1); }
-  .row { flex-direction:column; align-items:flex-start; gap:2px; }
   .row-inline { flex-wrap:wrap; }
   .search { width:100%; }
 }

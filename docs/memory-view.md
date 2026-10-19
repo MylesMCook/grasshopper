@@ -24,7 +24,8 @@ five agent tools do not change; this page decides what the owner sees.
   phones it becomes a menu at the top.
 - The main column: the page title, search, and sections labelled in a left
   margin by where they apply, or by date for the latest handoff. Each memory is
-  one line with "source · date" on the right. Large lists group by This week,
+  its title with "source · date" underneath, the same whether or not a memory
+  is open, so the list never shifts. Large lists group by This week,
   the month, then Earlier, with "Show N more"; each group's label keeps the
   place ("grasshopper · This week"). New lists projects by name, so deciding
   one never moves the rest.
@@ -40,11 +41,13 @@ five agent tools do not change; this page decides what the owner sees.
   Move to…, Archive, then Applies to, Startup (Loads, Not until you keep it,
   Not loaded), Saved by and History. Each row's detail is "Codex · Oct 6";
   handoffs start with "handoff". A device restriction hides the platform it
-  implies. History shows each version's text, and its title where that differs,
-  and appears only when an earlier version differs. Escape closes the panel and
+  implies. History lists only earlier versions, full width: who saved each
+  and when with Restore, its title where that differed, and three lines of its
+  text with "Show all". It appears only when an earlier version differs. Escape closes the panel and
   focus returns to the row that opened it. Archive and restore keep the
-  memory's author; the audit log records the owner's action. Handoffs have no
-  Move to; their panel says they stay where the agent saved them.
+  memory's author; the audit log records the owner's action. A handoff moves
+  like any memory and becomes the current handoff where it lands; the one
+  there is archived as replaced.
   The owner's own saves show "You" and the date, without internal provenance.
 - Move to sets where a memory applies: a project (All projects or a durable
   project by name), a device (every device or a connected one) and an OS

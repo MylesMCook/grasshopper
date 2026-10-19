@@ -90,13 +90,19 @@ function daysAgo(value, now = new Date()) {
   return Math.round((local(now) - local(date)) / 86400000);
 }
 function excerpt(text, size = 160) { return text.length > size ? `${text.slice(0, size).trimEnd()}…` : text; }
-// A version's text: short ones whole, long ones as an excerpt that opens to the
-// full text. Which ones are open survives redraws, keyed by memory and revision.
-function versionText(text, cls, key) {
-  if (text.length <= 160) return h('span', { class: cls, text });
-  return h('details', { class: cls, open: state.openVersions.has(key), ontoggle: event => {
-    if (event.currentTarget.getAttribute('open') !== null) state.openVersions.add(key); else state.openVersions.delete(key);
-  } }, h('summary', { 'data-key': `version:${key}`, text: excerpt(text) }), h('p', { class: 'reading full', text }));
+// One earlier version: who saved it and when, Restore, its title if it
+// differed, and its text, three lines until opened. Open ones survive redraws.
+function versionBlock(record, older) {
+  const key = `${record.id}:${older.revision}`;
+  const open = state.openVersions.has(key);
+  const long = older.content.length > 160 || older.content.split('\n').length > 3;
+  const toggle = () => { if (open) state.openVersions.delete(key); else state.openVersions.add(key); render(); };
+  return h('div', { class: 'version' },
+    h('div', { class: 'version-head' }, h('span', { class: 'meta', text: `${by(older)} · ${fullDate(older.updated_at)}` }),
+      record.archived ? null : h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `restore-version:${older.revision}`, 'aria-label': `Restore version from ${relDate(older.updated_at)}`, onclick: () => restoreRevision(record, older) }, 'Restore')),
+    older.title !== record.title ? h('p', { class: 'version-title', text: older.title }) : null,
+    h('p', { class: `version-text${long && !open ? ' clamp' : ''}`, text: older.content }),
+    long ? h('button', { type: 'button', class: 'quiet muted more', 'data-key': `version:${key}`, 'aria-expanded': String(open), onclick: toggle }, open ? 'Show less' : 'Show all') : null);
 }
 function shortDate(value) { const date = day(value); return date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''; }
 function relDate(value, now = new Date()) {
@@ -1052,7 +1058,6 @@ function memoryPanel(panel) {
   const isNew = !record.confirmed && record.purpose !== 'handoff' && !record.archived;
   const similar = isNew ? similarTo(record, [...(state.index?.records || []), ...(state.page?.records || [])]) : null;
   // Moving changes only the project; a device or platform restriction stays.
-  const movable = record.purpose !== 'handoff';
   const actions = record.archived
     ? [h('button', { type: 'button', class: 'btn', 'aria-disabled': saving, onclick: () => restore(record) }, 'Restore')]
     : isNew
@@ -1060,16 +1065,14 @@ function memoryPanel(panel) {
         h('button', { type: 'button', class: 'quiet', onclick: () => startEdit(panel) }, 'Edit'),
         h('button', { type: 'button', class: 'quiet muted', 'aria-disabled': saving, onclick: () => discard(record) }, 'Discard')]
       : [h('button', { type: 'button', class: 'quiet', onclick: () => startEdit(panel) }, 'Edit'),
-        movable ? h('button', { type: 'button', class: 'quiet', onclick: () => { panel.mode = 'move'; render(); } }, 'Move to…') : null,
+        h('button', { type: 'button', class: 'quiet', onclick: () => { panel.mode = 'move'; render(); } }, 'Move to…'),
         h('button', { type: 'button', class: 'quiet danger', 'aria-disabled': saving, onclick: () => archive(record) }, 'Archive')];
   const source = record.provenance || {};
   return [h('h2', { class: 'panel-title', id: 'panel-title', tabindex: '-1', text: record.title || `Memory #${record.id}` }),
     h('p', { class: 'reading full', text: record.content }),
     h('div', { class: 'actions' }, actions),
     similar ? section('Similar', [row(similar), h('button', { type: 'button', class: 'quiet more', 'aria-disabled': saving, onclick: () => keepAndReplace(record, similar) }, 'Keep and replace it')], 'warn') : null,
-    // Handoffs have no Move to: each place keeps only its latest one.
-    section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), record.scope?.project ? h('span', { class: 'meta', text: record.scope.project }) : null,
-      record.purpose === 'handoff' ? h('span', { class: 'meta', text: 'Handoffs stay where the agent saved them.' }) : null)),
+    section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), record.scope?.project ? h('span', { class: 'meta', text: record.scope.project }) : null)),
     // "Loads" means it can load; Preview startup shows the size limit's cuts.
     section('Startup', h('p', { class: 'val', text: record.archived ? 'Not loaded' : isNew ? 'Not until you keep it' : 'Loads' })),
     // The owner's own saves carry fixed internal provenance, so only the date shows.
@@ -1079,14 +1082,10 @@ function memoryPanel(panel) {
         source.source ? h('span', { class: 'meta', text: `“${source.source}”` }) : null)),
     record.purpose === 'handoff' && !record.archived ? section('Kept until', h('p', { class: 'val' }, 'The next handoff', h('span', { class: 'meta', text: 'Then it moves to Archived.' }))) : null,
     // Shown only when an earlier version differs; a keep or archive repeats the text.
-    panel.history?.length || (panel.history && panel.olderFrom >= 1) ? section('History', [
-      // Each version shows its text, and its title only where that differs, so Restore is never blind.
-      h('div', { class: 'row static' }, versionText(record.content, 't', `${record.id}:${record.revision}`), h('span', { class: 'm', text: `${by(record)} · ${relDate(record.updated_at)} · current` })),
-      panel.history.map(older => h('div', { class: 'row-inline' },
-        h('div', { class: 'row static' }, versionText(older.content, 't muted', `${record.id}:${older.revision}`),
-          h('span', { class: 'm', text: [by(older), relDate(older.updated_at), older.title !== record.title && `titled “${older.title}”`].filter(Boolean).join(' · ') })),
-        record.archived ? null : h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `restore-version:${older.revision}`, 'aria-label': `Restore version from ${relDate(older.updated_at)}`, onclick: () => restoreRevision(record, older) }, 'Restore'))),
-      panel.olderFrom >= 1 ? h('button', { type: 'button', class: 'quiet more', onclick: () => loadHistory(panel, true) }, 'Show older versions') : null]) : null];
+    // Earlier versions only, full width: the current text is already at the top.
+    panel.history?.length || (panel.history && panel.olderFrom >= 1) ? h('section', { class: 'sec stacked' }, h('h2', { class: 'sec-label', text: 'History' }),
+      h('div', { class: 'list' }, panel.history.map(older => versionBlock(record, older)),
+        panel.olderFrom >= 1 ? h('button', { type: 'button', class: 'quiet more', onclick: () => loadHistory(panel, true) }, 'Show older versions') : null)) : null];
 }
 
 function devicePanel(panel) {
