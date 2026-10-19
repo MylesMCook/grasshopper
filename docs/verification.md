@@ -428,6 +428,27 @@ server 2.9.10 and current connectors. A 140 KB prompt piped into the Codex hook
 returned `{}` with exit code 0 on the Mac and on the Windows PC. The Linux
 machine updates when next used.
 
+## 2.10.2 rollout (October 19)
+
+2.10.2 fixes the memory panel layout (#77): long history no longer scrolls the
+panel sideways, the panel sits against the right edge again, and handoffs say
+why they have no Move to. Local checks passed (`go test ./...`, `go vet ./...`,
+72 memory-view and 31 site Node tests); PR CI passed on all three systems and
+Bugbot found no issues. In Chromium the panel's scroll width matched its width
+at 1916, 1024 and 390 pixels. The release workflow's Windows job first failed
+in the unrelated `TestWindowsHookPreservesInputAndExitStatus` (a 41-second
+timeout; it passed on the same commit in PR CI); a rerun of that job passed,
+and the release published and deployed the site.
+
+The macOS archives matched `SHA256SUMS` with all 53 embedded hashes passing;
+packaged `--quickstart` signed in; a live-database copy passed under 2.10.2 and
+reopened under 2.10.1. Cutover: verified off-machine backup, stop, snapshot
+(274 records, 577 revisions, 366 receipts, 7 credentials), binary swap,
+restart; loopback and the private route report 2.10.2 with identical counts
+and a second backup verified. 2.10.1 is kept for rollback. The Mac's Claude
+Code and Codex connectors moved to 2.10.2, and `grasshopper check` reports
+server 2.10.2 and both connectors current.
+
 ## 2.10.1 rollout (October 19)
 
 2.10.1 lets Move to set a memory's device and OS as well as its project, so a
