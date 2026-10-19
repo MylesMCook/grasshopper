@@ -996,3 +996,80 @@ test('the sidebar keeps its order while the owner works', async () => {
   await flush();
   assert.deepEqual(navNames(ui).slice(1, 6), ['p1', 'p2', 'p3', 'p4', 'p5']);
 });
+
+test('Move to keeps the current project as an option even when it is not in the project list', async () => {
+  const OLD = 'git:github.com/example/not-listed';
+  const ui = await signedIn();
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], scope: { project: OLD } });
+  ui.find('Move to…').click();
+  assert.equal(ui.document.getElementById('move-to').querySelectorAll('option').find(node => node.getAttribute('selected') !== null)?.value, OLD);
+});
+
+test('projects that appear later also keep their sidebar place', async () => {
+  const { projects, records } = projectSet();
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: records.slice(0, 2), projects: projects.slice(0, 2), review_count: 0, server: { version: '2.10.0' }, total: 2 });
+  const refresh = async list => {
+    for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 15000) { ui.timers.delete(id); timer.fn(); }
+    await flush();
+    for (const request of ui.pending('/visualizer/api/context')) if (request.body?.all_projects && !request.body.view) { request.done = true; request.reply(200, { records: list, projects: projects.slice(0, 4), review_count: 0, server: { version: '2.10.0' }, total: list.length }); }
+    await flush();
+  };
+  await refresh(records.slice(0, 4));
+  const before = navNames(ui).slice(1, 5);
+  await refresh(records.slice(0, 4).map(record => record.id === 4 ? { ...record, updated_at: new Date(Date.now() + 60000).toISOString() } : record));
+  assert.deepEqual(navNames(ui).slice(1, 5), before);
+});
+
+test('an Add memory draft survives the session ending and signing in again', async () => {
+  const ui = await signedIn();
+  ui.find('Add memory').click();
+  ui.document.getElementById('edit-title').value = 'Short answers';
+  ui.document.getElementById('edit-text').value = 'Prefer short answers.';
+  for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 15000) { ui.timers.delete(id); timer.fn(); }
+  await flush();
+  await ui.answer('/visualizer/api/context', 401);
+  assert.match(ui.text(), /unsaved text is kept/);
+  ui.app.querySelector('#token').value = TOKEN;
+  ui.app.querySelector('form.signin-box').dispatch('submit');
+  await ui.answer('/visualizer/api/session', 200, {});
+  assert.equal(ui.document.getElementById('edit-text')?.value, 'Prefer short answers.');
+  assert.equal(ui.document.getElementById('edit-title')?.value, 'Short answers');
+  const where = ui.document.getElementById('edit-project');
+  assert.equal(where.querySelectorAll('option').find(node => node.getAttribute('selected') !== null)?.value, PROJECT, 'still for the project, not every project');
+});
+
+test('an empty store offers Add memory', async () => {
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: [], projects: [], review_count: 0, server: { version: '2.10.0' }, total: 0 });
+  await ui.answer('/visualizer/api/context', 200, { records: [], projects: [], total: 0 });
+  assert.ok(ui.find('Add memory'));
+});
+
+test('Add memory opened during an edit starts blank', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Discard me.';
+  ui.find('Add memory').click();
+  assert.equal(ui.document.getElementById('edit-text').value, '');
+  assert.equal(ui.document.getElementById('edit-title').value, '');
+});
+
+test('a long history stays drawn while it reloads after a save', async () => {
+  const ui = await signedIn();
+  const long = { ...projectRecords[0], revision: 7, content: 'Version 7.' };
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, long);
+  for (let revision = 6; revision >= 2; revision--) await ui.answer('/visualizer/api/record', 200, { ...long, revision, content: `Version ${revision}.` });
+  assert.ok(ui.find('Show older versions'));
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Version 8.';
+  ui.find('Save').click();
+  await ui.answer('/visualizer/api/update', 200, { id: 1, revision: 8 });
+  await ui.answer('/visualizer/api/record', 200, { ...long, revision: 8, content: 'Version 8.' });
+  assert.match(ui.app.querySelector('aside').textContent, /Version 8\./, 'the panel still draws');
+});

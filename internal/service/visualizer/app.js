@@ -63,10 +63,13 @@ function onlyLabel(scope = {}) {
 // New memories and moves need a project ID that survives clones and machines.
 function durable(project) { return /^id:.+|^git:[^/]+\/.+/.test(project); }
 function byName(projects) { return [...projects].sort((a, b) => projectName(a).localeCompare(projectName(b))); }
-// Where a memory can apply: every project, then durable projects by name (and
-// the current one, even if older). Add memory and Move to share it.
+// Where a memory can apply: every project, then durable projects by name, and
+// always the selected one, even before the project list loads. Add memory and
+// Move to share it.
 function placeSelect(id, selected, onchange) {
-  return h('select', { id, onchange }, [null, ...byName((state.index?.projects || []).filter(project => durable(project) || project === selected))].map(project =>
+  const projects = (state.index?.projects || []).filter(durable);
+  if (selected && !projects.includes(selected)) projects.push(selected);
+  return h('select', { id, onchange }, [null, ...byName(projects)].map(project =>
     h('option', { value: project || '', selected: (selected || '') === (project || '') ? true : null }, projectName(project))));
 }
 function whereLabel(scope = {}) { return [projectName(scope.project), onlyLabel(scope)].filter(Boolean).join(' · '); }
@@ -303,8 +306,9 @@ function sortedProjects() {
   const recency = state.index?.recency || new Map();
   const live = [...(state.index?.projects || [])].sort((a, b) => String(recency.get(b) || '').localeCompare(String(recency.get(a) || '')) || a.localeCompare(b));
   if (!live.length) return live;
-  state.projectOrder ||= live;
-  return [...state.projectOrder.filter(project => live.includes(project)), ...live.filter(project => !state.projectOrder.includes(project))];
+  const added = live.filter(project => !state.projectOrder?.includes(project));
+  if (added.length) state.projectOrder = [...(state.projectOrder || []), ...added];
+  return state.projectOrder.filter(project => live.includes(project));
 }
 
 async function refreshIndex() {
@@ -409,7 +413,7 @@ async function signIn(token) {
 
 // Reopens a memory with text that was being edited when the session ended.
 async function restoreDraft(kept) {
-  if (!kept.id) { startCreate(kept.project); state.panel.draft = { title: kept.title, content: kept.content }; render(); return; }
+  if (!kept.id) { startCreate(kept.project, { title: kept.title, content: kept.content }); return; }
   await openMemory(kept.id, false);
   if (state.panel?.id === kept.id && state.panel.record) {
     Object.assign(state.panel, { mode: 'edit', draft: { title: kept.title, content: kept.content } });
@@ -433,7 +437,7 @@ async function signOut(everywhere) {
 
 async function openMemory(id, push = true) {
   if (dirty() && !confirmLeave()) return;
-  const panel = { type: 'memory', id, record: null, history: null, mode: 'view', error: '', draft: null, theirs: null };
+  const panel = { type: 'memory', id, key: newRequestID(), record: null, history: null, mode: 'view', error: '', draft: null, theirs: null };
   state.panel = panel;
   if (push) { state.route.memory = id; setURL(true); }
   render();
@@ -811,7 +815,8 @@ function loadingOr(content) {
 function firstRun() {
   return h('div', { class: 'done' }, h('h1', { id: 'page-title', text: 'Nothing saved yet' }),
     h('p', { class: 'reading muted', text: 'Connect an agent, then tell it something worth remembering.' }),
-    h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn', onclick: () => go({ page: 'agents' }) }, 'Connect an agent')));
+    h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn', onclick: () => go({ page: 'agents' }) }, 'Connect an agent'),
+      h('button', { type: 'button', class: 'quiet', onclick: () => startCreate('') }, 'Add memory')));
 }
 
 function projectPage() {
@@ -978,8 +983,8 @@ function editForm(panel) {
       if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); saveEdit(panel); }
       else if (event.key === 'Escape') { event.preventDefault(); cancel(); }
     } },
-    h('label', { class: 'field' }, 'Title', h('input', { id: 'edit-title', type: 'text', value: draft.title, ...invalidProps(panel, 'edit-title') })),
-    h('label', { class: 'field' }, 'Text', h('textarea', { id: 'edit-text', rows: '6', value: draft.content, ...invalidProps(panel, 'edit-text') })),
+    h('label', { class: 'field' }, 'Title', h('input', { id: 'edit-title', type: 'text', value: draft.title, 'data-panel': panel.key, ...invalidProps(panel, 'edit-title') })),
+    h('label', { class: 'field' }, 'Text', h('textarea', { id: 'edit-text', rows: '6', value: draft.content, 'data-panel': panel.key, ...invalidProps(panel, 'edit-text') })),
     record.id ? null : h('label', { class: 'field' }, 'Applies to', placeSelect('edit-project', panel.project, event => { panel.project = event.target.value; })),
     panel.error ? h('p', { class: 'error', id: 'edit-error', role: 'alert', text: panel.error }) : null,
     h('div', { class: 'actions' },
@@ -990,9 +995,9 @@ function editForm(panel) {
 }
 
 // A new memory is an empty one in edit mode, so drafts, redraws and leaving work as for an edit.
-function startCreate(project) {
+function startCreate(project, draft = null) {
   if (dirty() && !confirmLeave()) return;
-  state.panel = { type: 'memory', id: null, record: { title: '', content: '', scope: {} }, mode: 'edit', project: durable(project) ? project : '', error: '', draft: null };
+  state.panel = { type: 'memory', id: null, key: newRequestID(), record: { title: '', content: '', scope: {} }, mode: 'edit', project: durable(project) ? project : '', error: '', draft };
   render();
   document.getElementById('edit-title')?.focus?.();
 }
@@ -1046,7 +1051,7 @@ function memoryPanel(panel) {
         source.source ? h('span', { class: 'meta', text: `“${source.source}”` }) : null)),
     record.purpose === 'handoff' && !record.archived ? section('Kept until', h('p', { class: 'val' }, 'The next handoff', h('span', { class: 'meta', text: 'Then it moves to Archived.' }))) : null,
     // Shown only when an earlier version differs; a keep or archive repeats the text.
-    panel.history?.length || panel.olderFrom >= 1 ? section('History', [
+    panel.history?.length || (panel.history && panel.olderFrom >= 1) ? section('History', [
       // Each version shows its text, and its title only where that differs, so Restore is never blind.
       h('div', { class: 'row static' }, h('span', { class: 't', text: excerpt(record.content) }), h('span', { class: 'm', text: `${by(record)} · ${relDate(record.updated_at)} · current` })),
       panel.history.map(older => h('div', { class: 'row-inline' },
@@ -1159,8 +1164,8 @@ function restoreFocus(key) { if (!focusByKey(key)) document.getElementById('main
 
 function render() {
   if (state.checking) return;
-  // Keep typing in the edit form across redraws.
-  if (state.panel?.mode === 'edit' && document.getElementById('edit-text')) {
+  // Keep typing in the edit form across redraws, but only into the panel that owns the form.
+  if (state.panel?.mode === 'edit' && document.getElementById('edit-text')?.getAttribute?.('data-panel') === state.panel.key) {
     state.panel.draft = { title: document.getElementById('edit-title').value, content: document.getElementById('edit-text').value };
   }
   const focused = document.activeElement;
