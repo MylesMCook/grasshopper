@@ -18,22 +18,39 @@ five agent tools do not change; this page decides what the owner sees.
 ## Layout
 
 - A permanent sidebar: New (only when there is something new), All projects,
-  the five most recent projects and "N more", Agents with status dots,
-  Archived, Settings. On phones it becomes a menu at the top.
+  the five most recent projects plus the open one, and "N more" listing the
+  rest by name, then Agents with status dots, Archived, Settings. The order is
+  fixed when the view loads, so the owner's own changes never reshuffle it. On
+  phones it becomes a menu at the top.
 - The main column: the page title, search, and sections labelled in a left
   margin by where they apply, or by date for the latest handoff. Each memory is
   one line with "source · date" on the right. Large lists group by This week,
-  the month, then Earlier, with "Show N more".
-- A project page shows what its agents start with: its own memories, the
-  memories for every project (folded only past 8), and the latest handoff. The
-  subtitle counts them, and "Preview startup" opens the exact startup context.
+  the month, then Earlier, with "Show N more"; each group's label keeps the
+  place ("grasshopper · This week"). New lists projects by name, so deciding
+  one never moves the rest.
+- A project page shows what its agents start with: the latest handoff first,
+  then its own memories and the memories for every project (folded only past 8,
+  and never when the project has none of its own). An empty project section
+  shows only when nothing applies. The subtitle counts them, followed by "Add
+  memory" and "Preview startup", which opens the exact startup context.
 - Archived lists what the owner archived. Handoffs replaced by newer ones fold
   into one "Show N replaced by newer ones" line at the end.
 - Opening a memory adds a right-hand panel on wide screens, replaces the list
   on laptops, and becomes a page on phones. It shows the full text, Edit,
-  Move to…, Archive, then Kind, Applies to, Agents (At startup, Not until you
-  keep it, Not at startup), Saved by and History. Each row's detail starts with
-  its kind: "decision · Codex · Oct 6".
+  Move to…, Archive, then Applies to, Startup (Loads, Not until you keep it,
+  Not loaded), Saved by and History. Each row's detail is "Codex · Oct 6";
+  handoffs start with "handoff". A device restriction hides the platform it
+  implies. History shows each version's text, and its title where that differs,
+  and appears only when an earlier version differs. Escape closes the panel and
+  focus returns to the row that opened it. Archive and restore keep the
+  memory's author; the audit log records the owner's action.
+  The owner's own saves show "You" and the date, without internal provenance.
+- Move to is a dropdown of All projects and durable projects by name, starting
+  at where the memory applies now; Move does nothing until another place is
+  picked.
+- Add memory and Edit share one form. The text box grows with the text;
+  Cmd/Ctrl+Enter saves and Escape cancels. A memory the owner adds is kept at
+  once and saved as a preference for the chosen project or All projects.
 
 - The owner can name a device in its panel. The name shows wherever the
   device appears; its ID, used in tokens, scopes and provenance, never changes
@@ -63,18 +80,26 @@ Feature: Owner reviews and manages memories
     Then the older handoff is archived with a note naming the newer one
     And handoffs in other scopes are unchanged
 
-  Scenario: A memory moves between a project and every project
+  Scenario: A memory moves to another project or every project
     Given a kept memory in project "grasshopper"
-    When the owner moves it to All projects
-    Then a copy with the same text, purpose and source applies everywhere
+    When the owner moves it to All projects or to project "tempus"
+    Then a copy with the same text, purpose and source applies there
     And the original is archived with a note naming the copy
     And retrying the same move does not create a second copy
+    And a device or platform restriction stays as it was
+
+  Scenario: The owner adds a memory
+    Given the owner is on project "grasshopper"
+    When the owner adds "Prefer short answers."
+    Then it applies to "grasshopper" unless the owner picks another place
+    And it is kept, so agents load it at startup
+    And retrying the same save does not create a second memory
 
   Scenario: A project page shows what agents start with
-    Given 2 memories apply to every project and none only to "grasshopper"
+    Given 9 memories apply to every project and none only to "grasshopper"
     When the owner opens "grasshopper"
-    Then both every-project memories are listed without unfolding
-    And the subtitle says "2 memories apply here"
+    Then all nine are listed without unfolding or an empty "grasshopper" section
+    And the subtitle says "9 memories apply here"
     And "Preview startup" opens the startup context for "grasshopper"
 
   Scenario: Replaced handoffs do not bury archived memories
@@ -105,5 +130,6 @@ Feature: Owner reviews and manages memories
 
 Server behavior is covered by `internal/memory/handoff_retention_test.go`,
 `internal/memory/client_tokens_test.go` and
-`internal/service/visualizer_move_test.go`. Browser behavior is covered by
+`internal/service/visualizer_move_test.go` and
+`internal/service/visualizer_create_test.go`. Browser behavior is covered by
 `internal/service/visualizer/app.test.cjs`.

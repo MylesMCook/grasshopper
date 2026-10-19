@@ -413,3 +413,55 @@ func TestOwnerRevisionRestoreSharesEmbeddingFailureAndSearchContract(t *testing.
 		t.Fatalf("restored embedding unavailable: %+v %v", page, err)
 	}
 }
+
+// Archiving and restoring change only whether a memory loads, so the memory
+// keeps the agent that wrote it; the audit log records the owner's action.
+func TestOwnerArchiveAndRestoreKeepTheAuthor(t *testing.T) {
+	server, store := testServer(t, true)
+	saved := agentSave(t, store, "keep-author", "Use gh", "Check PR status with gh.", "observation", false)
+	if status, _ := ownerJSON(t, server, "/visualizer/api/archive", map[string]any{"id": saved.ID, "expected_revision": saved.Revision, "archived": true, "request_id": "author-archive"}); status != http.StatusOK {
+		t.Fatalf("archive status=%d", status)
+	}
+	if status, _ := ownerJSON(t, server, "/visualizer/api/archive", map[string]any{"id": saved.ID, "expected_revision": saved.Revision + 1, "archived": false, "request_id": "author-restore"}); status != http.StatusOK {
+		t.Fatalf("restore status=%d", status)
+	}
+	record, err := store.RecordByID(context.Background(), saved.ID, nil)
+	if err != nil || record == nil || record.Archived || record.Provenance.Harness != "codex-desktop" || record.Revision != saved.Revision+2 {
+		t.Fatalf("restored memory lost its author: %+v %v", record, err)
+	}
+}
+
+// Restoring a replaced handoff keeps its author but not the note that it was
+// replaced, so archiving it again files it with what the owner archived.
+func TestOwnerRestoreClearsLifecycleNotes(t *testing.T) {
+	server, store := testServer(t, true)
+	first := agentSave(t, store, "handoff-1", "First", "First handoff.", "handoff", false)
+	// A different agent's handoff replaces it, so the archive revision carries Cursor.
+	project := "id:review"
+	if _, err := store.Write(context.Background(), memory.WriteInput{Scope: memory.Scope{Project: &project}, Title: ptr("Second"), Content: "Second handoff.", Purpose: "handoff",
+		Provenance: memory.Provenance{Harness: "cursor", Device: "laptop", Source: "next session"}, RequestID: "handoff-2"}, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	replaced, err := store.RecordByID(context.Background(), first.ID, nil)
+	if err != nil || replaced == nil || !replaced.Archived || !strings.HasPrefix(replaced.Provenance.Source, "Replaced by handoff") {
+		t.Fatalf("setup: %+v %v", replaced, err)
+	}
+	if status, _ := ownerJSON(t, server, "/visualizer/api/archive", map[string]any{"id": first.ID, "expected_revision": replaced.Revision, "archived": false, "request_id": "restore-replaced"}); status != http.StatusOK {
+		t.Fatalf("restore status=%d", status)
+	}
+	restored, _ := store.RecordByID(context.Background(), first.ID, nil)
+	if restored.Provenance.Harness != "codex-desktop" || restored.Provenance.Source != "review regression" {
+		t.Fatalf("restored provenance is not the original author's: %+v", restored.Provenance)
+	}
+	// A moved memory restored at its old place is the agent's again, not the owner's.
+	moved := agentSave(t, store, "moved-1", "Run vet", "Run go vet before a PR.", "decision", true)
+	if status, _ := ownerJSON(t, server, "/visualizer/api/move", map[string]any{"id": moved.ID, "expected_revision": moved.Revision, "project": nil, "request_id": "move-for-restore"}); status != http.StatusOK {
+		t.Fatalf("move status=%d", status)
+	}
+	if status, _ := ownerJSON(t, server, "/visualizer/api/archive", map[string]any{"id": moved.ID, "expected_revision": moved.Revision + 1, "archived": false, "request_id": "restore-moved"}); status != http.StatusOK {
+		t.Fatalf("restore moved status=%d", status)
+	}
+	if back, _ := store.RecordByID(context.Background(), moved.ID, nil); back.Provenance.Harness != "codex-desktop" {
+		t.Fatalf("restored moved memory: %+v", back.Provenance)
+	}
+}

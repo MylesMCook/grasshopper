@@ -7,11 +7,13 @@ Earlier release records are in Git history and
 
 ## Active
 
-2.9.10 is released, deployed and running live with the audit follow-ups (#69).
-Owner: Claude Code, macOS. Mac, Windows PC and Windows work machine connectors
-are on 2.9.10; the Linux machine updates when next used. Verification and
-rollback copies: [verification](docs/verification.md). Search speed, export
-blocking and history vectors are deferred until the store grows.
+2.10.0 is in release: the memory view audit and dogfood fixes, Add memory,
+moves between projects, a stable sidebar, and search that no longer returns
+every memory (calibrated meaning cutoff, filler words ignored). Owner: Claude
+Code, macOS, branch `memory-view-audit-fixes`. Server, storage and search code
+changed, so the full package, rehearsal and rollback checks apply before the
+live cutover. Search speed, export blocking and history vectors are deferred
+until the store grows.
 
 ## Decisions
 

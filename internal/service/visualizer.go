@@ -372,7 +372,38 @@ func visualizerUpdate(store *memory.Writer, save ownerSave, audit *auditLog) htt
 	}
 }
 
-// visualizerMove moves a memory between a project and every project. The
+// visualizerCreate saves a new memory the owner writes, already kept, for
+// every project or one durable project. Owner-written memories are
+// preferences: rules the owner wants agents to follow.
+func visualizerCreate(store *memory.Writer, save ownerSave, audit *auditLog) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Project   *string `json:"project"`
+			Title     string  `json:"title"`
+			Content   string  `json:"content"`
+			RequestID string  `json:"request_id"`
+		}
+		if !decodeVisualizerRead(w, r, &input, 65536) {
+			return
+		}
+		scope := memory.Scope{Project: input.Project}
+		if _, err := scope.Key(); err != nil {
+			http.Error(w, "invalid project", http.StatusBadRequest)
+			return
+		}
+		// An empty title means derive it, as in an edit.
+		receipt, _, err := save(r.Context(), memory.WriteInput{
+			Scope: scope, Content: input.Content, Title: &input.Title,
+			Purpose: "preference", Confirmed: true, Provenance: ownerProvenance, RequestID: input.RequestID,
+		})
+		if err == nil {
+			audit.event("owner_write", r, auditFields{action: "create", id: receipt.ID, revision: receipt.Revision, requestID: input.RequestID})
+		}
+		ownerWriteResult(w, r, store, 0, receipt, err)
+	}
+}
+
+// visualizerMove moves a memory to another project or every project. The
 // writer copies it (same text, purpose, confirmation and original source) and
 // archives the original in one transaction, so a failed or stale move changes
 // nothing and a retry with the same request ID replays.
@@ -444,7 +475,25 @@ func visualizerArchive(store *memory.Writer, audit *auditLog) http.HandlerFunc {
 			http.Error(w, "memory not found", http.StatusNotFound)
 			return
 		}
-		receipt, err := store.Archive(r.Context(), memory.ArchiveInput{Scope: current.Scope, ID: input.ID, ExpectedRevision: input.ExpectedRevision, Archived: input.Archived, RequestID: input.RequestID, Provenance: ownerProvenance})
+		// Archiving changes only whether a memory loads, so it keeps its author
+		// (the audit log records the owner). The requested revision, not the
+		// mutable current one, keeps an identical retry's fingerprint stable.
+		provenance := ownerProvenance
+		if prior, err := store.RecordByID(r.Context(), input.ID, &input.ExpectedRevision); err == nil && prior != nil {
+			provenance = prior.Provenance
+			// A handoff replacement or a move records who did it, not who wrote the
+			// memory, so take the author from the revision before that archive.
+			if strings.HasPrefix(provenance.Source, "Replaced by handoff") || strings.HasPrefix(provenance.Source, "Moved to memory") {
+				provenance = ownerProvenance
+				before := prior.Revision - 1
+				if before >= 1 {
+					if earlier, err := store.RecordByID(r.Context(), input.ID, &before); err == nil && earlier != nil {
+						provenance = earlier.Provenance
+					}
+				}
+			}
+		}
+		receipt, err := store.Archive(r.Context(), memory.ArchiveInput{Scope: current.Scope, ID: input.ID, ExpectedRevision: input.ExpectedRevision, Archived: input.Archived, RequestID: input.RequestID, Provenance: provenance})
 		if err == nil {
 			action := "archive"
 			if !input.Archived {
@@ -465,13 +514,13 @@ func ownerWriteResult(w http.ResponseWriter, r *http.Request, store *memory.Writ
 		ownerConflict(w, r, store, id, "revision_conflict")
 	case strings.HasPrefix(err.Error(), "idempotency_conflict"):
 		ownerConflict(w, r, store, id, "idempotency_conflict")
-	case strings.HasPrefix(err.Error(), "duplicate_conflict"):
+	case strings.HasPrefix(err.Error(), "duplicate_conflict"), strings.HasPrefix(err.Error(), "dedup_key_conflict"):
 		ownerConflict(w, r, store, id, "duplicate_conflict")
 	case strings.HasPrefix(err.Error(), "revision_not_found"):
 		http.Error(w, "revision not found", http.StatusNotFound)
 	case strings.HasPrefix(err.Error(), "memory_not_found"):
 		http.Error(w, "memory not found", http.StatusNotFound)
-	case strings.HasPrefix(err.Error(), "content must be"), strings.HasPrefix(err.Error(), "invalid purpose"),
+	case strings.HasPrefix(err.Error(), "content must be"), strings.HasPrefix(err.Error(), "invalid purpose"), strings.HasPrefix(err.Error(), "project must use"),
 		strings.HasPrefix(err.Error(), "metadata too large"), strings.HasPrefix(err.Error(), "request_id must"):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:

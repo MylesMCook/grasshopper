@@ -113,6 +113,7 @@ function setup({ hash = '', session = false, hidden = false, narrow = false } = 
       await flush();
       return request;
     },
+    keydown(key) { const event = { key, defaultPrevented: false, target: document.activeElement, preventDefault() { this.defaultPrevented = true; } }; for (const action of documentListeners.keydown || []) action(event); return event; },
     setHidden(value) { document.hidden = value; for (const action of documentListeners.visibilitychange || []) action(); },
     hashChange(value) { location.hash = value; for (const action of windowListeners.hashchange || []) action(); }
   };
@@ -177,12 +178,33 @@ test('signing in rejects an empty token, reports a wrong one, and sends the bear
 test('a project page shows suggestions, its own memories, everywhere memories and the latest handoff', async () => {
   const ui = await signedIn();
   const labels = ui.app.querySelectorAll('h2.sec-label').map(node => node.textContent);
-  assert.deepEqual(labels, ['New', 'grasshopper', 'All projects', new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })]);
+  assert.deepEqual(labels, [new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), 'New', 'grasshopper', 'All projects'], 'the latest handoff leads');
   assert.ok(ui.find('Keep Use gh for PR status'), 'suggestions have Keep');
   assert.ok(ui.rows('Prefers deterministic setups'), 'memories for every project show inline, because agents load them here');
   assert.match(ui.text(), /2 memories apply here/, 'the count is what agents start with, not only this project');
   assert.match(ui.rows('Squash merge only').textContent, /Claude Code · today/);
   assert.match(ui.text(), /New1/, 'the sidebar counts suggestions');
+});
+
+test('a project with nothing of its own lists what applies from every project, without an empty section', async () => {
+  const records = Array.from({ length: 9 }, (_, i) => memory(i + 1, `Everywhere ${i + 1}`, { scope: {} }));
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], review_count: 0, server: { version: '2.9.10' }, total: 9 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], total: 9 });
+  assert.deepEqual(ui.app.querySelectorAll('h2.sec-label').map(node => node.textContent), ['All projects']);
+  assert.doesNotMatch(ui.text(), /Nothing kept for this project/);
+  assert.ok(ui.rows('Everywhere 9'), 'not folded behind Show more when nothing else is listed');
+});
+
+test('a scope restricted to a device does not repeat its platform', async () => {
+  const records = [memory(1, 'Device note', { scope: { device: 'mac', platform: 'macos' } })];
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [], review_count: 0, server: { version: '2.9.10' }, total: 1 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [], total: 1 });
+  assert.match(ui.rows('Device note').textContent, /mac only/);
+  assert.doesNotMatch(ui.rows('Device note').textContent, /macOS only/);
 });
 
 test('Preview startup opens what an agent gets for this project', async () => {
@@ -360,25 +382,43 @@ test('an index change held back while typing a device name shows after focus lea
   assert.match(ui.text(), /New3/);
 });
 
-test('an opened memory lists its kind, where it applies, what agents do with it, and who saved it', async () => {
+test('an opened memory lists where it applies, whether it loads at startup, and who saved it', async () => {
   const ui = await signedIn();
   const panel = () => ui.app.querySelector('aside');
   const facts = () => Object.fromEntries(panel().querySelectorAll('section').map(sec => [sec.querySelector('h2').textContent, sec.querySelector('p')?.textContent]));
   await openSquash(ui);
   assert.ok(!ui.app.querySelector('p.about'), 'no prose sentence');
   const labels = panel().querySelectorAll('h2.sec-label').map(node => node.textContent);
-  assert.deepEqual(labels.slice(0, 4), ['Kind', 'Applies to', 'Agents', 'Saved by'], 'facts in a fixed order');
-  assert.equal(facts().Kind, 'Decision');
-  assert.equal(facts().Agents, 'At startup');
+  assert.deepEqual(labels.slice(0, 3), ['Applies to', 'Startup', 'Saved by'], 'facts in a fixed order, with no kind');
+  assert.equal(facts().Startup, 'Loads');
   ui.rows('Use gh for PR status').click();
   await ui.answer('/visualizer/api/record', 200, projectRecords[1]);
-  assert.equal(facts().Agents, 'Not until you keep it');
+  assert.equal(facts().Startup, 'Not until you keep it');
   ui.rows('Squash merge only').click();
   await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], archived: true });
-  assert.equal(facts().Agents, 'Not at startup');
-  assert.match(ui.rows('Squash merge only').textContent, /decision · Claude Code · today/, 'rows start their detail with the kind');
-  assert.match(ui.rows('Use gh for PR status').textContent, /observation · Codex · today/, 'suggestions too');
-  assert.match(ui.rows('Shipped 2.8.5. Next: redesign.').textContent, /handoff · Codex/, 'handoffs too');
+  assert.equal(facts().Startup, 'Not loaded');
+  assert.equal(ui.rows('Squash merge only').textContent, 'Squash merge onlyClaude Code · today', 'rows show only source and date');
+  assert.equal(ui.rows('Use gh for PR status').textContent, 'Use gh for PR statusCodex · today', 'suggestions too');
+  assert.match(ui.rows('Shipped 2.8.5. Next: redesign.').textContent, /handoff · Codex/, 'handoffs still say what they are');
+});
+
+test("the owner's own saves show no internal provenance", async () => {
+  const ui = await signedIn();
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], provenance: { harness: 'memory-view', device: 'owner browser', source: 'Owner action in the memory view' } });
+  const panel = ui.app.querySelector('aside').textContent;
+  assert.match(panel, /Saved byYou/);
+  assert.doesNotMatch(panel, /owner browser|Owner action/);
+});
+
+test('history shows the text each version would restore', async () => {
+  const ui = await signedIn();
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2, content: 'Squash merge only. Always.' });
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], content: 'Rebase is fine too.' });
+  const history = ui.app.querySelector('aside').querySelectorAll('section').find(sec => sec.querySelector('h2').textContent === 'History').textContent;
+  assert.match(history, /Squash merge only\. Always\..*current/, 'the current text');
+  assert.match(history, /Rebase is fine too\./, 'an older text that differs only in content');
 });
 
 test('Keep confirms at the shown revision and a retry reuses its request ID', async () => {
@@ -437,7 +477,8 @@ test('Move to All projects posts a null project', async () => {
   const ui = await signedIn();
   await openSquash(ui);
   ui.find('Move to…').click();
-  ui.app.querySelectorAll('button.pick').find(node => node.textContent === 'All projects').click();
+  ui.document.getElementById('move-to').value = '';
+  ui.find('Move').click();
   await flush();
   const moved = ui.requests.find(request => request.url === '/visualizer/api/move');
   assert.deepEqual({ ...moved.body, request_id: undefined }, { id: 1, expected_revision: 1, project: null, request_id: undefined });
@@ -568,11 +609,19 @@ test('a conflict on Keep refreshes the open memory, and an uncertain failure kee
   assert.equal(ui.requests.filter(request => request.url === '/visualizer/api/update')[2].body.expected_revision, 3);
 });
 
-test('a project memory can only move to All projects', async () => {
+test('Move to starts at where the memory applies now and saves nothing until that changes', async () => {
   const ui = await signedIn();
   await openSquash(ui);
   ui.find('Move to…').click();
-  assert.deepEqual(ui.app.querySelectorAll('button.pick').map(node => node.textContent), ['All projects']);
+  const where = ui.document.getElementById('move-to');
+  assert.equal(where.querySelectorAll('option').find(node => node.getAttribute('selected') !== null)?.value, PROJECT);
+  where.value = PROJECT;
+  ui.find('Move').click();
+  await flush();
+  assert.equal(ui.pending('/visualizer/api/move').length, 0);
+  assert.match(ui.text(), /Pick another place/);
+  ui.app.querySelector('form.edit').dispatch('keydown', { key: 'Escape' });
+  assert.ok(ui.find('Move to…'), 'Escape goes back to the memory');
 });
 
 test('a rate-limited sign-in says to wait', async () => {
@@ -802,4 +851,301 @@ test('focus restore prefers a native control over a region that shares its name'
   const focused = ui.document.activeElement;
   assert.equal(focused?.tagName, 'BUTTON', 'focus stays on a button, not the region titled "Edit"');
   assert.equal(focused.textContent, 'Edit');
+});
+
+test('Add memory saves a kept memory for the project on screen, then opens it', async () => {
+  const ui = await signedIn();
+  ui.find('Add memory').click();
+  assert.equal(ui.document.activeElement, ui.document.getElementById('edit-title'), 'focus starts at the title');
+  assert.equal(ui.document.getElementById('edit-project').querySelectorAll('option').find(node => node.getAttribute('selected') !== null)?.value, PROJECT, 'it applies to the project on screen by default');
+  ui.document.getElementById('edit-title').value = 'Short answers';
+  ui.document.getElementById('edit-text').value = 'Prefer short answers.';
+  ui.document.getElementById('edit-project').value = PROJECT;
+  ui.find('Save').click();
+  const create = await ui.answer('/visualizer/api/create', 200, { id: 9, revision: 1 });
+  assert.deepEqual({ ...create.body, request_id: undefined }, { project: PROJECT, title: 'Short answers', content: 'Prefer short answers.', request_id: undefined });
+  const opened = ui.pending('/visualizer/api/record')[0];
+  assert.equal(opened?.body.id, 9, 'the new memory opens');
+});
+
+test('Add memory can apply to every project, and asks before dropping typed text', async () => {
+  const ui = await signedIn();
+  ui.find('Add memory').click();
+  const where = ui.document.getElementById('edit-project');
+  where.value = '';
+  where.dispatch('change');
+  ui.document.getElementById('edit-text').value = 'Prefer short answers.';
+  let asked = 0;
+  ui.sandbox.window.confirm = () => { asked++; return false; };
+  ui.find('Cancel').click();
+  assert.equal(asked, 1, 'typed text is not dropped silently');
+  ui.find('Save').click();
+  const create = await ui.answer('/visualizer/api/create', 200, { id: 9, revision: 1 });
+  assert.equal(create.body.project, null);
+});
+
+test('Move to offers every other project as well as All projects', async () => {
+  const OTHER = 'git:github.com/example/tempus';
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT, OTHER, 'legacy-folder'], review_count: 1, server: { version: '2.9.10' }, total: 4 });
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT, OTHER], total: 4 });
+  await openSquash(ui);
+  ui.find('Move to…').click();
+  assert.deepEqual(ui.document.getElementById('move-to').querySelectorAll('option').map(node => node.textContent), ['All projects', 'grasshopper', 'tempus'], 'by name, never a folder name');
+  ui.document.getElementById('move-to').value = OTHER;
+  ui.find('Move').click();
+  await flush();
+  assert.equal(ui.requests.find(request => request.url === '/visualizer/api/move').body.project, OTHER);
+});
+
+test('in an edit, Cmd or Ctrl+Enter saves and Escape cancels', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  const form = ui.app.querySelector('form.edit');
+  form.dispatch('keydown', { key: 'Escape' });
+  assert.ok(ui.find('Edit') && !ui.app.querySelector('form.edit'), 'Escape leaves an unchanged edit');
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  ui.app.querySelector('form.edit').dispatch('keydown', { key: 'Enter', metaKey: true });
+  await flush();
+  assert.equal(ui.pending('/visualizer/api/update')[0]?.body.content, 'Squash merge only. Always.');
+});
+
+test('large lists keep saying where they apply', async () => {
+  const records = Array.from({ length: 9 }, (_, i) => memory(i + 1, `Project rule ${i + 1}`));
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], review_count: 0, server: { version: '2.9.10' }, total: 9 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], total: 9 });
+  assert.deepEqual(ui.app.querySelectorAll('h2.sec-label').map(node => node.textContent), ['grasshopper · This week']);
+});
+
+test('New lists projects by name, so deciding one never reshuffles the rest', async () => {
+  const OTHER = 'git:github.com/example/apples';
+  const older = new Date(Date.now() - 86400000).toISOString();
+  const records = [memory(1, 'Grasshopper idea', { confirmed: false, purpose: 'observation' }), memory(2, 'Apples idea', { confirmed: false, purpose: 'observation', scope: { project: OTHER }, updated_at: older })];
+  const ui = setup({ session: true, hash: '#page=new' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT, OTHER], review_count: 2, server: { version: '2.9.10' }, total: 2 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT, OTHER], total: 2 });
+  assert.deepEqual(ui.app.querySelectorAll('h2.sec-label').map(node => node.textContent), ['apples', 'grasshopper']);
+});
+
+test('History appears only when an earlier version differs', async () => {
+  const ui = await signedIn();
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2 });
+  await ui.answer('/visualizer/api/record', 200, projectRecords[0]);
+  assert.ok(!ui.app.querySelector('aside').querySelectorAll('h2').some(node => node.textContent === 'History'), 'a kept suggestion has nothing to restore');
+});
+
+test('Escape closes an open memory and focus returns to its row', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.keydown('Escape');
+  assert.equal(ui.app.querySelector('aside'), null, 'the panel closed');
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'open:1', 'focus is back on the row');
+  await openSquash(ui);
+  ui.find('Close').click();
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'open:1', 'Close returns focus too');
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.keydown('Escape');
+  assert.ok(ui.app.querySelector('aside'), 'an edit is left to its own Escape');
+});
+
+// Seven projects, newest first by their memory's date: p1 is the most recent.
+function projectSet() {
+  const projects = ['p1', 'p2', 'p3', 'p4', 'p5', 'zeta', 'alpha'].map(name => `git:github.com/example/${name}`);
+  const records = projects.map((project, i) => memory(i + 1, `Rule ${i + 1}`, { scope: { project }, updated_at: new Date(Date.now() - i * 3600000).toISOString() }));
+  return { projects, records };
+}
+const navNames = ui => ui.app.querySelector('nav.side').querySelectorAll('button.nav').map(node => node.textContent.trim());
+
+test('the sidebar shows the five most recent projects, then the rest by name', async () => {
+  const { projects, records } = projectSet();
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects, review_count: 0, server: { version: '2.9.11' }, total: 7 });
+  assert.deepEqual(navNames(ui).slice(0, 7), ['All projects', 'p1', 'p2', 'p3', 'p4', 'p5', '2 more']);
+  ui.find('2 more').click();
+  assert.deepEqual(navNames(ui).slice(6, 9), ['alpha', 'zeta', 'Fewer'], 'the rest are easy to scan');
+});
+
+test('the project on screen always shows in the sidebar', async () => {
+  const { projects, records } = projectSet();
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(projects[6])}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects, review_count: 0, server: { version: '2.9.11' }, total: 7 });
+  assert.ok(navNames(ui).includes('alpha'), 'alpha is older than the top five but is open');
+  assert.ok(navNames(ui).includes('1 more'));
+});
+
+test('the sidebar keeps its order while the owner works', async () => {
+  const { projects, records } = projectSet();
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects, review_count: 0, server: { version: '2.9.11' }, total: 7 });
+  // p5 changes most recently; the next index refresh must not move it to the top.
+  const changed = records.map(record => record.id === 5 ? { ...record, updated_at: new Date(Date.now() + 60000).toISOString() } : record);
+  for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 15000) { ui.timers.delete(id); timer.fn(); }
+  await flush();
+  for (const request of ui.pending('/visualizer/api/context')) { request.done = true; request.reply(200, { records: changed, projects, review_count: 0, server: { version: '2.9.11' }, total: 7 }); }
+  await flush();
+  assert.deepEqual(navNames(ui).slice(1, 6), ['p1', 'p2', 'p3', 'p4', 'p5']);
+});
+
+test('Move to keeps the current project as an option even when it is not in the project list', async () => {
+  const OLD = 'git:github.com/example/not-listed';
+  const ui = await signedIn();
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], scope: { project: OLD } });
+  ui.find('Move to…').click();
+  assert.equal(ui.document.getElementById('move-to').querySelectorAll('option').find(node => node.getAttribute('selected') !== null)?.value, OLD);
+});
+
+test('projects that appear later also keep their sidebar place', async () => {
+  const { projects, records } = projectSet();
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: records.slice(0, 2), projects: projects.slice(0, 2), review_count: 0, server: { version: '2.10.0' }, total: 2 });
+  const refresh = async list => {
+    for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 15000) { ui.timers.delete(id); timer.fn(); }
+    await flush();
+    for (const request of ui.pending('/visualizer/api/context')) if (request.body?.all_projects && !request.body.view) { request.done = true; request.reply(200, { records: list, projects: projects.slice(0, 4), review_count: 0, server: { version: '2.10.0' }, total: list.length }); }
+    await flush();
+  };
+  await refresh(records.slice(0, 4));
+  const before = navNames(ui).slice(1, 5);
+  await refresh(records.slice(0, 4).map(record => record.id === 4 ? { ...record, updated_at: new Date(Date.now() + 60000).toISOString() } : record));
+  assert.deepEqual(navNames(ui).slice(1, 5), before);
+});
+
+test('an Add memory draft survives the session ending and signing in again', async () => {
+  const ui = await signedIn();
+  ui.find('Add memory').click();
+  ui.document.getElementById('edit-title').value = 'Short answers';
+  ui.document.getElementById('edit-text').value = 'Prefer short answers.';
+  for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 15000) { ui.timers.delete(id); timer.fn(); }
+  await flush();
+  await ui.answer('/visualizer/api/context', 401);
+  assert.match(ui.text(), /unsaved text is kept/);
+  ui.app.querySelector('#token').value = TOKEN;
+  ui.app.querySelector('form.signin-box').dispatch('submit');
+  await ui.answer('/visualizer/api/session', 200, {});
+  assert.equal(ui.document.getElementById('edit-text')?.value, 'Prefer short answers.');
+  assert.equal(ui.document.getElementById('edit-title')?.value, 'Short answers');
+  const where = ui.document.getElementById('edit-project');
+  assert.equal(where.querySelectorAll('option').find(node => node.getAttribute('selected') !== null)?.value, PROJECT, 'still for the project, not every project');
+});
+
+test('an empty store offers Add memory', async () => {
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: [], projects: [], review_count: 0, server: { version: '2.10.0' }, total: 0 });
+  await ui.answer('/visualizer/api/context', 200, { records: [], projects: [], total: 0 });
+  assert.ok(ui.find('Add memory'));
+});
+
+test('Add memory opened during an edit starts blank', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Discard me.';
+  ui.find('Add memory').click();
+  assert.equal(ui.document.getElementById('edit-text').value, '');
+  assert.equal(ui.document.getElementById('edit-title').value, '');
+});
+
+test('a long history stays drawn while it reloads after a save', async () => {
+  const ui = await signedIn();
+  const long = { ...projectRecords[0], revision: 7, content: 'Version 7.' };
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, long);
+  for (let revision = 6; revision >= 2; revision--) await ui.answer('/visualizer/api/record', 200, { ...long, revision, content: `Version ${revision}.` });
+  assert.ok(ui.find('Show older versions'));
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Version 8.';
+  ui.find('Save').click();
+  await ui.answer('/visualizer/api/update', 200, { id: 1, revision: 8 });
+  await ui.answer('/visualizer/api/record', 200, { ...long, revision: 8, content: 'Version 8.' });
+  assert.match(ui.app.querySelector('aside').textContent, /Version 8\./, 'the panel still draws');
+});
+
+test('a project without a durable ID does not offer Add memory', async () => {
+  const LEGACY = 'old-folder-name';
+  const records = [memory(1, 'Old rule', { scope: { project: LEGACY } })];
+  const ui = setup({ session: true, hash: `#page=project&project=${LEGACY}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [LEGACY], review_count: 0, server: { version: '2.10.0' }, total: 1 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [LEGACY], total: 1 });
+  assert.ok(!ui.find('Add memory'), 'it could only save to every project');
+});
+
+test('the open project stays in the sidebar after its last memory leaves', async () => {
+  const OTHER = 'git:github.com/example/emptied';
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(OTHER)}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT], review_count: 0, server: { version: '2.10.0' }, total: 4 });
+  assert.ok(navNames(ui).includes('emptied'));
+});
+
+test('a failed move retries to the same place with the same request', async () => {
+  const OTHER = 'git:github.com/example/tempus';
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT, OTHER], review_count: 1, server: { version: '2.10.0' }, total: 4 });
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT, OTHER], total: 4 });
+  await openSquash(ui);
+  ui.find('Move to…').click();
+  const where = ui.document.getElementById('move-to');
+  where.value = OTHER;
+  where.dispatch('change');
+  ui.find('Move').click();
+  await flush();
+  const first = ui.pending('/visualizer/api/move')[0];
+  first.done = true; first.fail();
+  await flush();
+  ui.find('Move').click();
+  await flush();
+  const retry = ui.pending('/visualizer/api/move')[0];
+  assert.equal(retry?.body.project, OTHER);
+  assert.equal(retry.body.request_id, first.body.request_id);
+});
+
+test('a long earlier version can be read in full before restoring it', async () => {
+  const ui = await signedIn();
+  const older = `${'Older rule text. '.repeat(15)}The changed instruction is at the end.`;
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2, content: 'Current text.' });
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], content: older });
+  assert.ok(ui.app.querySelector('aside').querySelector('details'), 'a long version expands');
+  assert.match(ui.app.querySelector('aside').textContent, /The changed instruction is at the end\./);
+});
+
+test('an opened long version stays open across a refresh', async () => {
+  const ui = await signedIn();
+  const older = `${'Older rule text. '.repeat(15)}End.`;
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2, content: 'Current text.' });
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], content: older });
+  const details = ui.app.querySelector('aside').querySelector('details');
+  details.attributes.open = '';
+  details.dispatch('toggle');
+  for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 15000) { ui.timers.delete(id); timer.fn(); }
+  await flush();
+  for (const request of ui.pending('/visualizer/api/context')) { request.done = true; request.reply(200, { records: projectRecords, projects: [PROJECT], review_count: 2, server: { version: '2.10.0' }, total: 4 }); }
+  await flush();
+  assert.notEqual(ui.app.querySelector('aside').querySelector('details').getAttribute('open'), null);
+});
+
+test('cancelling Add memory over an open memory forgets that memory in the address', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  assert.match(ui.location.hash, /memory=1/);
+  ui.find('Add memory').click();
+  ui.find('Cancel').click();
+  assert.doesNotMatch(ui.location.hash, /memory=1/);
 });

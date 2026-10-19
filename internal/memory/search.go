@@ -12,6 +12,20 @@ import (
 	"unicode"
 )
 
+// Meaning matches. The pinned Granite model scores even unrelated text
+// 0.63-0.81 and the intended memory 0.78 or higher on the frozen recall
+// fixture, and short queries lift every score. So a meaning hit needs at least
+// MinSimilarity, the best hit must stand standoutGap above the median memory
+// in scope (otherwise the query matches nothing in particular), and each hit
+// must sit at least standoutShare of the way from that median to the best.
+// Exact-word matches always count. With fewer than five memories in scope
+// there is no meaningful median, so only the floor applies.
+const (
+	MinSimilarity = 0.76
+	standoutGap   = 0.04
+	standoutShare = 0.4
+)
+
 // Search merges scoped FTS5 and cosine-ranked vector hits. The caller supplies
 // the query vector and model; a nil vector gives lexical-only results. Scope
 // is constrained in SQLite before either candidate list is ranked.
@@ -103,6 +117,8 @@ func (r *Reader) searchKeys(ctx context.Context, keys []string, query string, ve
 			similarity float64
 		}
 		hits := []hit{}
+		// Every comparable memory's score, for the median the standout test uses.
+		scanned := []float64{}
 		for rows.Next() {
 			var id int64
 			var scopeJSON string
@@ -128,8 +144,11 @@ func (r *Reader) searchKeys(ctx context.Context, keys []string, query string, ve
 				rowNorm += float64(rowValue) * float64(rowValue)
 			}
 			similarity := dot / math.Sqrt(queryNorm*rowNorm)
-			if !math.IsNaN(similarity) && !math.IsInf(similarity, 0) && similarity >= 0.3 {
-				hits = append(hits, hit{id, recordScope, similarity})
+			if !math.IsNaN(similarity) && !math.IsInf(similarity, 0) {
+				scanned = append(scanned, similarity)
+				if similarity >= MinSimilarity {
+					hits = append(hits, hit{id, recordScope, similarity})
+				}
 			}
 		}
 		err = rows.Err()
@@ -143,6 +162,23 @@ func (r *Reader) searchKeys(ctx context.Context, keys []string, query string, ve
 			}
 			return hits[i].id < hits[j].id
 		})
+		if len(hits) > 0 && len(scanned) >= 5 {
+			sort.Float64s(scanned)
+			middle := len(scanned) / 2
+			best, median := hits[0].similarity, scanned[middle]
+			if len(scanned)%2 == 0 {
+				median = (scanned[middle-1] + scanned[middle]) / 2
+			}
+			kept := hits[:0]
+			if best-median >= standoutGap {
+				for _, hit := range hits {
+					if hit.similarity >= median+standoutShare*(best-median) {
+						kept = append(kept, hit)
+					}
+				}
+			}
+			hits = kept
+		}
 		for rank, hit := range hits {
 			scores[hit.id] += 0.6 / float64(61+rank)
 			if _, exists := records[hit.id]; !exists {
@@ -195,17 +231,34 @@ func prefixedRecordColumns(prefix string) string {
 	return strings.Join(parts, ",")
 }
 
+var fillerWords = map[string]bool{}
+
+func init() {
+	for _, word := range strings.Fields("a an and are as at be by can did do does for from has have how i in is it its me my of on or our so than that the their then there these this those to was we were what when where which who why will with you your") {
+		fillerWords[word] = true
+	}
+}
+
 func prepareFTSQuery(query string) string {
 	terms := []string{}
 	seen := map[string]bool{}
+	words := strings.FieldsFunc(query, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) })
+	// Filler words, whole or split from camel case, match nearly every memory;
+	// keep them only when the query has nothing else.
+	keepFiller := true
+	for _, word := range words {
+		if !fillerWords[strings.ToLower(word)] {
+			keepFiller = false
+			break
+		}
+	}
 	add := func(term string) {
 		term = strings.ToLower(term)
-		if term != "" && !seen[term] {
+		if term != "" && !seen[term] && (keepFiller || !fillerWords[term]) {
 			seen[term] = true
 			terms = append(terms, "\""+term+"\"")
 		}
 	}
-	words := strings.FieldsFunc(query, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) })
 	for _, word := range words {
 		add(word)
 	}

@@ -356,6 +356,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		ownerReads = map[string]http.HandlerFunc{
 			"/visualizer/api/search":             visualizerSearch(backend, embedQuery),
 			"/visualizer/api/record":             visualizerRecord(backend.Store),
+			"/visualizer/api/create":             visualizerCreate(backend.Store, saveMemory, audit),
 			"/visualizer/api/update":             visualizerUpdate(backend.Store, saveMemory, audit),
 			"/visualizer/api/archive":            visualizerArchive(backend.Store, audit),
 			"/visualizer/api/move":               visualizerMove(backend.Store, moveMemory, audit),

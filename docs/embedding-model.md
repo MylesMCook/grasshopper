@@ -31,7 +31,14 @@ The frozen corpora are in `tests/fixtures/embedding-search-eval.json` and run
 against separate synthetic databases. Production-adapter tests enforce the
 observed Granite recall, the export's published cosine examples, current scope
 and archive boundaries, immediate writes, and re-embedding/reopen behavior.
-The existing hybrid weights and similarity cutoff remain unchanged.
+The hybrid weights are unchanged. Granite scores even unrelated text
+0.63-0.81 cosine and short queries lift every score, so the earlier 0.3 cutoff
+returned every memory for any query. A meaning hit now needs at least 0.76
+(`memory.MinSimilarity`); the best hit must stand 0.04 above the median memory
+in scope, and each hit must sit at least 40% of the way from that median to the
+best. On the frozen fixture this keeps every intended memory and leaves most
+nonsense queries with no hits; `TestGraniteFrozenHybridRecall` enforces both.
+Exact-word matches always count, minus common filler words.
 
 ## Runtime bound
 

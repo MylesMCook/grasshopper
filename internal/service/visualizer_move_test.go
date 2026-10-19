@@ -57,8 +57,7 @@ func TestOwnerMovesAMemoryBetweenAProjectAndEveryProject(t *testing.T) {
 	}
 }
 
-// A move only goes between a project and every project, to a durable project,
-// and a target that already holds the same memory or a stale revision leaves
+// A move only goes to a durable project or every project, and a target that already holds the same memory or a stale revision leaves
 // everything unchanged, with no stray copy.
 func TestRejectedMovesChangeNothing(t *testing.T) {
 	server, store := testServer(t, true)
@@ -84,7 +83,6 @@ func TestRejectedMovesChangeNothing(t *testing.T) {
 		project any
 		want    int
 	}{
-		{"to another project", "id:elsewhere", http.StatusBadRequest},
 		{"to a legacy project name", "plain-folder-name", http.StatusBadRequest},
 		{"onto an identical global memory", nil, http.StatusConflict},
 	} {
@@ -100,3 +98,24 @@ func TestRejectedMovesChangeNothing(t *testing.T) {
 }
 
 func ptr(value string) *string { return &value }
+
+// A project memory moves straight to another project, keeping its text and
+// source, and the original is archived with a note.
+func TestOwnerMovesAMemoryBetweenProjects(t *testing.T) {
+	server, store := testServer(t, true)
+	ctx := context.Background()
+	saved := agentSave(t, store, "move-across", "Run vet", "Run go vet before a PR.", "decision", true)
+	status, body := ownerJSON(t, server, "/visualizer/api/move", map[string]any{"id": saved.ID, "expected_revision": saved.Revision, "project": "id:elsewhere", "request_id": "move-across-1"})
+	if status != http.StatusOK {
+		t.Fatalf("move status=%d body=%v", status, body)
+	}
+	var newID int64
+	_ = json.Unmarshal(body["id"], &newID)
+	copied, err := store.RecordByID(ctx, newID, nil)
+	if err != nil || copied == nil || copied.Scope.Project == nil || *copied.Scope.Project != "id:elsewhere" || copied.Content != "Run go vet before a PR." || copied.Provenance.Harness != "codex-desktop" {
+		t.Fatalf("copy in the other project is wrong: %+v %v", copied, err)
+	}
+	if original, _ := store.RecordByID(ctx, saved.ID, nil); original == nil || !original.Archived {
+		t.Fatalf("original was not archived: %+v", original)
+	}
+}
