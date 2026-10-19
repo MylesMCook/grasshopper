@@ -215,7 +215,7 @@ function sessionEnded() {
   stopPolling();
   const draft = draftOf(state.panel);
   if (draft) state.keptDraft = draft;
-  Object.assign(state, { active: false, generation: state.generation + 1, index: null, page: null, panel: null, devices: [], pairings: [], undo: null, signedOutNote: state.keptDraft ? 'Your session ended. Sign in again; your unsaved text is kept.' : 'Your session ended. Sign in again.' });
+  Object.assign(state, { active: false, generation: state.generation + 1, index: null, projectOrder: null, page: null, panel: null, devices: [], pairings: [], undo: null, signedOutNote: state.keptDraft ? 'Your session ended. Sign in again; your unsaved text is kept.' : 'Your session ended. Sign in again.' });
   writes.clear();
   render();
 }
@@ -297,9 +297,14 @@ function chooseDefaultProject() {
   return true;
 }
 
+// Most recent first, fixed when the view loads: the owner's own keeps and
+// moves never reshuffle the list under the pointer. New projects join the end.
 function sortedProjects() {
   const recency = state.index?.recency || new Map();
-  return [...(state.index?.projects || [])].sort((a, b) => String(recency.get(b) || '').localeCompare(String(recency.get(a) || '')) || a.localeCompare(b));
+  const live = [...(state.index?.projects || [])].sort((a, b) => String(recency.get(b) || '').localeCompare(String(recency.get(a) || '')) || a.localeCompare(b));
+  if (!live.length) return live;
+  state.projectOrder ||= live;
+  return [...state.projectOrder.filter(project => live.includes(project)), ...live.filter(project => !state.projectOrder.includes(project))];
 }
 
 async function refreshIndex() {
@@ -418,7 +423,7 @@ async function signOut(everywhere) {
     const result = everywhere ? await api('/visualizer/api/session/revoke-all', {}) : await api('/visualizer/api/session', undefined, { method: 'DELETE' });
     if (result.status >= 300) throw new Error();
     stopPolling();
-    Object.assign(state, { active: false, generation: state.generation + 1, index: null, page: null, panel: null, undo: null, signedOutNote: everywhere ? 'Signed out on every browser.' : 'Signed out.' });
+    Object.assign(state, { active: false, generation: state.generation + 1, index: null, projectOrder: null, page: null, panel: null, undo: null, signedOutNote: everywhere ? 'Signed out on every browser.' : 'Signed out.' });
     writes.clear();
   } catch (error) { if (!error.session) say("Couldn't sign out. Try again."); }
   render();
@@ -724,7 +729,10 @@ function navButton(label, route, { current = false, count = '', extra = '' } = {
 function sidebar() {
   const route = state.route;
   const projects = sortedProjects();
-  const shown = state.moreProjects ? projects : projects.slice(0, 5);
+  // The five most recent, plus the open project; the rest by name, to scan.
+  const top = projects.filter((project, i) => i < 5 || (route.page === 'project' && route.project === project));
+  const rest = byName(projects.filter(project => !top.includes(project)));
+  const shown = state.moreProjects ? [...top, ...rest] : top;
   const review = state.index?.review || 0;
   const devices = state.devices.filter(device => !device.revoked_at);
   const waiting = state.pairings.filter(request => request.status === 'pending').length;
@@ -735,7 +743,7 @@ function sidebar() {
     h('div', { class: 'nav-group' },
       navButton('All projects', { page: 'all' }, { current: route.page === 'all', extra: 'all' }),
       shown.map(project => navButton(projectName(project), { page: 'project', project }, { current: route.page === 'project' && route.project === project })),
-      projects.length > 5 ? h('button', { type: 'button', class: 'nav', 'data-key': 'nav:more', onclick: () => { state.moreProjects = !state.moreProjects; render(); } }, h('span', { text: state.moreProjects ? 'Fewer' : `${projects.length - 5} more` })) : null),
+      rest.length ? h('button', { type: 'button', class: 'nav', 'data-key': 'nav:more', onclick: () => { state.moreProjects = !state.moreProjects; render(); } }, h('span', { text: state.moreProjects ? 'Fewer' : `${rest.length} more` })) : null),
     h('div', { class: 'nav-group side-foot' },
       h('button', { type: 'button', class: 'nav', 'data-key': 'nav:#page=agents', 'aria-current': route.page === 'agents' ? 'page' : null, onclick: () => go({ page: 'agents' }) },
         h('span', {}, devices.length ? h('span', { class: 'dots', 'aria-hidden': 'true' }, devices.slice(0, 6).map(device => h('i', { class: recentlySeen(device) ? 'dot on' : 'dot' }))) : null, 'Agents',

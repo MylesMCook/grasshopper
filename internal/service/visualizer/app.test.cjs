@@ -955,3 +955,44 @@ test('Escape closes an open memory and focus returns to its row', async () => {
   ui.keydown('Escape');
   assert.ok(ui.app.querySelector('aside'), 'an edit is left to its own Escape');
 });
+
+// Seven projects, newest first by their memory's date: p1 is the most recent.
+function projectSet() {
+  const projects = ['p1', 'p2', 'p3', 'p4', 'p5', 'zeta', 'alpha'].map(name => `git:github.com/example/${name}`);
+  const records = projects.map((project, i) => memory(i + 1, `Rule ${i + 1}`, { scope: { project }, updated_at: new Date(Date.now() - i * 3600000).toISOString() }));
+  return { projects, records };
+}
+const navNames = ui => ui.app.querySelector('nav.side').querySelectorAll('button.nav').map(node => node.textContent.trim());
+
+test('the sidebar shows the five most recent projects, then the rest by name', async () => {
+  const { projects, records } = projectSet();
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects, review_count: 0, server: { version: '2.9.11' }, total: 7 });
+  assert.deepEqual(navNames(ui).slice(0, 7), ['All projects', 'p1', 'p2', 'p3', 'p4', 'p5', '2 more']);
+  ui.find('2 more').click();
+  assert.deepEqual(navNames(ui).slice(6, 9), ['alpha', 'zeta', 'Fewer'], 'the rest are easy to scan');
+});
+
+test('the project on screen always shows in the sidebar', async () => {
+  const { projects, records } = projectSet();
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(projects[6])}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects, review_count: 0, server: { version: '2.9.11' }, total: 7 });
+  assert.ok(navNames(ui).includes('alpha'), 'alpha is older than the top five but is open');
+  assert.ok(navNames(ui).includes('1 more'));
+});
+
+test('the sidebar keeps its order while the owner works', async () => {
+  const { projects, records } = projectSet();
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects, review_count: 0, server: { version: '2.9.11' }, total: 7 });
+  // p5 changes most recently; the next index refresh must not move it to the top.
+  const changed = records.map(record => record.id === 5 ? { ...record, updated_at: new Date(Date.now() + 60000).toISOString() } : record);
+  for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === 15000) { ui.timers.delete(id); timer.fn(); }
+  await flush();
+  for (const request of ui.pending('/visualizer/api/context')) { request.done = true; request.reply(200, { records: changed, projects, review_count: 0, server: { version: '2.9.11' }, total: 7 }); }
+  await flush();
+  assert.deepEqual(navNames(ui).slice(1, 6), ['p1', 'p2', 'p3', 'p4', 'p5']);
+});

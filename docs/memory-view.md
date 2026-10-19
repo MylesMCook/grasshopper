@@ -18,8 +18,10 @@ five agent tools do not change; this page decides what the owner sees.
 ## Layout
 
 - A permanent sidebar: New (only when there is something new), All projects,
-  the five most recent projects and "N more", Agents with status dots,
-  Archived, Settings. On phones it becomes a menu at the top.
+  the five most recent projects plus the open one, and "N more" listing the
+  rest by name, then Agents with status dots, Archived, Settings. The order is
+  fixed when the view loads, so the owner's own changes never reshuffle it. On
+  phones it becomes a menu at the top.
 - The main column: the page title, search, and sections labelled in a left
   margin by where they apply, or by date for the latest handoff. Each memory is
   one line with "source · date" on the right. Large lists group by This week,
