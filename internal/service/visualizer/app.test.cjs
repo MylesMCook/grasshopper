@@ -1173,3 +1173,11 @@ test('Move to changes or lifts a device or OS restriction', async () => {
   const moved = ui.pending('/visualizer/api/move')[0];
   assert.deepEqual([moved.body.project, moved.body.device, moved.body.platform], [null, null, null], 'applies on every device');
 });
+
+test('a handoff says why it has no Move to', async () => {
+  const ui = await signedIn();
+  ui.rows('Shipped 2.8.5. Next: redesign.').click();
+  await ui.answer('/visualizer/api/record', 200, projectRecords[3]);
+  assert.ok(!ui.find('Move to…'));
+  assert.match(ui.app.querySelector('aside').textContent, /Handoffs stay where the agent saved them\./);
+});

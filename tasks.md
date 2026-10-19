@@ -7,12 +7,11 @@ Earlier release records are in Git history and
 
 ## Active
 
-2.10.1 is released, deployed and running live (#75): Move to also changes a
-memory's device and OS. Owner: Claude Code, macOS. The Mac's Claude Code and
-Codex connectors are on 2.10.1; the Windows PC, Windows work machine and Linux
-machine update when next used. Verification and rollback copies:
-[verification](docs/verification.md). Search speed, export blocking and
-history vectors are deferred until the store grows.
+2.10.2 is in release: the memory panel no longer scrolls sideways on long
+history, sits against the right edge again, and handoffs say why they have no
+Move to. Owner: Claude Code, macOS, branch `panel-layout-fix`. 2.10.1 runs
+live; the Windows PC, Windows work machine and Linux machine update when next
+used.
 
 ## Decisions
 

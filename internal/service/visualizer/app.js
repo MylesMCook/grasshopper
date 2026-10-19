@@ -1067,7 +1067,9 @@ function memoryPanel(panel) {
     h('p', { class: 'reading full', text: record.content }),
     h('div', { class: 'actions' }, actions),
     similar ? section('Similar', [row(similar), h('button', { type: 'button', class: 'quiet more', 'aria-disabled': saving, onclick: () => keepAndReplace(record, similar) }, 'Keep and replace it')], 'warn') : null,
-    section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), record.scope?.project ? h('span', { class: 'meta', text: record.scope.project }) : null)),
+    // Handoffs have no Move to: each place keeps only its latest one.
+    section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), record.scope?.project ? h('span', { class: 'meta', text: record.scope.project }) : null,
+      record.purpose === 'handoff' ? h('span', { class: 'meta', text: 'Handoffs stay where the agent saved them.' }) : null)),
     // "Loads" means it can load; Preview startup shows the size limit's cuts.
     section('Startup', h('p', { class: 'val', text: record.archived ? 'Not loaded' : isNew ? 'Not until you keep it' : 'Loads' })),
     // The owner's own saves carry fixed internal provenance, so only the date shows.
