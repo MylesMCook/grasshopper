@@ -1,17 +1,18 @@
 # Grasshopper status
 
-Current release: [2.10.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.0),
-on the marketplace and usegrasshopper.com; the macOS service runs 2.10.0.
+Current release: [2.10.1](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.1),
+on the marketplace and usegrasshopper.com; the macOS service runs 2.10.1.
 Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-2.10.1 is in release: Move to also changes or lifts a memory's device and OS
-restriction. Owner: Claude Code, macOS, branch `device-scope-edit`. Server and
-storage code changed, so the full package, rehearsal and rollback checks
-apply. 2.10.0 runs live; the Windows PC, Windows work machine and Linux
-machine update when next used.
+2.10.1 is released, deployed and running live (#75): Move to also changes a
+memory's device and OS. Owner: Claude Code, macOS. The Mac's Claude Code and
+Codex connectors are on 2.10.1; the Windows PC, Windows work machine and Linux
+machine update when next used. Verification and rollback copies:
+[verification](docs/verification.md). Search speed, export blocking and
+history vectors are deferred until the store grows.
 
 ## Decisions
 
@@ -27,4 +28,4 @@ machine update when next used.
 
 ## Next
 
-Update the Windows and Linux connectors when next used; merge #73. Deferred: project archive and rename.
+Update the Windows and Linux connectors when next used. Deferred: project archive and rename.

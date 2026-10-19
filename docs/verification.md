@@ -428,6 +428,38 @@ server 2.9.10 and current connectors. A 140 KB prompt piped into the Codex hook
 returned `{}` with exit code 0 on the Mac and on the Windows PC. The Linux
 machine updates when next used.
 
+## 2.10.1 rollout (October 19)
+
+2.10.1 lets Move to set a memory's device and OS as well as its project, so a
+device-only or OS-only rule can move to another device or apply everywhere,
+and insets dropdown arrows in the memory view and on the setup page (#75).
+Local checks: `go test ./...`, `go vet ./...`, race tests on memory, service
+and client, 71 memory-view and 31 site Node tests. CI passed on macOS, Linux
+and Windows for the final head. Bugbot reviewed the device-scope change with
+no findings; the following CSS-only commit had a final diff inspection. The
+form and arrows were checked in Chromium, light and dark, on a synthetic
+server and the setup page.
+
+The release workflow passed every job and deployed the site; `setup.js` links
+2.10.1 and the marketplace branch moved to 2.10.1. The macOS server and client
+archives matched `SHA256SUMS`, all 53 embedded hashes passed, and the model
+and runtime are unchanged. Packaged `--quickstart` started, signed in and shut
+down cleanly. Rehearsal on a copy of the live database: 2.10.1 passed every
+check and moved a real device-only memory to every device with its author
+kept; 2.10.0 then reopened the same copy with every check passing.
+
+Cutover: an encrypted off-machine backup verified first, the service stopped,
+a verified snapshot was taken (273 records, 575 revisions, 365 receipts,
+7 credentials), the binaries were swapped and the service restarted. It reports
+2.10.1 on loopback and over the private route with identical counts; a second
+encrypted off-machine backup verified. The 2.10.0 binaries, service definition
+and snapshot are kept for rollback.
+
+Clients: the Mac moved its Claude Code and Codex connectors to 2.10.1, and
+`grasshopper check` reports server 2.10.1 and both connectors current. The
+Windows PC, the Windows work machine and the Linux machine update when next
+used.
+
 ## 2.10.0 rollout (October 19)
 
 2.10.0 ships the memory view audit and dogfood fixes, Add memory, moves
