@@ -43,7 +43,8 @@ five agent tools do not change; this page decides what the owner sees.
   implies. History shows each version's text, and its title where that differs,
   and appears only when an earlier version differs. Escape closes the panel and
   focus returns to the row that opened it. Archive and restore keep the
-  memory's author; the audit log records the owner's action.
+  memory's author; the audit log records the owner's action. Handoffs have no
+  Move to; their panel says they stay where the agent saved them.
   The owner's own saves show "You" and the date, without internal provenance.
 - Move to sets where a memory applies: a project (All projects or a durable
   project by name), a device (every device or a connected one) and an OS
