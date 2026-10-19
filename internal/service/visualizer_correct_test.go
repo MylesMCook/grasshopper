@@ -436,7 +436,12 @@ func TestOwnerArchiveAndRestoreKeepTheAuthor(t *testing.T) {
 func TestOwnerRestoreClearsLifecycleNotes(t *testing.T) {
 	server, store := testServer(t, true)
 	first := agentSave(t, store, "handoff-1", "First", "First handoff.", "handoff", false)
-	agentSave(t, store, "handoff-2", "Second", "Second handoff.", "handoff", false)
+	// A different agent's handoff replaces it, so the archive revision carries Cursor.
+	project := "id:review"
+	if _, err := store.Write(context.Background(), memory.WriteInput{Scope: memory.Scope{Project: &project}, Title: ptr("Second"), Content: "Second handoff.", Purpose: "handoff",
+		Provenance: memory.Provenance{Harness: "cursor", Device: "laptop", Source: "next session"}, RequestID: "handoff-2"}, nil, ""); err != nil {
+		t.Fatal(err)
+	}
 	replaced, err := store.RecordByID(context.Background(), first.ID, nil)
 	if err != nil || replaced == nil || !replaced.Archived || !strings.HasPrefix(replaced.Provenance.Source, "Replaced by handoff") {
 		t.Fatalf("setup: %+v %v", replaced, err)
@@ -445,7 +450,18 @@ func TestOwnerRestoreClearsLifecycleNotes(t *testing.T) {
 		t.Fatalf("restore status=%d", status)
 	}
 	restored, _ := store.RecordByID(context.Background(), first.ID, nil)
-	if restored.Provenance.Harness != "codex-desktop" || strings.HasPrefix(restored.Provenance.Source, "Replaced by handoff") {
-		t.Fatalf("restored provenance: %+v", restored.Provenance)
+	if restored.Provenance.Harness != "codex-desktop" || restored.Provenance.Source != "review regression" {
+		t.Fatalf("restored provenance is not the original author's: %+v", restored.Provenance)
+	}
+	// A moved memory restored at its old place is the agent's again, not the owner's.
+	moved := agentSave(t, store, "moved-1", "Run vet", "Run go vet before a PR.", "decision", true)
+	if status, _ := ownerJSON(t, server, "/visualizer/api/move", map[string]any{"id": moved.ID, "expected_revision": moved.Revision, "project": nil, "request_id": "move-for-restore"}); status != http.StatusOK {
+		t.Fatalf("move status=%d", status)
+	}
+	if status, _ := ownerJSON(t, server, "/visualizer/api/archive", map[string]any{"id": moved.ID, "expected_revision": moved.Revision + 1, "archived": false, "request_id": "restore-moved"}); status != http.StatusOK {
+		t.Fatalf("restore moved status=%d", status)
+	}
+	if back, _ := store.RecordByID(context.Background(), moved.ID, nil); back.Provenance.Harness != "codex-desktop" {
+		t.Fatalf("restored moved memory: %+v", back.Provenance)
 	}
 }

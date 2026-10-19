@@ -1114,3 +1114,13 @@ test('a failed move retries to the same place with the same request', async () =
   assert.equal(retry?.body.project, OTHER);
   assert.equal(retry.body.request_id, first.body.request_id);
 });
+
+test('a long earlier version can be read in full before restoring it', async () => {
+  const ui = await signedIn();
+  const older = `${'Older rule text. '.repeat(15)}The changed instruction is at the end.`;
+  ui.rows('Squash merge only').click();
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2, content: 'Current text.' });
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], content: older });
+  assert.ok(ui.app.querySelector('aside').querySelector('details'), 'a long version expands');
+  assert.match(ui.app.querySelector('aside').textContent, /The changed instruction is at the end\./);
+});

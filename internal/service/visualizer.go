@@ -386,9 +386,14 @@ func visualizerCreate(store *memory.Writer, save ownerSave, audit *auditLog) htt
 		if !decodeVisualizerRead(w, r, &input, 65536) {
 			return
 		}
+		scope := memory.Scope{Project: input.Project}
+		if _, err := scope.Key(); err != nil {
+			http.Error(w, "invalid project", http.StatusBadRequest)
+			return
+		}
 		// An empty title means derive it, as in an edit.
 		receipt, _, err := save(r.Context(), memory.WriteInput{
-			Scope: memory.Scope{Project: input.Project}, Content: input.Content, Title: &input.Title,
+			Scope: scope, Content: input.Content, Title: &input.Title,
 			Purpose: "preference", Confirmed: true, Provenance: ownerProvenance, RequestID: input.RequestID,
 		})
 		if err == nil {
@@ -476,10 +481,16 @@ func visualizerArchive(store *memory.Writer, audit *auditLog) http.HandlerFunc {
 		provenance := ownerProvenance
 		if prior, err := store.RecordByID(r.Context(), input.ID, &input.ExpectedRevision); err == nil && prior != nil {
 			provenance = prior.Provenance
-			// A note that a handoff was replaced or a memory moved described the
-			// earlier archive, not this owner action.
+			// A handoff replacement or a move records who did it, not who wrote the
+			// memory, so take the author from the revision before that archive.
 			if strings.HasPrefix(provenance.Source, "Replaced by handoff") || strings.HasPrefix(provenance.Source, "Moved to memory") {
-				provenance.Source = ownerProvenance.Source
+				provenance = ownerProvenance
+				before := prior.Revision - 1
+				if before >= 1 {
+					if earlier, err := store.RecordByID(r.Context(), input.ID, &before); err == nil && earlier != nil {
+						provenance = earlier.Provenance
+					}
+				}
 			}
 		}
 		receipt, err := store.Archive(r.Context(), memory.ArchiveInput{Scope: current.Scope, ID: input.ID, ExpectedRevision: input.ExpectedRevision, Archived: input.Archived, RequestID: input.RequestID, Provenance: provenance})
@@ -503,7 +514,7 @@ func ownerWriteResult(w http.ResponseWriter, r *http.Request, store *memory.Writ
 		ownerConflict(w, r, store, id, "revision_conflict")
 	case strings.HasPrefix(err.Error(), "idempotency_conflict"):
 		ownerConflict(w, r, store, id, "idempotency_conflict")
-	case strings.HasPrefix(err.Error(), "duplicate_conflict"):
+	case strings.HasPrefix(err.Error(), "duplicate_conflict"), strings.HasPrefix(err.Error(), "dedup_key_conflict"):
 		ownerConflict(w, r, store, id, "duplicate_conflict")
 	case strings.HasPrefix(err.Error(), "revision_not_found"):
 		http.Error(w, "revision not found", http.StatusNotFound)

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/MylesMCook/grasshopper/internal/memory"
 )
 
 // The owner adds a kept memory for every project or one durable project; a
@@ -34,9 +36,19 @@ func TestOwnerCreatesAMemory(t *testing.T) {
 	if saved, _ = store.RecordByID(ctx, id, nil); status != http.StatusOK || saved == nil || saved.Scope.Project == nil || *saved.Scope.Project != "id:review" {
 		t.Fatalf("project create status=%d record=%+v", status, saved)
 	}
+	// Text an agent already saved under a key here is a duplicate, not a server failure.
+	key := "keyed-rule"
+	if _, err := store.Write(ctx, memory.WriteInput{Scope: memory.Scope{}, Title: ptr("Keyed"), Content: "Keyed rule.", Purpose: "preference", Confirmed: true, Key: &key,
+		Provenance: memory.Provenance{Harness: "codex-desktop", Device: "mac", Source: "keyed"}, RequestID: "keyed-1"}, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if status, body := ownerJSON(t, server, "/visualizer/api/create", map[string]any{"project": nil, "title": "Keyed", "content": "Keyed rule.", "request_id": "create-dup"}); status != http.StatusConflict || string(body["error"]) != `"duplicate_conflict"` {
+		t.Fatalf("duplicate create: status=%d body=%v", status, body)
+	}
 	for name, input := range map[string]map[string]any{
 		"empty text":          {"project": nil, "title": "x", "content": "  ", "request_id": "create-empty"},
 		"folder-name project": {"project": "plain-folder-name", "title": "x", "content": "x", "request_id": "create-legacy"},
+		"empty project":       {"project": "", "title": "x", "content": "x", "request_id": "create-empty-project"},
 	} {
 		if status, _ := ownerJSON(t, server, "/visualizer/api/create", input); status != http.StatusBadRequest {
 			t.Fatalf("%s: status=%d", name, status)

@@ -86,6 +86,10 @@ function daysAgo(value, now = new Date()) {
   return Math.round((local(now) - local(date)) / 86400000);
 }
 function excerpt(text, size = 160) { return text.length > size ? `${text.slice(0, size).trimEnd()}…` : text; }
+// A version's text: short ones whole, long ones as an excerpt that opens to the full text.
+function versionText(text, cls) {
+  return text.length > 160 ? h('details', { class: cls }, h('summary', { text: excerpt(text) }), h('p', { class: 'reading full', text })) : h('span', { class: cls, text });
+}
 function shortDate(value) { const date = day(value); return date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''; }
 function relDate(value, now = new Date()) {
   const days = daysAgo(value, now);
@@ -1057,9 +1061,9 @@ function memoryPanel(panel) {
     // Shown only when an earlier version differs; a keep or archive repeats the text.
     panel.history?.length || (panel.history && panel.olderFrom >= 1) ? section('History', [
       // Each version shows its text, and its title only where that differs, so Restore is never blind.
-      h('div', { class: 'row static' }, h('span', { class: 't', text: excerpt(record.content) }), h('span', { class: 'm', text: `${by(record)} · ${relDate(record.updated_at)} · current` })),
+      h('div', { class: 'row static' }, versionText(record.content, 't'), h('span', { class: 'm', text: `${by(record)} · ${relDate(record.updated_at)} · current` })),
       panel.history.map(older => h('div', { class: 'row-inline' },
-        h('div', { class: 'row static' }, h('span', { class: 't muted', text: excerpt(older.content) }),
+        h('div', { class: 'row static' }, versionText(older.content, 't muted'),
           h('span', { class: 'm', text: [by(older), relDate(older.updated_at), older.title !== record.title && `titled “${older.title}”`].filter(Boolean).join(' · ') })),
         record.archived ? null : h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `restore-version:${older.revision}`, 'aria-label': `Restore version from ${relDate(older.updated_at)}`, onclick: () => restoreRevision(record, older) }, 'Restore'))),
       panel.olderFrom >= 1 ? h('button', { type: 'button', class: 'quiet more', onclick: () => loadHistory(panel, true) }, 'Show older versions') : null]) : null];
