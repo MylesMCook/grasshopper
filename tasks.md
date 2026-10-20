@@ -7,6 +7,11 @@ Earlier release records are in Git history and
 
 ## Active
 
+2.10.4 prepares the Windows hook executable-resolution fix and moves similarity
+comparison to the opened suggestion. Local native Windows, model, package and
+browser checks pass; cross-platform CI, final review and release remain pending.
+The live cutover requires the existing encrypted off-host backup gate.
+
 2.10.3 is released, deployed and running live (#79). Owner: Claude Code,
 macOS. The Mac's connectors are on 2.10.3 (`grasshopper check`); the Windows
 PC, Windows work machine and Linux machine update when next used.
