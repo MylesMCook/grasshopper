@@ -6,7 +6,7 @@ has never been verified. Per-release detail lives in each
 history (the full log up to 2.8.5 is in
 [the 2.8.5 tree](https://github.com/MylesMCook/grasshopper/blob/v2.8.5/docs/memory-acceptance.md)).
 
-## 2.10.4 candidate verification (October 20)
+## 2.10.4 verification and rollout (October 20)
 
 On Windows x64, Go 1.27.1 passed `go test ./...` with the pinned Granite and
 ONNX assets, including real-model tests and native archive quickstart; vet,
@@ -32,9 +32,35 @@ overflow appeared at widths 375, 768, 1280 or 1440.
 
 These timings cover the removed comparison work, not all large-list cost:
 synthetic route/panel interactions still produced long tasks up to 2,635 ms.
-No Expect or axe audit, other browser, fresh native AI session or live rollout
-is claimed by these checks. Final-head CI, release and deployment are separate
-gates.
+No Expect or axe audit, other browser or fresh native AI session is claimed.
+
+[PR 81](https://github.com/MylesMCook/grasshopper/pull/81) passed final-head
+CI on all three systems and a requested Bugbot review with no findings.
+Post-merge CI and every tagged release job passed at `27b44d4`. All seven
+published archives passed their outer and embedded hashes. The published macOS
+archive passed all 53 embedded hashes, packaged quickstart sign-in and clean
+shutdown. On a private same-host database copy, 2.10.4 passed owner sign-in,
+current and historical reads, search and the expected embedded UI hash;
+2.10.3 then reopened the same copy with those controls passing.
+
+Cutover: verified encrypted off-host backup, stopped-service snapshot, binary
+swap and restart. The macOS service reports 2.10.4; authenticated loopback
+health and the exact embedded UI hash pass, anonymous health is rejected,
+and counts remain 275 records, 579 revisions, 367 receipts and 7 credentials.
+The second encrypted off-host backup and repository check passed. The snapshot,
+2.10.3 binaries and launch definition are retained for rollback.
+
+On Windows, Codex CLI 0.162.1 upgraded only the Grasshopper marketplace/plugin
+to 2.10.4. Its saved connection and device credential stayed byte-identical.
+The installed hook JSON passed four native cmd/PowerShell working-directory
+and PATH shadow controls, preserving arguments, input and exit status; all
+three events share that launcher. A synthetic 140 KB prompt returned `{}`
+with exit 0 and the expected skip diagnostic. Active sessions were not restarted.
+All 20 public site assets returned HTTP 200 and setup.js advertises 2.10.4.
+
+The saved Windows connection remains unreachable: the existing private proxy
+has no serve configuration. Routing and credentials were not changed; fresh
+end-to-end Windows memory access remains unverified.
 
 ## Clients verified on real machines
 
