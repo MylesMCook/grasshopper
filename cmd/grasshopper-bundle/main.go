@@ -92,6 +92,8 @@ var pluginVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 // Codex uses the turn's selected shell, which may be cmd.exe or PowerShell.
 // An encoded PowerShell command preserves the plugin path across both callers.
 // String expansion avoids importing the management module for Join-Path.
+// The global device namespace resolves the system installation without searching
+// the checkout or PATH, or assuming a Windows drive letter or directory name.
 func windowsHookCommand() string {
 	script := `$ErrorActionPreference='Stop'; & "$env:PLUGIN_ROOT/bin/grasshopper.exe" hook --harness codex; exit $LASTEXITCODE`
 	units := utf16.Encode([]rune(script))
@@ -99,7 +101,7 @@ func windowsHookCommand() string {
 	for i, unit := range units {
 		binary.LittleEndian.PutUint16(data[i*2:], unit)
 	}
-	return "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + base64.StdEncoding.EncodeToString(data)
+	return `\\.\GLOBALROOT\SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -EncodedCommand ` + base64.StdEncoding.EncodeToString(data)
 }
 
 // windowsHookCommandJSON escapes string contents for the hook JSON templates.
