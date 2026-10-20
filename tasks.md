@@ -1,23 +1,21 @@
 # Grasshopper status
 
-Current release: [2.10.3](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.3),
-on the marketplace and usegrasshopper.com; the macOS service runs 2.10.3.
+Current release: [2.10.4](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.4),
+on the marketplace and usegrasshopper.com; the macOS service runs 2.10.4.
 Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-2.10.4 prepares the Windows hook executable-resolution fix and moves similarity
-comparison to the opened suggestion. Local native Windows, model, package and
-browser checks pass; cross-platform CI, final review and release remain pending.
-The live cutover requires the existing encrypted off-host backup gate.
+2.10.4 fixes Windows hook executable resolution and moves similarity comparison
+to the opened suggestion (#81). Native Windows, real-model, package, browser,
+cross-platform CI and requested review checks passed. The macOS service and
+Windows Codex plugin are on 2.10.4; encrypted backups before and after cutover
+passed, with 2.10.3 kept for rollback. Other connectors update when next used.
 
-2.10.3 is released, deployed and running live (#79). Owner: Claude Code,
-macOS. The Mac's connectors are on 2.10.3 (`grasshopper check`); the Windows
-PC, Windows work machine and Linux machine update when next used.
-`TestWindowsHookPreservesInputAndExitStatus` timed out once on a Windows
-release runner in 2.10.2; watch for flakiness. Verification and rollback
-copies: [verification](docs/verification.md).
+The saved Windows connection is still unreachable because the existing private
+proxy has no serve configuration. Routing was left unchanged. Verification and
+rollback details: [verification](docs/verification.md).
 
 ## Decisions
 
@@ -33,4 +31,5 @@ copies: [verification](docs/verification.md).
 
 ## Next
 
-Update the Windows and Linux connectors when next used. Deferred: project archive and rename.
+Restore the existing private proxy only after routing approval, then verify
+Windows memory access. Deferred: project archive and rename.
