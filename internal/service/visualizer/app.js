@@ -791,9 +791,9 @@ function section(label, children, cls = '') {
   return h('section', { class: 'sec' }, h('h2', { class: `sec-label ${cls}`.trim(), text: label }), h('div', { class: 'list' }, children));
 }
 
-function suggestionRow(record, kept) {
-  const similar = similarTo(record, kept);
-  const meta = [by(record), relDate(record.updated_at), similar ? 'similar' : ''].filter(Boolean).join(' · ');
+function suggestionRow(record) {
+  // Compare only the opened suggestion in panelBody, not every pair on redraw.
+  const meta = [by(record), relDate(record.updated_at)].filter(Boolean).join(' · ');
   return h('div', { class: 'row-inline' }, row(record, { meta }),
     h('span', { class: 'actions tight' },
       h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `keep:${record.id}`, 'aria-label': `Keep ${record.title}`, onclick: () => keep(record) }, 'Keep'),
@@ -855,7 +855,7 @@ function projectPage() {
     const applying = own.length + global.length;
     return [head(projectName(project), [`${applying} ${applying === 1 ? 'memory applies' : 'memories apply'} here`, durable(project) ? h('button', { type: 'button', class: 'quiet', onclick: () => startCreate(project) }, 'Add memory') : null, h('button', { type: 'button', class: 'quiet', onclick: () => openStartup(project) }, 'Preview startup')]), banner(),
       handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null,
-      fresh.length ? section('New', fresh.map(record => suggestionRow(record, kept)), 'warn') : null,
+      fresh.length ? section('New', fresh.map(record => suggestionRow(record)), 'warn') : null,
       // An empty project section only matters when nothing else applies here.
       own.length || !global.length ? grouped(own, projectName(project)) || section(projectName(project), own.length ? own.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing kept for this project yet.' })) : null,
       global.length ? section('All projects', global.length <= 8 || !own.length ? global.map(record => row(record)) : state.showGlobal
@@ -873,7 +873,7 @@ function allPage() {
     const handoff = records.filter(record => record.purpose === 'handoff').sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0];
     return [head('All projects', ['Memories that apply to every project', h('button', { type: 'button', class: 'quiet', onclick: () => startCreate('') }, 'Add memory')]), banner(),
       handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null,
-      fresh.length ? section('New', fresh.map(record => suggestionRow(record, kept)), 'warn') : null,
+      fresh.length ? section('New', fresh.map(record => suggestionRow(record)), 'warn') : null,
       grouped(kept, 'All projects') || section('All projects', kept.length ? kept.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing applies to every project yet.' }))];
   });
 }
@@ -886,14 +886,13 @@ function newPage() {
     const records = state.page.records;
     if (!records.length) return h('div', { class: 'done' }, h('h1', { id: 'page-title', text: "You're caught up" }),
       h('p', { class: 'reading muted', text: 'New things your agents notice show up here.' }));
-    const kept = state.index?.records || [];
     return [h('div', { class: 'head' },
       h('div', {}, h('h1', { id: 'page-title', text: 'New' }), h('p', { class: 'meta sub', text: `${records.length} waiting · agents load them at startup only after you keep them` })),
       h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: keepAll }, 'Keep all')), banner(),
     // By name, not recency: keeping one must not move the rest.
     [null, ...byName(state.index?.projects || [])].map(project => {
       const items = records.filter(record => (record.scope?.project || null) === project);
-      return items.length ? section(projectName(project), items.map(record => suggestionRow(record, kept))) : null;
+      return items.length ? section(projectName(project), items.map(record => suggestionRow(record))) : null;
     })];
   });
 }

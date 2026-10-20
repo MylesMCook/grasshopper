@@ -564,6 +564,46 @@ test('helpers: recency groups, similar suggestions and project names', () => {
   assert.equal(name(''), 'All projects');
 });
 
+test('large suggestion lists compare only the opened memory', async () => {
+  for (const route of [`#page=project&project=${encodeURIComponent(PROJECT)}`, '#page=all', '#page=new']) {
+    const ui = setup({ session: true, hash: route });
+    const scope = route === '#page=all' ? {} : { project: PROJECT };
+    let contentReads = 0;
+    const records = Array.from({ length: 4000 }, (_, i) => {
+      const record = memory(i + 1, `Synthetic memory ${i + 1}`, { scope, confirmed: i < 2000 });
+      Object.defineProperty(record, 'content', { get() { contentReads++; return 'Short interface help text.'; } });
+      return record;
+    });
+    await flush();
+    await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], review_count: 2000, total: records.length });
+    await ui.answer('/visualizer/api/context', 200, { records: route === '#page=new' ? records.slice(2000) : records, total: records.length });
+    assert.ok(contentReads <= records.length * 4, `${route}: loading must read a linear number of bodies`);
+    contentReads = 0;
+    vm.runInContext('render()', ui.sandbox);
+    assert.equal(contentReads, 0, `${route}: list redraws must not compare memory bodies`);
+    assert.ok(ui.find('Keep Synthetic memory 2001'));
+    assert.ok(ui.find('Discard Synthetic memory 2001'));
+    ui.rows('Synthetic memory 2001').click();
+    await ui.answer('/visualizer/api/record', 200, records[2000]);
+    assert.ok(ui.find('Keep and replace it'), 'opening a suggestion still offers its similar kept memory');
+    assert.ok(ui.app.querySelectorAll('h2.sec-label').some(node => node.textContent === 'Similar'));
+    assert.ok(contentReads > 0 && contentReads < 20000, 'one open comparison reads a linear number of bodies');
+  }
+});
+
+test('similarity keeps project scope, unique words, exclusions and first-on-tie behavior', () => {
+  const similar = vm.runInContext('similarTo', setup().sandbox);
+  const suggestion = memory(10, 'CAFÉ metric units', { content: 'Grams grams.', confirmed: false });
+  const global = memory(1, 'café metric units', { scope: {} });
+  const tied = memory(2, 'café metric units');
+  const excluded = [suggestion, memory(3, 'café metric units grams', { confirmed: false }),
+    memory(4, 'café metric units grams', { purpose: 'handoff' }),
+    memory(5, 'café metric units grams', { scope: { project: 'id:elsewhere' } })];
+  assert.equal(similar(suggestion, [...excluded, global, tied])?.id, global.id);
+  assert.equal(similar({ ...suggestion, scope: {} }, [tied, global])?.id, global.id);
+  assert.equal(similar(memory(11, 'grams grams grams', { content: '' }), [memory(12, 'grams grams grams', { content: '' })]), null);
+});
+
 test('persisted theme applies before body DOM exists and its script precedes styles', () => {
   for (const theme of ['light', 'dark']) {
     const document = { documentElement: { dataset: {} } };

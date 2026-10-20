@@ -6,6 +6,36 @@ has never been verified. Per-release detail lives in each
 history (the full log up to 2.8.5 is in
 [the 2.8.5 tree](https://github.com/MylesMCook/grasshopper/blob/v2.8.5/docs/memory-acceptance.md)).
 
+## 2.10.4 candidate verification (October 20)
+
+On Windows x64, Go 1.27.1 passed `go test ./...` with the pinned Granite and
+ONNX assets, including real-model tests and native archive quickstart; vet,
+all five command builds, 74 memory-view tests and 31 site tests passed.
+The test process used an isolated temporary directory to keep a large
+machine-level AGENTS.md out of synthetic hook fixtures, and Git's existing
+shell directories were added only to its PATH.
+
+Native cmd and Windows PowerShell tests first reproduced the old lookup with
+a harmless copied test executable in the working directory or PATH. The
+absolute system launcher ignored both fixtures while preserving input,
+arguments, unusual plugin paths, missing-client errors and exit status.
+PowerShell 7 also passed an independent harmless launcher control. This does
+not establish which working directory or sandbox a real Codex session uses.
+
+In Chromium on Windows, synthetic snapshots of 4,000 records (half kept,
+half suggestions) exercised project, All projects and New views. List redraws
+made zero similarity calls, versus 2,000 before the change. In one measured
+run, their redraw times changed from 4,070/4,267/3,892 ms to 275/324/160 ms.
+Opening a suggestion still showed its exact similar memory; Keep by keyboard,
+Discard, Keep and replace, refresh, Back and Escape worked. No horizontal
+overflow appeared at widths 375, 768, 1280 or 1440.
+
+These timings cover the removed comparison work, not all large-list cost:
+synthetic route/panel interactions still produced long tasks up to 2,635 ms.
+No Expect or axe audit, other browser, fresh native AI session or live rollout
+is claimed by these checks. Final-head CI, release and deployment are separate
+gates.
+
 ## Clients verified on real machines
 
 A fresh native CLI session received a confirmed memory in startup context before
