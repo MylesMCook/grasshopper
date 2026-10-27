@@ -1,6 +1,6 @@
 # Grasshopper status
 
-Current release: [2.10.5](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.5),
+Current release: [2.11.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.11.0),
 on the marketplace and usegrasshopper.com; the macOS service runs 2.10.5.
 Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
