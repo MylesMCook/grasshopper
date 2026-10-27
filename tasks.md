@@ -7,6 +7,11 @@ Earlier release records are in Git history and
 
 ## Active
 
+2.11.0 makes updates self-running: release on merge, clients that follow the
+server's version, and `grasshopper-server upgrade` (nightly with `--schedule`).
+Its first real launchd run on the Mac and the one-time plugin update on each
+machine are pending.
+
 Context-aware recall is released and deployed. The server balances scopes and
 old/new records when startup exceeds budget; updated hooks guide sanitized
 task search. Codex and Claude connectors on Windows and macOS are updated;
