@@ -153,8 +153,9 @@ func releaseTarget() (string, bool) {
 
 // FollowServer makes the managed client match the server's version, in
 // either direction, so a server rollback also rolls clients back. It returns
-// the version it switched to, or "" when nothing changed. Failures are saved
-// for check; they never affect the running agent.
+// the version it switched to, or "" when nothing changed. A development
+// build (running) never downloads. Failures are saved for check; they never
+// affect the running agent.
 func FollowServer(ctx context.Context, configPath, running string) (string, error) {
 	dir := ManagedDir(configPath)
 	if UpdatesDisabled(dir) {
@@ -175,25 +176,18 @@ func FollowServer(ctx context.Context, configPath, running string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	return Follow(ctx, dir, running, identity.Version)
+	return Follow(ctx, dir, identity.Version)
 }
 
-// Follow points the managed client at server. running is the client that
-// would run without a managed one; a server at or below it needs no managed
-// client, so current is cleared and the bundled client runs.
-func Follow(ctx context.Context, dir, running, server string) (string, error) {
-	order, ok := CompareVersions(server, running)
-	if !ok {
+// Follow points the managed client at server. The managed folder is shared
+// by every agent on the machine, each with its own bundled version, so it
+// always tracks the server rather than any one caller; a bundled client newer
+// than it simply does not hand off.
+func Follow(ctx context.Context, dir, server string) (string, error) {
+	if _, ok := ParseVersion(server); !ok {
 		return "", nil
 	}
-	managed, _, haveManaged := ManagedClient(dir)
-	if order <= 0 {
-		if haveManaged {
-			return "", os.Remove(filepath.Join(dir, "current"))
-		}
-		return "", nil
-	}
-	if haveManaged && managed == server {
+	if managed, _, ok := ManagedClient(dir); ok && managed == server {
 		return "", nil
 	}
 	if err := Install(ctx, dir, server); err != nil {

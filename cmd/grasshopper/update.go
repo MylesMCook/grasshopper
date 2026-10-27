@@ -13,7 +13,7 @@ import (
 
 // handedOffEnv marks a client started by another client's hand-off, so a
 // managed client never hands off again. Its value is the bundled client's
-// version, which decides whether a managed client is still needed.
+// version, for diagnosis.
 const handedOffEnv = "GRASSHOPPER_HANDED_OFF"
 
 // runManagedClient hands bridge and hook off to a newer managed client. If
@@ -29,21 +29,13 @@ func runManagedClient(configPath string) {
 	}
 }
 
-// bundledVersion is the client that runs when no managed client does.
-func bundledVersion() string {
-	if version := os.Getenv(handedOffEnv); version != "" {
-		return version
-	}
-	return clientVersion
-}
-
 // followServerInBackground starts the bridge's self-update. It never delays
 // or fails the bridge; the new client is used from the next session.
 func followServerInBackground(configPath string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		_, _ = client.FollowServer(ctx, configPath, bundledVersion())
+		_, _ = client.FollowServer(ctx, configPath, clientVersion)
 	}()
 }
 
@@ -77,7 +69,7 @@ func updateClient(args []string) error {
 	if client.UpdatesDisabled(dir) {
 		return fmt.Errorf("updates are off on this machine; remove %s to turn them on", dir+string(os.PathSeparator)+"updates-off")
 	}
-	installed, err := client.FollowServer(ctx, path, bundledVersion())
+	installed, err := client.FollowServer(ctx, path, clientVersion)
 	if err != nil {
 		return err
 	}

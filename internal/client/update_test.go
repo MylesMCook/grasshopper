@@ -87,7 +87,7 @@ func TestFollowInstallsTheServerVersionAndHandsOff(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "client")
 	ctx := context.Background()
 
-	installed, err := Follow(ctx, dir, "2.11.0", "2.11.1")
+	installed, err := Follow(ctx, dir, "2.11.1")
 	if err != nil || installed != "2.11.1" {
 		t.Fatalf("Follow = %q, %v", installed, err)
 	}
@@ -104,7 +104,7 @@ func TestFollowInstallsTheServerVersionAndHandsOff(t *testing.T) {
 			t.Fatalf("client %s must not hand off to 2.11.1", running)
 		}
 	}
-	if installed, err := Follow(ctx, dir, "2.11.0", "2.11.1"); err != nil || installed != "" || release.downloads.Load() != 1 {
+	if installed, err := Follow(ctx, dir, "2.11.1"); err != nil || installed != "" || release.downloads.Load() != 1 {
 		t.Fatalf("matching version should not download again: %q %v %d", installed, err, release.downloads.Load())
 	}
 }
@@ -113,7 +113,7 @@ func TestFollowRefusesAChecksumMismatch(t *testing.T) {
 	release := newFakeRelease(t, "2.11.1")
 	release.corrupt = true
 	dir := filepath.Join(t.TempDir(), "client")
-	if _, err := Follow(context.Background(), dir, "2.11.0", "2.11.1"); err == nil || !strings.Contains(err.Error(), "SHA256SUMS") {
+	if _, err := Follow(context.Background(), dir, "2.11.1"); err == nil || !strings.Contains(err.Error(), "SHA256SUMS") {
 		t.Fatalf("expected checksum failure, got %v", err)
 	}
 	if _, _, ok := ManagedClient(dir); ok {
@@ -129,16 +129,16 @@ func TestFollowRollsBackWithTheServer(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "client")
 	ctx := context.Background()
 	for _, server := range []string{"2.11.1", "2.11.2"} {
-		if _, err := Follow(ctx, dir, "2.11.0", server); err != nil {
+		if _, err := Follow(ctx, dir, server); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// A server rollback switches to the kept version without downloading.
-	if installed, err := Follow(ctx, dir, "2.11.0", "2.11.1"); err != nil || installed != "2.11.1" || release.downloads.Load() != 2 {
+	if installed, err := Follow(ctx, dir, "2.11.1"); err != nil || installed != "2.11.1" || release.downloads.Load() != 2 {
 		t.Fatalf("rollback = %q %v, downloads %d", installed, err, release.downloads.Load())
 	}
 	// Only the current and previous versions are kept.
-	if _, err := Follow(ctx, dir, "2.11.0", "2.11.3"); err != nil {
+	if _, err := Follow(ctx, dir, "2.11.3"); err != nil {
 		t.Fatal(err)
 	}
 	entries, _ := os.ReadDir(filepath.Join(dir, "versions"))
@@ -149,12 +149,14 @@ func TestFollowRollsBackWithTheServer(t *testing.T) {
 	if strings.Join(kept, ",") != "2.11.1,2.11.3" {
 		t.Fatalf("kept versions = %v", kept)
 	}
-	// A server back at the bundled version needs no managed client.
-	if _, err := Follow(ctx, dir, "2.11.0", "2.11.0"); err != nil {
-		t.Fatal(err)
+	// A newer bundled client elsewhere on the machine does not hand off,
+	// and the shared managed client stays for older ones.
+	configPath := filepath.Join(filepath.Dir(dir), "client.json")
+	if _, ok := HandOffTarget(configPath, "2.12.0"); ok {
+		t.Fatal("a bundled client newer than the managed one must not hand off")
 	}
-	if _, _, ok := ManagedClient(dir); ok {
-		t.Fatal("managed client should be cleared when the bundled client matches the server")
+	if _, ok := HandOffTarget(configPath, "2.11.0"); !ok {
+		t.Fatal("an older bundled client should still hand off")
 	}
 }
 
