@@ -1,11 +1,16 @@
 # Grasshopper status
 
-Current release: [2.10.5](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.5),
+Current release: [2.11.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.11.0),
 on the marketplace and usegrasshopper.com; the macOS service runs 2.10.5.
 Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
+
+2.11.0 makes updates self-running: release on merge, clients that follow the
+server's version, and `grasshopper-server upgrade` (nightly with `--schedule`).
+Its first real launchd run on the Mac and the one-time plugin update on each
+machine are pending.
 
 Context-aware recall is released and deployed. The server balances scopes and
 old/new records when startup exceeds budget; updated hooks guide sanitized
