@@ -10,7 +10,7 @@ Earlier release records are in Git history and
 Context-aware recall is released and deployed. The server balances scopes and
 old/new records when startup exceeds budget; updated hooks guide sanitized
 task search. Codex and Claude connectors on Windows and macOS are updated;
-Cursor's direct plugin update remains pending. See [verification](docs/verification.md).
+Cursor verification remains pending. See [verification](docs/verification.md).
 
 The Windows Grasshopper connector reports a verified device connection to the
 2.10.5 server. The encrypted off-machine backup passed a repository check and
