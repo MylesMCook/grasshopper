@@ -6,6 +6,42 @@ secrets in your private operator notes, outside this public repository.
 
 ## Update and recover
 
+### One command on macOS
+
+For a server run by launchd from an extracted archive, run this on the server
+machine, from the current archive or a newer one:
+
+```sh
+./bin/grasshopper-server upgrade
+```
+
+It finds the one plist in `~/Library/LaunchAgents` that runs
+`grasshopper-server` (pass `--plist` if there are several). It downloads the
+latest release (or `--to X.Y.Z`), checks it against
+`SHA256SUMS`, and extracts it beside the current archive as
+`grasshopper-server-X.Y.Z`. It backs up and verifies the database into
+`backups` next to it, points the `current` link beside the archives at the new
+one and has launchd restart the job, then checks authenticated health. If the
+new server does not report the new version, `current` goes back and the old
+server restarts. launchd runs at most one process per job, so two servers never
+share the database. The database, token, listener and proxy flags are kept as
+they are.
+
+The first upgrade moves the plist onto `current` once (the old plist is saved
+as `.before-current`) and restarts the same version before switching.
+The `previous` link keeps the replaced archive. `upgrade --rollback` switches
+back; running it again goes forward. Older extracted archives are removed.
+To upgrade automatically, run `./bin/grasshopper-server upgrade --schedule`
+once. It installs a second launchd job beside the service plist that runs
+`upgrade` at 03:30 each night with the server's current program, logging to
+`~/Library/Logs/Grasshopper/upgrade.log`. A failed night leaves the previous
+server running. `--unschedule` removes it.
+
+Clients follow the server's version on their own, so a rollback also rolls them
+back. Keep an off-machine backup as well.
+
+### By hand
+
 1. Inspect the configured supervisor, listener, private HTTPS route, data paths,
    dependencies and recent logs. Run the [backup tool](../README.md#back-up-and-update-the-server)
    and verify a restored copy. Keep the current archive and configuration.

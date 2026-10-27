@@ -104,8 +104,10 @@ To release, merge a pull request that updates `VERSION` and replaces
 then builds and checks every archive, tags the merged commit `vX.Y.Z` with that
 summary, publishes the GitHub release, updates the `marketplace` branch and
 deploys the site. It refuses an empty or unchanged summary. Pushing an
-annotated tag by hand still works as a fallback. Never edit the `marketplace` branch by hand. Live server cutover stays a
-separate, owner-approved step.
+annotated tag by hand still works as a fallback. Never edit the `marketplace`
+branch by hand. The owner approved nightly `grasshopper-server upgrade
+--schedule` on the server; any other live cutover stays a separate,
+owner-approved step.
 
 ## Pull request delivery
 
