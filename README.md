@@ -140,7 +140,7 @@ and keep an encrypted copy off the machine:
 ./bin/grasshopper-backup --verify /absolute/path/to/backup.db
 ```
 
-On macOS with launchd, `./bin/grasshopper-server upgrade --plist <plist>`
+On macOS with launchd, `./bin/grasshopper-server upgrade`
 does the backup, a rehearsal on a copy, the switch and a rollback on failure in
 one step ([details](docs/operations.md#one-command-on-macos)). Otherwise, stop
 the old server, keep its archive and database, and never run two servers on one

@@ -12,10 +12,12 @@ For a server run by launchd from an extracted archive, run this on the server
 machine, from the current archive or a newer one:
 
 ```sh
-./bin/grasshopper-server upgrade --plist /absolute/path/com.example.grasshopper.plist
+./bin/grasshopper-server upgrade
 ```
 
-It downloads the latest release (or `--to X.Y.Z`), checks it against
+It finds the one plist in `~/Library/LaunchAgents` that runs
+`grasshopper-server` (pass `--plist` if there are several). It downloads the
+latest release (or `--to X.Y.Z`), checks it against
 `SHA256SUMS`, and extracts it beside the current archive as
 `grasshopper-server-X.Y.Z`. It backs up and verifies the database into
 `backups` next to it, then starts the new server on a copy of that backup at a
@@ -26,7 +28,7 @@ the stop restores the previous plist and server. The database, token, listener
 and proxy flags are kept as they are.
 
 The previous plist is saved as `.previous` and its archive is kept.
-`upgrade --plist ... --rollback` switches back; running it again goes forward.
+`upgrade --rollback` switches back; running it again goes forward.
 Clients follow the server's version on their own, so a rollback also rolls them
 back. Keep an off-machine backup as well.
 

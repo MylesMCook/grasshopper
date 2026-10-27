@@ -56,7 +56,7 @@ type upgrader struct {
 
 func upgradeCommand(args []string) error {
 	flags := flag.NewFlagSet("upgrade", flag.ContinueOnError)
-	plist := flags.String("plist", "", "the server's launchd plist (absolute path)")
+	plist := flags.String("plist", "", "the server's launchd plist (default: the one Grasshopper plist in ~/Library/LaunchAgents)")
 	to := flags.String("to", "", "release to install (default: the latest release)")
 	rollback := flags.Bool("rollback", false, "switch back to the plist saved by the last upgrade")
 	if err := flags.Parse(args); err != nil {
@@ -68,8 +68,19 @@ func upgradeCommand(args []string) error {
 	if runtime.GOOS != "darwin" {
 		return errors.New("upgrade supports a macOS launchd service; on other systems follow docs/operations.md")
 	}
+	if *plist == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		found, err := findPlist(runCommand, filepath.Join(home, "Library", "LaunchAgents"))
+		if err != nil {
+			return err
+		}
+		*plist = found
+	}
 	if !filepath.IsAbs(*plist) {
-		return errors.New("upgrade needs --plist with the absolute path of the server's launchd plist")
+		return errors.New("--plist must be the absolute path of the server's launchd plist")
 	}
 	u := &upgrader{
 		plist: *plist, out: os.Stdout, run: runCommand,
@@ -87,6 +98,27 @@ func upgradeCommand(args []string) error {
 		return u.rollback(ctx)
 	}
 	return u.upgrade(ctx, *to)
+}
+
+// findPlist returns the one launchd plist in dir whose program is a
+// grasshopper-server, so the usual single-server Mac needs no --plist.
+func findPlist(run func(string, ...string) ([]byte, error), dir string) (string, error) {
+	candidates, _ := filepath.Glob(filepath.Join(dir, "*.plist"))
+	var found []string
+	for _, candidate := range candidates {
+		raw, err := run("plutil", "-extract", "ProgramArguments", "json", "-o", "-", candidate)
+		var arguments []string
+		if err == nil && json.Unmarshal(raw, &arguments) == nil && len(arguments) > 0 && filepath.Base(arguments[0]) == "grasshopper-server" {
+			found = append(found, candidate)
+		}
+	}
+	switch len(found) {
+	case 1:
+		return found[0], nil
+	case 0:
+		return "", fmt.Errorf("no launchd plist in %s runs grasshopper-server; pass --plist", dir)
+	}
+	return "", fmt.Errorf("several plists run grasshopper-server (%s); pass --plist", strings.Join(found, ", "))
 }
 
 func runCommand(name string, args ...string) ([]byte, error) {

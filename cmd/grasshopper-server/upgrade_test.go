@@ -410,3 +410,26 @@ func TestRebaseMovesOnlyPathsInsideTheOldArchive(t *testing.T) {
 		}
 	}
 }
+
+func TestFindPlistNeedsExactlyOneGrasshopperJob(t *testing.T) {
+	dir := t.TempDir()
+	launchd := &fakeLaunchd{}
+	write := func(name, program string) {
+		data, _ := json.Marshal(fakePlist{Label: name, ProgramArguments: []string{program}})
+		if err := os.WriteFile(filepath.Join(dir, name+".plist"), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("other", "/usr/bin/true")
+	if _, err := findPlist(launchd.run, dir); err == nil {
+		t.Fatal("no Grasshopper plist should fail")
+	}
+	write("grasshopper", "/apps/app/bin/grasshopper-server")
+	if got, err := findPlist(launchd.run, dir); err != nil || got != filepath.Join(dir, "grasshopper.plist") {
+		t.Fatalf("findPlist = %q, %v", got, err)
+	}
+	write("grasshopper2", "/apps/two/bin/grasshopper-server")
+	if _, err := findPlist(launchd.run, dir); err == nil || !strings.Contains(err.Error(), "several") {
+		t.Fatalf("two Grasshopper plists should fail, got %v", err)
+	}
+}
