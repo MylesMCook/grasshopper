@@ -40,8 +40,12 @@ jobs:
             pull_request:*) tag= ;;
             push:tag) tag=$GITHUB_REF_NAME ;;
             push:branch)
-              if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
-                echo "$tag already exists; nothing to release"
+              # A tag on this commit means an earlier attempt of this release
+              # got as far as tagging; publish again so a failed later step
+              # can be retried. A tag on another commit is an older release.
+              tagged=$(git ls-remote --tags origin "refs/tags/$tag^{}" "refs/tags/$tag" | sort -k2 -r | head -n 1 | cut -f1)
+              if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
+                echo "$tag already tags another commit; nothing to release"
                 build=false tag=
               fi ;;
           esac
