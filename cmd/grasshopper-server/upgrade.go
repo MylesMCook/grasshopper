@@ -120,7 +120,9 @@ func (u *upgrader) setSchedule(install bool) error {
 	label := job.label + ".upgrade"
 	path := filepath.Join(filepath.Dir(u.plist), label+".plist")
 	domain := launchdDomain()
-	_, _ = u.run("launchctl", "bootout", domain, path)
+	if err := u.unload(path, label); err != nil {
+		return err
+	}
 	if !install {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -358,8 +360,8 @@ func launchdDomain() string {
 
 // adopt moves a service whose plist still names an archive folder onto a
 // current link to that folder, once, so later upgrades only repoint the link.
-// Reloading the job restarts the same version; bootout returns only after
-// launchd has stopped the old process. On failure the old plist goes back.
+// Reloading the job restarts the same version. On failure the old plist goes
+// back.
 func (u *upgrader) adopt(ctx context.Context, s *launchdJob, version string) error {
 	if filepath.Base(s.root) == "current" {
 		return nil
@@ -384,7 +386,7 @@ func (u *upgrader) adopt(ctx context.Context, s *launchdJob, version string) err
 		return errors.Join(err, copyPrivate(saved, u.plist))
 	}
 	domain := launchdDomain()
-	if _, err := u.run("launchctl", "bootout", domain, u.plist); err != nil {
+	if err := u.unload(u.plist, s.label); err != nil {
 		return errors.Join(err, copyPrivate(saved, u.plist))
 	}
 	_, err := u.run("launchctl", "bootstrap", domain, u.plist)
@@ -392,8 +394,7 @@ func (u *upgrader) adopt(ctx context.Context, s *launchdJob, version string) err
 		err = u.waitHealthy(ctx, s.listen, s.tokenFile, version)
 	}
 	if err != nil {
-		_, _ = u.run("launchctl", "bootout", domain, u.plist)
-		restoreErr := copyPrivate(saved, u.plist)
+		restoreErr := errors.Join(u.unload(u.plist, s.label), copyPrivate(saved, u.plist))
 		if restoreErr == nil {
 			_, restoreErr = u.run("launchctl", "bootstrap", domain, u.plist)
 		}
@@ -402,6 +403,28 @@ func (u *upgrader) adopt(ctx context.Context, s *launchdJob, version string) err
 	s.root, s.arguments = current, arguments
 	u.step("The service now runs from %s.", current)
 	return nil
+}
+
+// unloadWait bounds how long unload waits for launchd to remove a job.
+var unloadWait = 30 * time.Second
+
+// unload boots the job out and waits until launchd no longer lists it.
+// bootout can return while launchd is still stopping the job, and bootstrap
+// fails on a label that is still loaded, so callers bootstrap only after
+// this returns nil. A job that is not loaded returns nil at once.
+func (u *upgrader) unload(plist, label string) error {
+	target := launchdDomain() + "/" + label
+	_, _ = u.run("launchctl", "bootout", launchdDomain(), plist)
+	deadline := time.Now().Add(unloadWait)
+	for {
+		if _, err := u.run("launchctl", "print", target); err != nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("launchd still lists %s after bootout", label)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
 // cutover points the current link at the archive folder name, restarts the

@@ -132,13 +132,26 @@ func (f *fakeLaunchd) run(name string, args ...string) ([]byte, error) {
 	case name == "launchctl" && len(args) == 3 && strings.HasSuffix(args[2], ".upgrade.plist"):
 		// The nightly job is only loaded, never run, in these tests.
 		return nil, nil
+	case name == "launchctl" && args[0] == "print" && strings.HasSuffix(args[1], ".upgrade"):
+		return nil, errors.New("not loaded")
 	case name == "launchctl" && args[0] == "bootout":
-		if f.job == nil {
+		if f.plist == "" {
 			return nil, errors.New("not loaded")
 		}
-		f.kill()
-		f.plist = ""
+		// Like launchd, finish removing the job after bootout returns.
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.kill()
+			f.plist = ""
+		}()
 		return nil, nil
+	case name == "launchctl" && args[0] == "print":
+		if f.plist == "" {
+			return nil, errors.New("not loaded")
+		}
+		return []byte("state = running\n"), nil
 	case name == "launchctl" && args[0] == "bootstrap":
 		if f.plist != "" {
 			return nil, errors.New("already loaded")
