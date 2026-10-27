@@ -6,6 +6,30 @@ has never been verified. Per-release detail lives in each
 history (the full log up to 2.8.5 is in
 [the 2.8.5 tree](https://github.com/MylesMCook/grasshopper/blob/v2.8.5/docs/memory-acceptance.md)).
 
+## 2.10.5 verification and rollout (October 27)
+
+[PR 83](https://github.com/MylesMCook/grasshopper/pull/83) passed final-head
+CI on macOS, Linux and Windows and a requested Bugbot review with no findings.
+Local Go tests, vet and race checks, 105 JavaScript tests and real Granite model
+tests passed. All tagged release jobs passed, publishing seven archives, the
+marketplace and the site. The macOS archive matched the published checksum and
+all 53 embedded hashes.
+
+On a private database copy, the packaged server and the previous server both
+passed anonymous rejection, authenticated health, context, search and current
+and historical reads. An initial live cutover stopped before the binary swap
+because the database had not yet unlocked; the previous service was restored.
+After waiting for it to release the database, cutover succeeded with verified
+local snapshots and the 2.10.4 binary retained for rollback. Both before and
+after snapshots had 399 records and 814 revisions and passed SQLite quick_check.
+
+The live macOS server reports 2.10.5 and rejects anonymous health requests.
+From Windows Codex, authenticated MCP context at a 3,000-byte budget included
+both project and global memories; current and prior reads and semantic search
+passed. This does not verify that a fresh native agent follows the new recall
+guidance. Installed connectors were not updated in this rollout. An off-machine
+backup was not independently verified for this cutover.
+
 ## 2.10.4 verification and rollout (October 20)
 
 On Windows x64, Go 1.27.1 passed `go test ./...` with the pinned Granite and

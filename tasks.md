@@ -1,22 +1,20 @@
 # Grasshopper status
 
-Current release: [2.10.4](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.4),
-on the marketplace and usegrasshopper.com; the macOS service runs 2.10.4.
+Current release: [2.10.5](https://github.com/MylesMCook/grasshopper/releases/tag/v2.10.5),
+on the marketplace and usegrasshopper.com; the macOS service runs 2.10.5.
 Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-Context-aware recall: branch codex/contextual-memory balances scopes and old/new
-records when startup exceeds budget; hooks guide agent-chosen sanitized search.
-Synthetic baseline, scoped recall, Go suite, vet and race checks pass. Real agent
-behavior and deployment remain unverified; no production deployment.
+Context-aware recall is released and deployed. The server balances scopes and
+old/new records when startup exceeds budget; updated hooks guide sanitized
+task search. See [verification](docs/verification.md) for live evidence and
+the remaining client and backup verification boundaries.
 
-2.10.4 fixes Windows hook executable resolution and moves similarity comparison
-to the opened suggestion (#81). Native Windows, real-model, package, browser,
-cross-platform CI and requested review checks passed. The macOS service and
-Windows Codex plugin are on 2.10.4; encrypted backups before and after cutover
-passed, with 2.10.3 kept for rollback. Other connectors update when next used.
+2.10.4 fixed Windows hook executable resolution and moved similarity comparison
+to the opened suggestion (#81). Its Windows Codex plugin remains installed;
+the 2.10.5 rollout did not update installed connectors.
 
 The saved Windows connection is still unreachable because the existing private
 proxy has no serve configuration. Routing was left unchanged. Verification and
