@@ -182,6 +182,9 @@ func run() error {
 	flag.StringVar(&tokenFile, "token-file", "", "private bearer token file")
 	flag.StringVar(&listen, "listen", "127.0.0.1:8106", "loopback listen address")
 	flag.StringVar(&allowedProxyHost, "allowed-proxy-host", "", "exact HTTPS proxy Host, including port")
+	if len(os.Args) > 1 && os.Args[1] == "upgrade" {
+		return upgradeCommand(os.Args[2:])
+	}
 	flag.Parse()
 	if showVersion {
 		fmt.Println("grasshopper server " + serverVersion)

@@ -6,6 +6,32 @@ secrets in your private operator notes, outside this public repository.
 
 ## Update and recover
 
+### One command on macOS
+
+For a server run by launchd from an extracted archive, run this on the server
+machine, from the current archive or a newer one:
+
+```sh
+./bin/grasshopper-server upgrade --plist /absolute/path/com.example.grasshopper.plist
+```
+
+It downloads the latest release (or `--to X.Y.Z`), checks it against
+`SHA256SUMS`, and extracts it beside the current archive as
+`grasshopper-server-X.Y.Z`. It backs up and verifies the database into
+`backups` next to it, then starts the new server on a copy of that backup at a
+spare loopback port. Only if that copy answers authenticated health does it stop
+the service, wait for the old process to exit, point the plist's paths at the
+new archive, start it and check authenticated health again. Any failure after
+the stop restores the previous plist and server. The database, token, listener
+and proxy flags are kept as they are.
+
+The previous plist is saved as `.previous` and its archive is kept.
+`upgrade --plist ... --rollback` switches back; running it again goes forward.
+Clients follow the server's version on their own, so a rollback also rolls them
+back. Keep an off-machine backup as well.
+
+### By hand
+
 1. Inspect the configured supervisor, listener, private HTTPS route, data paths,
    dependencies and recent logs. Run the [backup tool](../README.md#back-up-and-update-the-server)
    and verify a restored copy. Keep the current archive and configuration.
