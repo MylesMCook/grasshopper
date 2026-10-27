@@ -7,6 +7,11 @@ Earlier release records are in Git history and
 
 ## Active
 
+Context-aware recall: branch codex/contextual-memory balances scopes and old/new
+records when startup exceeds budget; hooks guide agent-chosen sanitized search.
+Synthetic baseline, scoped recall, Go suite, vet and race checks pass. Real agent
+behavior and deployment remain unverified; no production deployment.
+
 2.10.4 fixes Windows hook executable resolution and moves similarity comparison
 to the opened suggestion (#81). Native Windows, real-model, package, browser,
 cross-platform CI and requested review checks passed. The macOS service and

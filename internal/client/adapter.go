@@ -137,7 +137,7 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 		if err == nil {
 			delivered = true
 			encodedScope, _ := json.Marshal(compactScope(scope))
-			status = fmt.Sprintf("Grasshopper context loaded for %s. project_resolved=%t; unresolved projects load only global/device/platform records. Historical data follows:\n%s", encodedScope, resolved, loaded)
+			status = fmt.Sprintf("Grasshopper context loaded for %s. project_resolved=%t; unresolved projects load only global/device/platform records. For task-relevant memories, choose sanitized search terms and search the current scope; omitted memories remain searchable. Fetch full records before relying on them. Historical data follows:\n%s", encodedScope, resolved, loaded)
 		}
 	}
 	text := policy + "\n" + status

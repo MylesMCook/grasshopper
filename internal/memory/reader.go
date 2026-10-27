@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -515,7 +516,7 @@ func (r *Reader) contextKeys(ctx context.Context, keys []string, budget int) (Pa
 		return Page{}, err
 	}
 	selected, skipped := chooseHandoff(records)
-	page, err := boundRecords(selected, budget, 0)
+	page, err := boundStartupRecords(selected, budget)
 	if err != nil {
 		return Page{}, err
 	}
@@ -527,6 +528,56 @@ func (r *Reader) contextKeys(ctx context.Context, keys []string, budget int) (Pa
 		}
 	}
 	return page, nil
+}
+
+func boundStartupRecords(records []Record, budget int) (Page, error) {
+	page, err := boundRecords(records, budget, 0)
+	if err != nil || page.Omitted == 0 {
+		return page, err
+	}
+	return boundRecords(balanceStartupScopes(records), budget, 0)
+}
+
+// balanceStartupScopes keeps project memories from being crowded out by a
+// larger global scope, while sampling both old and recent records in each.
+func balanceStartupScopes(records []Record) []Record {
+	var global, project, handoffs []Record
+	for _, record := range records {
+		if record.Purpose == "handoff" {
+			handoffs = append(handoffs, record)
+		} else if record.Scope.Project == nil {
+			global = append(global, record)
+		} else {
+			project = append(project, record)
+		}
+	}
+	for _, group := range [][]Record{global, project} {
+		sort.SliceStable(group, func(i, j int) bool {
+			if group[i].UpdatedAt == group[j].UpdatedAt {
+				return group[i].ID > group[j].ID
+			}
+			return group[i].UpdatedAt > group[j].UpdatedAt
+		})
+	}
+	ordered := make([]Record, 0, len(records))
+	oldest := false
+	for len(global) > 0 || len(project) > 0 {
+		for _, group := range []*[]Record{&global, &project} {
+			if len(*group) == 0 {
+				continue
+			}
+			if oldest {
+				last := len(*group) - 1
+				ordered = append(ordered, (*group)[last])
+				*group = (*group)[:last]
+			} else {
+				ordered = append(ordered, (*group)[0])
+				*group = (*group)[1:]
+			}
+		}
+		oldest = !oldest
+	}
+	return append(ordered, handoffs...)
 }
 
 // Agent startup context loads confirmed records and handoffs only.
@@ -605,7 +656,7 @@ func (r *Reader) StartupPreview(ctx context.Context, scope Scope, budget int) (S
 		}
 	}
 	selected, skipped := chooseHandoff(eligible)
-	page, err := boundRecords(selected, budget, 0)
+	page, err := boundStartupRecords(selected, budget)
 	if err != nil {
 		return Startup{}, err
 	}
