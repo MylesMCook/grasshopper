@@ -27,8 +27,19 @@ The live macOS server reports 2.10.5 and rejects anonymous health requests.
 From Windows Codex, authenticated MCP context at a 3,000-byte budget included
 both project and global memories; current and prior reads and semantic search
 passed. This does not verify that a fresh native agent follows the new recall
-guidance. Installed connectors were not updated in this rollout. An off-machine
-backup was not independently verified for this cutover.
+guidance.
+
+Follow-up: Codex and Claude Code plugins on macOS and Windows were updated to
+2.10.5. Each packaged client reported a verified device connection and its
+Codex, Claude and Cursor hook returned context and sanitized-search guidance.
+These are direct hook checks, not fresh native agent sessions. The Windows
+Cursor marketplace was refreshed; its older direct plugin still requires a
+Plugins-menu update. The macOS Cursor marketplace check reported a locked login
+keychain. Native session and permission prompts remain user-owned.
+
+A fresh encrypted off-machine backup contained 400 records and 816 revisions.
+The repository check passed and a restored snapshot matched the source byte
+for byte and passed SQLite quick_check.
 
 ## 2.10.4 verification and rollout (October 20)
 
