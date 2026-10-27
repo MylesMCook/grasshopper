@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 }
 
 // fakeServer answers --version and an owner /connection. A version marked
-// live-broken starts only on a rehearsal copy; one marked broken never does.
+// broken never starts.
 func fakeServer(version string) int {
 	values := map[string]string{}
 	for i := 1; i < len(os.Args); i++ {
@@ -49,8 +49,7 @@ func fakeServer(version string) int {
 			i++
 		}
 	}
-	rehearsal := strings.Contains(values["--db"], ".rehearsal-")
-	if os.Getenv("GRASSHOPPER_FAKE_BROKEN") != "" || (os.Getenv("GRASSHOPPER_FAKE_LIVE_BROKEN") != "" && !rehearsal) {
+	if os.Getenv("GRASSHOPPER_FAKE_BROKEN") != "" {
 		fmt.Fprintln(os.Stderr, "fake server refuses to start")
 		return 1
 	}
@@ -81,10 +80,13 @@ func fakeServer(version string) int {
 }
 
 // fakeLaunchd answers plutil and launchctl from a JSON "plist" and runs the
-// job as a child process; other commands run for real.
+// job as a child process; other commands run for real. Like launchd it runs at
+// most one process for the job.
 type fakeLaunchd struct {
-	mu  sync.Mutex
-	job *exec.Cmd
+	mu     sync.Mutex
+	plist  string
+	job    *exec.Cmd
+	starts int
 }
 
 type fakePlist struct {
@@ -130,43 +132,55 @@ func (f *fakeLaunchd) run(name string, args ...string) ([]byte, error) {
 	case name == "launchctl" && len(args) == 3 && strings.HasSuffix(args[2], ".upgrade.plist"):
 		// The nightly job is only loaded, never run, in these tests.
 		return nil, nil
-	case name == "launchctl" && args[0] == "print":
-		if f.job == nil {
-			return nil, errors.New("not loaded")
-		}
-		return []byte(fmt.Sprintf("state = running\n\tpid = %d\n", f.job.Process.Pid)), nil
 	case name == "launchctl" && args[0] == "bootout":
 		if f.job == nil {
 			return nil, errors.New("not loaded")
 		}
+		f.kill()
+		f.plist = ""
+		return nil, nil
+	case name == "launchctl" && args[0] == "bootstrap":
+		if f.plist != "" {
+			return nil, errors.New("already loaded")
+		}
+		f.plist = args[2]
+		return nil, f.start()
+	case name == "launchctl" && args[0] == "kickstart":
+		if f.plist == "" {
+			return nil, errors.New("not loaded")
+		}
+		f.kill()
+		return nil, f.start()
+	}
+	return exec.Command(name, args...).Output()
+}
+
+func (f *fakeLaunchd) start() error {
+	plist, err := readFakePlist(f.plist)
+	if err != nil {
+		return err
+	}
+	job := exec.Command(plist.ProgramArguments[0], plist.ProgramArguments[1:]...)
+	if err := job.Start(); err != nil {
+		return err
+	}
+	f.job = job
+	f.starts++
+	return nil
+}
+
+func (f *fakeLaunchd) kill() {
+	if f.job != nil {
 		_ = f.job.Process.Signal(os.Interrupt)
 		_ = f.job.Wait()
 		f.job = nil
-		return nil, nil
-	case name == "launchctl" && args[0] == "bootstrap":
-		plist, err := readFakePlist(args[2])
-		if err != nil {
-			return nil, err
-		}
-		job := exec.Command(plist.ProgramArguments[0], plist.ProgramArguments[1:]...)
-		if err := job.Start(); err != nil {
-			return nil, err
-		}
-		f.job = job
-		// launchd would keep restarting a job that exits; reap it so a
-		// failed start is visible as an unhealthy server.
-		return nil, nil
 	}
-	return exec.Command(name, args...).Output()
 }
 
 func (f *fakeLaunchd) stop() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.job != nil {
-		_ = f.job.Process.Kill()
-		_ = f.job.Wait()
-	}
+	f.kill()
 }
 
 // writeArchive lays out a release archive whose programs are scripts around
@@ -270,7 +284,7 @@ func newUpgradeFixture(t *testing.T, releases map[string]string) *upgradeFixture
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/latest" {
-			_, _ = w.Write([]byte(`{"tag_name":"v2.11.1"}`))
+			_, _ = w.Write([]byte(`{"tag_name":"v2.11.2"}`))
 			return
 		}
 		if data, ok := served[r.URL.Path]; ok {
@@ -288,7 +302,7 @@ func newUpgradeFixture(t *testing.T, releases map[string]string) *upgradeFixture
 	t.Cleanup(launchd.stop)
 	out := &bytes.Buffer{}
 	u := &upgrader{plist: plist, out: out, run: launchd.run, http: server.Client(),
-		healthWait: 10 * time.Second, stopWait: 10 * time.Second, processGone: processGone}
+		healthWait: 10 * time.Second}
 	if _, err := launchd.run("launchctl", "bootstrap", "gui/0", plist); err != nil {
 		t.Fatal(err)
 	}
@@ -307,15 +321,28 @@ func (f *upgradeFixture) program(t *testing.T) string {
 	return plist.ProgramArguments[0]
 }
 
+func (f *upgradeFixture) links(t *testing.T) (string, string) {
+	t.Helper()
+	current, err := os.Readlink(filepath.Join(f.parent, "current"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous, _ := os.Readlink(filepath.Join(f.parent, "previous"))
+	return current, previous
+}
+
 func TestUpgradeSwitchesTheServiceAndRollsBack(t *testing.T) {
-	f := newUpgradeFixture(t, map[string]string{"2.11.1": ""})
+	f := newUpgradeFixture(t, map[string]string{"2.11.1": "", "2.11.2": ""})
 	ctx := context.Background()
 
-	if err := f.u.upgrade(ctx, ""); err != nil {
+	if err := f.u.upgrade(ctx, "2.11.1"); err != nil {
 		t.Fatalf("upgrade: %v\n%s", err, f.out)
 	}
-	if want := filepath.Join(f.parent, "grasshopper-server-2.11.1", "bin", "grasshopper-server"); f.program(t) != want {
+	if want := filepath.Join(f.parent, "current", "bin", "grasshopper-server"); f.program(t) != want {
 		t.Fatalf("plist runs %s, want %s", f.program(t), want)
+	}
+	if current, previous := f.links(t); current != "grasshopper-server-2.11.1" || previous != "app" {
+		t.Fatalf("current %s, previous %s", current, previous)
 	}
 	backups, _ := filepath.Glob(filepath.Join(filepath.Dir(f.database), "backups", "pre-2.11.1-*.db"))
 	if len(backups) != 1 {
@@ -328,44 +355,42 @@ func TestUpgradeSwitchesTheServiceAndRollsBack(t *testing.T) {
 	if err := f.u.rollback(ctx); err != nil {
 		t.Fatalf("rollback: %v\n%s", err, f.out)
 	}
-	if want := filepath.Join(f.parent, "app", "bin", "grasshopper-server"); f.program(t) != want {
-		t.Fatalf("rollback left the plist on %s", f.program(t))
+	if current, previous := f.links(t); current != "app" || previous != "grasshopper-server-2.11.1" {
+		t.Fatalf("rollback left current %s, previous %s", current, previous)
 	}
-	if err := f.u.rollback(ctx); err != nil || !strings.Contains(f.program(t), "2.11.1") {
+	if err := f.u.rollback(ctx); err != nil {
 		t.Fatalf("a second rollback should go forward again: %v", err)
+	}
+
+	if err := f.u.upgrade(ctx, ""); err != nil {
+		t.Fatalf("upgrade to latest: %v\n%s", err, f.out)
+	}
+	if current, previous := f.links(t); current != "grasshopper-server-2.11.2" || previous != "grasshopper-server-2.11.1" {
+		t.Fatalf("current %s, previous %s", current, previous)
+	}
+	if _, err := os.Stat(filepath.Join(f.parent, "app")); err != nil {
+		t.Fatal("pruning removed a folder upgrade did not create")
+	}
+	f.launchd.mu.Lock()
+	defer f.launchd.mu.Unlock()
+	if f.launchd.plist == "" || f.launchd.job == nil {
+		t.Fatal("the service is not running")
 	}
 }
 
 func TestFailedUpgradeRestoresThePreviousServer(t *testing.T) {
-	f := newUpgradeFixture(t, map[string]string{"2.11.2": "GRASSHOPPER_FAKE_LIVE_BROKEN=1"})
+	f := newUpgradeFixture(t, map[string]string{"2.11.3": "GRASSHOPPER_FAKE_BROKEN=1"})
 	f.u.healthWait = 3 * time.Second
-	before, _ := os.ReadFile(f.plist)
 
-	err := f.u.upgrade(context.Background(), "2.11.2")
+	err := f.u.upgrade(context.Background(), "2.11.3")
 	if err == nil || !strings.Contains(err.Error(), "2.11.0 is running again") {
 		t.Fatalf("want a restored 2.11.0, got %v\n%s", err, f.out)
 	}
-	after, _ := os.ReadFile(f.plist)
-	if !bytes.Equal(before, after) {
-		t.Fatalf("plist not restored:\n%s\n%s", before, after)
+	if current, previous := f.links(t); current != "app" || previous != "" {
+		t.Fatalf("current %s, previous %s", current, previous)
 	}
-}
-
-func TestRehearsalFailureLeavesTheLiveServerAlone(t *testing.T) {
-	f := newUpgradeFixture(t, map[string]string{"2.11.3": "GRASSHOPPER_FAKE_BROKEN=1"})
-	f.u.healthWait = 3 * time.Second
-	f.launchd.mu.Lock()
-	pid := f.launchd.job.Process.Pid
-	f.launchd.mu.Unlock()
-
-	err := f.u.upgrade(context.Background(), "2.11.3")
-	if err == nil || !strings.Contains(err.Error(), "live server untouched") {
-		t.Fatalf("want a rehearsal failure, got %v", err)
-	}
-	f.launchd.mu.Lock()
-	defer f.launchd.mu.Unlock()
-	if f.launchd.job == nil || f.launchd.job.Process.Pid != pid {
-		t.Fatal("the live server was restarted")
+	if err := f.u.rollback(context.Background()); err == nil {
+		t.Fatal("a failed upgrade left something to roll back to")
 	}
 }
 

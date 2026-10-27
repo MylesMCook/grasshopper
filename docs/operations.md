@@ -20,15 +20,17 @@ It finds the one plist in `~/Library/LaunchAgents` that runs
 latest release (or `--to X.Y.Z`), checks it against
 `SHA256SUMS`, and extracts it beside the current archive as
 `grasshopper-server-X.Y.Z`. It backs up and verifies the database into
-`backups` next to it, then starts the new server on a copy of that backup at a
-spare loopback port. Only if that copy answers authenticated health does it stop
-the service, wait for the old process to exit, point the plist's paths at the
-new archive, start it and check authenticated health again. Any failure after
-the stop restores the previous plist and server. The database, token, listener
-and proxy flags are kept as they are.
+`backups` next to it, points the `current` link beside the archives at the new
+one and has launchd restart the job, then checks authenticated health. If the
+new server does not report the new version, `current` goes back and the old
+server restarts. launchd runs at most one process per job, so two servers never
+share the database. The database, token, listener and proxy flags are kept as
+they are.
 
-The previous plist is saved as `.previous` and its archive is kept.
-`upgrade --rollback` switches back; running it again goes forward.
+The first upgrade moves the plist onto `current` once (the old plist is saved
+as `.before-current`) and restarts the same version before switching.
+The `previous` link keeps the replaced archive. `upgrade --rollback` switches
+back; running it again goes forward. Older extracted archives are removed.
 To upgrade automatically, run `./bin/grasshopper-server upgrade --schedule`
 once. It installs a second launchd job beside the service plist that runs
 `upgrade` at 03:30 each night with the server's current program, logging to

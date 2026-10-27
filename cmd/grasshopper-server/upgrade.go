@@ -13,7 +13,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -21,20 +20,23 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
 // Upgrade replaces a launchd-supervised server with another release in one
-// command: download and check the archive, back up the database, rehearse the
-// new server on a copy, stop the service, point its plist at the new archive,
-// start it and check authenticated health. Any failure after the stop puts
-// the previous plist back and restarts it. The previous archive and plist stay
-// on disk for --rollback.
+// command: download and check the archive, back up the database, point the
+// current link at the new archive, restart the job and check authenticated
+// health. If the new server does not become healthy, current goes back to the
+// old archive and the job restarts on it. The previous link keeps the old
+// archive for --rollback.
 //
-// Archives are extracted beside the running one as grasshopper-server-X.Y.Z.
-// Only plist arguments under the old archive folder change; the database,
-// token, listener and proxy flags are kept as they are.
+// Archives are extracted beside the running one as grasshopper-server-X.Y.Z,
+// next to the current and previous links. The plist runs current/bin/
+// grasshopper-server; the first upgrade moves an older plist onto current
+// once. Only plist arguments under the archive folder change; the database,
+// token, listener and proxy flags are kept as they are. Restarts go through
+// launchd, which runs at most one process per job, so two servers never share
+// the database.
 
 // releaseBaseURL and latestReleaseURL are where releases come from. Tests
 // replace them.
@@ -46,20 +48,18 @@ var (
 // upgrader holds the parts of an upgrade that touch the machine, so tests can
 // replace launchd and the network.
 type upgrader struct {
-	plist       string
-	out         io.Writer
-	run         func(name string, args ...string) ([]byte, error)
-	http        *http.Client
-	healthWait  time.Duration
-	stopWait    time.Duration
-	processGone func(pid int) bool
+	plist      string
+	out        io.Writer
+	run        func(name string, args ...string) ([]byte, error)
+	http       *http.Client
+	healthWait time.Duration
 }
 
 func upgradeCommand(args []string) error {
 	flags := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	plist := flags.String("plist", "", "the server's launchd plist (default: the one Grasshopper plist in ~/Library/LaunchAgents)")
 	to := flags.String("to", "", "release to install (default: the latest release)")
-	rollback := flags.Bool("rollback", false, "switch back to the plist saved by the last upgrade")
+	rollback := flags.Bool("rollback", false, "switch back to the archive the last upgrade replaced")
 	schedule := flags.Bool("schedule", false, "install a launchd job that runs upgrade every night")
 	unschedule := flags.Bool("unschedule", false, "remove the nightly upgrade job")
 	if err := flags.Parse(args); err != nil {
@@ -87,10 +87,8 @@ func upgradeCommand(args []string) error {
 	}
 	u := &upgrader{
 		plist: *plist, out: os.Stdout, run: runCommand,
-		http:        &http.Client{Timeout: 10 * time.Minute},
-		healthWait:  2 * time.Minute,
-		stopWait:    time.Minute,
-		processGone: processGone,
+		http:       &http.Client{Timeout: 10 * time.Minute},
+		healthWait: 2 * time.Minute,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
@@ -121,7 +119,7 @@ func (u *upgrader) setSchedule(install bool) error {
 	}
 	label := job.label + ".upgrade"
 	path := filepath.Join(filepath.Dir(u.plist), label+".plist")
-	domain := "gui/" + strconv.Itoa(os.Getuid())
+	domain := launchdDomain()
 	_, _ = u.run("launchctl", "bootout", domain, path)
 	if !install {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -224,19 +222,11 @@ func runCommand(name string, args ...string) ([]byte, error) {
 	return output, nil
 }
 
-func processGone(pid int) bool {
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return true
-	}
-	return errors.Is(process.Signal(syscall.Signal(0)), os.ErrProcessDone)
-}
-
 // launchdJob is what upgrade reads from the plist.
 type launchdJob struct {
 	label     string
 	arguments []string
-	root      string // extracted archive folder holding bin/grasshopper-server
+	root      string // archive folder (usually the current link) holding bin/grasshopper-server
 	listen    string
 	database  string
 	tokenFile string
@@ -329,110 +319,134 @@ func (u *upgrader) upgrade(ctx context.Context, target string) error {
 		return err
 	}
 	u.step("Backed up and verified the database: %s", backup)
-	if err := u.rehearse(ctx, root, current, backup, target); err != nil {
-		return fmt.Errorf("rehearsal on a copy failed, live server untouched: %w", err)
-	}
-	u.step("Rehearsed %s on a copy of the backup.", target)
-
-	next := make([]string, len(current.arguments))
-	for i, argument := range current.arguments {
-		next[i] = rebase(argument, current.root, root)
-	}
-	if err := copyPrivate(u.plist, u.plist+".previous"); err != nil {
+	if err := u.adopt(ctx, &current, running); err != nil {
 		return err
 	}
-	if err := u.switchTo(ctx, current, next, target); err != nil {
-		u.step("Upgrade failed: %v", err)
-		u.step("Restoring %s.", running)
-		if restoreErr := u.switchTo(ctx, current, current.arguments, running); restoreErr != nil {
-			return fmt.Errorf("upgrade failed (%v) and restoring %s also failed: %w", err, running, restoreErr)
-		}
-		return fmt.Errorf("upgrade failed; %s is running again: %w", running, err)
+	if err := u.cutover(ctx, current, filepath.Base(root), target); err != nil {
+		return err
 	}
-	u.pruneArchives(filepath.Dir(root), root, current.root)
+	u.pruneArchives(filepath.Dir(current.root))
 	u.step("The server runs %s. The previous version stays for upgrade --rollback.", target)
 	return nil
 }
 
-// rollback swaps the plist with the one the last upgrade saved, so a second
-// rollback goes forward again.
+// rollback points current at the archive the last upgrade replaced, so a
+// second rollback goes forward again.
 func (u *upgrader) rollback(ctx context.Context) error {
 	current, err := u.readService()
 	if err != nil {
 		return err
 	}
-	saved := &upgrader{plist: u.plist + ".previous", run: u.run}
-	previous, err := saved.readService()
-	if err != nil {
-		return fmt.Errorf("no plist saved by an earlier upgrade: %w", err)
+	previous, err := os.Readlink(filepath.Join(filepath.Dir(current.root), "previous"))
+	if err != nil || filepath.Base(current.root) != "current" {
+		return errors.New("no earlier upgrade to roll back")
 	}
-	version, err := archiveVersion(previous.root)
+	version, err := archiveVersion(filepath.Join(filepath.Dir(current.root), previous))
 	if err != nil {
 		return err
 	}
-	if err := copyPrivate(u.plist, u.plist+".rollback"); err != nil {
-		return err
-	}
-	if err := u.switchTo(ctx, current, previous.arguments, version); err != nil {
-		running, _ := archiveVersion(current.root)
-		if restoreErr := u.switchTo(ctx, current, current.arguments, running); restoreErr != nil {
-			return fmt.Errorf("rollback failed (%v) and restoring also failed: %w", err, restoreErr)
-		}
-		return fmt.Errorf("rollback failed; the server runs %s again: %w", running, err)
-	}
-	if err := os.Rename(u.plist+".rollback", u.plist+".previous"); err != nil {
+	if err := u.cutover(ctx, current, previous, version); err != nil {
 		return err
 	}
 	u.step("The server runs %s. Run upgrade --rollback again to go back.", version)
 	return nil
 }
 
-// switchTo stops the service, waits for its process to exit so the database
-// lock is released, writes arguments to the plist, starts the service and
-// waits for authenticated health to report version.
-func (u *upgrader) switchTo(ctx context.Context, s launchdJob, arguments []string, version string) error {
-	domain := "gui/" + strconv.Itoa(os.Getuid())
-	pid := u.servicePID(domain + "/" + s.label)
-	if _, err := u.run("launchctl", "bootout", domain, u.plist); err != nil && pid != 0 {
+func launchdDomain() string {
+	return "gui/" + strconv.Itoa(os.Getuid())
+}
+
+// adopt moves a service whose plist still names an archive folder onto a
+// current link to that folder, once, so later upgrades only repoint the link.
+// Reloading the job restarts the same version; bootout returns only after
+// launchd has stopped the old process. On failure the old plist goes back.
+func (u *upgrader) adopt(ctx context.Context, s *launchdJob, version string) error {
+	if filepath.Base(s.root) == "current" {
+		return nil
+	}
+	current := filepath.Join(filepath.Dir(s.root), "current")
+	if err := link(current, filepath.Base(s.root)); err != nil {
 		return err
 	}
-	if pid != 0 {
-		deadline := time.Now().Add(u.stopWait)
-		for !u.processGone(pid) {
-			if time.Now().After(deadline) {
-				return fmt.Errorf("server process %d did not exit", pid)
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
+	saved := u.plist + ".before-current"
+	if err := copyPrivate(u.plist, saved); err != nil {
+		return err
+	}
+	arguments := make([]string, len(s.arguments))
+	for i, argument := range s.arguments {
+		arguments[i] = rebase(argument, s.root, current)
 	}
 	encoded, _ := json.Marshal(arguments)
 	if _, err := u.run("plutil", "-replace", "ProgramArguments", "-json", string(encoded), u.plist); err != nil {
 		return err
 	}
 	if _, err := u.run("plutil", "-lint", u.plist); err != nil {
+		return errors.Join(err, copyPrivate(saved, u.plist))
+	}
+	domain := launchdDomain()
+	if _, err := u.run("launchctl", "bootout", domain, u.plist); err != nil {
+		return errors.Join(err, copyPrivate(saved, u.plist))
+	}
+	_, err := u.run("launchctl", "bootstrap", domain, u.plist)
+	if err == nil {
+		err = u.waitHealthy(ctx, s.listen, s.tokenFile, version)
+	}
+	if err != nil {
+		_, _ = u.run("launchctl", "bootout", domain, u.plist)
+		restoreErr := copyPrivate(saved, u.plist)
+		if restoreErr == nil {
+			_, restoreErr = u.run("launchctl", "bootstrap", domain, u.plist)
+		}
+		return fmt.Errorf("moving the service onto %s failed and the old plist was restored: %w", current, errors.Join(err, restoreErr))
+	}
+	s.root, s.arguments = current, arguments
+	u.step("The service now runs from %s.", current)
+	return nil
+}
+
+// cutover points the current link at the archive folder name, restarts the
+// job and waits for it to report version. If it does not, current goes back
+// and the old server restarts. On success, previous names the old archive.
+func (u *upgrader) cutover(ctx context.Context, s launchdJob, name, version string) error {
+	old, err := os.Readlink(s.root)
+	if err != nil {
 		return err
 	}
-	if _, err := u.run("launchctl", "bootstrap", domain, u.plist); err != nil {
+	running, err := archiveVersion(s.root)
+	if err != nil {
+		return err
+	}
+	if err := u.restartOn(ctx, s, name, version); err != nil {
+		u.step("%s did not become healthy: %v", version, err)
+		u.step("Restoring %s.", running)
+		if restoreErr := u.restartOn(ctx, s, old, running); restoreErr != nil {
+			return fmt.Errorf("%s failed (%v) and restoring %s also failed: %w", version, err, running, restoreErr)
+		}
+		return fmt.Errorf("%s failed; %s is running again: %w", version, running, err)
+	}
+	return link(filepath.Join(filepath.Dir(s.root), "previous"), old)
+}
+
+// restartOn points current at name and has launchd kill the running process
+// and start the job again.
+func (u *upgrader) restartOn(ctx context.Context, s launchdJob, name, version string) error {
+	if err := link(s.root, name); err != nil {
+		return err
+	}
+	if _, err := u.run("launchctl", "kickstart", "-k", launchdDomain()+"/"+s.label); err != nil {
 		return err
 	}
 	return u.waitHealthy(ctx, s.listen, s.tokenFile, version)
 }
 
-// servicePID reads the running job's PID, or 0 when it is not running.
-func (u *upgrader) servicePID(target string) int {
-	output, err := u.run("launchctl", "print", target)
-	if err != nil {
-		return 0
+// link atomically makes path a symlink to target, replacing what was there.
+func link(path, target string) error {
+	temp := path + ".tmp"
+	_ = os.Remove(temp)
+	if err := os.Symlink(target, temp); err != nil {
+		return err
 	}
-	scanner := bufio.NewScanner(bytes.NewReader(output))
-	for scanner.Scan() {
-		if value, ok := strings.CutPrefix(strings.TrimSpace(scanner.Text()), "pid = "); ok {
-			if pid, err := strconv.Atoi(value); err == nil && pid > 0 {
-				return pid
-			}
-		}
-	}
-	return 0
+	return os.Rename(temp, path)
 }
 
 // waitHealthy waits for an owner-authenticated /connection on listen to
@@ -644,78 +658,6 @@ func (u *upgrader) backup(root string, s launchdJob, version string) (string, er
 	return path, nil
 }
 
-// rehearse starts the new server on a copy of the backup at a free loopback
-// port, waits for it to report version, then stops it. Migrations therefore
-// run on a copy before they touch the live database.
-func (u *upgrader) rehearse(ctx context.Context, root string, s launchdJob, backup, version string) error {
-	dir, err := os.MkdirTemp(filepath.Dir(backup), ".rehearsal-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(dir)
-	database := filepath.Join(dir, "memory.db")
-	if err := copyPrivate(backup, database); err != nil {
-		return err
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return err
-	}
-	listen := listener.Addr().String()
-	listener.Close()
-	arguments := []string{}
-	for i := 1; i < len(s.arguments); i++ {
-		name, _, inline := strings.Cut(s.arguments[i], "=")
-		name = "--" + strings.TrimLeft(name, "-")
-		takesValue := name != "--quickstart" && name != "--visualizer" && name != "--create-db"
-		switch name {
-		case "--db", "--listen", "--data-dir", "--quickstart", "--token-file", "--create-db":
-			if takesValue && !inline {
-				i++
-			}
-			continue
-		}
-		arguments = append(arguments, rebase(s.arguments[i], s.root, root))
-	}
-	program := filepath.Join(root, "bin", "grasshopper-server")
-	arguments = append(arguments, "--db", database, "--token-file", s.tokenFile, "--listen", listen)
-	if !containsFlag(arguments, "--onnx-library") {
-		// A quickstart service finds the model beside its program.
-		library, model, tokenizer, err := quickstartFiles(program)
-		if err != nil {
-			return err
-		}
-		arguments = append(arguments, "--onnx-library", library, "--model", model, "--tokenizer", tokenizer)
-	}
-	command := exec.CommandContext(ctx, program, arguments...)
-	var logs bytes.Buffer
-	command.Stdout, command.Stderr = &logs, &logs
-	if err := command.Start(); err != nil {
-		return err
-	}
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
-	healthy := make(chan error, 1)
-	go func() { healthy <- u.waitHealthy(ctx, listen, s.tokenFile, version) }()
-	select {
-	case err = <-healthy:
-		_ = command.Process.Signal(os.Interrupt)
-		<-done
-	case waitErr := <-done:
-		err = fmt.Errorf("server exited: %v: %s", waitErr, strings.TrimSpace(logs.String()))
-	}
-	return err
-}
-
-func containsFlag(arguments []string, flag string) bool {
-	for _, argument := range arguments {
-		if argument == flag || strings.HasPrefix(argument, flag+"=") {
-			return true
-		}
-	}
-	return false
-}
-
 // rebase moves an argument under the old archive folder to the new one.
 func rebase(argument, oldRoot, newRoot string) string {
 	if argument == oldRoot {
@@ -740,20 +682,22 @@ func copyPrivate(source, destination string) error {
 }
 
 // pruneArchives removes archives an earlier upgrade extracted, keeping the
-// running and previous ones. Folders it did not create are left alone.
-func (u *upgrader) pruneArchives(parent string, keep ...string) {
+// ones current and previous point at. Folders it did not create are left
+// alone.
+func (u *upgrader) pruneArchives(parent string) {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
 		return
 	}
+	current, _ := os.Readlink(filepath.Join(parent, "current"))
+	previous, _ := os.Readlink(filepath.Join(parent, "previous"))
 	for _, entry := range entries {
-		path := filepath.Join(parent, entry.Name())
 		version, ok := strings.CutPrefix(entry.Name(), "grasshopper-server-")
-		if !ok || !entry.IsDir() || path == keep[0] || path == keep[1] {
+		if !ok || !entry.IsDir() || entry.Name() == current || entry.Name() == previous {
 			continue
 		}
 		if _, ok := parseVersion(version); ok {
-			_ = os.RemoveAll(path)
+			_ = os.RemoveAll(filepath.Join(parent, entry.Name()))
 		}
 	}
 }

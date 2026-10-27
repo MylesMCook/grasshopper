@@ -141,8 +141,7 @@ and keep an encrypted copy off the machine:
 ```
 
 On macOS with launchd, `./bin/grasshopper-server upgrade`
-does the backup, a rehearsal on a copy, the switch and a rollback on failure in
-one step ([details](docs/operations.md#one-command-on-macos)). Otherwise, stop
+does the backup, the switch and a rollback on failure in one step ([details](docs/operations.md#one-command-on-macos)). Otherwise, stop
 the old server, keep its archive and database, and never run two servers on one
 database. [Operations](docs/operations.md#update-and-recover) covers
 restoring a backup, rolling back and the one-time re-embedding when upgrading
