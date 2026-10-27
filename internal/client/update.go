@@ -42,7 +42,8 @@ var ReleaseBaseURL = "https://github.com/MylesMCook/grasshopper/releases/downloa
 // MinimumPluginVersion is the oldest plugin whose hook and MCP wiring is
 // still current. Plugins at or above it run the self-updated client, so check
 // asks for a plugin update only below it. Raise it when a release changes
-// integrations/plugins templates.
+// integrations/plugins templates; TestPluginWiringChangesRaiseMinimumPluginVersion
+// fails until it is.
 const MinimumPluginVersion = "2.11.0"
 
 const maxClientBinary = 64 << 20
