@@ -404,7 +404,8 @@ func TestRebaseMovesOnlyPathsInsideTheOldArchive(t *testing.T) {
 		"--listen":                      "--listen",
 	}
 	for in, want := range cases {
-		if got := rebase(in, "/a/app", "/a/new"); got != want {
+		in, want = filepath.FromSlash(in), filepath.FromSlash(want)
+		if got := rebase(in, filepath.FromSlash("/a/app"), filepath.FromSlash("/a/new")); got != want {
 			t.Errorf("rebase(%q) = %q, want %q", in, got, want)
 		}
 	}
