@@ -115,10 +115,20 @@ not who can access it.
 
 Connector changes never delete memories on the server.
 
-To see which connectors need an update, run `./bin/grasshopper check` from the
-client archive. It lists each agent's connector version, whether it matches the
-server, and the exact update step for any that are behind. It fails only when an
-agent points at a Grasshopper program that no longer exists.
+From 2.11.0, connectors update themselves. When an agent's session starts and
+the server runs a newer release, its client downloads that release's client
+archive in the background, checks it against `SHA256SUMS`, and every agent on
+the machine uses it from the next session. Clients follow the server, so
+upgrading or rolling back the server is the only update step. Run
+`grasshopper update` to do it now. To turn it off on a machine, create an empty
+`updates-off` file in the `client` folder next to the path that
+`grasshopper config-path` prints.
+
+Update a connector by hand only to move it to 2.11.0 the first time, or when
+`check` asks. Run `./bin/grasshopper check` from the client archive: it lists
+each agent's connector, the client it runs, whether that matches the server,
+and the exact step for any that are behind. It fails only when an agent points
+at a Grasshopper program that no longer exists.
 
 | Agent | Update | Remove |
 | --- | --- | --- |
@@ -140,8 +150,10 @@ and keep an encrypted copy off the machine:
 ./bin/grasshopper-backup --verify /absolute/path/to/backup.db
 ```
 
-Stop the old server, keep its archive and database, and never run two servers
-on one database. [Operations](docs/operations.md#update-and-recover) covers
+On macOS with launchd, `./bin/grasshopper-server upgrade`
+does the backup, the switch and a rollback on failure in one step ([details](docs/operations.md#one-command-on-macos)). Otherwise, stop
+the old server, keep its archive and database, and never run two servers on one
+database. [Operations](docs/operations.md#update-and-recover) covers
 restoring a backup, rolling back and the one-time re-embedding when upgrading
 from 2.3.x or earlier.
 
