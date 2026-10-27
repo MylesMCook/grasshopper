@@ -58,7 +58,41 @@ func checkConnection(args []string) error {
 	if *jsonOutput {
 		return json.NewEncoder(os.Stdout).Encode(result)
 	}
-	return renderCheck(os.Stdout, result, checkAgents(result["host_version"]))
+	agents := checkAgents(result["host_version"])
+	dir := client.ManagedDir(path)
+	managed, _, _ := client.ManagedClient(dir)
+	result["client_note"] = managedClientNote(dir, managed)
+	return renderCheck(os.Stdout, result, withManagedClient(agents, managed, result["host_version"]))
+}
+
+// managedClientNote says which self-updated client this machine's agents run.
+func managedClientNote(dir, managed string) string {
+	note := "Agents run their bundled client."
+	if managed != "" {
+		note = "Agents run self-updated client " + managed + " when it is newer than their own."
+	}
+	if client.UpdatesDisabled(dir) {
+		note += " Self-update is off."
+	} else if last := client.LastUpdateError(dir); last != "" {
+		note += " Last self-update failed: " + last
+	}
+	return note
+}
+
+// withManagedClient marks a plugin current when its wiring is current and the
+// self-updated client it hands off to matches the server, so check asks for a
+// plugin update only when the plugin itself must change.
+func withManagedClient(agents []agentReport, managed, serverVersion string) []agentReport {
+	if versionState(managed, serverVersion) != agentCurrent {
+		return agents
+	}
+	for i, agent := range agents {
+		if agent.State == agentBehind && versionState(agent.Version, client.MinimumPluginVersion) != agentBehind {
+			agents[i].State, agents[i].Update = agentCurrent, ""
+			agents[i].Detail = "Runs self-updated client " + managed + "."
+		}
+	}
+	return agents
 }
 
 // checkAgents inspects this machine's agents. Tests replace it so check never

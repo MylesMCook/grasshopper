@@ -22,6 +22,11 @@ project context. Keep confirmed preferences stable until an explicit correction
 with expected revision. Preserve record IDs, provenance, revision history,
 legacy quarantine, and idempotency. New writes must be searchable immediately.
 
+Clients update themselves to the server's version from their next session, so
+a server must keep working with clients one release behind it. A change to
+`integrations/plugins` templates reaches agents only through a plugin update;
+raise `client.MinimumPluginVersion` with it.
+
 Local code search from the old Rust CLI is retired for this release.
 Do not restore a second language runtime, separate writable store, transcript
 mining service, or parallel instruction files.
@@ -62,8 +67,10 @@ are pinned in `internal/embedding/granite.go`.
 - Keep credentials out of Git, output, logs, exports, and repository identity.
   Bind the server to explicit loopback; private routing requires approval.
 - Record actual harness, version, OS, and observed behavior in
-  `docs/verification.md`; keep `tasks.md` short and current. Do not claim
-  cross-harness or deployed success from unit tests alone.
+  `docs/verification.md` when something is verified for the first time or
+  fails; a routine release needs no rollout record or follow-up PR. Keep
+  `tasks.md` short and current. Do not claim cross-harness or deployed
+  success from unit tests alone.
 
 The old Linux service names in historical documentation do not prove a running
 deployment. Inspect the target host, supervisor, database, ports, credentials,
@@ -92,13 +99,15 @@ changes that touch only the public site without a version release. Run the full
 package, recovery and rollback rehearsal only when server, storage, migration or
 client-bridge code changes.
 
-To release, merge a pull request that updates `VERSION`, then push an annotated
-tag whose message is the release summary: `git tag -a vX.Y.Z -m "..."` and
-`git push origin vX.Y.Z`. The release workflow builds and checks every archive,
-publishes the GitHub release, updates the `marketplace` branch and deploys the
-site. Never edit the `marketplace` branch by hand. The owner approved nightly
-`grasshopper-server upgrade --schedule` on the server; any other live cutover
-stays a separate, owner-approved step.
+To release, merge a pull request that updates `VERSION` and replaces
+`.github/release-summary.md` with this release's summary. The release workflow
+then builds and checks every archive, tags the merged commit `vX.Y.Z` with that
+summary, publishes the GitHub release, updates the `marketplace` branch and
+deploys the site. It refuses an empty or unchanged summary. Pushing an
+annotated tag by hand still works as a fallback. Never edit the `marketplace`
+branch by hand. The owner approved nightly `grasshopper-server upgrade
+--schedule` on the server; any other live cutover stays a separate,
+owner-approved step.
 
 ## Pull request delivery
 
