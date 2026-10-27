@@ -22,6 +22,11 @@ project context. Keep confirmed preferences stable until an explicit correction
 with expected revision. Preserve record IDs, provenance, revision history,
 legacy quarantine, and idempotency. New writes must be searchable immediately.
 
+Clients update themselves to the server's version from their next session, so
+a server must keep working with clients one release behind it. A change to
+`integrations/plugins` templates reaches agents only through a plugin update;
+raise `client.MinimumPluginVersion` with it.
+
 Local code search from the old Rust CLI is retired for this release.
 Do not restore a second language runtime, separate writable store, transcript
 mining service, or parallel instruction files.

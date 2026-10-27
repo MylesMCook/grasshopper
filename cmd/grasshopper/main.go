@@ -28,6 +28,7 @@ Usage: grasshopper COMMAND [options]
 
   connect        Connect this machine; request owner approval when needed
   check          Check the saved connection without changing it
+  update         Install the client matching the server (agents do this themselves)
   setup          Install agents from an extracted client archive
   claude remove  Remove local Claude Code connector wiring
   cursor remove  Remove local Cursor connector wiring
@@ -59,6 +60,8 @@ Use grasshopper COMMAND --help for options, or --version for the version.`)
 		return configure(os.Args[2:])
 	case "check":
 		return checkConnection(os.Args[2:])
+	case "update":
+		return updateClient(os.Args[2:])
 	case "cursor":
 		return cursorCommand(os.Args[2:])
 	case "claude":
@@ -73,6 +76,8 @@ Use grasshopper COMMAND --help for options, or --version for the version.`)
 		if err != nil {
 			return err
 		}
+		runManagedClient(path)
+		followServerInBackground(path)
 		return client.Bridge(context.Background(), path, os.Stdin, os.Stdout)
 	case "hook":
 		flags := flag.NewFlagSet("hook", flag.ContinueOnError)
@@ -89,6 +94,7 @@ Use grasshopper COMMAND --help for options, or --version for the version.`)
 		if err != nil {
 			return err
 		}
+		runManagedClient(path)
 		input, err := client.ParseHookInput(os.Stdin)
 		if err != nil {
 			// An oversized or malformed prompt must not fail the agent's hook;
@@ -112,7 +118,7 @@ Use grasshopper COMMAND --help for options, or --version for the version.`)
 		}
 		return json.NewEncoder(os.Stdout).Encode(output)
 	default:
-		return errors.New("use connect, setup, configure, check, cursor, claude, bridge, hook, or config-path")
+		return errors.New("use connect, setup, configure, check, update, cursor, claude, bridge, hook, or config-path")
 	}
 }
 
