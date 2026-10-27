@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -125,6 +126,9 @@ func (f *fakeLaunchd) run(name string, args ...string) ([]byte, error) {
 		data, _ := json.Marshal(plist)
 		return nil, os.WriteFile(path, data, 0o600)
 	case name == "plutil" && args[0] == "-lint":
+		return nil, nil
+	case name == "launchctl" && len(args) == 3 && strings.HasSuffix(args[2], ".upgrade.plist"):
+		// The nightly job is only loaded, never run, in these tests.
 		return nil, nil
 	case name == "launchctl" && args[0] == "print":
 		if f.job == nil {
@@ -431,5 +435,35 @@ func TestFindPlistNeedsExactlyOneGrasshopperJob(t *testing.T) {
 	write("grasshopper2", "/apps/two/bin/grasshopper-server")
 	if _, err := findPlist(launchd.run, dir); err == nil || !strings.Contains(err.Error(), "several") {
 		t.Fatalf("two Grasshopper plists should fail, got %v", err)
+	}
+}
+
+func TestScheduleWritesANightlyJobThatFollowsTheServicePlist(t *testing.T) {
+	f := newUpgradeFixture(t, nil)
+	t.Setenv("HOME", t.TempDir())
+	if err := f.u.setSchedule(true); err != nil {
+		t.Fatalf("schedule: %v", err)
+	}
+	job := filepath.Join(filepath.Dir(f.plist), "com.example.grasshopper.upgrade.plist")
+	data, err := os.ReadFile(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"<string>com.example.grasshopper.upgrade</string>", "ProgramArguments.0", "upgrade --plist", "<string>" + f.plist + "</string>", "<integer>3</integer>"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("job plist lacks %q", want)
+		}
+	}
+	if err := xml.Unmarshal(data, new(any)); err != nil {
+		t.Fatalf("job plist is not XML: %v", err)
+	}
+	if _, err := findPlist(f.launchd.run, filepath.Dir(f.plist)); err != nil {
+		t.Fatalf("the job must not look like a second server plist: %v", err)
+	}
+	if err := f.u.setSchedule(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(job); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("unschedule left the job plist")
 	}
 }

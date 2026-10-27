@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"flag"
 	"fmt"
@@ -59,6 +60,8 @@ func upgradeCommand(args []string) error {
 	plist := flags.String("plist", "", "the server's launchd plist (default: the one Grasshopper plist in ~/Library/LaunchAgents)")
 	to := flags.String("to", "", "release to install (default: the latest release)")
 	rollback := flags.Bool("rollback", false, "switch back to the plist saved by the last upgrade")
+	schedule := flags.Bool("schedule", false, "install a launchd job that runs upgrade every night")
+	unschedule := flags.Bool("unschedule", false, "remove the nightly upgrade job")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -91,6 +94,12 @@ func upgradeCommand(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
+	if *schedule || *unschedule {
+		if *to != "" || *rollback || (*schedule && *unschedule) {
+			return errors.New("schedule and unschedule take only --plist")
+		}
+		return u.setSchedule(*schedule)
+	}
 	if *rollback {
 		if *to != "" {
 			return errors.New("rollback cannot be combined with --to")
@@ -98,6 +107,89 @@ func upgradeCommand(args []string) error {
 		return u.rollback(ctx)
 	}
 	return u.upgrade(ctx, *to)
+}
+
+// setSchedule installs or removes a second launchd job, beside the service
+// plist, that runs upgrade at 03:30 each night. The job reads the service's
+// current program from its plist at run time, so it keeps working after
+// upgrades move the server to a new archive. A failed night leaves the
+// previous server running; the log says why.
+func (u *upgrader) setSchedule(install bool) error {
+	job, err := u.readService()
+	if err != nil {
+		return err
+	}
+	label := job.label + ".upgrade"
+	path := filepath.Join(filepath.Dir(u.plist), label+".plist")
+	domain := "gui/" + strconv.Itoa(os.Getuid())
+	_, _ = u.run("launchctl", "bootout", domain, path)
+	if !install {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		u.step("Nightly upgrades are off.")
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	logs := filepath.Join(home, "Library", "Logs", "Grasshopper")
+	if err := os.MkdirAll(logs, 0o700); err != nil {
+		return err
+	}
+	script := `program=$(/usr/bin/plutil -extract ProgramArguments.0 raw -o - "$1") && exec "$program" upgrade --plist "$1"`
+	if err := os.WriteFile(path, []byte(schedulePlist(label, script, u.plist, filepath.Join(logs, "upgrade.log"))), 0o600); err != nil {
+		return err
+	}
+	if _, err := u.run("plutil", "-lint", path); err != nil {
+		return err
+	}
+	if _, err := u.run("launchctl", "bootstrap", domain, path); err != nil {
+		return err
+	}
+	u.step("Nightly upgrades are on (03:30). Log: %s", filepath.Join(logs, "upgrade.log"))
+	return nil
+}
+
+func schedulePlist(label, script, servicePlist, log string) string {
+	escape := func(value string) string {
+		var buffer bytes.Buffer
+		_ = xml.EscapeText(&buffer, []byte(value))
+		return buffer.String()
+	}
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>` + escape(label) + `</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>` + escape(script) + `</string>
+    <string>sh</string>
+    <string>` + escape(servicePlist) + `</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>Umask</key>
+  <integer>63</integer>
+  <key>StandardOutPath</key>
+  <string>` + escape(log) + `</string>
+  <key>StandardErrorPath</key>
+  <string>` + escape(log) + `</string>
+</dict>
+</plist>
+`
 }
 
 // findPlist returns the one launchd plist in dir whose program is a

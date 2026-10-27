@@ -29,6 +29,12 @@ and proxy flags are kept as they are.
 
 The previous plist is saved as `.previous` and its archive is kept.
 `upgrade --rollback` switches back; running it again goes forward.
+To upgrade automatically, run `./bin/grasshopper-server upgrade --schedule`
+once. It installs a second launchd job beside the service plist that runs
+`upgrade` at 03:30 each night with the server's current program, logging to
+`~/Library/Logs/Grasshopper/upgrade.log`. A failed night leaves the previous
+server running. `--unschedule` removes it.
+
 Clients follow the server's version on their own, so a rollback also rolls them
 back. Keep an off-machine backup as well.
 

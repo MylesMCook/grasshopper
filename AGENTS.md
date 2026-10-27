@@ -96,8 +96,9 @@ To release, merge a pull request that updates `VERSION`, then push an annotated
 tag whose message is the release summary: `git tag -a vX.Y.Z -m "..."` and
 `git push origin vX.Y.Z`. The release workflow builds and checks every archive,
 publishes the GitHub release, updates the `marketplace` branch and deploys the
-site. Never edit the `marketplace` branch by hand. Live server cutover stays a
-separate, owner-approved step.
+site. Never edit the `marketplace` branch by hand. The owner approved nightly
+`grasshopper-server upgrade --schedule` on the server; any other live cutover
+stays a separate, owner-approved step.
 
 ## Pull request delivery
 
