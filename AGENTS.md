@@ -92,11 +92,12 @@ changes that touch only the public site without a version release. Run the full
 package, recovery and rollback rehearsal only when server, storage, migration or
 client-bridge code changes.
 
-To release, merge a pull request that updates `VERSION`, then push an annotated
-tag whose message is the release summary: `git tag -a vX.Y.Z -m "..."` and
-`git push origin vX.Y.Z`. The release workflow builds and checks every archive,
-publishes the GitHub release, updates the `marketplace` branch and deploys the
-site. Never edit the `marketplace` branch by hand. Live server cutover stays a
+To release, merge a pull request that updates `VERSION` and replaces
+`.github/release-summary.md` with this release's summary. The release workflow
+then builds and checks every archive, tags the merged commit `vX.Y.Z` with that
+summary, publishes the GitHub release, updates the `marketplace` branch and
+deploys the site. It refuses an empty or unchanged summary. Pushing an
+annotated tag by hand still works as a fallback. Never edit the `marketplace` branch by hand. Live server cutover stays a
 separate, owner-approved step.
 
 ## Pull request delivery
