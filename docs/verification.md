@@ -32,12 +32,12 @@ guidance.
 Follow-up: Codex and Claude Code plugins on macOS and Windows were updated to
 2.10.5. Each packaged client reported a verified device connection and its
 Codex, Claude and Cursor hook returned context and sanitized-search guidance.
-These are direct hook checks, not fresh native agent sessions. The Windows
-Cursor marketplace was refreshed and the owner reported completing the
-Plugins-menu step. A client check still detected older Cursor plugin files and
-could not parse its existing MCP settings. The macOS Cursor marketplace check
-reported a locked login keychain. Native session and permission prompts remain
-user-owned.
+These are direct hook checks, not fresh native agent sessions. Both Cursor
+marketplaces were refreshed to the 2.10.5 release. The owner reported completing
+the Windows Plugins-menu step and confirmed Cursor showed 2.10.5 installed on
+macOS. Older cache files do not establish the active Cursor plugin version.
+Actual memory injection in a fresh Cursor session remains unverified; native
+session and permission prompts remain user-owned.
 
 A fresh encrypted off-machine backup contained 400 records and 816 revisions.
 The repository check passed and a restored snapshot matched the source byte
