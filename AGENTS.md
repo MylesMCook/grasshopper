@@ -62,8 +62,10 @@ are pinned in `internal/embedding/granite.go`.
 - Keep credentials out of Git, output, logs, exports, and repository identity.
   Bind the server to explicit loopback; private routing requires approval.
 - Record actual harness, version, OS, and observed behavior in
-  `docs/verification.md`; keep `tasks.md` short and current. Do not claim
-  cross-harness or deployed success from unit tests alone.
+  `docs/verification.md` when something is verified for the first time or
+  fails; a routine release needs no rollout record or follow-up PR. Keep
+  `tasks.md` short and current. Do not claim cross-harness or deployed
+  success from unit tests alone.
 
 The old Linux service names in historical documentation do not prove a running
 deployment. Inspect the target host, supervisor, database, ports, credentials,
