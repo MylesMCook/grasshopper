@@ -9,16 +9,14 @@ Earlier release records are in Git history and
 
 Context-aware recall is released and deployed. The server balances scopes and
 old/new records when startup exceeds budget; updated hooks guide sanitized
-task search. See [verification](docs/verification.md) for live evidence and
-the remaining client and backup verification boundaries.
+task search. Codex and Claude connectors on Windows and macOS are updated;
+the owner completed Cursor's Windows plugin step and confirmed 2.10.5 installed
+on macOS. Direct hook checks passed; native-session coverage limits are in
+[verification](docs/verification.md).
 
-2.10.4 fixed Windows hook executable resolution and moved similarity comparison
-to the opened suggestion (#81). Its Windows Codex plugin remains installed;
-the 2.10.5 rollout did not update installed connectors.
-
-The saved Windows connection is still unreachable because the existing private
-proxy has no serve configuration. Routing was left unchanged. Verification and
-rollback details: [verification](docs/verification.md).
+The Windows Grasshopper connector reports a verified device connection to the
+2.10.5 server. The encrypted off-machine backup passed a repository check and
+byte-identical restore.
 
 ## Decisions
 
@@ -34,5 +32,4 @@ rollback details: [verification](docs/verification.md).
 
 ## Next
 
-Restore the existing private proxy only after routing approval, then verify
-Windows memory access. Deferred: project archive and rename.
+Deferred: project archive and rename.
