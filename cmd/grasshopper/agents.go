@@ -8,9 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/MylesMCook/grasshopper/internal/client"
 )
 
 // agentReport describes one Grasshopper connector an agent has on this
@@ -367,8 +368,8 @@ func withNewerDetail(report agentReport) agentReport {
 // versionState compares release versions such as 2.9.1. A development build
 // or missing server version cannot be compared and is unknown.
 func versionState(version, serverVersion string) string {
-	agent, agentOK := parseVersion(version)
-	server, serverOK := parseVersion(serverVersion)
+	agent, agentOK := client.ParseVersion(version)
+	server, serverOK := client.ParseVersion(serverVersion)
 	if !agentOK || !serverOK {
 		return agentUnknown
 	}
@@ -381,22 +382,6 @@ func versionState(version, serverVersion string) string {
 		}
 	}
 	return agentCurrent
-}
-
-func parseVersion(version string) ([3]int, bool) {
-	var parsed [3]int
-	parts := strings.Split(strings.TrimPrefix(version, "v"), ".")
-	if len(parts) != 3 {
-		return parsed, false
-	}
-	for i, part := range parts {
-		number, err := strconv.Atoi(part)
-		if err != nil || number < 0 {
-			return parsed, false
-		}
-		parsed[i] = number
-	}
-	return parsed, true
 }
 
 // agentProblem fails check only for wiring that cannot work. An agent behind
@@ -434,6 +419,9 @@ func renderCheck(w io.Writer, result map[string]string, agents []agentReport) er
 		fmt.Fprintf(w, "Server %s.\n", version)
 	} else {
 		fmt.Fprintln(w, "Server version unknown.")
+	}
+	if note := result["client_note"]; note != "" {
+		fmt.Fprintln(w, note)
 	}
 	if len(agents) == 0 {
 		fmt.Fprintln(w, "No Grasshopper agents found on this machine.")
