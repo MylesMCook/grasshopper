@@ -1,11 +1,16 @@
-# Pushing an annotated tag vX.Y.Z (matching VERSION) publishes a release: native
-# server archives on each OS, client and marketplace archives, SHA256SUMS, the
-# GitHub release, the marketplace branch and the public site. A pull request
-# that changes this workflow builds every archive without publishing anything.
+# A release is published when VERSION changes on main: once every archive
+# builds, the publish job creates the annotated tag vX.Y.Z on the merged
+# commit, with .github/release-summary.md as its message. Pushing that tag by
+# hand (git tag -a) still works and uses the tag's own message. Either way the
+# run builds native server archives on each OS, client and marketplace
+# archives, SHA256SUMS, the GitHub release, the marketplace branch and the
+# public site. A pull request that changes this workflow builds every archive
+# without publishing anything.
 name: Release
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
   pull_request:
     paths: ['.github/workflows/release.yml', 'cmd/grasshopper-bundle/**', 'scripts/build-*.sh']
@@ -18,7 +23,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # decide names the tag this run publishes, if any. A push to main whose
+  # VERSION already has a tag (every ordinary merge) builds nothing.
+  decide:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+      tag: ${{ steps.decide.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: decide
+        run: |
+          tag=v$(cat VERSION)
+          build=true
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF_TYPE" in
+            pull_request:*) tag= ;;
+            push:tag) tag=$GITHUB_REF_NAME ;;
+            push:branch)
+              # A tag on this commit means an earlier attempt of this release
+              # got as far as tagging; publish again so a failed later step
+              # can be retried. A tag on another commit is an older release.
+              tagged=$(git ls-remote --tags origin "refs/tags/$tag^{}" "refs/tags/$tag" | sort -k2 -r | head -n 1 | cut -f1)
+              if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
+                echo "$tag already tags another commit; nothing to release"
+                build=false tag=
+              fi ;;
+          esac
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   server:
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
     strategy:
       fail-fast: true
       matrix:
@@ -122,8 +158,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: package
-    if: github.ref_type == 'tag'
+    needs: [decide, package]
+    if: needs.decide.outputs.tag != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -136,25 +172,53 @@ jobs:
         with:
           name: release
           path: dist
+      - name: Tag the merged commit
+        if: github.ref_type == 'branch'
+        env:
+          TAG: ${{ needs.decide.outputs.tag }}
+        run: |
+          # A re-run after a later step failed finds its own tag and continues;
+          # a tag on any other commit means VERSION was not bumped, so stop.
+          if git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null; then
+            if [ "$(git rev-parse "refs/tags/$TAG^{commit}")" != "$GITHUB_SHA" ]; then
+              echo "$TAG already tags another commit" >&2
+              exit 1
+            fi
+            exit 0
+          fi
+          summary=.github/release-summary.md
+          if ! grep -q '[^[:space:]]' "$summary"; then
+            echo "$summary is empty; write the release summary there" >&2
+            exit 1
+          fi
+          previous=$(git describe --tags --abbrev=0 --match 'v*' "$GITHUB_SHA" 2>/dev/null || true)
+          if [ -n "$previous" ] && git diff --quiet "$previous" "$GITHUB_SHA" -- "$summary"; then
+            echo "$summary is unchanged since $previous; write this release's summary" >&2
+            exit 1
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            tag -a "$TAG" -F "$summary" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.decide.outputs.tag }}
         run: |
           # The annotated tag message is the release summary; a lightweight tag
           # has no message of its own, so refuse it.
-          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
-          if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != tag ]; then
-            echo "$GITHUB_REF_NAME is a lightweight tag; push an annotated tag (git tag -a)" >&2
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          if [ "$(git cat-file -t "refs/tags/$TAG")" != tag ]; then
+            echo "$TAG is a lightweight tag; push an annotated tag (git tag -a)" >&2
             exit 1
           fi
-          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
+          git tag -l --format='%(contents)' "$TAG" > notes.md
           echo >> notes.md
           sed "s/VERSION/$VERSION/g" .github/release-notes.md >> notes.md
           # Re-runs after a partial failure replace the assets instead of failing.
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.zip dist/SHA256SUMS --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS \
+            gh release create "$TAG" dist/*.zip dist/SHA256SUMS \
               --verify-tag --title "Grasshopper $VERSION" --notes-file notes.md
           fi
       - name: Update the marketplace branch
