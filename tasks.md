@@ -12,7 +12,8 @@ upgrade` on the macOS server that only moves forward, and clients that follow
 the server's version. 2.11.3 is live on the Mac; its Claude Code and Codex
 agents run the matching client (see [verification](docs/verification.md)).
 Pending, owner steps: the one-time plugin update on the Windows PC, and
-updating Cursor's plugin on the Mac to 2.11 (its active version is unverified). Not done: release signing (needs a new dependency) and a
+updating Cursor's plugin on the Mac to 2.11 (its active version is
+unverified). Not done: release signing (needs a new dependency) and a
 per-address pairing cap (ineffective behind the private proxy).
 
 Context-aware recall is released and deployed. The server balances scopes and
