@@ -718,11 +718,15 @@ async function undo() {
 }
 
 async function decidePairing(request, decision) {
+  if (saving) return;
+  saving = true; render();
   try {
     const { status } = await api('/visualizer/api/pairings', { request_id: request.request_id, code: request.code, decision });
     say(status >= 300 ? "Couldn't change this request. Try again." : decision === 'approve' ? `${request.device} connected.` : `${request.device} denied.`);
   } catch (error) { if (!error.session) say("Couldn't change this request. Try again."); }
+  finally { saving = false; }
   refreshDevices();
+  render();
 }
 async function renameDevice(device, label, panel) {
   if (saving) return;
@@ -742,11 +746,14 @@ async function renameDevice(device, label, panel) {
   render();
 }
 async function disconnectDevice(device) {
+  if (saving) return;
+  saving = true; render();
   try {
     const { status } = await api('/visualizer/api/devices', { id: device.id }, { method: 'DELETE' });
     say(status >= 300 ? "Couldn't disconnect it. Try again." : `${device.label || device.device} disconnected.`);
     if (status < 300) state.panel = null;
   } catch (error) { if (!error.session) say("Couldn't disconnect it. Try again."); }
+  finally { saving = false; }
   refreshDevices();
   render();
 }
@@ -999,8 +1006,8 @@ function agentsPage() {
       h('div', { class: 'row-inline' }, h('span', { class: 'reading', text: `${request.device} wants to connect` }), h('code', { class: 'code', text: request.code })),
       h('p', { class: 'label muted', text: `Approve only if the agent shows the same code. ${request.expires_in >= 60 ? `Expires in ${Math.ceil(request.expires_in / 60)} min.` : `Expires in ${request.expires_in} s.`}` }),
       h('div', { class: 'actions' },
-        h('button', { type: 'button', class: 'btn', 'data-key': `approve:${request.request_id}`, 'aria-label': `Approve ${request.device}`, onclick: () => decidePairing(request, 'approve') }, 'Approve'),
-        h('button', { type: 'button', class: 'quiet muted', 'data-key': `deny:${request.request_id}`, 'aria-label': `Deny ${request.device}`, onclick: () => decidePairing(request, 'deny') }, 'Deny')))), 'warn') : null,
+        h('button', { type: 'button', class: 'btn', 'aria-disabled': saving, 'data-key': `approve:${request.request_id}`, 'aria-label': `Approve ${request.device}`, onclick: () => decidePairing(request, 'approve') }, 'Approve'),
+        h('button', { type: 'button', class: 'quiet muted', 'aria-disabled': saving, 'data-key': `deny:${request.request_id}`, 'aria-label': `Deny ${request.device}`, onclick: () => decidePairing(request, 'deny') }, 'Deny')))), 'warn') : null,
     linked && state.devicesLoaded && !waiting.some(request => request.request_id === linked)
       ? h('p', { class: 'label muted', text: 'That connection request has expired or was already handled. Ask the agent to connect again.' }) : null,
     section('Connected', connected.length ? connected.map(device => h('button', { type: 'button', class: 'row', 'data-key': `device:${device.id}`, 'aria-current': state.panel?.type === 'device' && state.panel.id === device.id ? 'true' : null, onclick: () => { state.panel = { type: 'device', id: device.id, confirm: false }; render(); } },
@@ -1161,7 +1168,7 @@ function devicePanel(panel) {
       ? h('div', { class: 'confirm', role: 'group', 'aria-labelledby': 'disconnect-question' },
         h('p', { class: 'label', id: 'disconnect-question', tabindex: '-1', text: `Disconnect ${name}? Its agents stop reading and saving right away.` }),
         h('div', { class: 'actions' },
-          h('button', { type: 'button', class: 'btn danger', 'data-key': `disconnect-confirm:${device.id}`, onclick: () => disconnectDevice(device) }, 'Disconnect'),
+          h('button', { type: 'button', class: 'btn danger', 'aria-disabled': saving, 'data-key': `disconnect-confirm:${device.id}`, onclick: () => disconnectDevice(device) }, 'Disconnect'),
           h('button', { type: 'button', class: 'quiet muted', 'data-key': `disconnect-cancel:${device.id}`, onclick: () => { panel.confirm = false; render(); focusByKey(`disconnect-open:${device.id}`); } }, 'Cancel')))
       : h('div', { class: 'actions' }, h('button', { type: 'button', class: 'quiet danger', 'data-key': `disconnect-open:${device.id}`, onclick: () => { panel.confirm = true; render(); document.getElementById('disconnect-question')?.focus?.(); } }, 'Disconnect'))];
 }

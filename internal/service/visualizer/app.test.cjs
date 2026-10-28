@@ -1501,3 +1501,27 @@ test('searching again from a project search keeps that project', async () => {
   const again = ui.pending('/visualizer/api/search')[0];
   assert.deepEqual(again.body.scope, { project: PROJECT });
 });
+
+test('Approve, Deny and Disconnect send once on a double click', async () => {
+  const id = 'b'.repeat(64);
+  const ui = setup({ session: true, hash: `#connect=${id}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT], review_count: 0, total: 4 });
+  await ui.answer('/visualizer/api/pairings', 200, [{ request_id: id, code: 'C0DE42', device: 'linux-box', status: 'pending', expires_in: 240 }]);
+  await ui.answer('/visualizer/api/devices', 200, [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: today }]);
+  ui.find('Approve').click();
+  ui.find('Approve').click();
+  ui.find('Deny').click();
+  await flush();
+  assert.equal(ui.requests.filter(request => request.url === '/visualizer/api/pairings' && request.method === 'POST').length, 1);
+  const decision = ui.requests.find(request => request.url === '/visualizer/api/pairings' && request.method === 'POST');
+  decision.done = true; decision.reply(204);
+  await flush();
+  ui.rows('mac').click();
+  ui.app.querySelector('aside.panel').querySelectorAll('button').find(node => node.textContent === 'Disconnect').click();
+  const confirm = () => ui.app.querySelectorAll('button').find(node => node.getAttribute('data-key') === 'disconnect-confirm:7');
+  confirm().click();
+  confirm()?.click();
+  await flush();
+  assert.equal(ui.requests.filter(request => request.url === '/visualizer/api/devices' && request.method === 'DELETE').length, 1);
+});
