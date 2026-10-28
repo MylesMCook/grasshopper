@@ -124,6 +124,24 @@ func TestFollowRefusesAChecksumMismatch(t *testing.T) {
 	}
 }
 
+func TestInstallRefusesAnExistingVersionFolderThatDoesNotReportItsVersion(t *testing.T) {
+	newFakeRelease(t, "2.11.1")
+	dir := filepath.Join(t.TempDir(), "client")
+	program := managedProgram(dir, "2.11.1")
+	if err := os.MkdirAll(filepath.Dir(program), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(program, []byte("not a program"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install(context.Background(), dir, "2.11.1"); err == nil {
+		t.Fatal("Install reused a folder whose program does not report 2.11.1")
+	}
+	if _, _, ok := ManagedClient(dir); ok {
+		t.Fatal("a broken program became current")
+	}
+}
+
 func TestFollowRollsBackWithTheServer(t *testing.T) {
 	release := newFakeRelease(t, "2.11.1", "2.11.2", "2.11.3")
 	dir := filepath.Join(t.TempDir(), "client")

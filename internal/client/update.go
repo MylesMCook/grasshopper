@@ -264,9 +264,10 @@ func Install(ctx context.Context, dir, version string) error {
 	}
 	final := filepath.Dir(managedProgram(dir, version))
 	if err := os.Rename(staging, final); err != nil {
-		// Another bridge may have installed the same version first.
-		if info, statErr := os.Stat(managedProgram(dir, version)); statErr != nil || !info.Mode().IsRegular() {
-			return err
+		// Another bridge may have installed the same version first; reuse
+		// its folder only if its program reports that version.
+		if !reportsVersion(ctx, managedProgram(dir, version), version) {
+			return fmt.Errorf("%s exists but does not hold client %s: %w", final, version, err)
 		}
 	}
 	return makeCurrent(dir, version)
