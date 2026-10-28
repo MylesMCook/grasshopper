@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +29,8 @@ import (
 // current link at the new archive, restart the job and check authenticated
 // health. If the new server does not become healthy, current goes back to the
 // old archive and the job restarts on it. The previous link keeps the old
-// archive for --rollback.
+// archive for --rollback. Without --to, upgrade installs only a newer release
+// than the running one, and skips one that was rolled back or failed.
 //
 // Archives are extracted beside the running one as grasshopper-server-X.Y.Z,
 // next to the current and previous links. The plist runs current/bin/
@@ -58,7 +60,7 @@ type upgrader struct {
 func upgradeCommand(args []string) error {
 	flags := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	plist := flags.String("plist", "", "the server's launchd plist (default: the one Grasshopper plist in ~/Library/LaunchAgents)")
-	to := flags.String("to", "", "release to install (default: the latest release)")
+	to := flags.String("to", "", "release to install, even an older or skipped one (default: the latest release, if newer)")
 	rollback := flags.Bool("rollback", false, "switch back to the archive the last upgrade replaced")
 	schedule := flags.Bool("schedule", false, "install a launchd job that runs upgrade every night")
 	unschedule := flags.Bool("unschedule", false, "remove the nightly upgrade job")
@@ -298,21 +300,36 @@ func (u *upgrader) upgrade(ctx context.Context, target string) error {
 	if err != nil {
 		return err
 	}
-	if target == "" {
+	parent := filepath.Dir(current.root)
+	explicit := target != ""
+	if !explicit {
 		if target, err = u.latestVersion(ctx); err != nil {
 			return err
 		}
 	}
-	if _, ok := parseVersion(target); !ok {
+	wanted, ok := parseVersion(target)
+	if !ok {
 		return fmt.Errorf("invalid release %q", target)
 	}
 	if target == running {
 		u.step("The server already runs %s.", running)
 		return nil
 	}
+	// The nightly job names no release: it only moves forward, and never
+	// retries a release that was rolled back or failed its health check.
+	if !explicit {
+		if have, ok := parseVersion(running); ok && slices.Compare(wanted[:], have[:]) <= 0 {
+			u.step("The latest release %s is not newer than %s; nothing to do.", target, running)
+			return nil
+		}
+		if readSkip(parent) == target {
+			u.step("Skipping %s: it was rolled back or failed its health check. Run upgrade --to %s to install it anyway.", target, target)
+			return nil
+		}
+	}
 	u.step("Upgrading the server from %s to %s.", running, target)
 
-	root, err := u.fetchArchive(ctx, filepath.Dir(current.root), target)
+	root, err := u.fetchArchive(ctx, parent, target)
 	if err != nil {
 		return err
 	}
@@ -325,9 +342,13 @@ func (u *upgrader) upgrade(ctx context.Context, target string) error {
 		return err
 	}
 	if err := u.cutover(ctx, current, filepath.Base(root), target); err != nil {
+		u.recordSkip(parent, target)
 		return err
 	}
-	u.pruneArchives(filepath.Dir(current.root))
+	if skipped, ok := parseVersion(readSkip(parent)); ok && slices.Compare(wanted[:], skipped[:]) >= 0 {
+		_ = os.Remove(filepath.Join(parent, skipFile))
+	}
+	u.pruneArchives(parent)
 	u.step("The server runs %s. The previous version stays for upgrade --rollback.", target)
 	return nil
 }
@@ -343,6 +364,10 @@ func (u *upgrader) rollback(ctx context.Context) error {
 	if err != nil || filepath.Base(current.root) != "current" {
 		return errors.New("no earlier upgrade to roll back")
 	}
+	running, err := archiveVersion(current.root)
+	if err != nil {
+		return err
+	}
 	version, err := archiveVersion(filepath.Join(filepath.Dir(current.root), previous))
 	if err != nil {
 		return err
@@ -350,8 +375,24 @@ func (u *upgrader) rollback(ctx context.Context) error {
 	if err := u.cutover(ctx, current, previous, version); err != nil {
 		return err
 	}
+	u.recordSkip(filepath.Dir(current.root), running)
 	u.step("The server runs %s. Run upgrade --rollback again to go back.", version)
 	return nil
+}
+
+// skipFile, beside the archives, names the release the last rollback or
+// failed cutover backed out. Upgrades without --to skip exactly that release.
+const skipFile = "skip-version"
+
+func readSkip(parent string) string {
+	data, _ := os.ReadFile(filepath.Join(parent, skipFile))
+	return strings.TrimSpace(string(data))
+}
+
+func (u *upgrader) recordSkip(parent, version string) {
+	if err := os.WriteFile(filepath.Join(parent, skipFile), []byte(version+"\n"), 0o600); err != nil {
+		u.step("Could not record %s as skipped: %v", version, err)
+	}
 }
 
 func launchdDomain() string {

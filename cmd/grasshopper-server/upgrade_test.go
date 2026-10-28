@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -239,6 +240,7 @@ type upgradeFixture struct {
 	parent   string
 	database string
 	out      *bytes.Buffer
+	latest   *atomic.Value // the latest release tag; "" makes the request fail
 }
 
 func newUpgradeFixture(t *testing.T, releases map[string]string) *upgradeFixture {
@@ -287,6 +289,8 @@ func newUpgradeFixture(t *testing.T, releases map[string]string) *upgradeFixture
 		t.Fatal(err)
 	}
 
+	latest := &atomic.Value{}
+	latest.Store("v2.11.2")
 	served := map[string][]byte{}
 	for version, env := range releases {
 		name := "grasshopper-server-darwin-arm64-" + version + ".zip"
@@ -297,7 +301,12 @@ func newUpgradeFixture(t *testing.T, releases map[string]string) *upgradeFixture
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/latest" {
-			_, _ = w.Write([]byte(`{"tag_name":"v2.11.2"}`))
+			tag := latest.Load().(string)
+			if tag == "" {
+				http.Error(w, "unavailable", http.StatusBadGateway)
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"tag_name":%q}`, tag)
 			return
 		}
 		if data, ok := served[r.URL.Path]; ok {
@@ -322,7 +331,7 @@ func newUpgradeFixture(t *testing.T, releases map[string]string) *upgradeFixture
 	if err := u.waitHealthy(context.Background(), listen, tokenFile, "2.11.0"); err != nil {
 		t.Fatal(err)
 	}
-	return &upgradeFixture{u: u, launchd: launchd, plist: plist, parent: parent, database: database, out: out}
+	return &upgradeFixture{u: u, launchd: launchd, plist: plist, parent: parent, database: database, out: out, latest: latest}
 }
 
 func (f *upgradeFixture) program(t *testing.T) string {
@@ -404,6 +413,87 @@ func TestFailedUpgradeRestoresThePreviousServer(t *testing.T) {
 	}
 	if err := f.u.rollback(context.Background()); err == nil {
 		t.Fatal("a failed upgrade left something to roll back to")
+	}
+	f.latest.Store("v2.11.3")
+	if err := f.u.upgrade(context.Background(), ""); err != nil || !strings.Contains(f.out.String(), "Skipping 2.11.3") {
+		t.Fatalf("the nightly upgrade should not retry a failed release: %v\n%s", err, f.out)
+	}
+}
+
+func TestNightlyUpgradeDoesNotUndoARollback(t *testing.T) {
+	f := newUpgradeFixture(t, map[string]string{"2.11.2": ""})
+	ctx := context.Background()
+	if err := f.u.upgrade(ctx, "2.11.2"); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, f.out)
+	}
+	if err := f.u.rollback(ctx); err != nil {
+		t.Fatalf("rollback: %v\n%s", err, f.out)
+	}
+	if err := f.u.upgrade(ctx, ""); err != nil || !strings.Contains(f.out.String(), "Skipping 2.11.2") {
+		t.Fatalf("the nightly upgrade should skip the rolled-back release: %v\n%s", err, f.out)
+	}
+	if current, _ := f.links(t); current != "app" {
+		t.Fatalf("the nightly upgrade moved current to %s", current)
+	}
+}
+
+func TestUpgradeNeverDowngradesToAnOlderLatestRelease(t *testing.T) {
+	f := newUpgradeFixture(t, nil)
+	f.latest.Store("v2.10.9")
+	if err := f.u.upgrade(context.Background(), ""); err != nil || !strings.Contains(f.out.String(), "not newer") {
+		t.Fatalf("an older latest release should be a no-op: %v\n%s", err, f.out)
+	}
+	if f.launchd.starts != 1 {
+		t.Fatalf("the server restarted %d times", f.launchd.starts-1)
+	}
+}
+
+func TestSkippedReleaseIsSkippedUntilANewerOneShipsOrIsNamed(t *testing.T) {
+	f := newUpgradeFixture(t, map[string]string{"2.11.1": "", "2.11.2": ""})
+	ctx := context.Background()
+	if err := f.u.upgrade(ctx, "2.11.1"); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, f.out)
+	}
+	if err := f.u.rollback(ctx); err != nil {
+		t.Fatalf("rollback: %v\n%s", err, f.out)
+	}
+	f.latest.Store("v2.11.1")
+	if err := f.u.upgrade(ctx, ""); err != nil || !strings.Contains(f.out.String(), "Skipping 2.11.1") {
+		t.Fatalf("want 2.11.1 skipped: %v\n%s", err, f.out)
+	}
+	if err := f.u.upgrade(ctx, "2.11.1"); err != nil {
+		t.Fatalf("--to should override the skip: %v\n%s", err, f.out)
+	}
+	if current, _ := f.links(t); current != "grasshopper-server-2.11.1" {
+		t.Fatalf("--to left current at %s", current)
+	}
+	if err := f.u.rollback(ctx); err != nil {
+		t.Fatalf("rollback: %v\n%s", err, f.out)
+	}
+	f.latest.Store("v2.11.2")
+	if err := f.u.upgrade(ctx, ""); err != nil {
+		t.Fatalf("a newer release should proceed: %v\n%s", err, f.out)
+	}
+	if current, _ := f.links(t); current != "grasshopper-server-2.11.2" {
+		t.Fatalf("current %s, want 2.11.2", current)
+	}
+	if _, err := os.Stat(filepath.Join(f.parent, "skip-version")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a newer release should clear the skip record: %v", err)
+	}
+}
+
+func TestFailedLatestReleaseRequestLeavesTheServerUntouched(t *testing.T) {
+	f := newUpgradeFixture(t, nil)
+	f.latest.Store("")
+	before := f.program(t)
+	if err := f.u.upgrade(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "latest release") {
+		t.Fatalf("want a latest-release failure, got %v", err)
+	}
+	if f.program(t) != before || f.launchd.starts != 1 {
+		t.Fatalf("the plist or service changed: %s, %d starts", f.program(t), f.launchd.starts)
+	}
+	if _, err := os.Lstat(filepath.Join(f.parent, "current")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("a failed latest-release request created links")
 	}
 }
 
