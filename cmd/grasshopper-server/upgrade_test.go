@@ -559,6 +559,48 @@ func TestCutoverPointsPreviousAtTheOldArchiveBeforeRestarting(t *testing.T) {
 	}
 }
 
+func TestUpgradeKeepsTheNewestFivePreUpgradeBackups(t *testing.T) {
+	f := newUpgradeFixture(t, map[string]string{"2.11.1": ""})
+	backups := filepath.Join(filepath.Dir(f.database), "backups")
+	if err := os.MkdirAll(backups, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Older versions sort after newer ones by name; age is the timestamp.
+	for i, version := range []string{"2.9.0", "2.8.0", "2.10.0", "2.10.1", "2.10.2", "2.11.0"} {
+		name := fmt.Sprintf("pre-%s-2025010%dT000000Z.db", version, i+1)
+		if err := os.WriteFile(filepath.Join(backups, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, other := range []string{"manual.db", "pre-notes.txt"} {
+		if err := os.WriteFile(filepath.Join(backups, other), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.u.upgrade(context.Background(), "2.11.1"); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, f.out)
+	}
+	entries, _ := os.ReadDir(backups)
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	kept := strings.Join(names, " ")
+	for _, gone := range []string{"pre-2.9.0-20250101", "pre-2.8.0-20250102"} {
+		if strings.Contains(kept, gone) {
+			t.Fatalf("%s should be pruned: %s", gone, kept)
+		}
+	}
+	for _, want := range []string{"pre-2.11.1-", "pre-2.10.0-20250103", "pre-2.11.0-20250106", "manual.db", "pre-notes.txt"} {
+		if !strings.Contains(kept, want) {
+			t.Fatalf("%s should be kept: %s", want, kept)
+		}
+	}
+	if len(names) != 7 {
+		t.Fatalf("want 5 backups and 2 other files, got %s", kept)
+	}
+}
+
 func TestUpgradeRefusesAnArchiveThatDoesNotMatchSHA256SUMS(t *testing.T) {
 	f := newUpgradeFixture(t, map[string]string{"2.11.1": ""})
 	oldBase := releaseBaseURL

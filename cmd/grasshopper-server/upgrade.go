@@ -734,11 +734,30 @@ func (u *upgrader) backup(root string, s launchdJob, version string) (string, er
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, "pre-"+version+"-"+time.Now().UTC().Format("20060102T150405Z")+".db")
+	const stamp = "20060102T150405Z"
+	path := filepath.Join(dir, "pre-"+version+"-"+time.Now().UTC().Format(stamp)+".db")
 	if output, err := u.run(filepath.Join(root, "bin", "grasshopper-backup"), "--source", s.database, "--dest", path); err != nil {
 		return "", fmt.Errorf("backup failed: %w", err)
 	} else {
 		fmt.Fprint(u.out, string(output))
+	}
+	// Keep the newest five pre-upgrade backups, by their timestamp; leave
+	// every other file alone.
+	type dated struct {
+		path string
+		at   time.Time
+	}
+	var found []dated
+	names, _ := filepath.Glob(filepath.Join(dir, "pre-*.db"))
+	for _, name := range names {
+		base := strings.TrimSuffix(filepath.Base(name), ".db")
+		if at, err := time.Parse(stamp, base[strings.LastIndex(base, "-")+1:]); err == nil {
+			found = append(found, dated{name, at})
+		}
+	}
+	slices.SortFunc(found, func(a, b dated) int { return b.at.Compare(a.at) })
+	for _, old := range found[min(len(found), 5):] {
+		_ = os.Remove(old.path)
 	}
 	return path, nil
 }
