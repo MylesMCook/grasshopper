@@ -1280,3 +1280,49 @@ test('Archived, New and Search list projects the index leaves out', async () => 
   await search.answer('/visualizer/api/search', 200, { records: [memory(32, 'Found outside the index', { scope: { project: OUTSIDE } })] });
   assert.ok(search.rows('Found outside the index'), 'a match in an unlisted project shows');
 });
+
+test('a kept edit draft opens as a conflict when the memory changed while signed out', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  await fire(ui, 15000);
+  await ui.answer('/visualizer/api/context', 401);
+  ui.app.querySelector('#token').value = TOKEN;
+  ui.app.querySelector('form.signin-box').dispatch('submit');
+  await ui.answer('/visualizer/api/session', 200, {});
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2, content: 'Squash or rebase.' });
+  assert.match(ui.text(), /changed this while you were editing\. Nothing was overwritten\./);
+  assert.match(ui.text(), /Squash or rebase\./);
+  assert.match(ui.text(), /Squash merge only\. Always\./);
+  ui.find('Keep yours').click();
+  await flush();
+  const save = ui.pending('/visualizer/api/update')[0];
+  assert.equal(save.body.expected_revision, 2, 'saving yours is an explicit choice against the newer revision');
+  assert.equal(save.body.content, 'Squash merge only. Always.');
+});
+
+test('leaving the page with an unsaved edit asks first', async () => {
+  const ui = await signedIn();
+  assert.equal(ui.beforeUnload().defaultPrevented, false, 'nothing to lose, no prompt');
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  assert.equal(ui.beforeUnload().defaultPrevented, true);
+});
+
+test('a failed poll does not rebuild the edit form', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  const field = ui.document.getElementById('edit-text');
+  field.value = 'Squash merge only. Always.';
+  await fire(ui, 5000);
+  ui.pending('/visualizer/api/context').forEach(request => { request.done = true; request.fail(); });
+  await flush();
+  assert.equal(ui.document.getElementById('edit-text'), field, 'a page poll failure keeps the textarea');
+  await fire(ui, 15000);
+  ui.pending('/visualizer/api/context').forEach(request => { request.done = true; request.fail(); });
+  await flush();
+  assert.equal(ui.document.getElementById('edit-text'), field, 'an index poll failure keeps the textarea');
+});

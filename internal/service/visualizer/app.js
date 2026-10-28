@@ -228,6 +228,8 @@ window.addEventListener('hashchange', () => {
   const route = routeFromHash();
   if (routeHash(route) !== routeHash(state.route) && !go(route, false)) setURL(false);
 });
+// Closing or reloading the tab asks before an unsaved edit is lost.
+window.addEventListener('beforeunload', event => { if (dirty()) event.preventDefault(); });
 
 // ---------- network ----------
 
@@ -317,7 +319,7 @@ async function refreshPage() {
     if (error.session || generation !== state.generation || inFlight.page !== controller) return;
     state.loading = false;
     state.offline = state.offline || new Date();
-    render();
+    redraw(true);
   } finally {
     if (inFlight.page === controller) {
       inFlight.page = null;
@@ -370,7 +372,7 @@ async function refreshIndex() {
     if (chooseDefaultProject()) refreshPage();
     redraw(Boolean(page || wasOffline));
   } catch (error) {
-    if (!error.session && generation === state.generation && inFlight.index === controller) { state.offline = state.offline || new Date(); render(); }
+    if (!error.session && generation === state.generation && inFlight.index === controller) { state.offline = state.offline || new Date(); redraw(true); }
   } finally {
     if (inFlight.index === controller) { inFlight.index = null; if (state.active && !document.hidden) timers.index = setTimeout(refreshIndex, POLL.index); }
   }
@@ -448,11 +450,15 @@ async function signIn(token) {
 }
 
 // Reopens a memory with text that was being edited when the session ended.
+// If an agent saved a newer revision meanwhile, both show as a conflict, so
+// saving the draft never overwrites it silently.
 async function restoreDraft(kept) {
   if (!kept.id) { startCreate(kept.project, { title: kept.title, content: kept.content }); return; }
   await openMemory(kept.id, false);
-  if (state.panel?.id === kept.id && state.panel.record) {
-    Object.assign(state.panel, { mode: 'edit', draft: { title: kept.title, content: kept.content } });
+  const panel = state.panel;
+  if (panel?.id === kept.id && panel.record) {
+    const draft = { title: kept.title, content: kept.content };
+    Object.assign(panel, panel.record.revision > kept.revision ? { mode: 'conflict', draft, theirs: panel.record } : { mode: 'edit', draft });
     render();
   }
 }
@@ -534,7 +540,7 @@ function draftOf(panel) {
   if (!panel?.record || (panel.mode !== 'edit' && panel.mode !== 'conflict')) return null;
   const title = document.getElementById('edit-title')?.value ?? panel.draft?.title ?? panel.record.title;
   const content = document.getElementById('edit-text')?.value ?? panel.draft?.content ?? panel.record.content;
-  return title !== panel.record.title || content !== panel.record.content ? { id: panel.record.id, title, content, project: panel.project } : null;
+  return title !== panel.record.title || content !== panel.record.content ? { id: panel.record.id, revision: panel.record.revision, title, content, project: panel.project } : null;
 }
 function dirty() {
   const panel = state.panel;
