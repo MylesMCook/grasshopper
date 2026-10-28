@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBundleIncludesChecksumsAndRejectsOverwrite(t *testing.T) {
@@ -45,6 +47,44 @@ func TestBundleIncludesChecksumsAndRejectsOverwrite(t *testing.T) {
 	}
 	if err := bundle(output, []input{{"bin/grasshopper-server", source}}); err == nil {
 		t.Fatal("archive was overwritten")
+	}
+}
+
+func TestBundleIsReproducibleAcrossFileTimes(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "binary")
+	if err := os.WriteFile(source, []byte("synthetic executable"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	build := func(name string, modified time.Time) []byte {
+		t.Helper()
+		if err := os.Chtimes(source, modified, modified); err != nil {
+			t.Fatal(err)
+		}
+		output := filepath.Join(dir, name)
+		if err := bundle(output, []input{{"bin/grasshopper-server", source}}); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	first := build("first.zip", time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC))
+	second := build("second.zip", time.Now())
+	if !bytes.Equal(first, second) {
+		t.Fatal("archives of the same files differ by file time")
+	}
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	build("dated.zip", time.Now())
+	archive, err := zip.OpenReader(filepath.Join(dir, "dated.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	if got := archive.File[0].Modified.UTC(); !got.Equal(time.Unix(1700000000, 0)) {
+		t.Fatalf("entry time %v does not follow SOURCE_DATE_EPOCH", got)
 	}
 }
 
