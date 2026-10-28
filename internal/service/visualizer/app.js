@@ -843,7 +843,7 @@ function grouped(records, place) {
     const visible = state.expanded.has(group.label) ? group.records : group.records.slice(0, limit);
     const rest = group.records.length - visible.length;
     return section(`${place} · ${group.label}`, [visible.map(record => row(record)),
-      rest > 0 ? h('button', { type: 'button', class: 'quiet more', onclick: () => { state.expanded.add(group.label); render(); } }, `Show ${rest} more`) : null]);
+      rest > 0 ? h('button', { type: 'button', class: 'quiet more', 'data-key': `more:${place}:${group.label}`, onclick: () => reveal(() => state.expanded.add(group.label)) }, `Show ${rest} more`) : null]);
   });
 }
 
@@ -895,7 +895,7 @@ function projectPage() {
       own.length || !global.length ? grouped(own, projectName(project)) || section(projectName(project), own.length ? own.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing kept for this project yet.' })) : null,
       global.length ? section('All projects', global.length <= 8 || !own.length ? global.map(record => row(record)) : state.showGlobal
         ? [global.map(record => row(record)), h('button', { type: 'button', class: 'quiet more muted', onclick: () => { state.showGlobal = false; render(); } }, 'Hide')]
-        : h('button', { type: 'button', class: 'quiet more', onclick: () => { state.showGlobal = true; render(); } }, `Show ${global.length} that also apply here`)) : null];
+        : h('button', { type: 'button', class: 'quiet more', 'data-key': 'show-global', onclick: () => reveal(() => { state.showGlobal = true; }) }, `Show ${global.length} that also apply here`)) : null];
   });
 }
 
@@ -965,7 +965,7 @@ function archivedPage() {
         return items.length ? section(projectName(project), items.map(record => h('div', { class: 'row-inline' }, row(record, { meta: label(record) }),
           h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `restore:${record.id}`, 'aria-label': `Restore ${record.title}`, onclick: () => restore(record) }, 'Restore')))) : null;
       }),
-      replaced.length && !showReplaced ? section('Earlier handoffs', h('button', { type: 'button', class: 'quiet more', 'data-key': 'show-replaced', onclick: () => { state.expanded.add('replaced'); render(); } }, `Show ${replaced.length} replaced by newer ones`)) : null];
+      replaced.length && !showReplaced ? section('Earlier handoffs', h('button', { type: 'button', class: 'quiet more', 'data-key': 'show-replaced', onclick: () => reveal(() => state.expanded.add('replaced')) }, `Show ${replaced.length} replaced by newer ones`)) : null];
   });
 }
 
@@ -1207,9 +1207,10 @@ function mainView() {
 // Controls are matched across redraws by data-key first, so a control whose
 // label changes (Save to Saving…) or two that share a label (Disconnect and
 // its confirmation) never trade focus.
+const FOCUSABLE = 'button, input, textarea, select, a, summary, [tabindex]';
 function keyOf(node) { return node.getAttribute?.('data-key') || node.getAttribute?.('aria-label') || node.id || node.textContent; }
 function focusByKey(key) {
-  const candidates = [...(root.querySelectorAll?.('button, input, textarea, select, a, summary, [tabindex]') || [])];
+  const candidates = [...(root.querySelectorAll?.(FOCUSABLE) || [])];
   // An exact data-key wins; after that a native control wins over a focusable
   // region (such as main, labelled with a memory title) that reads the same.
   const native = node => /^(BUTTON|INPUT|TEXTAREA|SELECT|A|SUMMARY)$/.test(node.tagName);
@@ -1220,8 +1221,23 @@ function focusByKey(key) {
   // A match inside hidden content cannot take focus; report that so the caller falls back.
   return Boolean(match) && document.activeElement === match;
 }
-// A redraw must not strand keyboard focus on a removed control.
-function restoreFocus(key) { if (!focusByKey(key)) document.getElementById('main')?.focus?.(); }
+// A redraw must not strand keyboard focus on a removed control: it moves to
+// the nearest control after it in the same list, else before it, else main.
+function restoreFocus(key, nearby = []) { if (![key, ...nearby].some(focusByKey)) document.getElementById('main')?.focus?.(); }
+function nearbyKeys(node) {
+  const list = node?.closest?.('.list');
+  if (!list) return [];
+  const all = [...list.querySelectorAll(FOCUSABLE)];
+  const at = all.indexOf(node);
+  return [...all.slice(at + 1), ...all.slice(0, Math.max(at, 0)).reverse()].map(keyOf);
+}
+// Expands a folded list and moves focus to the first row it reveals.
+function reveal(expand) {
+  const shown = new Set([...root.querySelectorAll('.row')].map(keyOf));
+  expand();
+  render();
+  [...root.querySelectorAll('.row')].find(node => !shown.has(keyOf(node)))?.focus?.();
+}
 
 let lastPlace = '';
 function render() {
@@ -1232,6 +1248,7 @@ function render() {
   }
   const focused = document.activeElement;
   const focusKey = focused && focused !== document.body ? keyOf(focused) : '';
+  const nearby = focusKey ? nearbyKeys(focused) : [];
   document.title = state.active ? `${state.panel?.record?.title || currentPlace()} · Grasshopper` : 'Grasshopper';
   if (!state.active) { root.replaceChildren(signInView()); if (focusKey) restoreFocus(focusKey); return; }
   // Scrolling areas keep their position across a redraw; the list starts at the
@@ -1258,7 +1275,7 @@ function render() {
     onmouseleave: event => { if (!event.currentTarget.contains?.(document.activeElement)) armUndo(); } },
   h('span', { text: `${state.undo.verb} “${state.undo.record.title}”` }), h('button', { type: 'button', class: 'quiet', 'data-key': 'undo', onclick: undo }, 'Undo')) : null].filter(Boolean));
   for (const [selector, top] of scrolled) { const node = root.querySelector?.(selector); if (node && top) node.scrollTop = top; }
-  if (focusKey) restoreFocus(focusKey);
+  if (focusKey) restoreFocus(focusKey, nearby);
   // An approval link moves focus to its request once, not on every redraw.
   if (state.route.connect && !state.approvalFocused) {
     const request = document.getElementById('focused-request');

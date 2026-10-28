@@ -1362,3 +1362,51 @@ test('closing a memory replaces its history entry, and Back from an edit asks fi
   assert.equal(ui.document.getElementById('edit-text').value, 'Squash merge only. Always.', 'declining keeps the edit');
   assert.match(ui.location.hash, /memory=1/, 'the address goes back to the memory');
 });
+
+test('after Keep removes a row, focus moves to the next row in the list', async () => {
+  const records = [memory(1, 'First idea', { confirmed: false, purpose: 'observation' }), memory(2, 'Second idea', { confirmed: false, purpose: 'observation' })];
+  const ui = setup({ session: true, hash: '#page=new' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], review_count: 2, server: { version: '2.11.1' }, total: 2 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], total: 2 });
+  ui.find('Keep First idea').focus();
+  ui.find('Keep First idea').click();
+  await ui.answer('/visualizer/api/update', 200, { id: 1, revision: 2 });
+  await replyAll(ui, '/visualizer/api/context', { records: [records[1]], projects: [PROJECT], review_count: 1, total: 1 });
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'open:2');
+});
+
+test('Show more buttons move focus to the first row they reveal', async () => {
+  const old = new Date(Date.now() - 400 * 86400000).toISOString();
+  const globals = Array.from({ length: 9 }, (_, i) => memory(i + 1, `Everywhere ${i + 1}`, { scope: {}, updated_at: old }));
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: globals, projects: [], review_count: 0, server: { version: '2.11.1' }, total: 9 });
+  await ui.answer('/visualizer/api/context', 200, { records: globals, projects: [], total: 9 });
+  const more = ui.find('Show 6 more');
+  assert.ok(more.getAttribute('data-key'), 'Show more has a stable key');
+  more.focus(); more.click();
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'open:6');
+
+  const project = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+  await flush();
+  const mixed = [projectRecords[0], ...globals.map(record => ({ ...record, id: record.id + 100 }))];
+  await project.answer('/visualizer/api/context', 200, { records: mixed, projects: [PROJECT], review_count: 0, server: { version: '2.11.1' }, total: 10 });
+  await project.answer('/visualizer/api/context', 200, { records: mixed, projects: [PROJECT], total: 10 });
+  project.find('Show 9 that also apply here').focus();
+  project.find('Show 9 that also apply here').click();
+  assert.equal(project.document.activeElement?.getAttribute('data-key'), 'open:101');
+});
+
+test('Show replaced moves focus to the first replaced handoff', async () => {
+  const ui = await signedIn();
+  ui.hashChange('#page=archived');
+  await flush();
+  const replaced = id => memory(id, `Old handoff ${id}`, { purpose: 'handoff', confirmed: false, archived: true, provenance: { harness: 'codex', device: 'mac', source: 'Replaced by handoff 99' } });
+  const page = ui.pending('/visualizer/api/context').find(request => request.body?.view === 'archived');
+  page.done = true; page.reply(200, { records: [memory(10, 'Archived by hand', { archived: true }), replaced(11), replaced(12)], projects: [PROJECT], total: 3 });
+  await flush();
+  ui.find('Show 2 replaced by newer ones').focus();
+  ui.find('Show 2 replaced by newer ones').click();
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'open:11');
+});
