@@ -7,11 +7,13 @@ Earlier release records are in Git history and
 
 ## Active
 
-2.11.0 makes updates self-running: release on merge, clients that follow the
-server's version, and `grasshopper-server upgrade` (nightly with `--schedule`).
-Its first real launchd run on the Mac passed (2.10.5 to 2.11.0; see
-[verification](docs/verification.md)). Pending: the one-time plugin update on
-each machine, and owner approval for the nightly `--schedule` job.
+Updates are self-running: release on merge, a nightly `grasshopper-server
+upgrade` on the macOS server that only moves forward, and clients that follow
+the server's version. 2.11.3 is live on the Mac; its Claude Code and Codex
+agents run the matching client (see [verification](docs/verification.md)).
+Pending, owner steps: the one-time plugin update on the Windows PC and Cursor
+on the Mac. Not done: release signing (needs a new dependency) and a
+per-address pairing cap (ineffective behind the private proxy).
 
 Context-aware recall is released and deployed. The server balances scopes and
 old/new records when startup exceeds budget; updated hooks guide sanitized

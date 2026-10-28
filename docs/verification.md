@@ -6,6 +6,38 @@ has never been verified. Per-release detail lives in each
 history (the full log up to 2.8.5 is in
 [the 2.8.5 tree](https://github.com/MylesMCook/grasshopper/blob/v2.8.5/docs/memory-acceptance.md)).
 
+## 2.11.1 to 2.11.3 and nightly upgrades (October 28)
+
+[PR 90](https://github.com/MylesMCook/grasshopper/pull/90) (2.11.1),
+[PR 91](https://github.com/MylesMCook/grasshopper/pull/91) (2.11.2) and
+[PR 92](https://github.com/MylesMCook/grasshopper/pull/92) (2.11.3) each passed
+final-head CI on macOS, Linux and Windows and a requested Bugbot review. PR 91
+needed one rerun of an unrelated Windows hook test that timed out. Bugbot
+found one issue in PR 92 (`check` labeling plugins too old to hand off as
+running the newer client); it was fixed with a test and re-reviewed clean.
+Each release workflow published eight assets and deployed the site.
+
+Memory view checks ran in headless Chromium against branch servers on
+synthetic databases: at 1440 px the page itself no longer scrolls and the list
+keeps its offset when a memory opens; archiving a project's only memory keeps
+it on Archived; Back after opening a memory keeps the list without a reload;
+Keep all asks first and refreshes once. The Node suites grew to 92 memory-view
+and 32 site tests.
+
+On the macOS server, `grasshopper-server upgrade` moved 2.11.0 to 2.11.1 and
+2.11.1 to 2.11.3, each with a verified snapshot (402 and 404 records,
+quick_check ok), anonymous health 401 and authenticated health 200. A second
+run reported the version already current. The owner approved nightly
+upgrades; `upgrade --schedule` installed the 03:30 job, after the 03:15
+off-machine backup, and a manual launchd kickstart of it logged that the
+server was already current, without a restart. Claude Code's plugin moved to
+2.11.1 and `grasshopper update` installed the matching client; `check` reports
+Claude Code and Codex running the self-updated client that matches the server.
+
+Not verified: a real 03:30 upgrade, `--rollback` and the skip rule on the live
+server (unit tests only), Cursor on macOS (still 2.9.2), the Windows PC's
+plugin updates, screen readers and Safari.
+
 ## 2.11.0 macOS server upgrade (October 28)
 
 The Mac's service predated the archive layout `upgrade` expects, so it was
