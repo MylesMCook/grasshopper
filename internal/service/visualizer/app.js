@@ -43,6 +43,17 @@ function h(tag, props, ...children) {
   return node;
 }
 
+// Routes and memories are links so Cmd/Ctrl-click and middle-click open a new
+// tab; a plain left click stays in place and keeps the unsaved-changes check.
+function inPlace(action) {
+  return event => {
+    if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    action(event);
+  };
+}
+function routeLink(route) { return routeHash({ page: 'project', ...route }) || location.pathname; }
+
 function say(message) { if (announcer) announcer.textContent = message; }
 
 // Projects are named by the last part of their repository or ID; two that end
@@ -746,7 +757,7 @@ function currentPlace() {
 }
 
 function navButton(label, route, { current = false, count = '', extra = '' } = {}) {
-  return h('button', { type: 'button', class: `nav ${extra}`.trim(), 'data-key': `nav:${routeHash(route)}`, 'aria-current': current ? 'page' : null, onclick: () => go(route) },
+  return h('a', { href: routeLink(route), class: `nav ${extra}`.trim(), 'data-key': `nav:${routeHash(route)}`, 'aria-current': current ? 'page' : null, onclick: inPlace(() => go(route)) },
     h('span', { text: label }), count ? h('span', { class: 'count', text: count }) : null);
 }
 
@@ -772,7 +783,7 @@ function sidebar() {
       shown.map(project => navButton(projectName(project), { page: 'project', project }, { current: route.page === 'project' && route.project === project })),
       rest.length ? h('button', { type: 'button', class: 'nav', 'data-key': 'nav:more', onclick: () => { state.moreProjects = !state.moreProjects; render(); } }, h('span', { text: state.moreProjects ? 'Fewer' : `${rest.length} more` })) : null),
     h('div', { class: 'nav-group side-foot' },
-      h('button', { type: 'button', class: 'nav', 'data-key': 'nav:#page=agents', 'aria-current': route.page === 'agents' ? 'page' : null, onclick: () => go({ page: 'agents' }) },
+      h('a', { href: routeLink({ page: 'agents' }), class: 'nav', 'data-key': 'nav:#page=agents', 'aria-current': route.page === 'agents' ? 'page' : null, onclick: inPlace(() => go({ page: 'agents' })) },
         h('span', {}, devices.length ? h('span', { class: 'dots', 'aria-hidden': 'true' }, devices.slice(0, 6).map(device => h('i', { class: recentlySeen(device) ? 'dot on' : 'dot' }))) : null, 'Agents',
           devices.length ? h('span', { class: 'visually-hidden', text: `, ${active} of ${devices.length} active` }) : null),
         waiting ? h('span', { class: 'count warn', text: `${waiting} waiting` }) : null),
@@ -782,8 +793,8 @@ function sidebar() {
 
 function row(record, { meta } = {}) {
   const right = [record.purpose === 'handoff' && 'handoff', meta ?? [by(record), relDate(record.updated_at), onlyLabel(record.scope)].filter(Boolean).join(' · ')].filter(Boolean).join(' · ');
-  return h('button', { type: 'button', class: 'row', 'data-key': `open:${record.id}`, 'aria-current': state.panel?.id === record.id ? 'true' : null,
-    title: fullDate(record.updated_at), onclick: () => openMemory(record.id) },
+  return h('a', { href: routeLink({ ...state.route, memory: record.id }), class: 'row', 'data-key': `open:${record.id}`, 'aria-current': state.panel?.id === record.id ? 'true' : null,
+    title: fullDate(record.updated_at), onclick: inPlace(() => openMemory(record.id)) },
   h('span', { class: 't', text: record.title || `Memory #${record.id}` }), h('span', { class: 'm', text: right }));
 }
 
@@ -819,7 +830,7 @@ function head(title, sub, { search = true } = {}) {
       event.preventDefault();
       const query = event.target.querySelector('input').value.trim();
       if (query) go({ page: 'search', query, project: state.route.page === 'project' ? state.route.project : '' });
-    } }, h('input', { type: 'search', 'aria-label': 'Search memories', placeholder: 'Search', value: state.searchDraft ?? (state.route.page === 'search' ? state.route.query : ''),
+    } }, h('input', { type: 'search', 'aria-label': 'Search memories', placeholder: 'Search…', value: state.searchDraft ?? (state.route.page === 'search' ? state.route.query : ''),
       oninput: event => { state.searchDraft = event.target.value; } })) : null);
 }
 
@@ -906,7 +917,7 @@ function searchPage() {
   const omitted = state.page?.omitted_records || [];
   const titles = state.page?.omitted_titles || {};
   const extra = omitted.length ? section('More', [h('p', { class: 'meta', text: `${omitted.length} more ${omitted.length === 1 ? 'match' : 'matches'} did not fit in one response.` }),
-    omitted.map(reference => h('button', { type: 'button', class: 'row', 'data-key': `open:${reference.id}`, onclick: () => openMemory(reference.id) },
+    omitted.map(reference => h('a', { href: routeLink({ ...state.route, memory: reference.id }), class: 'row', 'data-key': `open:${reference.id}`, onclick: inPlace(() => openMemory(reference.id)) },
       h('span', { class: 't', text: titles[reference.id] || `Memory #${reference.id}` }), h('span', { class: 'm', text: projectName(reference.scope?.project) })))]) : null;
   const found = records.length + omitted.length;
   return [head('Search', state.page ? `${found} found${state.page.semantic_ready === false ? ' · exact words only' : ''}` : ''), banner(), body, extra];
@@ -1188,6 +1199,7 @@ function focusByKey(key) {
 // A redraw must not strand keyboard focus on a removed control.
 function restoreFocus(key) { if (!focusByKey(key)) document.getElementById('main')?.focus?.(); }
 
+let lastPlace = '';
 function render() {
   if (state.checking) return;
   // Keep typing in the edit form across redraws, but only into the panel that owns the form.
@@ -1198,8 +1210,12 @@ function render() {
   const focusKey = focused && focused !== document.body ? keyOf(focused) : '';
   document.title = state.active ? `${state.panel?.record?.title || currentPlace()} · Grasshopper` : 'Grasshopper';
   if (!state.active) { root.replaceChildren(signInView()); if (focusKey) restoreFocus(focusKey); return; }
-  // Scrolling areas keep their position across a redraw.
-  const scrolled = ['side', 'panel'].map(name => [name, root.querySelector?.(`.${name}`)?.scrollTop || 0]);
+  // Scrolling areas keep their position across a redraw; the list starts at the
+  // top when the page changes, but not when a memory opens or closes beside it.
+  const place = routeHash({ ...state.route, memory: null });
+  const areas = ['.side', 'aside.panel', ...(place === lastPlace ? ['main'] : [])];
+  lastPlace = place;
+  const scrolled = areas.map(selector => [selector, root.querySelector?.(selector)?.scrollTop || 0]);
   const narrow = Boolean(narrowLayout?.matches) && Boolean(state.panel);
   const panel = narrow ? null : panelView();
   const review = state.index?.review || 0;
@@ -1217,7 +1233,7 @@ function render() {
     onfocusout: event => { if (!event.currentTarget.matches?.(':hover')) armUndo(); },
     onmouseleave: event => { if (!event.currentTarget.contains?.(document.activeElement)) armUndo(); } },
   h('span', { text: `${state.undo.verb} “${state.undo.record.title}”` }), h('button', { type: 'button', class: 'quiet', 'data-key': 'undo', onclick: undo }, 'Undo')) : null].filter(Boolean));
-  for (const [name, top] of scrolled) { const node = root.querySelector?.(`.${name}`); if (node && top) node.scrollTop = top; }
+  for (const [selector, top] of scrolled) { const node = root.querySelector?.(selector); if (node && top) node.scrollTop = top; }
   if (focusKey) restoreFocus(focusKey);
   // An approval link moves focus to its request once, not on every redraw.
   if (state.route.connect && !state.approvalFocused) {

@@ -1,15 +1,11 @@
-Grasshopper 2.11.0
+Grasshopper 2.11.1
 
-Updates now take care of themselves across machines.
+Memory view polish.
 
-- Releases publish when a VERSION change merges; no tag push needed.
-- Clients follow the server: the bridge downloads the client matching the
-  server's version, checks it against SHA256SUMS and switches to it. Opt out
-  with an updates-off file beside client.json.
-- grasshopper-server upgrade on macOS backs up the database, switches a
-  current link to the new archive, restarts the launchd job and restores the
-  old version if health fails. upgrade --rollback goes back; upgrade
-  --schedule runs it nightly.
-
-Plugins need one manual update to 2.11.0; after that, clients update with the
-server.
+- On wide screens the list, sidebar and opened memory each scroll on their
+  own, so the page no longer shows a second scroll bar, and the list keeps its
+  place when a memory opens.
+- Memories and sidebar places are links: Cmd/Ctrl-click or middle-click opens
+  them in a new tab.
+- Scrolling past the end of a column no longer scrolls the page behind it.
+- The browser's toolbar matches the light or dark background.

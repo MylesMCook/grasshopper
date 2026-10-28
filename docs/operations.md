@@ -37,6 +37,12 @@ once. It installs a second launchd job beside the service plist that runs
 `~/Library/Logs/Grasshopper/upgrade.log`. A failed night leaves the previous
 server running. `--unschedule` removes it.
 
+A service set up by hand, whose plist runs a renamed binary or a folder that is
+not a release archive, is refused. Extract the release archive of the running
+version, point the plist's program, runtime and model paths into it, restart,
+then upgrade. Servers before 2.11.0 cannot run `upgrade`; run it from the newer
+archive's `bin/grasshopper-server`.
+
 Clients follow the server's version on their own, so a rollback also rolls them
 back. Keep an off-machine backup as well.
 
