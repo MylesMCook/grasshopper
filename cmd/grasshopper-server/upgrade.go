@@ -92,6 +92,11 @@ func upgradeCommand(args []string) error {
 		http:       &http.Client{Timeout: 10 * time.Minute},
 		healthWait: 2 * time.Minute,
 	}
+	unlock, err := u.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	if *schedule || *unschedule {
@@ -505,12 +510,15 @@ func (u *upgrader) restartOn(ctx context.Context, s launchdJob, name, version st
 
 // link atomically makes path a symlink to target, replacing what was there.
 func link(path, target string) error {
-	temp := path + ".tmp"
-	_ = os.Remove(temp)
+	temp := fmt.Sprintf("%s.tmp-%d-%d", path, os.Getpid(), time.Now().UnixNano())
 	if err := os.Symlink(target, temp); err != nil {
 		return err
 	}
-	return os.Rename(temp, path)
+	if err := os.Rename(temp, path); err != nil {
+		_ = os.Remove(temp)
+		return err
+	}
+	return nil
 }
 
 // waitHealthy waits for an owner-authenticated /connection on listen to

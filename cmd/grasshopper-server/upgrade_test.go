@@ -497,6 +497,41 @@ func TestFailedLatestReleaseRequestLeavesTheServerUntouched(t *testing.T) {
 	}
 }
 
+func TestUpgradeCommandsHoldAnExclusiveLock(t *testing.T) {
+	f := newUpgradeFixture(t, nil)
+	unlock, err := f.u.lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.u.lock(); err == nil || !strings.Contains(err.Error(), "already running") {
+		t.Fatalf("a second upgrade should be refused, got %v", err)
+	}
+	unlock()
+	again, err := f.u.lock()
+	if err != nil {
+		t.Fatalf("the lock should be free after unlock: %v", err)
+	}
+	again()
+}
+
+func TestLinkDoesNotUseAFixedTempName(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "current")
+	// A concurrent link, or a leftover, at the old fixed temp name must not
+	// be reused.
+	if err := os.MkdirAll(filepath.Join(path+".tmp", "busy"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"a", "b"} {
+		if err := link(path, target); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := os.Readlink(path); got != target {
+			t.Fatalf("current -> %s, want %s", got, target)
+		}
+	}
+}
+
 func TestUpgradeRefusesAnArchiveThatDoesNotMatchSHA256SUMS(t *testing.T) {
 	f := newUpgradeFixture(t, map[string]string{"2.11.1": ""})
 	oldBase := releaseBaseURL
