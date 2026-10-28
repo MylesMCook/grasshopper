@@ -33,8 +33,10 @@ import (
 //	client/updates-off        present: never download (bundled clients still run)
 //	client/last-error         why the last download failed, for check
 //
-// Clients follow the server's version, never the newest release, so a client
-// is never ahead of a server that has not been upgraded.
+// The managed client follows the server's version, never the newest release.
+// A bundled plugin client can still be ahead: plugins update when the
+// marketplace publishes, before the server's nightly upgrade. check warns
+// when an agent runs a client newer than the server.
 
 // ReleaseBaseURL is where release assets are downloaded from. Tests replace it.
 var ReleaseBaseURL = "https://github.com/MylesMCook/grasshopper/releases/download"
