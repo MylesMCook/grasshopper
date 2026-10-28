@@ -23,7 +23,7 @@ class Node {
   addEventListener(name, action) { (this.listeners[name] ||= []).push(action); }
   dispatch(name, extra = {}) { const event = { target: this, currentTarget: this, preventDefault() {}, ...extra }; for (const action of this.listeners[name] || []) action(event); return event; }
   click() {
-    if (this.tagName === 'A') { this.ownerDocument.downloads.push(this.attributes.download); return; }
+    if (this.tagName === 'A' && 'download' in this.attributes) { this.ownerDocument.downloads.push(this.attributes.download); return; }
     if (this.disabled) return;
     this.dispatch('click');
     // As in a browser, a submit button submits its form.
@@ -100,8 +100,8 @@ function setup({ hash = '', session = false, hidden = false, narrow = false } = 
   vm.runInContext(source, sandbox);
   return {
     app, announce, document, requests, timers, history, location, sandbox,
-    find: text => [...app.walk()].find(node => node.tagName === 'BUTTON' && (node.textContent.trim() === text || node.getAttribute('aria-label') === text)),
-    rows: text => app.querySelectorAll('button.row').find(node => node.textContent.includes(text)),
+    find: text => [...app.walk()].find(node => (node.tagName === 'BUTTON' || node.tagName === 'A') && (node.textContent.trim() === text || node.getAttribute('aria-label') === text)),
+    rows: text => app.querySelectorAll('.row').find(node => node.textContent.includes(text)),
     text: () => app.textContent,
     pending: url => requests.filter(request => request.url === url && !request.done),
     async answer(url, status, data, headers) {
@@ -140,7 +140,7 @@ async function signedIn(options = {}) {
   await ui.answer('/visualizer/api/devices', 200, [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: today }]);
   return ui;
 }
-function agentsLink(ui) { return ui.app.querySelectorAll('button.nav').find(node => node.getAttribute('data-key') === 'nav:#page=agents'); }
+function agentsLink(ui) { return ui.app.querySelectorAll('.nav').find(node => node.getAttribute('data-key') === 'nav:#page=agents'); }
 async function openSquash(ui) {
   ui.rows('Squash merge only').click();
   await ui.answer('/visualizer/api/record', 200, projectRecords[0]);
@@ -717,7 +717,7 @@ test('a focused Save keeps focus while saving and cannot be pressed twice', asyn
 
 test('the Agents link says how many agents are active', async () => {
   const ui = await signedIn();
-  const agents = ui.app.querySelectorAll('button.nav').find(node => node.textContent.startsWith('Agents'));
+  const agents = ui.app.querySelectorAll('.nav').find(node => node.textContent.startsWith('Agents'));
   assert.match(agents.textContent, /Agents, 1 of 1 active/);
   assert.equal(agents.getAttribute('data-key'), 'nav:#page=agents');
 });
@@ -982,6 +982,32 @@ test('History appears only when an earlier version differs', async () => {
   assert.ok(!ui.app.querySelector('aside').querySelectorAll('h2').some(node => node.textContent === 'History'), 'a kept suggestion has nothing to restore');
 });
 
+test('memories and places are links, so they also open in a new tab', async () => {
+  const ui = await signedIn();
+  const link = ui.rows('Squash merge only');
+  assert.equal(link.tagName, 'A');
+  assert.equal(link.getAttribute('href'), `#${new URLSearchParams({ page: 'project', project: PROJECT, memory: '1' })}`);
+  assert.equal(agentsLink(ui).tagName, 'A');
+  assert.equal(agentsLink(ui).getAttribute('href'), '#page=agents');
+  link.dispatch('click', { metaKey: true });
+  link.dispatch('click', { button: 1 });
+  assert.equal(ui.pending('/visualizer/api/record').length, 0, 'a modified or middle click is left to the browser');
+  let prevented = false;
+  link.dispatch('click', { button: 0, preventDefault() { prevented = true; } });
+  assert.ok(prevented, 'a plain click opens in place');
+  await ui.answer('/visualizer/api/record', 200, projectRecords[0]);
+  assert.ok(ui.app.querySelector('aside.panel'));
+});
+
+test('the list keeps its scroll across redraws and starts at the top on another page', async () => {
+  const ui = await signedIn();
+  ui.app.querySelector('main').scrollTop = 300;
+  await openSquash(ui);
+  assert.equal(ui.app.querySelector('main').scrollTop, 300, 'opening a memory keeps the list where it was');
+  agentsLink(ui).click();
+  assert.equal(ui.app.querySelector('main').scrollTop || 0, 0);
+});
+
 test('Escape closes an open memory and focus returns to its row', async () => {
   const ui = await signedIn();
   await openSquash(ui);
@@ -1003,7 +1029,7 @@ function projectSet() {
   const records = projects.map((project, i) => memory(i + 1, `Rule ${i + 1}`, { scope: { project }, updated_at: new Date(Date.now() - i * 3600000).toISOString() }));
   return { projects, records };
 }
-const navNames = ui => ui.app.querySelector('nav.side').querySelectorAll('button.nav').map(node => node.textContent.trim());
+const navNames = ui => ui.app.querySelector('nav.side').querySelectorAll('.nav').map(node => node.textContent.trim());
 
 test('the sidebar shows the five most recent projects, then the rest by name', async () => {
   const { projects, records } = projectSet();

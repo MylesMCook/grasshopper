@@ -6,6 +6,20 @@ has never been verified. Per-release detail lives in each
 history (the full log up to 2.8.5 is in
 [the 2.8.5 tree](https://github.com/MylesMCook/grasshopper/blob/v2.8.5/docs/memory-acceptance.md)).
 
+## 2.11.0 macOS server upgrade (October 28)
+
+The Mac's service predated the archive layout `upgrade` expects, so it was
+first moved, at the same version, onto the checked 2.10.5 release archive with
+identical model digests, and restarted healthy. The 2.11.0 archive's
+`grasshopper-server upgrade` then backed up and verified the database (401
+records, 818 revisions, quick_check ok), switched the `current` link, restarted
+the launchd job and reported 2.11.0 healthy, with 2.10.5 kept as `previous`.
+Anonymous health returned 401, authenticated health 200, and an authenticated
+MCP read from Claude Code on the Mac succeeded. The owner signed in to the
+memory view over the private route from Windows and browsed projects and a
+full record. The 2.10.5 binary cannot run `upgrade` itself. The nightly
+`--schedule` job is not installed.
+
 ## 2.10.5 verification and rollout (October 27)
 
 [PR 83](https://github.com/MylesMCook/grasshopper/pull/83) passed final-head
