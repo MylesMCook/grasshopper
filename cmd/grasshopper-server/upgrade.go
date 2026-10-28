@@ -89,7 +89,7 @@ func upgradeCommand(args []string) error {
 	}
 	u := &upgrader{
 		plist: *plist, out: os.Stdout, run: runCommand,
-		http:       &http.Client{Timeout: 10 * time.Minute},
+		http:       downloadClient(),
 		healthWait: 2 * time.Minute,
 	}
 	unlock, err := u.lock()
@@ -630,6 +630,17 @@ func (u *upgrader) fetchArchive(ctx context.Context, parent, version string) (st
 	}
 	u.step("Downloaded and checked %s.", name)
 	return root, nil
+}
+
+func downloadClient() *http.Client {
+	// Same rule as internal/client's Install, copied so the server does not
+	// link the client package.
+	return &http.Client{Timeout: 10 * time.Minute, CheckRedirect: func(request *http.Request, via []*http.Request) error {
+		if len(via) > 5 || (via[0].URL.Scheme == "https" && request.URL.Scheme != "https") {
+			return errors.New("refusing redirect")
+		}
+		return nil
+	}}
 }
 
 func (u *upgrader) download(ctx context.Context, url string, limit int64) ([]byte, error) {

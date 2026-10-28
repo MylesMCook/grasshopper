@@ -625,6 +625,23 @@ func TestUpgradeRefusesAnArchiveThatDoesNotMatchSHA256SUMS(t *testing.T) {
 	}
 }
 
+func TestDownloadsRefuseARedirectFromHTTPSToHTTP(t *testing.T) {
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("downgraded"))
+	}))
+	defer plain.Close()
+	secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL+r.URL.Path, http.StatusFound)
+	}))
+	defer secure.Close()
+	client := downloadClient()
+	client.Transport = secure.Client().Transport
+	u := &upgrader{http: client}
+	if data, err := u.download(context.Background(), secure.URL+"/SHA256SUMS", 1024); err == nil {
+		t.Fatalf("followed an https-to-http redirect: %q", data)
+	}
+}
+
 func TestExtractRefusesPathsOutsideTheArchive(t *testing.T) {
 	archive := writeArchive(t, map[string]string{"../escape": "x"})
 	if err := extract(archive, t.TempDir()); err == nil {
