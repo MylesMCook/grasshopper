@@ -1456,6 +1456,18 @@ test('Keep and replace offers Undo, and a changed older memory says it was kept'
   }
 });
 
+test('with nothing loaded, the offline banner does not claim a time and a failed search stops searching', async () => {
+  const ui = setup({ session: true, hash: '#page=search&query=idea' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: [], projects: [PROJECT], review_count: 0, server: { version: '2.11.1' }, total: 0 });
+  const search = ui.pending('/visualizer/api/search')[0];
+  search.done = true; search.fail();
+  await flush();
+  assert.match(ui.text(), /Can't reach your server\./);
+  assert.doesNotMatch(ui.text(), /Showing what loaded|Searching…/);
+  assert.ok(ui.find('Retry'));
+});
+
 test('an Undo that conflicts stops offering Undo and says why', async () => {
   const ui = await signedIn();
   await openSquash(ui);
@@ -1474,4 +1486,18 @@ test('Undo is announced once, not by a live region redrawn each render', async (
   await ui.answer('/visualizer/api/archive', 200, { id: 1, revision: 2 });
   assert.equal(ui.app.querySelector('div.undo').getAttribute('role'), null);
   assert.equal(ui.announce.textContent, 'Archived “Squash merge only”. Undo available.');
+});
+
+test('searching again from a project search keeps that project', async () => {
+  const ui = setup({ session: true, hash: `#page=search&project=${encodeURIComponent(PROJECT)}&query=squash` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT], review_count: 0, server: { version: '2.11.1' }, total: 4 });
+  await ui.answer('/visualizer/api/search', 200, { records: [projectRecords[0]] });
+  assert.match(ui.app.querySelector('.head').textContent, /1 found in grasshopper/);
+  const form = ui.app.querySelector('form.search');
+  form.querySelector('input').value = 'gh';
+  form.dispatch('submit');
+  await flush();
+  const again = ui.pending('/visualizer/api/search')[0];
+  assert.deepEqual(again.body.scope, { project: PROJECT });
 });

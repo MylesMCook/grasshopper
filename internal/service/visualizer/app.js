@@ -861,7 +861,8 @@ function head(title, sub, { search = true } = {}) {
     search ? h('form', { class: 'search', role: 'search', onsubmit: event => {
       event.preventDefault();
       const query = event.target.querySelector('input').value.trim();
-      if (query) go({ page: 'search', query, project: state.route.page === 'project' ? state.route.project : '' });
+      // A search from a project, or from a search in one, stays in that project.
+      if (query) go({ page: 'search', query, project: ['project', 'search'].includes(state.route.page) ? state.route.project : '' });
     } }, h('input', { type: 'search', 'aria-label': 'Search memories', placeholder: 'Search…', value: state.searchDraft ?? (state.route.page === 'search' ? state.route.query : ''),
       oninput: event => { state.searchDraft = event.target.value; } })) : null);
 }
@@ -869,12 +870,12 @@ function head(title, sub, { search = true } = {}) {
 function banner() {
   if (!state.offline) return null;
   return h('div', { class: 'banner', role: 'status' },
-    h('span', { text: `Can't reach your server. Showing what loaded at ${state.offline.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.` }),
+    h('span', { text: state.page ? `Can't reach your server. Showing what loaded at ${state.offline.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.` : "Can't reach your server." }),
     h('button', { type: 'button', class: 'quiet', onclick: () => { state.offline = null; restartPolling(); } }, 'Retry'));
 }
 
 function loadingOr(content) {
-  if (!state.page) return [banner(), h('p', { class: 'meta loading', text: 'Loading…' })];
+  if (!state.page) return [banner(), state.offline ? null : h('p', { class: 'meta loading', text: 'Loading…' })];
   return content();
 }
 
@@ -954,7 +955,7 @@ function newPage() {
 function searchPage() {
   const records = state.page?.records || [];
   const order = places(records, [state.route.project || null, null, ...sortedProjects()]);
-  const body = !state.page ? h('p', { class: 'meta loading', text: 'Searching…' })
+  const body = !state.page ? (state.offline ? null : h('p', { class: 'meta loading', text: 'Searching…' }))
     : !records.length ? h('p', { class: 'meta empty', text: `Nothing matches “${state.route.query}”. Try fewer words.` })
     : order.map(project => { const items = records.filter(record => (record.scope?.project || null) === project); return items.length ? section(projectName(project), items.map(record => row(record))) : null; });
   const omitted = state.page?.omitted_records || [];
@@ -963,7 +964,8 @@ function searchPage() {
     omitted.map(reference => h('a', { href: routeLink({ ...state.route, memory: reference.id }), class: 'row', 'data-key': `open:${reference.id}`, onclick: inPlace(() => openMemory(reference.id)) },
       h('span', { class: 't', text: titles[reference.id] || `Memory #${reference.id}` }), h('span', { class: 'm', text: projectName(reference.scope?.project) })))]) : null;
   const found = records.length + omitted.length;
-  return [head('Search', state.page ? `${found} found${state.page.semantic_ready === false ? ' · exact words only' : ''}` : ''), banner(), body, extra];
+  const where = state.route.project ? ` in ${projectName(state.route.project)}` : '';
+  return [head('Search', state.page ? `${found} found${where}${state.page.semantic_ready === false ? ' · exact words only' : ''}` : ''), banner(), body, extra];
 }
 
 function archivedPage() {
