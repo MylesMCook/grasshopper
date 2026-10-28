@@ -35,8 +35,10 @@ server was already current, without a restart. Claude Code's plugin moved to
 Claude Code and Codex running the self-updated client that matches the server.
 
 Not verified: a real 03:30 upgrade, `--rollback` and the skip rule on the live
-server (unit tests only), Cursor on macOS (still 2.9.2), the Windows PC's
-plugin updates, screen readers and Safari.
+server (unit tests only), the Windows PC's plugin updates, screen readers and
+Safari. On macOS, `check` reads older Cursor plugin files (2.9.2) and cannot
+show the active Cursor plugin, which the owner last saw at 2.10.5; whether it
+now follows the server is unverified.
 
 ## 2.11.0 macOS server upgrade (October 28)
 
