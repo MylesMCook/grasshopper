@@ -1432,3 +1432,46 @@ test('Keep all asks with the count, then refreshes once', async () => {
   await ui.answer('/visualizer/api/update', 200, { id: 2, revision: 2 });
   assert.equal(loads() - before, 2, 'one index and one page refresh after the loop');
 });
+
+test('Keep and replace offers Undo, and a changed older memory says it was kept', async () => {
+  const suggestion = memory(20, 'Prefers terse UI copy', { content: 'Keep interface copy short. One sentence of help text at most.', confirmed: false, purpose: 'observation' });
+  const kept = memory(21, 'One short sentence of help text', { content: 'Help text in the product is one short sentence at most.' });
+  for (const status of [200, 409]) {
+    const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+    await flush();
+    await ui.answer('/visualizer/api/context', 200, { records: [suggestion, kept], projects: [PROJECT], review_count: 1, server: { version: '2.11.1' }, total: 2 });
+    await ui.answer('/visualizer/api/context', 200, { records: [suggestion, kept], projects: [PROJECT], total: 2 });
+    ui.rows('Prefers terse UI copy').click();
+    await ui.answer('/visualizer/api/record', 200, suggestion);
+    ui.find('Keep and replace it').click();
+    await ui.answer('/visualizer/api/update', 200, { id: 20, revision: 2 });
+    if (status === 200) {
+      await ui.answer('/visualizer/api/archive', 200, { id: 21, revision: 2 });
+      assert.match(ui.text(), /Replaced “One short sentence of help text”Undo/);
+    } else {
+      await ui.answer('/visualizer/api/archive', 409, { error: 'revision_conflict', current: { ...kept, revision: 2 } });
+      assert.match(ui.announce.textContent, /The older memory changed, so it was kept\./);
+      assert.ok(!ui.app.querySelector('div.undo'));
+    }
+  }
+});
+
+test('an Undo that conflicts stops offering Undo and says why', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Archive').click();
+  await ui.answer('/visualizer/api/archive', 200, { id: 1, revision: 2 });
+  ui.find('Undo').click();
+  await ui.answer('/visualizer/api/archive', 409, { error: 'revision_conflict', current: { ...projectRecords[0], revision: 3 } });
+  assert.ok(!ui.app.querySelector('div.undo'), 'no retry with a stale revision');
+  assert.match(ui.announce.textContent, /changed since/);
+});
+
+test('Undo is announced once, not by a live region redrawn each render', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Archive').click();
+  await ui.answer('/visualizer/api/archive', 200, { id: 1, revision: 2 });
+  assert.equal(ui.app.querySelector('div.undo').getAttribute('role'), null);
+  assert.equal(ui.announce.textContent, 'Archived “Squash merge only”. Undo available.');
+});

@@ -614,7 +614,10 @@ function discard(record) {
   });
 }
 async function keepAndReplace(record, old) {
-  if (await keep(record)) await write('/visualizer/api/archive', { id: old.id, expected_revision: old.revision, archived: true }, { onDone: () => say(`Kept “${record.title}” and archived “${old.title}”.`) });
+  if (await keep(record)) await write('/visualizer/api/archive', { id: old.id, expected_revision: old.revision, archived: true }, {
+    onDone: receipt => offerUndo(old, receipt.revision, 'Replaced'),
+    onConflict: () => say('The older memory changed, so it was kept. Archive it yourself if needed.')
+  });
 }
 // After deciding on a suggestion in its panel, open the next one on New.
 function advanceReview(id) {
@@ -677,8 +680,11 @@ function move(record, to) {
   });
 }
 
+// Announced once here; the bar itself is not a live region, since it is
+// redrawn with every render.
 function offerUndo(record, revision, verb) {
   state.undo = { record, revision, verb };
+  say(`${verb} “${record.title}”. Undo available.`);
   armUndo();
 }
 // Undo stays for ten seconds, counted only while it has neither keyboard
@@ -702,7 +708,9 @@ async function undo() {
   let done;
   try {
     done = await write('/visualizer/api/archive', { id: pending.record.id, expected_revision: pending.revision, archived: false }, {
-      onDone: () => { say(`Restored “${pending.record.title}”.`); if (state.undo === pending) state.undo = null; }
+      onDone: () => { say(`Restored “${pending.record.title}”.`); if (state.undo === pending) state.undo = null; },
+      // A newer revision means the archived one can no longer be undone safely.
+      onConflict: () => { if (state.undo === pending) state.undo = null; say(`“${pending.record.title}” changed since. Nothing was undone.`); }
     });
   } finally { state.undoBusy = false; }
   // On failure the Undo stays for another ten seconds so it can be retried.
@@ -1280,7 +1288,7 @@ function render() {
       ? h('main', { id: 'main', tabindex: '-1', class: 'panel panel-main', 'aria-label': state.panel.record?.title || 'Memory' }, panelBody(state.panel))
       : h('main', { id: 'main', tabindex: '-1', class: state.offline ? 'offline' : null }, h('div', { class: 'page' }, mainView())),
     panel),
-  state.undo ? h('div', { class: 'undo', role: 'status',
+  state.undo ? h('div', { class: 'undo',
     onfocusin: holdUndo, onmouseenter: holdUndo,
     onfocusout: event => { if (!event.currentTarget.matches?.(':hover')) armUndo(); },
     onmouseleave: event => { if (!event.currentTarget.contains?.(document.activeElement)) armUndo(); } },
