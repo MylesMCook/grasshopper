@@ -475,7 +475,9 @@ func (u *upgrader) unload(plist, label string) error {
 
 // cutover points the current link at the archive folder name, restarts the
 // job and waits for it to report version. If it does not, current goes back
-// and the old server restarts. On success, previous names the old archive.
+// and the old server restarts. previous names the old archive before the
+// restart, so a crash mid-cutover still leaves rollback aimed at it; a failed
+// cutover puts previous back.
 func (u *upgrader) cutover(ctx context.Context, s launchdJob, name, version string) error {
 	old, err := os.Readlink(s.root)
 	if err != nil {
@@ -485,15 +487,26 @@ func (u *upgrader) cutover(ctx context.Context, s launchdJob, name, version stri
 	if err != nil {
 		return err
 	}
+	previous := filepath.Join(filepath.Dir(s.root), "previous")
+	before, _ := os.Readlink(previous)
+	if err := link(previous, old); err != nil {
+		return err
+	}
 	if err := u.restartOn(ctx, s, name, version); err != nil {
 		u.step("%s did not become healthy: %v", version, err)
 		u.step("Restoring %s.", running)
-		if restoreErr := u.restartOn(ctx, s, old, running); restoreErr != nil {
+		restoreErr := u.restartOn(ctx, s, old, running)
+		if before == "" {
+			restoreErr = errors.Join(restoreErr, os.Remove(previous))
+		} else {
+			restoreErr = errors.Join(restoreErr, link(previous, before))
+		}
+		if restoreErr != nil {
 			return fmt.Errorf("%s failed (%v) and restoring %s also failed: %w", version, err, running, restoreErr)
 		}
 		return fmt.Errorf("%s failed; %s is running again: %w", version, running, err)
 	}
-	return link(filepath.Join(filepath.Dir(s.root), "previous"), old)
+	return nil
 }
 
 // restartOn points current at name and has launchd kill the running process

@@ -532,6 +532,33 @@ func TestLinkDoesNotUseAFixedTempName(t *testing.T) {
 	}
 }
 
+func TestCutoverPointsPreviousAtTheOldArchiveBeforeRestarting(t *testing.T) {
+	f := newUpgradeFixture(t, map[string]string{"2.11.1": "", "2.11.3": "GRASSHOPPER_FAKE_BROKEN=1"})
+	f.u.healthWait = 3 * time.Second
+	var atRestart []string
+	run := f.u.run
+	f.u.run = func(name string, args ...string) ([]byte, error) {
+		if name == "launchctl" && args[0] == "kickstart" {
+			previous, _ := os.Readlink(filepath.Join(f.parent, "previous"))
+			atRestart = append(atRestart, previous)
+		}
+		return run(name, args...)
+	}
+	ctx := context.Background()
+	if err := f.u.upgrade(ctx, "2.11.1"); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, f.out)
+	}
+	if err := f.u.upgrade(ctx, "2.11.3"); err == nil {
+		t.Fatal("the broken release should fail")
+	}
+	if len(atRestart) < 2 || atRestart[0] != "app" || atRestart[1] != "grasshopper-server-2.11.1" {
+		t.Fatalf("previous at each restart: %q", atRestart)
+	}
+	if current, previous := f.links(t); current != "grasshopper-server-2.11.1" || previous != "app" {
+		t.Fatalf("a failed cutover left current %s, previous %s", current, previous)
+	}
+}
+
 func TestUpgradeRefusesAnArchiveThatDoesNotMatchSHA256SUMS(t *testing.T) {
 	f := newUpgradeFixture(t, map[string]string{"2.11.1": ""})
 	oldBase := releaseBaseURL
