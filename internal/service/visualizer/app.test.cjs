@@ -1326,3 +1326,39 @@ test('a failed poll does not rebuild the edit form', async () => {
   await flush();
   assert.equal(ui.document.getElementById('edit-text'), field, 'an index poll failure keeps the textarea');
 });
+
+test('Back and Forward over an opened memory keep the list loaded', async () => {
+  const ui = await signedIn();
+  const list = `#page=project&project=${encodeURIComponent(PROJECT)}`;
+  await openSquash(ui);
+  const loads = () => ui.requests.filter(request => request.url === '/visualizer/api/context').length;
+  const before = loads();
+  ui.hashChange(list);
+  await flush();
+  assert.equal(ui.app.querySelector('aside'), null, 'Back closes the memory');
+  assert.ok(ui.rows('Squash merge only'), 'the list stays drawn');
+  assert.equal(loads(), before, 'nothing reloads');
+  ui.hashChange(`${list}&memory=1`);
+  await ui.answer('/visualizer/api/record', 200, projectRecords[0]);
+  assert.ok(ui.app.querySelector('aside'), 'Forward reopens it');
+  assert.equal(loads(), before);
+});
+
+test('closing a memory replaces its history entry, and Back from an edit asks first', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  assert.equal(ui.history.length, 1);
+  ui.find('Close').click();
+  assert.equal(ui.history.length, 1, 'Back does not reopen the closed memory');
+  assert.doesNotMatch(ui.location.hash, /memory=/);
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  let asked = 0;
+  ui.sandbox.window.confirm = () => { asked++; return false; };
+  ui.hashChange(`#page=project&project=${encodeURIComponent(PROJECT)}`);
+  await flush();
+  assert.equal(asked, 1);
+  assert.equal(ui.document.getElementById('edit-text').value, 'Squash merge only. Always.', 'declining keeps the edit');
+  assert.match(ui.location.hash, /memory=1/, 'the address goes back to the memory');
+});

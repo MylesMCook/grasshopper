@@ -226,7 +226,17 @@ window.addEventListener('hashchange', () => {
   // In-page anchors such as the skip link are not routes.
   if (![...new URLSearchParams(location.hash.slice(1)).keys()].some(key => ROUTE_KEYS.includes(key)) && location.hash) return;
   const route = routeFromHash();
-  if (routeHash(route) !== routeHash(state.route) && !go(route, false)) setURL(false);
+  if (routeHash(route) === routeHash(state.route)) return;
+  // Back or Forward over an opened memory opens or closes it beside the list,
+  // which stays loaded and expanded.
+  if (routeHash({ ...route, memory: null }) === routeHash({ ...state.route, memory: null })) {
+    if (dirty() && !confirmLeave()) { setURL(false); return; }
+    // The owner chose to discard the edit, so the panel need not ask again.
+    if (state.panel) state.panel.mode = 'view';
+    if (route.memory) { state.route.memory = route.memory; openMemory(route.memory, false); } else closePanel();
+    return;
+  }
+  if (!go(route, false)) setURL(false);
 });
 // Closing or reloading the tab asks before an unsaved edit is lost.
 window.addEventListener('beforeunload', event => { if (dirty()) event.preventDefault(); });
@@ -522,7 +532,8 @@ function closePanel() {
   const opener = { memory: 'open:', device: 'device:' }[state.panel?.type];
   const id = state.panel?.id;
   state.panel = null;
-  if (state.route.memory) { state.route.memory = null; setURL(true); }
+  // Replaced, not pushed, so Back does not reopen the memory just closed.
+  if (state.route.memory) { state.route.memory = null; setURL(false); }
   render();
   if (opener) focusByKey(opener + id);
 }
