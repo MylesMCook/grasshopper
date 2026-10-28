@@ -387,7 +387,7 @@ func (s switchEmbedder) EmbedQuery(string) ([]float32, error) {
 	return []float32{0, 1}, nil
 }
 
-func TestThreeInferenceTimeoutsInARowExitTheServer(t *testing.T) {
+func TestAStuckInferenceCallExitsTheServer(t *testing.T) {
 	source := filepath.Join("..", "..", "tests", "fixtures", "go-compat", "memory.db")
 	w, err := memory.OpenWritableCopy(context.Background(), source, filepath.Join(t.TempDir(), "stuck-model.db"))
 	if err != nil {
@@ -414,20 +414,17 @@ func TestThreeInferenceTimeoutsInARowExitTheServer(t *testing.T) {
 	}
 
 	embedder.stall.Store(true)
-	search()
-	search()
-	embedder.stall.Store(false)
-	embedder.release <- struct{}{} // the stuck call returns and frees the model
-	search()                       // a success resets the count
-	embedder.stall.Store(true)
-	search()
+	search() // holds the model past its timeout
+	search() // queued behind it: a slow call is not yet a stuck one
 	search()
 	if len(exits) != 0 {
-		t.Fatalf("two timeouts after a success should not exit, got %v", exits)
+		t.Fatalf("timeouts behind a briefly slow call should not exit, got %v", exits)
 	}
+	time.Sleep(600 * time.Millisecond) // six timeouts
+	search()
 	search()
 	if len(exits) != 1 || exits[0] == 0 {
-		t.Fatalf("three timeouts in a row should exit non-zero once, got %v", exits)
+		t.Fatalf("a call held past six timeouts should exit non-zero once, got %v", exits)
 	}
 	if !strings.Contains(logs.String(), `"event":"inference_stuck"`) || strings.Contains(logs.String(), testToken) {
 		t.Fatalf("missing or unsafe stuck-inference log: %s", logs.String())
