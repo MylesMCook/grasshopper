@@ -81,8 +81,8 @@ func managedClientNote(dir, managed string) string {
 
 // withManagedClient marks a plugin current when its wiring is current and the
 // self-updated client it hands off to matches the server, so check asks for a
-// plugin update only when the plugin itself must change. A plugin that hands
-// off to a managed client ahead of the server is marked newer.
+// plugin update only when the plugin itself must change. A plugin new enough
+// to hand off to a managed client ahead of the server is marked newer.
 func withManagedClient(agents []agentReport, managed, serverVersion string) []agentReport {
 	state := versionState(managed, serverVersion)
 	for i, agent := range agents {
@@ -90,8 +90,8 @@ func withManagedClient(agents []agentReport, managed, serverVersion string) []ag
 		case state == agentCurrent && agent.State == agentBehind && versionState(agent.Version, client.MinimumPluginVersion) != agentBehind:
 			agents[i].State, agents[i].Update = agentCurrent, ""
 			agents[i].Detail = "Runs self-updated client " + managed + "."
-		case state == agentNewer && agent.State != agentBroken && versionState(agent.Version, managed) == agentBehind:
-			agents[i].State = agentNewer
+		case state == agentNewer && agent.State != agentBroken && versionState(agent.Version, managed) == agentBehind && versionState(agent.Version, client.MinimumPluginVersion) != agentBehind:
+			agents[i].State, agents[i].Update = agentNewer, ""
 			agents[i].Detail = "Runs self-updated client " + managed + ", newer than the server."
 		}
 	}
