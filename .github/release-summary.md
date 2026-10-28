@@ -1,17 +1,18 @@
-Grasshopper 2.11.2
+Grasshopper 2.11.3
 
-Memory view fixes.
+Safer unattended upgrades.
 
-- Archived memories stay listed after their project's last live memory is
-  archived, and a new project's suggestions show right away.
-- An edit kept across signing in again opens as a conflict if an agent changed
-  the memory meanwhile, instead of saving over it.
-- Reloading or closing the tab asks before losing an unsaved edit, and the
-  editor no longer resets every 15 seconds while offline.
-- Back and Forward over an opened memory keep the list loaded.
-- Keyboard focus stays in the list after Keep, Discard, Restore and Show more.
-- Keep all asks first; Keep and replace offers Undo; Undo stops retrying after
-  a conflict and is announced once.
-- Searching again from a project search stays in that project.
-- Approve, Deny and Disconnect send once on a double click.
-- The setup page opens a bare localhost address over HTTP.
+- The nightly server upgrade only moves forward: it never undoes a rollback,
+  never downgrades, and skips a release that was rolled back or failed its
+  health check until a newer one ships. `upgrade --to` still installs any
+  release.
+- Upgrade, rollback and schedule take a lock, so two never overlap; the
+  rollback link is set before the restart; pre-upgrade backups keep the
+  newest five.
+- An upgrade must answer a real search before it counts as healthy, and
+  downloads refuse an HTTPS-to-HTTP redirect.
+- Release runs never publish the same version twice at once, and archives are
+  reproducible.
+- `grasshopper check` warns when an agent runs a client newer than the server.
+- The server restarts itself if one embedding call is stuck for 30 seconds.
+- Search reads at most 200 full-text matches.
