@@ -25,6 +25,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/MylesMCook/grasshopper/internal/memory"
+	"github.com/MylesMCook/grasshopper/internal/service"
 )
 
 // TestMain lets the test binary stand in for a release's grasshopper-server,
@@ -67,11 +70,27 @@ func fakeServer(version string) int {
 		return 1
 	}
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/connection" || r.Header.Get("Authorization") != "Bearer "+token {
+		if r.Header.Get("Authorization") != "Bearer "+token {
 			http.Error(w, "no", 401)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"role": "owner", "version": version})
+		switch r.URL.Path {
+		case "/connection":
+			_ = json.NewEncoder(w).Encode(map[string]string{"role": "owner", "version": version})
+		case "/mcp":
+			var call struct {
+				Method string
+				Params struct{ Name string }
+			}
+			if json.NewDecoder(r.Body).Decode(&call) != nil || call.Method != "tools/call" || call.Params.Name != "search" {
+				http.Error(w, "bad call", 400)
+				return
+			}
+			broken := os.Getenv("GRASSHOPPER_FAKE_SEARCH_BROKEN") != ""
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"content": []any{}, "isError": broken}})
+		default:
+			http.NotFound(w, r)
+		}
 	})}
 	go func() { _ = server.Serve(listener) }()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -417,6 +436,41 @@ func TestFailedUpgradeRestoresThePreviousServer(t *testing.T) {
 	f.latest.Store("v2.11.3")
 	if err := f.u.upgrade(context.Background(), ""); err != nil || !strings.Contains(f.out.String(), "Skipping 2.11.3") {
 		t.Fatalf("the nightly upgrade should not retry a failed release: %v\n%s", err, f.out)
+	}
+}
+
+func TestUpgradeWhoseSearchFailsRestoresThePreviousServer(t *testing.T) {
+	f := newUpgradeFixture(t, map[string]string{"2.11.4": "GRASSHOPPER_FAKE_SEARCH_BROKEN=1"})
+	f.u.healthWait = 3 * time.Second
+	err := f.u.upgrade(context.Background(), "2.11.4")
+	if err == nil || !strings.Contains(err.Error(), "2.11.0 is running again") {
+		t.Fatalf("a server whose search fails should be rolled back, got %v\n%s", err, f.out)
+	}
+}
+
+func TestSearchHealthCheckWorksAgainstTheRealService(t *testing.T) {
+	database, tokenPath, err := quickstartState(filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := memory.OpenWritableExisting(database, "synthetic", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	token, _ := readToken(tokenPath)
+	handler, err := service.NewHandler(service.Backend{Store: store, Version: "2.11.0"}, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	listen := strings.TrimPrefix(server.URL, "http://")
+	if err := searchWorks(context.Background(), listen, token); err != nil {
+		t.Fatalf("search health check against the real service: %v", err)
+	}
+	if err := searchWorks(context.Background(), listen, strings.Repeat("x", 40)); err == nil {
+		t.Fatal("search health check passed with a wrong token")
 	}
 }
 

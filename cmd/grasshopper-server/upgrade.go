@@ -535,7 +535,8 @@ func link(path, target string) error {
 }
 
 // waitHealthy waits for an owner-authenticated /connection on listen to
-// report version. The embedding model takes some seconds to load.
+// report version and answer one MCP search. The embedding model takes some
+// seconds to load.
 func (u *upgrader) waitHealthy(ctx context.Context, listen, tokenFile, version string) error {
 	token, err := readToken(tokenFile)
 	if err != nil {
@@ -560,7 +561,9 @@ func (u *upgrader) waitHealthy(ctx context.Context, listen, tokenFile, version s
 			case identity.Role != "owner" || identity.Version != version:
 				last = fmt.Errorf("server reports %s, not %s", identity.Version, version)
 			default:
-				return nil
+				if last = searchWorks(ctx, listen, token); last == nil {
+					return nil
+				}
 			}
 		} else {
 			last = err
@@ -572,6 +575,51 @@ func (u *upgrader) waitHealthy(ctx context.Context, listen, tokenFile, version s
 		}
 	}
 	return fmt.Errorf("server did not become healthy: %w", last)
+}
+
+// searchWorks makes one authenticated MCP search, so a server whose database
+// or model is broken fails health even though /connection answers.
+func searchWorks(ctx context.Context, listen, token string) error {
+	const body = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"scope":{},"query":"upgrade health check","limit":1},` +
+		`"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"grasshopper-upgrade","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}`
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+listen+"/mcp", strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	request.Header.Set("MCP-Protocol-Version", "2026-07-28")
+	request.Header.Set("Mcp-Method", "tools/call")
+	request.Header.Set("Mcp-Name", "search")
+	response, err := (&http.Client{Timeout: 15 * time.Second}).Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("search returned HTTP %d", response.StatusCode)
+	}
+	// The reply may come as one server-sent event.
+	for _, line := range strings.Split(string(raw), "\n") {
+		if data, ok := strings.CutPrefix(line, "data:"); ok {
+			raw = []byte(data)
+		}
+	}
+	var reply struct {
+		Error  json.RawMessage `json:"error"`
+		Result *struct {
+			IsError bool `json:"isError"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &reply); err != nil || reply.Error != nil || reply.Result == nil || reply.Result.IsError {
+		return errors.New("search failed")
+	}
+	return nil
 }
 
 func (u *upgrader) latestVersion(ctx context.Context) (string, error) {
