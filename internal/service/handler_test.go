@@ -1,10 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -366,6 +369,68 @@ func TestMCPStalledInferenceHasBoundedFailure(t *testing.T) {
 	page, err := w.Search(context.Background(), input.Scope, "stalled write", nil, "", 10, 16000)
 	if err != nil || len(page.Records) != 0 {
 		t.Fatalf("stalled write persisted: %+v %v", page, err)
+	}
+}
+
+// switchEmbedder stalls while stall is set, until release delivers a value.
+type switchEmbedder struct {
+	stall   *atomic.Bool
+	release chan struct{}
+}
+
+func (s switchEmbedder) EmbedDocument(text string) ([]float32, error) { return s.EmbedQuery(text) }
+func (s switchEmbedder) EmbedQuery(string) ([]float32, error) {
+	if s.stall.Load() {
+		<-s.release
+		return nil, errors.New("stalled model released")
+	}
+	return []float32{0, 1}, nil
+}
+
+func TestThreeInferenceTimeoutsInARowExitTheServer(t *testing.T) {
+	source := filepath.Join("..", "..", "tests", "fixtures", "go-compat", "memory.db")
+	w, err := memory.OpenWritableCopy(context.Background(), source, filepath.Join(t.TempDir(), "stuck-model.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	var exits []int
+	previous := exitProcess
+	exitProcess = func(code int) { exits = append(exits, code) }
+	defer func() { exitProcess = previous }()
+	embedder := switchEmbedder{stall: &atomic.Bool{}, release: make(chan struct{})}
+	defer close(embedder.release)
+	var logs bytes.Buffer
+	handler, err := NewHandler(Backend{Store: w, Embedder: embedder, Model: "synthetic-model", InferenceTimeout: 100 * time.Millisecond, Logger: slog.New(slog.NewJSONHandler(&logs, nil))}, testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	session := clientSession(t, server, "2026-07-28")
+	search := func() {
+		t.Helper()
+		call(t, session, "search", map[string]any{"scope": map[string]any{"project": "id:project-a"}, "query": "bun"})
+	}
+
+	embedder.stall.Store(true)
+	search()
+	search()
+	embedder.stall.Store(false)
+	embedder.release <- struct{}{} // the stuck call returns and frees the model
+	search()                       // a success resets the count
+	embedder.stall.Store(true)
+	search()
+	search()
+	if len(exits) != 0 {
+		t.Fatalf("two timeouts after a success should not exit, got %v", exits)
+	}
+	search()
+	if len(exits) != 1 || exits[0] == 0 {
+		t.Fatalf("three timeouts in a row should exit non-zero once, got %v", exits)
+	}
+	if !strings.Contains(logs.String(), `"event":"inference_stuck"`) || strings.Contains(logs.String(), testToken) {
+		t.Fatalf("missing or unsafe stuck-inference log: %s", logs.String())
 	}
 }
 

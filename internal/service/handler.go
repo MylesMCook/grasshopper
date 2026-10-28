@@ -12,15 +12,20 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
 	"github.com/MylesMCook/grasshopper/internal/memory"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// exitProcess ends the server. Tests replace it.
+var exitProcess = os.Exit
 
 // Embedder creates vectors for stored documents and search queries.
 type Embedder interface {
@@ -163,13 +168,27 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	// A request timeout does not stop an in-flight embedding. Keep the slot
 	// occupied until the call returns so timed-out calls cannot overlap.
 	inferenceGate := make(chan struct{}, 1)
+	// A call that never returns holds the gate forever: writes then time out
+	// while health stays green. After three timeouts in a row the server
+	// exits so its supervisor restarts it; writes are transactional, so no
+	// half-written memory remains.
+	var inferenceTimeouts atomic.Int32
+	timedOut := func(ctx, inferenceCtx context.Context) error {
+		if ctx.Err() == nil && inferenceTimeouts.Add(1) >= 3 {
+			if backend.Logger != nil {
+				backend.Logger.Error("embedding model stuck; exiting for a restart", "event", "inference_stuck", "consecutive_timeouts", inferenceTimeouts.Load())
+			}
+			exitProcess(1)
+		}
+		return inferenceCtx.Err()
+	}
 	runInference := func(ctx context.Context, fn func() ([]float32, error)) ([]float32, error) {
 		inferenceCtx, cancel := context.WithTimeout(ctx, inferenceTimeout)
 		defer cancel()
 		select {
 		case inferenceGate <- struct{}{}:
 		case <-inferenceCtx.Done():
-			return nil, inferenceCtx.Err()
+			return nil, timedOut(ctx, inferenceCtx)
 		}
 		type result struct {
 			vector []float32
@@ -179,9 +198,10 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 		go func() { defer func() { <-inferenceGate }(); vector, err := fn(); completed <- result{vector, err} }()
 		select {
 		case outcome := <-completed:
+			inferenceTimeouts.Store(0)
 			return outcome.vector, outcome.err
 		case <-inferenceCtx.Done():
-			return nil, inferenceCtx.Err()
+			return nil, timedOut(ctx, inferenceCtx)
 		}
 	}
 	embedQuery := func(ctx context.Context, query string) ([]float32, error) {
