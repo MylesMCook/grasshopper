@@ -1410,3 +1410,25 @@ test('Show replaced moves focus to the first replaced handoff', async () => {
   ui.find('Show 2 replaced by newer ones').click();
   assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'open:11');
 });
+
+test('Keep all asks with the count, then refreshes once', async () => {
+  const records = [memory(1, 'First idea', { confirmed: false, purpose: 'observation' }), memory(2, 'Second idea', { confirmed: false, purpose: 'observation' })];
+  const ui = setup({ session: true, hash: '#page=new' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], review_count: 2, server: { version: '2.11.1' }, total: 2 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], total: 2 });
+  ui.find('Keep all').click();
+  await flush();
+  assert.equal(ui.pending('/visualizer/api/update').length, 0, 'nothing is kept before confirming');
+  assert.match(ui.text(), /Keep all 2\?/);
+  assert.equal(ui.document.activeElement?.id, 'keep-all-question', 'focus goes to the question, not the button');
+  ui.find('Cancel').click();
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'keep-all-open');
+  ui.find('Keep all').click();
+  const loads = () => ui.requests.filter(request => request.url === '/visualizer/api/context').length;
+  const before = loads();
+  ui.app.querySelectorAll('button').find(node => node.getAttribute('data-key') === 'keep-all-confirm').click();
+  await ui.answer('/visualizer/api/update', 200, { id: 1, revision: 2 });
+  await ui.answer('/visualizer/api/update', 200, { id: 2, revision: 2 });
+  assert.equal(loads() - before, 2, 'one index and one page refresh after the loop');
+});

@@ -212,7 +212,7 @@ function setURL(push) {
 function go(route, push = true) {
   if (dirty() && !confirmLeave()) return false;
   state.route = { page: 'project', project: '', query: '', memory: null, connect: '', ...route };
-  Object.assign(state, { panel: null, menu: false, expanded: new Set(), showGlobal: false, page: null, pageKey: '', approvalFocused: false, searchDraft: null });
+  Object.assign(state, { panel: null, menu: false, expanded: new Set(), showGlobal: false, page: null, pageKey: '', approvalFocused: false, searchDraft: null, confirmKeepAll: false });
   setURL(push);
   chooseDefaultProject();
   if (state.route.memory) openMemory(state.route.memory, false);
@@ -573,7 +573,7 @@ function redraw(changed) {
 function selecting() { const selection = window.getSelection?.(); return Boolean(selection && !selection.isCollapsed); }
 
 // One owner write at a time. A 409 shows the newer version; nothing is overwritten.
-async function write(path, body, { onDone, onConflict } = {}) {
+async function write(path, body, { onDone, onConflict, refresh = true } = {}) {
   if (saving) { say('Another change is still saving.'); return false; }
   const { key, id } = requestIDFor(path, body);
   saving = true; render();
@@ -581,7 +581,7 @@ async function write(path, body, { onDone, onConflict } = {}) {
   try {
     const { status, data } = await api(path, { ...body, request_id: id }, { timeout: 20000 });
     if (generation !== state.generation) return false;
-    if (status === 200) { writes.delete(key); await onDone?.(data); refreshAfterWrite(); return true; }
+    if (status === 200) { writes.delete(key); await onDone?.(data); if (refresh) refreshAfterWrite(); return true; }
     // Only a definite answer retires the request ID; a retry after 5xx reuses it.
     if ([400, 404, 409].includes(status)) writes.delete(key);
     if (status === 409 && data?.error === 'duplicate_conflict') { say('Not saved. Another memory already has this text.'); return false; }
@@ -591,7 +591,7 @@ async function write(path, body, { onDone, onConflict } = {}) {
         say('This memory changed. Showing the latest.');
         if (state.panel?.type === 'memory' && state.panel.id === body.id && data?.current) { state.panel.record = data.current; state.panel.history = null; loadHistory(state.panel); }
       }
-      refreshAfterWrite();
+      if (refresh) refreshAfterWrite();
       return false;
     }
     say(status === 400 ? 'That change is not valid. Check the text and try again.' : "Couldn't save. Try again; it won't save twice.");
@@ -603,9 +603,9 @@ async function write(path, body, { onDone, onConflict } = {}) {
 }
 function refreshAfterWrite() { state.etags = {}; refreshIndex(); refreshPage(); }
 
-function keep(record) {
+function keep(record, refresh = true) {
   return write('/visualizer/api/update', { id: record.id, expected_revision: record.revision, action: 'confirm' }, {
-    onDone: () => { say(`Kept “${record.title}”.`); advanceReview(record.id); }
+    onDone: () => { say(`Kept “${record.title}”.`); advanceReview(record.id); }, refresh
   });
 }
 function discard(record) {
@@ -913,8 +913,11 @@ function allPage() {
   });
 }
 
+// One refresh after the loop, so the list does not reload under each keep.
 async function keepAll() {
-  for (const record of [...(state.page?.records || [])]) if (!(await keep(record))) break;
+  state.confirmKeepAll = false;
+  for (const record of [...(state.page?.records || [])]) if (!(await keep(record, false))) break;
+  refreshAfterWrite();
 }
 function newPage() {
   return loadingOr(() => {
@@ -923,7 +926,15 @@ function newPage() {
       h('p', { class: 'reading muted', text: 'New things your agents notice show up here.' }));
     return [h('div', { class: 'head' },
       h('div', {}, h('h1', { id: 'page-title', text: 'New' }), h('p', { class: 'meta sub', text: `${records.length} waiting · agents load them at startup only after you keep them` })),
-      h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: keepAll }, 'Keep all')), banner(),
+      state.confirmKeepAll ? null : h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': 'keep-all-open',
+        onclick: () => { state.confirmKeepAll = true; render(); document.getElementById('keep-all-question')?.focus?.(); } }, 'Keep all')),
+    // As with Disconnect, focus goes to the question, never the confirming button.
+    state.confirmKeepAll ? h('div', { class: 'confirm', role: 'group', 'aria-labelledby': 'keep-all-question' },
+      h('p', { class: 'label', id: 'keep-all-question', tabindex: '-1', text: `Keep all ${records.length}?` }),
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'btn', 'aria-disabled': saving, 'data-key': 'keep-all-confirm', onclick: keepAll }, 'Keep all'),
+        h('button', { type: 'button', class: 'quiet muted', 'data-key': 'keep-all-cancel', onclick: () => { state.confirmKeepAll = false; render(); focusByKey('keep-all-open'); } }, 'Cancel'))) : null,
+    banner(),
     // By name, not recency: keeping one must not move the rest.
     places(records, [null]).map(project => {
       const items = records.filter(record => (record.scope?.project || null) === project);
