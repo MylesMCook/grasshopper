@@ -28,9 +28,11 @@ form.addEventListener('submit', event => {
   event.preventDefault();
   clearError();
   const entered = address.value.trim();
+  // A local server usually has no certificate, so a bare local address means HTTP.
+  const scheme = /^(localhost|127\.0\.0\.1|\[::1\])(:\d*)?(\/|$)/i.test(entered) ? 'http' : 'https';
   let url;
   try {
-    url = new URL(entered.includes('://') ? entered : `https://${entered}`);
+    url = new URL(entered.includes('://') ? entered : `${scheme}://${entered}`);
   } catch {
     showError("Enter your server's address, like your-server.tailnet.ts.net.");
     return;

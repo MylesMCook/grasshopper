@@ -74,6 +74,13 @@ function onlyLabel(scope = {}) {
 // New memories and moves need a project ID that survives clones and machines.
 function durable(project) { return /^id:.+|^git:[^/]+\/.+/.test(project); }
 function byName(projects) { return [...projects].sort((a, b) => projectName(a).localeCompare(projectName(b))); }
+// The places these records apply, in the given order, then any others by
+// name: the index leaves out projects with only archived memories, and a
+// brand-new project can appear on a page before it reaches the index.
+function places(records, order) {
+  const present = new Set(records.map(record => record.scope?.project || null));
+  return [...new Set([...order, ...byName([...present].filter(Boolean))])].filter(project => present.has(project));
+}
 // Where a memory can apply: every project, then durable projects by name, and
 // always the selected one, even before the project list loads. Add memory and
 // Move to share it.
@@ -205,7 +212,7 @@ function setURL(push) {
 function go(route, push = true) {
   if (dirty() && !confirmLeave()) return false;
   state.route = { page: 'project', project: '', query: '', memory: null, connect: '', ...route };
-  Object.assign(state, { panel: null, menu: false, expanded: new Set(), showGlobal: false, page: null, pageKey: '', approvalFocused: false, searchDraft: null });
+  Object.assign(state, { panel: null, menu: false, expanded: new Set(), showGlobal: false, page: null, pageKey: '', approvalFocused: false, searchDraft: null, confirmKeepAll: false });
   setURL(push);
   chooseDefaultProject();
   if (state.route.memory) openMemory(state.route.memory, false);
@@ -219,8 +226,20 @@ window.addEventListener('hashchange', () => {
   // In-page anchors such as the skip link are not routes.
   if (![...new URLSearchParams(location.hash.slice(1)).keys()].some(key => ROUTE_KEYS.includes(key)) && location.hash) return;
   const route = routeFromHash();
-  if (routeHash(route) !== routeHash(state.route) && !go(route, false)) setURL(false);
+  if (routeHash(route) === routeHash(state.route)) return;
+  // Back or Forward over an opened memory opens or closes it beside the list,
+  // which stays loaded and expanded.
+  if (routeHash({ ...route, memory: null }) === routeHash({ ...state.route, memory: null })) {
+    if (dirty() && !confirmLeave()) { setURL(false); return; }
+    // The owner chose to discard the edit, so the panel need not ask again.
+    if (state.panel) state.panel.mode = 'view';
+    if (route.memory) { state.route.memory = route.memory; openMemory(route.memory, false); } else closePanel();
+    return;
+  }
+  if (!go(route, false)) setURL(false);
 });
+// Closing or reloading the tab asks before an unsaved edit is lost.
+window.addEventListener('beforeunload', event => { if (dirty()) event.preventDefault(); });
 
 // ---------- network ----------
 
@@ -310,7 +329,7 @@ async function refreshPage() {
     if (error.session || generation !== state.generation || inFlight.page !== controller) return;
     state.loading = false;
     state.offline = state.offline || new Date();
-    render();
+    redraw(true);
   } finally {
     if (inFlight.page === controller) {
       inFlight.page = null;
@@ -363,7 +382,7 @@ async function refreshIndex() {
     if (chooseDefaultProject()) refreshPage();
     redraw(Boolean(page || wasOffline));
   } catch (error) {
-    if (!error.session && generation === state.generation && inFlight.index === controller) { state.offline = state.offline || new Date(); render(); }
+    if (!error.session && generation === state.generation && inFlight.index === controller) { state.offline = state.offline || new Date(); redraw(true); }
   } finally {
     if (inFlight.index === controller) { inFlight.index = null; if (state.active && !document.hidden) timers.index = setTimeout(refreshIndex, POLL.index); }
   }
@@ -441,11 +460,15 @@ async function signIn(token) {
 }
 
 // Reopens a memory with text that was being edited when the session ended.
+// If an agent saved a newer revision meanwhile, both show as a conflict, so
+// saving the draft never overwrites it silently.
 async function restoreDraft(kept) {
   if (!kept.id) { startCreate(kept.project, { title: kept.title, content: kept.content }); return; }
   await openMemory(kept.id, false);
-  if (state.panel?.id === kept.id && state.panel.record) {
-    Object.assign(state.panel, { mode: 'edit', draft: { title: kept.title, content: kept.content } });
+  const panel = state.panel;
+  if (panel?.id === kept.id && panel.record) {
+    const draft = { title: kept.title, content: kept.content };
+    Object.assign(panel, panel.record.revision > kept.revision ? { mode: 'conflict', draft, theirs: panel.record } : { mode: 'edit', draft });
     render();
   }
 }
@@ -509,7 +532,8 @@ function closePanel() {
   const opener = { memory: 'open:', device: 'device:' }[state.panel?.type];
   const id = state.panel?.id;
   state.panel = null;
-  if (state.route.memory) { state.route.memory = null; setURL(true); }
+  // Replaced, not pushed, so Back does not reopen the memory just closed.
+  if (state.route.memory) { state.route.memory = null; setURL(false); }
   render();
   if (opener) focusByKey(opener + id);
 }
@@ -527,7 +551,7 @@ function draftOf(panel) {
   if (!panel?.record || (panel.mode !== 'edit' && panel.mode !== 'conflict')) return null;
   const title = document.getElementById('edit-title')?.value ?? panel.draft?.title ?? panel.record.title;
   const content = document.getElementById('edit-text')?.value ?? panel.draft?.content ?? panel.record.content;
-  return title !== panel.record.title || content !== panel.record.content ? { id: panel.record.id, title, content, project: panel.project } : null;
+  return title !== panel.record.title || content !== panel.record.content ? { id: panel.record.id, revision: panel.record.revision, title, content, project: panel.project } : null;
 }
 function dirty() {
   const panel = state.panel;
@@ -549,7 +573,7 @@ function redraw(changed) {
 function selecting() { const selection = window.getSelection?.(); return Boolean(selection && !selection.isCollapsed); }
 
 // One owner write at a time. A 409 shows the newer version; nothing is overwritten.
-async function write(path, body, { onDone, onConflict } = {}) {
+async function write(path, body, { onDone, onConflict, refresh = true } = {}) {
   if (saving) { say('Another change is still saving.'); return false; }
   const { key, id } = requestIDFor(path, body);
   saving = true; render();
@@ -557,7 +581,7 @@ async function write(path, body, { onDone, onConflict } = {}) {
   try {
     const { status, data } = await api(path, { ...body, request_id: id }, { timeout: 20000 });
     if (generation !== state.generation) return false;
-    if (status === 200) { writes.delete(key); await onDone?.(data); refreshAfterWrite(); return true; }
+    if (status === 200) { writes.delete(key); await onDone?.(data); if (refresh) refreshAfterWrite(); return true; }
     // Only a definite answer retires the request ID; a retry after 5xx reuses it.
     if ([400, 404, 409].includes(status)) writes.delete(key);
     if (status === 409 && data?.error === 'duplicate_conflict') { say('Not saved. Another memory already has this text.'); return false; }
@@ -567,7 +591,7 @@ async function write(path, body, { onDone, onConflict } = {}) {
         say('This memory changed. Showing the latest.');
         if (state.panel?.type === 'memory' && state.panel.id === body.id && data?.current) { state.panel.record = data.current; state.panel.history = null; loadHistory(state.panel); }
       }
-      refreshAfterWrite();
+      if (refresh) refreshAfterWrite();
       return false;
     }
     say(status === 400 ? 'That change is not valid. Check the text and try again.' : "Couldn't save. Try again; it won't save twice.");
@@ -579,9 +603,9 @@ async function write(path, body, { onDone, onConflict } = {}) {
 }
 function refreshAfterWrite() { state.etags = {}; refreshIndex(); refreshPage(); }
 
-function keep(record) {
+function keep(record, refresh = true) {
   return write('/visualizer/api/update', { id: record.id, expected_revision: record.revision, action: 'confirm' }, {
-    onDone: () => { say(`Kept “${record.title}”.`); advanceReview(record.id); }
+    onDone: () => { say(`Kept “${record.title}”.`); advanceReview(record.id); }, refresh
   });
 }
 function discard(record) {
@@ -590,7 +614,10 @@ function discard(record) {
   });
 }
 async function keepAndReplace(record, old) {
-  if (await keep(record)) await write('/visualizer/api/archive', { id: old.id, expected_revision: old.revision, archived: true }, { onDone: () => say(`Kept “${record.title}” and archived “${old.title}”.`) });
+  if (await keep(record)) await write('/visualizer/api/archive', { id: old.id, expected_revision: old.revision, archived: true }, {
+    onDone: receipt => offerUndo(old, receipt.revision, 'Replaced'),
+    onConflict: () => say('The older memory changed, so it was kept. Archive it yourself if needed.')
+  });
 }
 // After deciding on a suggestion in its panel, open the next one on New.
 function advanceReview(id) {
@@ -653,8 +680,11 @@ function move(record, to) {
   });
 }
 
+// Announced once here; the bar itself is not a live region, since it is
+// redrawn with every render.
 function offerUndo(record, revision, verb) {
   state.undo = { record, revision, verb };
+  say(`${verb} “${record.title}”. Undo available.`);
   armUndo();
 }
 // Undo stays for ten seconds, counted only while it has neither keyboard
@@ -678,7 +708,9 @@ async function undo() {
   let done;
   try {
     done = await write('/visualizer/api/archive', { id: pending.record.id, expected_revision: pending.revision, archived: false }, {
-      onDone: () => { say(`Restored “${pending.record.title}”.`); if (state.undo === pending) state.undo = null; }
+      onDone: () => { say(`Restored “${pending.record.title}”.`); if (state.undo === pending) state.undo = null; },
+      // A newer revision means the archived one can no longer be undone safely.
+      onConflict: () => { if (state.undo === pending) state.undo = null; say(`“${pending.record.title}” changed since. Nothing was undone.`); }
     });
   } finally { state.undoBusy = false; }
   // On failure the Undo stays for another ten seconds so it can be retried.
@@ -686,11 +718,15 @@ async function undo() {
 }
 
 async function decidePairing(request, decision) {
+  if (saving) return;
+  saving = true; render();
   try {
     const { status } = await api('/visualizer/api/pairings', { request_id: request.request_id, code: request.code, decision });
     say(status >= 300 ? "Couldn't change this request. Try again." : decision === 'approve' ? `${request.device} connected.` : `${request.device} denied.`);
   } catch (error) { if (!error.session) say("Couldn't change this request. Try again."); }
+  finally { saving = false; }
   refreshDevices();
+  render();
 }
 async function renameDevice(device, label, panel) {
   if (saving) return;
@@ -710,11 +746,14 @@ async function renameDevice(device, label, panel) {
   render();
 }
 async function disconnectDevice(device) {
+  if (saving) return;
+  saving = true; render();
   try {
     const { status } = await api('/visualizer/api/devices', { id: device.id }, { method: 'DELETE' });
     say(status >= 300 ? "Couldn't disconnect it. Try again." : `${device.label || device.device} disconnected.`);
     if (status < 300) state.panel = null;
   } catch (error) { if (!error.session) say("Couldn't disconnect it. Try again."); }
+  finally { saving = false; }
   refreshDevices();
   render();
 }
@@ -819,7 +858,7 @@ function grouped(records, place) {
     const visible = state.expanded.has(group.label) ? group.records : group.records.slice(0, limit);
     const rest = group.records.length - visible.length;
     return section(`${place} · ${group.label}`, [visible.map(record => row(record)),
-      rest > 0 ? h('button', { type: 'button', class: 'quiet more', onclick: () => { state.expanded.add(group.label); render(); } }, `Show ${rest} more`) : null]);
+      rest > 0 ? h('button', { type: 'button', class: 'quiet more', 'data-key': `more:${place}:${group.label}`, onclick: () => reveal(() => state.expanded.add(group.label)) }, `Show ${rest} more`) : null]);
   });
 }
 
@@ -829,7 +868,8 @@ function head(title, sub, { search = true } = {}) {
     search ? h('form', { class: 'search', role: 'search', onsubmit: event => {
       event.preventDefault();
       const query = event.target.querySelector('input').value.trim();
-      if (query) go({ page: 'search', query, project: state.route.page === 'project' ? state.route.project : '' });
+      // A search from a project, or from a search in one, stays in that project.
+      if (query) go({ page: 'search', query, project: ['project', 'search'].includes(state.route.page) ? state.route.project : '' });
     } }, h('input', { type: 'search', 'aria-label': 'Search memories', placeholder: 'Search…', value: state.searchDraft ?? (state.route.page === 'search' ? state.route.query : ''),
       oninput: event => { state.searchDraft = event.target.value; } })) : null);
 }
@@ -837,12 +877,12 @@ function head(title, sub, { search = true } = {}) {
 function banner() {
   if (!state.offline) return null;
   return h('div', { class: 'banner', role: 'status' },
-    h('span', { text: `Can't reach your server. Showing what loaded at ${state.offline.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.` }),
+    h('span', { text: state.page ? `Can't reach your server. Showing what loaded at ${state.offline.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.` : "Can't reach your server." }),
     h('button', { type: 'button', class: 'quiet', onclick: () => { state.offline = null; restartPolling(); } }, 'Retry'));
 }
 
 function loadingOr(content) {
-  if (!state.page) return [banner(), h('p', { class: 'meta loading', text: 'Loading…' })];
+  if (!state.page) return [banner(), state.offline ? null : h('p', { class: 'meta loading', text: 'Loading…' })];
   return content();
 }
 
@@ -871,7 +911,7 @@ function projectPage() {
       own.length || !global.length ? grouped(own, projectName(project)) || section(projectName(project), own.length ? own.map(record => row(record)) : h('p', { class: 'meta empty', text: 'Nothing kept for this project yet.' })) : null,
       global.length ? section('All projects', global.length <= 8 || !own.length ? global.map(record => row(record)) : state.showGlobal
         ? [global.map(record => row(record)), h('button', { type: 'button', class: 'quiet more muted', onclick: () => { state.showGlobal = false; render(); } }, 'Hide')]
-        : h('button', { type: 'button', class: 'quiet more', onclick: () => { state.showGlobal = true; render(); } }, `Show ${global.length} that also apply here`)) : null];
+        : h('button', { type: 'button', class: 'quiet more', 'data-key': 'show-global', onclick: () => reveal(() => { state.showGlobal = true; }) }, `Show ${global.length} that also apply here`)) : null];
   });
 }
 
@@ -889,8 +929,11 @@ function allPage() {
   });
 }
 
+// One refresh after the loop, so the list does not reload under each keep.
 async function keepAll() {
-  for (const record of [...(state.page?.records || [])]) if (!(await keep(record))) break;
+  state.confirmKeepAll = false;
+  for (const record of [...(state.page?.records || [])]) if (!(await keep(record, false))) break;
+  refreshAfterWrite();
 }
 function newPage() {
   return loadingOr(() => {
@@ -899,9 +942,17 @@ function newPage() {
       h('p', { class: 'reading muted', text: 'New things your agents notice show up here.' }));
     return [h('div', { class: 'head' },
       h('div', {}, h('h1', { id: 'page-title', text: 'New' }), h('p', { class: 'meta sub', text: `${records.length} waiting · agents load them at startup only after you keep them` })),
-      h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: keepAll }, 'Keep all')), banner(),
+      state.confirmKeepAll ? null : h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': 'keep-all-open',
+        onclick: () => { state.confirmKeepAll = true; render(); document.getElementById('keep-all-question')?.focus?.(); } }, 'Keep all')),
+    // As with Disconnect, focus goes to the question, never the confirming button.
+    state.confirmKeepAll ? h('div', { class: 'confirm', role: 'group', 'aria-labelledby': 'keep-all-question' },
+      h('p', { class: 'label', id: 'keep-all-question', tabindex: '-1', text: `Keep all ${records.length}?` }),
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'btn', 'aria-disabled': saving, 'data-key': 'keep-all-confirm', onclick: keepAll }, 'Keep all'),
+        h('button', { type: 'button', class: 'quiet muted', 'data-key': 'keep-all-cancel', onclick: () => { state.confirmKeepAll = false; render(); focusByKey('keep-all-open'); } }, 'Cancel'))) : null,
+    banner(),
     // By name, not recency: keeping one must not move the rest.
-    [null, ...byName(state.index?.projects || [])].map(project => {
+    places(records, [null]).map(project => {
       const items = records.filter(record => (record.scope?.project || null) === project);
       return items.length ? section(projectName(project), items.map(record => suggestionRow(record))) : null;
     })];
@@ -910,8 +961,8 @@ function newPage() {
 
 function searchPage() {
   const records = state.page?.records || [];
-  const order = [state.route.project || null, null, ...sortedProjects()].filter((value, index, all) => all.indexOf(value) === index);
-  const body = !state.page ? h('p', { class: 'meta loading', text: 'Searching…' })
+  const order = places(records, [state.route.project || null, null, ...sortedProjects()]);
+  const body = !state.page ? (state.offline ? null : h('p', { class: 'meta loading', text: 'Searching…' }))
     : !records.length ? h('p', { class: 'meta empty', text: `Nothing matches “${state.route.query}”. Try fewer words.` })
     : order.map(project => { const items = records.filter(record => (record.scope?.project || null) === project); return items.length ? section(projectName(project), items.map(record => row(record))) : null; });
   const omitted = state.page?.omitted_records || [];
@@ -920,7 +971,8 @@ function searchPage() {
     omitted.map(reference => h('a', { href: routeLink({ ...state.route, memory: reference.id }), class: 'row', 'data-key': `open:${reference.id}`, onclick: inPlace(() => openMemory(reference.id)) },
       h('span', { class: 't', text: titles[reference.id] || `Memory #${reference.id}` }), h('span', { class: 'm', text: projectName(reference.scope?.project) })))]) : null;
   const found = records.length + omitted.length;
-  return [head('Search', state.page ? `${found} found${state.page.semantic_ready === false ? ' · exact words only' : ''}` : ''), banner(), body, extra];
+  const where = state.route.project ? ` in ${projectName(state.route.project)}` : '';
+  return [head('Search', state.page ? `${found} found${where}${state.page.semantic_ready === false ? ' · exact words only' : ''}` : ''), banner(), body, extra];
 }
 
 function archivedPage() {
@@ -936,12 +988,12 @@ function archivedPage() {
     const showReplaced = state.expanded.has('replaced');
     const records = showReplaced ? all : all.filter(record => !replaced.includes(record));
     return [head('Archived', "Agents don't load these at startup.", { search: false }), banner(),
-      [null, ...sortedProjects()].map(project => {
+      places(records, [null, ...sortedProjects()]).map(project => {
         const items = records.filter(record => (record.scope?.project || null) === project);
         return items.length ? section(projectName(project), items.map(record => h('div', { class: 'row-inline' }, row(record, { meta: label(record) }),
           h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `restore:${record.id}`, 'aria-label': `Restore ${record.title}`, onclick: () => restore(record) }, 'Restore')))) : null;
       }),
-      replaced.length && !showReplaced ? section('Earlier handoffs', h('button', { type: 'button', class: 'quiet more', 'data-key': 'show-replaced', onclick: () => { state.expanded.add('replaced'); render(); } }, `Show ${replaced.length} replaced by newer ones`)) : null];
+      replaced.length && !showReplaced ? section('Earlier handoffs', h('button', { type: 'button', class: 'quiet more', 'data-key': 'show-replaced', onclick: () => reveal(() => state.expanded.add('replaced')) }, `Show ${replaced.length} replaced by newer ones`)) : null];
   });
 }
 
@@ -954,8 +1006,8 @@ function agentsPage() {
       h('div', { class: 'row-inline' }, h('span', { class: 'reading', text: `${request.device} wants to connect` }), h('code', { class: 'code', text: request.code })),
       h('p', { class: 'label muted', text: `Approve only if the agent shows the same code. ${request.expires_in >= 60 ? `Expires in ${Math.ceil(request.expires_in / 60)} min.` : `Expires in ${request.expires_in} s.`}` }),
       h('div', { class: 'actions' },
-        h('button', { type: 'button', class: 'btn', 'data-key': `approve:${request.request_id}`, 'aria-label': `Approve ${request.device}`, onclick: () => decidePairing(request, 'approve') }, 'Approve'),
-        h('button', { type: 'button', class: 'quiet muted', 'data-key': `deny:${request.request_id}`, 'aria-label': `Deny ${request.device}`, onclick: () => decidePairing(request, 'deny') }, 'Deny')))), 'warn') : null,
+        h('button', { type: 'button', class: 'btn', 'aria-disabled': saving, 'data-key': `approve:${request.request_id}`, 'aria-label': `Approve ${request.device}`, onclick: () => decidePairing(request, 'approve') }, 'Approve'),
+        h('button', { type: 'button', class: 'quiet muted', 'aria-disabled': saving, 'data-key': `deny:${request.request_id}`, 'aria-label': `Deny ${request.device}`, onclick: () => decidePairing(request, 'deny') }, 'Deny')))), 'warn') : null,
     linked && state.devicesLoaded && !waiting.some(request => request.request_id === linked)
       ? h('p', { class: 'label muted', text: 'That connection request has expired or was already handled. Ask the agent to connect again.' }) : null,
     section('Connected', connected.length ? connected.map(device => h('button', { type: 'button', class: 'row', 'data-key': `device:${device.id}`, 'aria-current': state.panel?.type === 'device' && state.panel.id === device.id ? 'true' : null, onclick: () => { state.panel = { type: 'device', id: device.id, confirm: false }; render(); } },
@@ -1116,7 +1168,7 @@ function devicePanel(panel) {
       ? h('div', { class: 'confirm', role: 'group', 'aria-labelledby': 'disconnect-question' },
         h('p', { class: 'label', id: 'disconnect-question', tabindex: '-1', text: `Disconnect ${name}? Its agents stop reading and saving right away.` }),
         h('div', { class: 'actions' },
-          h('button', { type: 'button', class: 'btn danger', 'data-key': `disconnect-confirm:${device.id}`, onclick: () => disconnectDevice(device) }, 'Disconnect'),
+          h('button', { type: 'button', class: 'btn danger', 'aria-disabled': saving, 'data-key': `disconnect-confirm:${device.id}`, onclick: () => disconnectDevice(device) }, 'Disconnect'),
           h('button', { type: 'button', class: 'quiet muted', 'data-key': `disconnect-cancel:${device.id}`, onclick: () => { panel.confirm = false; render(); focusByKey(`disconnect-open:${device.id}`); } }, 'Cancel')))
       : h('div', { class: 'actions' }, h('button', { type: 'button', class: 'quiet danger', 'data-key': `disconnect-open:${device.id}`, onclick: () => { panel.confirm = true; render(); document.getElementById('disconnect-question')?.focus?.(); } }, 'Disconnect'))];
 }
@@ -1183,9 +1235,10 @@ function mainView() {
 // Controls are matched across redraws by data-key first, so a control whose
 // label changes (Save to Saving…) or two that share a label (Disconnect and
 // its confirmation) never trade focus.
+const FOCUSABLE = 'button, input, textarea, select, a, summary, [tabindex]';
 function keyOf(node) { return node.getAttribute?.('data-key') || node.getAttribute?.('aria-label') || node.id || node.textContent; }
 function focusByKey(key) {
-  const candidates = [...(root.querySelectorAll?.('button, input, textarea, select, a, summary, [tabindex]') || [])];
+  const candidates = [...(root.querySelectorAll?.(FOCUSABLE) || [])];
   // An exact data-key wins; after that a native control wins over a focusable
   // region (such as main, labelled with a memory title) that reads the same.
   const native = node => /^(BUTTON|INPUT|TEXTAREA|SELECT|A|SUMMARY)$/.test(node.tagName);
@@ -1196,8 +1249,23 @@ function focusByKey(key) {
   // A match inside hidden content cannot take focus; report that so the caller falls back.
   return Boolean(match) && document.activeElement === match;
 }
-// A redraw must not strand keyboard focus on a removed control.
-function restoreFocus(key) { if (!focusByKey(key)) document.getElementById('main')?.focus?.(); }
+// A redraw must not strand keyboard focus on a removed control: it moves to
+// the nearest control after it in the same list, else before it, else main.
+function restoreFocus(key, nearby = []) { if (![key, ...nearby].some(focusByKey)) document.getElementById('main')?.focus?.(); }
+function nearbyKeys(node) {
+  const list = node?.closest?.('.list');
+  if (!list) return [];
+  const all = [...list.querySelectorAll(FOCUSABLE)];
+  const at = all.indexOf(node);
+  return [...all.slice(at + 1), ...all.slice(0, Math.max(at, 0)).reverse()].map(keyOf);
+}
+// Expands a folded list and moves focus to the first row it reveals.
+function reveal(expand) {
+  const shown = new Set([...root.querySelectorAll('.row')].map(keyOf));
+  expand();
+  render();
+  [...root.querySelectorAll('.row')].find(node => !shown.has(keyOf(node)))?.focus?.();
+}
 
 let lastPlace = '';
 function render() {
@@ -1208,6 +1276,7 @@ function render() {
   }
   const focused = document.activeElement;
   const focusKey = focused && focused !== document.body ? keyOf(focused) : '';
+  const nearby = focusKey ? nearbyKeys(focused) : [];
   document.title = state.active ? `${state.panel?.record?.title || currentPlace()} · Grasshopper` : 'Grasshopper';
   if (!state.active) { root.replaceChildren(signInView()); if (focusKey) restoreFocus(focusKey); return; }
   // Scrolling areas keep their position across a redraw; the list starts at the
@@ -1228,13 +1297,13 @@ function render() {
       ? h('main', { id: 'main', tabindex: '-1', class: 'panel panel-main', 'aria-label': state.panel.record?.title || 'Memory' }, panelBody(state.panel))
       : h('main', { id: 'main', tabindex: '-1', class: state.offline ? 'offline' : null }, h('div', { class: 'page' }, mainView())),
     panel),
-  state.undo ? h('div', { class: 'undo', role: 'status',
+  state.undo ? h('div', { class: 'undo',
     onfocusin: holdUndo, onmouseenter: holdUndo,
     onfocusout: event => { if (!event.currentTarget.matches?.(':hover')) armUndo(); },
     onmouseleave: event => { if (!event.currentTarget.contains?.(document.activeElement)) armUndo(); } },
   h('span', { text: `${state.undo.verb} “${state.undo.record.title}”` }), h('button', { type: 'button', class: 'quiet', 'data-key': 'undo', onclick: undo }, 'Undo')) : null].filter(Boolean));
   for (const [selector, top] of scrolled) { const node = root.querySelector?.(selector); if (node && top) node.scrollTop = top; }
-  if (focusKey) restoreFocus(focusKey);
+  if (focusKey) restoreFocus(focusKey, nearby);
   // An approval link moves focus to its request once, not on every redraw.
   if (state.route.connect && !state.approvalFocused) {
     const request = document.getElementById('focused-request');

@@ -33,6 +33,7 @@ class Node {
   focus() { for (let node = this; node; node = node.parent) if (node.hidden) return; if (!this.disabled) this.ownerDocument.activeElement = this; }
   blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null; }
   contains(node) { for (let current = node; current; current = current.parent) if (current === this) return true; return false; }
+  closest(selector) { for (let node = this; node; node = node.parent) if (node.matches(selector)) return node; return null; }
   *walk() { for (const child of this.children) if (typeof child !== 'string') { yield child; yield* child.walk(); } }
   matches(selector) {
     return selector.split(',').map(part => part.trim()).some(part => {
@@ -115,7 +116,8 @@ function setup({ hash = '', session = false, hidden = false, narrow = false } = 
     },
     keydown(key) { const event = { key, defaultPrevented: false, target: document.activeElement, preventDefault() { this.defaultPrevented = true; } }; for (const action of documentListeners.keydown || []) action(event); return event; },
     setHidden(value) { document.hidden = value; for (const action of documentListeners.visibilitychange || []) action(); },
-    hashChange(value) { location.hash = value; for (const action of windowListeners.hashchange || []) action(); }
+    hashChange(value) { location.hash = value; for (const action of windowListeners.hashchange || []) action(); },
+    beforeUnload() { const event = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } }; for (const action of windowListeners.beforeunload || []) action(event); return event; }
   };
 }
 
@@ -1248,4 +1250,278 @@ test('a handoff can be moved like any memory', async () => {
   await ui.answer('/visualizer/api/record', 200, projectRecords[3]);
   assert.ok(ui.find('Move to…'));
   assert.doesNotMatch(ui.app.querySelector('aside').textContent, /Handoffs stay/);
+});
+
+// ---------- memory view data fixes ----------
+
+const OUTSIDE = 'git:github.com/example/outside-index';
+const fire = async (ui, delay) => { for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === delay) { ui.timers.delete(id); timer.fn(); } await flush(); };
+const replyAll = async (ui, url, data) => { await flush(); for (const request of ui.pending(url)) { request.done = true; request.reply(200, data); } await flush(); };
+
+test('Archived, New and Search list projects the index leaves out', async () => {
+  const ui = await signedIn();
+  ui.hashChange('#page=archived');
+  await flush();
+  const archived = ui.pending('/visualizer/api/context').find(request => request.body?.view === 'archived');
+  archived.done = true; archived.reply(200, { records: [memory(30, 'Last one archived', { archived: true, scope: { project: OUTSIDE } })], projects: [PROJECT], total: 1 });
+  await flush();
+  assert.ok(ui.rows('Last one archived'), 'an archived-only project still shows on Archived');
+  assert.ok(ui.app.querySelectorAll('h2.sec-label').some(node => node.textContent === 'outside-index'));
+
+  const fresh = setup({ session: true, hash: '#page=new' });
+  await flush();
+  await fresh.answer('/visualizer/api/context', 200, { records: [], projects: [PROJECT], review_count: 1, server: { version: '2.11.1' }, total: 0 });
+  await fresh.answer('/visualizer/api/context', 200, { records: [memory(31, 'Brand-new project idea', { confirmed: false, purpose: 'observation', scope: { project: OUTSIDE } })], projects: [PROJECT], total: 1 });
+  assert.ok(fresh.rows('Brand-new project idea'), "a new project's first suggestion shows on New");
+
+  const search = setup({ session: true, hash: '#page=search&query=idea' });
+  await flush();
+  await search.answer('/visualizer/api/context', 200, { records: [], projects: [PROJECT], review_count: 0, server: { version: '2.11.1' }, total: 0 });
+  await search.answer('/visualizer/api/search', 200, { records: [memory(32, 'Found outside the index', { scope: { project: OUTSIDE } })] });
+  assert.ok(search.rows('Found outside the index'), 'a match in an unlisted project shows');
+});
+
+test('a kept edit draft opens as a conflict when the memory changed while signed out', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  await fire(ui, 15000);
+  await ui.answer('/visualizer/api/context', 401);
+  ui.app.querySelector('#token').value = TOKEN;
+  ui.app.querySelector('form.signin-box').dispatch('submit');
+  await ui.answer('/visualizer/api/session', 200, {});
+  await ui.answer('/visualizer/api/record', 200, { ...projectRecords[0], revision: 2, content: 'Squash or rebase.' });
+  assert.match(ui.text(), /changed this while you were editing\. Nothing was overwritten\./);
+  assert.match(ui.text(), /Squash or rebase\./);
+  assert.match(ui.text(), /Squash merge only\. Always\./);
+  ui.find('Keep yours').click();
+  await flush();
+  const save = ui.pending('/visualizer/api/update')[0];
+  assert.equal(save.body.expected_revision, 2, 'saving yours is an explicit choice against the newer revision');
+  assert.equal(save.body.content, 'Squash merge only. Always.');
+});
+
+test('leaving the page with an unsaved edit asks first', async () => {
+  const ui = await signedIn();
+  assert.equal(ui.beforeUnload().defaultPrevented, false, 'nothing to lose, no prompt');
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  assert.equal(ui.beforeUnload().defaultPrevented, true);
+});
+
+test('a failed poll does not rebuild the edit form', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Edit').click();
+  const field = ui.document.getElementById('edit-text');
+  field.value = 'Squash merge only. Always.';
+  await fire(ui, 5000);
+  ui.pending('/visualizer/api/context').forEach(request => { request.done = true; request.fail(); });
+  await flush();
+  assert.equal(ui.document.getElementById('edit-text'), field, 'a page poll failure keeps the textarea');
+  await fire(ui, 15000);
+  ui.pending('/visualizer/api/context').forEach(request => { request.done = true; request.fail(); });
+  await flush();
+  assert.equal(ui.document.getElementById('edit-text'), field, 'an index poll failure keeps the textarea');
+});
+
+test('Back and Forward over an opened memory keep the list loaded', async () => {
+  const ui = await signedIn();
+  const list = `#page=project&project=${encodeURIComponent(PROJECT)}`;
+  await openSquash(ui);
+  const loads = () => ui.requests.filter(request => request.url === '/visualizer/api/context').length;
+  const before = loads();
+  ui.hashChange(list);
+  await flush();
+  assert.equal(ui.app.querySelector('aside'), null, 'Back closes the memory');
+  assert.ok(ui.rows('Squash merge only'), 'the list stays drawn');
+  assert.equal(loads(), before, 'nothing reloads');
+  ui.hashChange(`${list}&memory=1`);
+  await ui.answer('/visualizer/api/record', 200, projectRecords[0]);
+  assert.ok(ui.app.querySelector('aside'), 'Forward reopens it');
+  assert.equal(loads(), before);
+});
+
+test('closing a memory replaces its history entry, and Back from an edit asks first', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  assert.equal(ui.history.length, 1);
+  ui.find('Close').click();
+  assert.equal(ui.history.length, 1, 'Back does not reopen the closed memory');
+  assert.doesNotMatch(ui.location.hash, /memory=/);
+  await openSquash(ui);
+  ui.find('Edit').click();
+  ui.document.getElementById('edit-text').value = 'Squash merge only. Always.';
+  let asked = 0;
+  ui.sandbox.window.confirm = () => { asked++; return false; };
+  ui.hashChange(`#page=project&project=${encodeURIComponent(PROJECT)}`);
+  await flush();
+  assert.equal(asked, 1);
+  assert.equal(ui.document.getElementById('edit-text').value, 'Squash merge only. Always.', 'declining keeps the edit');
+  assert.match(ui.location.hash, /memory=1/, 'the address goes back to the memory');
+});
+
+test('after Keep removes a row, focus moves to the next row in the list', async () => {
+  const records = [memory(1, 'First idea', { confirmed: false, purpose: 'observation' }), memory(2, 'Second idea', { confirmed: false, purpose: 'observation' })];
+  const ui = setup({ session: true, hash: '#page=new' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], review_count: 2, server: { version: '2.11.1' }, total: 2 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], total: 2 });
+  ui.find('Keep First idea').focus();
+  ui.find('Keep First idea').click();
+  await ui.answer('/visualizer/api/update', 200, { id: 1, revision: 2 });
+  await replyAll(ui, '/visualizer/api/context', { records: [records[1]], projects: [PROJECT], review_count: 1, total: 1 });
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'open:2');
+});
+
+test('Show more buttons move focus to the first row they reveal', async () => {
+  const old = new Date(Date.now() - 400 * 86400000).toISOString();
+  const globals = Array.from({ length: 9 }, (_, i) => memory(i + 1, `Everywhere ${i + 1}`, { scope: {}, updated_at: old }));
+  const ui = setup({ session: true, hash: '#page=all' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: globals, projects: [], review_count: 0, server: { version: '2.11.1' }, total: 9 });
+  await ui.answer('/visualizer/api/context', 200, { records: globals, projects: [], total: 9 });
+  const more = ui.find('Show 6 more');
+  assert.ok(more.getAttribute('data-key'), 'Show more has a stable key');
+  more.focus(); more.click();
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'open:6');
+
+  const project = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+  await flush();
+  const mixed = [projectRecords[0], ...globals.map(record => ({ ...record, id: record.id + 100 }))];
+  await project.answer('/visualizer/api/context', 200, { records: mixed, projects: [PROJECT], review_count: 0, server: { version: '2.11.1' }, total: 10 });
+  await project.answer('/visualizer/api/context', 200, { records: mixed, projects: [PROJECT], total: 10 });
+  project.find('Show 9 that also apply here').focus();
+  project.find('Show 9 that also apply here').click();
+  assert.equal(project.document.activeElement?.getAttribute('data-key'), 'open:101');
+});
+
+test('Show replaced moves focus to the first replaced handoff', async () => {
+  const ui = await signedIn();
+  ui.hashChange('#page=archived');
+  await flush();
+  const replaced = id => memory(id, `Old handoff ${id}`, { purpose: 'handoff', confirmed: false, archived: true, provenance: { harness: 'codex', device: 'mac', source: 'Replaced by handoff 99' } });
+  const page = ui.pending('/visualizer/api/context').find(request => request.body?.view === 'archived');
+  page.done = true; page.reply(200, { records: [memory(10, 'Archived by hand', { archived: true }), replaced(11), replaced(12)], projects: [PROJECT], total: 3 });
+  await flush();
+  ui.find('Show 2 replaced by newer ones').focus();
+  ui.find('Show 2 replaced by newer ones').click();
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'open:11');
+});
+
+test('Keep all asks with the count, then refreshes once', async () => {
+  const records = [memory(1, 'First idea', { confirmed: false, purpose: 'observation' }), memory(2, 'Second idea', { confirmed: false, purpose: 'observation' })];
+  const ui = setup({ session: true, hash: '#page=new' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], review_count: 2, server: { version: '2.11.1' }, total: 2 });
+  await ui.answer('/visualizer/api/context', 200, { records, projects: [PROJECT], total: 2 });
+  ui.find('Keep all').click();
+  await flush();
+  assert.equal(ui.pending('/visualizer/api/update').length, 0, 'nothing is kept before confirming');
+  assert.match(ui.text(), /Keep all 2\?/);
+  assert.equal(ui.document.activeElement?.id, 'keep-all-question', 'focus goes to the question, not the button');
+  ui.find('Cancel').click();
+  assert.equal(ui.document.activeElement?.getAttribute('data-key'), 'keep-all-open');
+  ui.find('Keep all').click();
+  const loads = () => ui.requests.filter(request => request.url === '/visualizer/api/context').length;
+  const before = loads();
+  ui.app.querySelectorAll('button').find(node => node.getAttribute('data-key') === 'keep-all-confirm').click();
+  await ui.answer('/visualizer/api/update', 200, { id: 1, revision: 2 });
+  await ui.answer('/visualizer/api/update', 200, { id: 2, revision: 2 });
+  assert.equal(loads() - before, 2, 'one index and one page refresh after the loop');
+});
+
+test('Keep and replace offers Undo, and a changed older memory says it was kept', async () => {
+  const suggestion = memory(20, 'Prefers terse UI copy', { content: 'Keep interface copy short. One sentence of help text at most.', confirmed: false, purpose: 'observation' });
+  const kept = memory(21, 'One short sentence of help text', { content: 'Help text in the product is one short sentence at most.' });
+  for (const status of [200, 409]) {
+    const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+    await flush();
+    await ui.answer('/visualizer/api/context', 200, { records: [suggestion, kept], projects: [PROJECT], review_count: 1, server: { version: '2.11.1' }, total: 2 });
+    await ui.answer('/visualizer/api/context', 200, { records: [suggestion, kept], projects: [PROJECT], total: 2 });
+    ui.rows('Prefers terse UI copy').click();
+    await ui.answer('/visualizer/api/record', 200, suggestion);
+    ui.find('Keep and replace it').click();
+    await ui.answer('/visualizer/api/update', 200, { id: 20, revision: 2 });
+    if (status === 200) {
+      await ui.answer('/visualizer/api/archive', 200, { id: 21, revision: 2 });
+      assert.match(ui.text(), /Replaced “One short sentence of help text”Undo/);
+    } else {
+      await ui.answer('/visualizer/api/archive', 409, { error: 'revision_conflict', current: { ...kept, revision: 2 } });
+      assert.match(ui.announce.textContent, /The older memory changed, so it was kept\./);
+      assert.ok(!ui.app.querySelector('div.undo'));
+    }
+  }
+});
+
+test('with nothing loaded, the offline banner does not claim a time and a failed search stops searching', async () => {
+  const ui = setup({ session: true, hash: '#page=search&query=idea' });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: [], projects: [PROJECT], review_count: 0, server: { version: '2.11.1' }, total: 0 });
+  const search = ui.pending('/visualizer/api/search')[0];
+  search.done = true; search.fail();
+  await flush();
+  assert.match(ui.text(), /Can't reach your server\./);
+  assert.doesNotMatch(ui.text(), /Showing what loaded|Searching…/);
+  assert.ok(ui.find('Retry'));
+});
+
+test('an Undo that conflicts stops offering Undo and says why', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Archive').click();
+  await ui.answer('/visualizer/api/archive', 200, { id: 1, revision: 2 });
+  ui.find('Undo').click();
+  await ui.answer('/visualizer/api/archive', 409, { error: 'revision_conflict', current: { ...projectRecords[0], revision: 3 } });
+  assert.ok(!ui.app.querySelector('div.undo'), 'no retry with a stale revision');
+  assert.match(ui.announce.textContent, /changed since/);
+});
+
+test('Undo is announced once, not by a live region redrawn each render', async () => {
+  const ui = await signedIn();
+  await openSquash(ui);
+  ui.find('Archive').click();
+  await ui.answer('/visualizer/api/archive', 200, { id: 1, revision: 2 });
+  assert.equal(ui.app.querySelector('div.undo').getAttribute('role'), null);
+  assert.equal(ui.announce.textContent, 'Archived “Squash merge only”. Undo available.');
+});
+
+test('searching again from a project search keeps that project', async () => {
+  const ui = setup({ session: true, hash: `#page=search&project=${encodeURIComponent(PROJECT)}&query=squash` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT], review_count: 0, server: { version: '2.11.1' }, total: 4 });
+  await ui.answer('/visualizer/api/search', 200, { records: [projectRecords[0]] });
+  assert.match(ui.app.querySelector('.head').textContent, /1 found in grasshopper/);
+  const form = ui.app.querySelector('form.search');
+  form.querySelector('input').value = 'gh';
+  form.dispatch('submit');
+  await flush();
+  const again = ui.pending('/visualizer/api/search')[0];
+  assert.deepEqual(again.body.scope, { project: PROJECT });
+});
+
+test('Approve, Deny and Disconnect send once on a double click', async () => {
+  const id = 'b'.repeat(64);
+  const ui = setup({ session: true, hash: `#connect=${id}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT], review_count: 0, total: 4 });
+  await ui.answer('/visualizer/api/pairings', 200, [{ request_id: id, code: 'C0DE42', device: 'linux-box', status: 'pending', expires_in: 240 }]);
+  await ui.answer('/visualizer/api/devices', 200, [{ id: 7, device: 'mac', created_at: today, revoked_at: null, last_seen_at: today }]);
+  ui.find('Approve').click();
+  ui.find('Approve').click();
+  ui.find('Deny').click();
+  await flush();
+  assert.equal(ui.requests.filter(request => request.url === '/visualizer/api/pairings' && request.method === 'POST').length, 1);
+  const decision = ui.requests.find(request => request.url === '/visualizer/api/pairings' && request.method === 'POST');
+  decision.done = true; decision.reply(204);
+  await flush();
+  ui.rows('mac').click();
+  ui.app.querySelector('aside.panel').querySelectorAll('button').find(node => node.textContent === 'Disconnect').click();
+  const confirm = () => ui.app.querySelectorAll('button').find(node => node.getAttribute('data-key') === 'disconnect-confirm:7');
+  confirm().click();
+  confirm()?.click();
+  await flush();
+  assert.equal(ui.requests.filter(request => request.url === '/visualizer/api/devices' && request.method === 'DELETE').length, 1);
 });

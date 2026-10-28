@@ -45,6 +45,19 @@ test('server links normalize common formats and keep local HTTP available', () =
   }
 });
 
+test('a local address typed without a scheme opens over HTTP', () => {
+  for (const [value, origin] of [
+    ['localhost:8106', 'http://localhost:8106'],
+    ['localhost', 'http://localhost'],
+    ['127.0.0.1:8106', 'http://127.0.0.1:8106'],
+    ['[::1]:8106', 'http://[::1]:8106'],
+    ['LOCALHOST:8106/visualizer/', 'http://localhost:8106'],
+    ['localhost.example.com', 'https://localhost.example.com'],
+  ]) {
+    assert.equal(submit(value).destination, `${origin}/visualizer/`, value);
+  }
+});
+
 test('unsafe or unrelated links remain rejected', () => {
   for (const value of ['http://memory.example.com', 'https://user:pass@memory.example.com', 'https://memory.example.com/?token=x', 'https://memory.example.com/?', 'https://memory.example.com/#x', 'https://memory.example.com/other']) {
     assert.equal(submit(value).destination, undefined, value);
