@@ -74,6 +74,13 @@ function onlyLabel(scope = {}) {
 // New memories and moves need a project ID that survives clones and machines.
 function durable(project) { return /^id:.+|^git:[^/]+\/.+/.test(project); }
 function byName(projects) { return [...projects].sort((a, b) => projectName(a).localeCompare(projectName(b))); }
+// The places these records apply, in the given order, then any others by
+// name: the index leaves out projects with only archived memories, and a
+// brand-new project can appear on a page before it reaches the index.
+function places(records, order) {
+  const present = new Set(records.map(record => record.scope?.project || null));
+  return [...new Set([...order, ...byName([...present].filter(Boolean))])].filter(project => present.has(project));
+}
 // Where a memory can apply: every project, then durable projects by name, and
 // always the selected one, even before the project list loads. Add memory and
 // Move to share it.
@@ -901,7 +908,7 @@ function newPage() {
       h('div', {}, h('h1', { id: 'page-title', text: 'New' }), h('p', { class: 'meta sub', text: `${records.length} waiting · agents load them at startup only after you keep them` })),
       h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, onclick: keepAll }, 'Keep all')), banner(),
     // By name, not recency: keeping one must not move the rest.
-    [null, ...byName(state.index?.projects || [])].map(project => {
+    places(records, [null]).map(project => {
       const items = records.filter(record => (record.scope?.project || null) === project);
       return items.length ? section(projectName(project), items.map(record => suggestionRow(record))) : null;
     })];
@@ -910,7 +917,7 @@ function newPage() {
 
 function searchPage() {
   const records = state.page?.records || [];
-  const order = [state.route.project || null, null, ...sortedProjects()].filter((value, index, all) => all.indexOf(value) === index);
+  const order = places(records, [state.route.project || null, null, ...sortedProjects()]);
   const body = !state.page ? h('p', { class: 'meta loading', text: 'Searching…' })
     : !records.length ? h('p', { class: 'meta empty', text: `Nothing matches “${state.route.query}”. Try fewer words.` })
     : order.map(project => { const items = records.filter(record => (record.scope?.project || null) === project); return items.length ? section(projectName(project), items.map(record => row(record))) : null; });
@@ -936,7 +943,7 @@ function archivedPage() {
     const showReplaced = state.expanded.has('replaced');
     const records = showReplaced ? all : all.filter(record => !replaced.includes(record));
     return [head('Archived', "Agents don't load these at startup.", { search: false }), banner(),
-      [null, ...sortedProjects()].map(project => {
+      places(records, [null, ...sortedProjects()]).map(project => {
         const items = records.filter(record => (record.scope?.project || null) === project);
         return items.length ? section(projectName(project), items.map(record => h('div', { class: 'row-inline' }, row(record, { meta: label(record) }),
           h('button', { type: 'button', class: 'quiet', 'aria-disabled': saving, 'data-key': `restore:${record.id}`, 'aria-label': `Restore ${record.title}`, onclick: () => restore(record) }, 'Restore')))) : null;

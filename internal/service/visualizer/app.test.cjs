@@ -33,6 +33,7 @@ class Node {
   focus() { for (let node = this; node; node = node.parent) if (node.hidden) return; if (!this.disabled) this.ownerDocument.activeElement = this; }
   blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null; }
   contains(node) { for (let current = node; current; current = current.parent) if (current === this) return true; return false; }
+  closest(selector) { for (let node = this; node; node = node.parent) if (node.matches(selector)) return node; return null; }
   *walk() { for (const child of this.children) if (typeof child !== 'string') { yield child; yield* child.walk(); } }
   matches(selector) {
     return selector.split(',').map(part => part.trim()).some(part => {
@@ -115,7 +116,8 @@ function setup({ hash = '', session = false, hidden = false, narrow = false } = 
     },
     keydown(key) { const event = { key, defaultPrevented: false, target: document.activeElement, preventDefault() { this.defaultPrevented = true; } }; for (const action of documentListeners.keydown || []) action(event); return event; },
     setHidden(value) { document.hidden = value; for (const action of documentListeners.visibilitychange || []) action(); },
-    hashChange(value) { location.hash = value; for (const action of windowListeners.hashchange || []) action(); }
+    hashChange(value) { location.hash = value; for (const action of windowListeners.hashchange || []) action(); },
+    beforeUnload() { const event = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } }; for (const action of windowListeners.beforeunload || []) action(event); return event; }
   };
 }
 
@@ -1248,4 +1250,33 @@ test('a handoff can be moved like any memory', async () => {
   await ui.answer('/visualizer/api/record', 200, projectRecords[3]);
   assert.ok(ui.find('Move to…'));
   assert.doesNotMatch(ui.app.querySelector('aside').textContent, /Handoffs stay/);
+});
+
+// ---------- memory view data fixes ----------
+
+const OUTSIDE = 'git:github.com/example/outside-index';
+const fire = async (ui, delay) => { for (const [id, timer] of [...ui.timers.entries()]) if (timer.delay === delay) { ui.timers.delete(id); timer.fn(); } await flush(); };
+const replyAll = async (ui, url, data) => { await flush(); for (const request of ui.pending(url)) { request.done = true; request.reply(200, data); } await flush(); };
+
+test('Archived, New and Search list projects the index leaves out', async () => {
+  const ui = await signedIn();
+  ui.hashChange('#page=archived');
+  await flush();
+  const archived = ui.pending('/visualizer/api/context').find(request => request.body?.view === 'archived');
+  archived.done = true; archived.reply(200, { records: [memory(30, 'Last one archived', { archived: true, scope: { project: OUTSIDE } })], projects: [PROJECT], total: 1 });
+  await flush();
+  assert.ok(ui.rows('Last one archived'), 'an archived-only project still shows on Archived');
+  assert.ok(ui.app.querySelectorAll('h2.sec-label').some(node => node.textContent === 'outside-index'));
+
+  const fresh = setup({ session: true, hash: '#page=new' });
+  await flush();
+  await fresh.answer('/visualizer/api/context', 200, { records: [], projects: [PROJECT], review_count: 1, server: { version: '2.11.1' }, total: 0 });
+  await fresh.answer('/visualizer/api/context', 200, { records: [memory(31, 'Brand-new project idea', { confirmed: false, purpose: 'observation', scope: { project: OUTSIDE } })], projects: [PROJECT], total: 1 });
+  assert.ok(fresh.rows('Brand-new project idea'), "a new project's first suggestion shows on New");
+
+  const search = setup({ session: true, hash: '#page=search&query=idea' });
+  await flush();
+  await search.answer('/visualizer/api/context', 200, { records: [], projects: [PROJECT], review_count: 0, server: { version: '2.11.1' }, total: 0 });
+  await search.answer('/visualizer/api/search', 200, { records: [memory(32, 'Found outside the index', { scope: { project: OUTSIDE } })] });
+  assert.ok(search.rows('Found outside the index'), 'a match in an unlisted project shows');
 });
