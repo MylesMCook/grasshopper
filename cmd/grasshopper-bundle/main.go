@@ -19,7 +19,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 	"unicode/utf16"
 )
 
@@ -275,6 +277,11 @@ func addFile(writer *zip.Writer, file input, sums *strings.Builder) error {
 	}
 	header.Name = file.name
 	header.Method = zip.Deflate
+	// A fixed entry time keeps archives of the same files byte-identical.
+	header.Modified = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	if epoch, err := strconv.ParseInt(os.Getenv("SOURCE_DATE_EPOCH"), 10, 64); err == nil {
+		header.Modified = time.Unix(epoch, 0).UTC()
+	}
 	// Staged templates stay private on disk. Archive entries are public package
 	// files and must remain readable after a root-owned system installation.
 	if info.Mode().Perm()&0111 != 0 {

@@ -21,9 +21,13 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/MylesMCook/grasshopper/internal/memory"
+	"github.com/MylesMCook/grasshopper/internal/service"
 )
 
 // TestMain lets the test binary stand in for a release's grasshopper-server,
@@ -66,11 +70,27 @@ func fakeServer(version string) int {
 		return 1
 	}
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/connection" || r.Header.Get("Authorization") != "Bearer "+token {
+		if r.Header.Get("Authorization") != "Bearer "+token {
 			http.Error(w, "no", 401)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"role": "owner", "version": version})
+		switch r.URL.Path {
+		case "/connection":
+			_ = json.NewEncoder(w).Encode(map[string]string{"role": "owner", "version": version})
+		case "/mcp":
+			var call struct {
+				Method string
+				Params struct{ Name string }
+			}
+			if json.NewDecoder(r.Body).Decode(&call) != nil || call.Method != "tools/call" || call.Params.Name != "search" {
+				http.Error(w, "bad call", 400)
+				return
+			}
+			broken := os.Getenv("GRASSHOPPER_FAKE_SEARCH_BROKEN") != ""
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"content": []any{}, "isError": broken}})
+		default:
+			http.NotFound(w, r)
+		}
 	})}
 	go func() { _ = server.Serve(listener) }()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -239,6 +259,7 @@ type upgradeFixture struct {
 	parent   string
 	database string
 	out      *bytes.Buffer
+	latest   *atomic.Value // the latest release tag; "" makes the request fail
 }
 
 func newUpgradeFixture(t *testing.T, releases map[string]string) *upgradeFixture {
@@ -287,6 +308,8 @@ func newUpgradeFixture(t *testing.T, releases map[string]string) *upgradeFixture
 		t.Fatal(err)
 	}
 
+	latest := &atomic.Value{}
+	latest.Store("v2.11.2")
 	served := map[string][]byte{}
 	for version, env := range releases {
 		name := "grasshopper-server-darwin-arm64-" + version + ".zip"
@@ -297,7 +320,12 @@ func newUpgradeFixture(t *testing.T, releases map[string]string) *upgradeFixture
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/latest" {
-			_, _ = w.Write([]byte(`{"tag_name":"v2.11.2"}`))
+			tag := latest.Load().(string)
+			if tag == "" {
+				http.Error(w, "unavailable", http.StatusBadGateway)
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"tag_name":%q}`, tag)
 			return
 		}
 		if data, ok := served[r.URL.Path]; ok {
@@ -322,7 +350,7 @@ func newUpgradeFixture(t *testing.T, releases map[string]string) *upgradeFixture
 	if err := u.waitHealthy(context.Background(), listen, tokenFile, "2.11.0"); err != nil {
 		t.Fatal(err)
 	}
-	return &upgradeFixture{u: u, launchd: launchd, plist: plist, parent: parent, database: database, out: out}
+	return &upgradeFixture{u: u, launchd: launchd, plist: plist, parent: parent, database: database, out: out, latest: latest}
 }
 
 func (f *upgradeFixture) program(t *testing.T) string {
@@ -405,6 +433,226 @@ func TestFailedUpgradeRestoresThePreviousServer(t *testing.T) {
 	if err := f.u.rollback(context.Background()); err == nil {
 		t.Fatal("a failed upgrade left something to roll back to")
 	}
+	f.latest.Store("v2.11.3")
+	if err := f.u.upgrade(context.Background(), ""); err != nil || !strings.Contains(f.out.String(), "Skipping 2.11.3") {
+		t.Fatalf("the nightly upgrade should not retry a failed release: %v\n%s", err, f.out)
+	}
+}
+
+func TestUpgradeWhoseSearchFailsRestoresThePreviousServer(t *testing.T) {
+	f := newUpgradeFixture(t, map[string]string{"2.11.4": "GRASSHOPPER_FAKE_SEARCH_BROKEN=1"})
+	f.u.healthWait = 3 * time.Second
+	err := f.u.upgrade(context.Background(), "2.11.4")
+	if err == nil || !strings.Contains(err.Error(), "2.11.0 is running again") {
+		t.Fatalf("a server whose search fails should be rolled back, got %v\n%s", err, f.out)
+	}
+}
+
+func TestSearchHealthCheckWorksAgainstTheRealService(t *testing.T) {
+	database, tokenPath, err := quickstartState(filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := memory.OpenWritableExisting(database, "synthetic", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	token, _ := readToken(tokenPath)
+	handler, err := service.NewHandler(service.Backend{Store: store, Version: "2.11.0"}, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	listen := strings.TrimPrefix(server.URL, "http://")
+	if err := searchWorks(context.Background(), listen, token); err != nil {
+		t.Fatalf("search health check against the real service: %v", err)
+	}
+	if err := searchWorks(context.Background(), listen, strings.Repeat("x", 40)); err == nil {
+		t.Fatal("search health check passed with a wrong token")
+	}
+}
+
+func TestNightlyUpgradeDoesNotUndoARollback(t *testing.T) {
+	f := newUpgradeFixture(t, map[string]string{"2.11.2": ""})
+	ctx := context.Background()
+	if err := f.u.upgrade(ctx, "2.11.2"); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, f.out)
+	}
+	if err := f.u.rollback(ctx); err != nil {
+		t.Fatalf("rollback: %v\n%s", err, f.out)
+	}
+	if err := f.u.upgrade(ctx, ""); err != nil || !strings.Contains(f.out.String(), "Skipping 2.11.2") {
+		t.Fatalf("the nightly upgrade should skip the rolled-back release: %v\n%s", err, f.out)
+	}
+	if current, _ := f.links(t); current != "app" {
+		t.Fatalf("the nightly upgrade moved current to %s", current)
+	}
+}
+
+func TestUpgradeNeverDowngradesToAnOlderLatestRelease(t *testing.T) {
+	f := newUpgradeFixture(t, nil)
+	f.latest.Store("v2.10.9")
+	if err := f.u.upgrade(context.Background(), ""); err != nil || !strings.Contains(f.out.String(), "not newer") {
+		t.Fatalf("an older latest release should be a no-op: %v\n%s", err, f.out)
+	}
+	if f.launchd.starts != 1 {
+		t.Fatalf("the server restarted %d times", f.launchd.starts-1)
+	}
+}
+
+func TestSkippedReleaseIsSkippedUntilANewerOneShipsOrIsNamed(t *testing.T) {
+	f := newUpgradeFixture(t, map[string]string{"2.11.1": "", "2.11.2": ""})
+	ctx := context.Background()
+	if err := f.u.upgrade(ctx, "2.11.1"); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, f.out)
+	}
+	if err := f.u.rollback(ctx); err != nil {
+		t.Fatalf("rollback: %v\n%s", err, f.out)
+	}
+	f.latest.Store("v2.11.1")
+	if err := f.u.upgrade(ctx, ""); err != nil || !strings.Contains(f.out.String(), "Skipping 2.11.1") {
+		t.Fatalf("want 2.11.1 skipped: %v\n%s", err, f.out)
+	}
+	if err := f.u.upgrade(ctx, "2.11.1"); err != nil {
+		t.Fatalf("--to should override the skip: %v\n%s", err, f.out)
+	}
+	if current, _ := f.links(t); current != "grasshopper-server-2.11.1" {
+		t.Fatalf("--to left current at %s", current)
+	}
+	if err := f.u.rollback(ctx); err != nil {
+		t.Fatalf("rollback: %v\n%s", err, f.out)
+	}
+	f.latest.Store("v2.11.2")
+	if err := f.u.upgrade(ctx, ""); err != nil {
+		t.Fatalf("a newer release should proceed: %v\n%s", err, f.out)
+	}
+	if current, _ := f.links(t); current != "grasshopper-server-2.11.2" {
+		t.Fatalf("current %s, want 2.11.2", current)
+	}
+	if _, err := os.Stat(filepath.Join(f.parent, "skip-version")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a newer release should clear the skip record: %v", err)
+	}
+}
+
+func TestFailedLatestReleaseRequestLeavesTheServerUntouched(t *testing.T) {
+	f := newUpgradeFixture(t, nil)
+	f.latest.Store("")
+	before := f.program(t)
+	if err := f.u.upgrade(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "latest release") {
+		t.Fatalf("want a latest-release failure, got %v", err)
+	}
+	if f.program(t) != before || f.launchd.starts != 1 {
+		t.Fatalf("the plist or service changed: %s, %d starts", f.program(t), f.launchd.starts)
+	}
+	if _, err := os.Lstat(filepath.Join(f.parent, "current")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("a failed latest-release request created links")
+	}
+}
+
+func TestUpgradeCommandsHoldAnExclusiveLock(t *testing.T) {
+	f := newUpgradeFixture(t, nil)
+	unlock, err := f.u.lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.u.lock(); err == nil || !strings.Contains(err.Error(), "already running") {
+		t.Fatalf("a second upgrade should be refused, got %v", err)
+	}
+	unlock()
+	again, err := f.u.lock()
+	if err != nil {
+		t.Fatalf("the lock should be free after unlock: %v", err)
+	}
+	again()
+}
+
+func TestLinkDoesNotUseAFixedTempName(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "current")
+	// A concurrent link, or a leftover, at the old fixed temp name must not
+	// be reused.
+	if err := os.MkdirAll(filepath.Join(path+".tmp", "busy"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"a", "b"} {
+		if err := link(path, target); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := os.Readlink(path); got != target {
+			t.Fatalf("current -> %s, want %s", got, target)
+		}
+	}
+}
+
+func TestCutoverPointsPreviousAtTheOldArchiveBeforeRestarting(t *testing.T) {
+	f := newUpgradeFixture(t, map[string]string{"2.11.1": "", "2.11.3": "GRASSHOPPER_FAKE_BROKEN=1"})
+	f.u.healthWait = 3 * time.Second
+	var atRestart []string
+	run := f.u.run
+	f.u.run = func(name string, args ...string) ([]byte, error) {
+		if name == "launchctl" && args[0] == "kickstart" {
+			previous, _ := os.Readlink(filepath.Join(f.parent, "previous"))
+			atRestart = append(atRestart, previous)
+		}
+		return run(name, args...)
+	}
+	ctx := context.Background()
+	if err := f.u.upgrade(ctx, "2.11.1"); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, f.out)
+	}
+	if err := f.u.upgrade(ctx, "2.11.3"); err == nil {
+		t.Fatal("the broken release should fail")
+	}
+	if len(atRestart) < 2 || atRestart[0] != "app" || atRestart[1] != "grasshopper-server-2.11.1" {
+		t.Fatalf("previous at each restart: %q", atRestart)
+	}
+	if current, previous := f.links(t); current != "grasshopper-server-2.11.1" || previous != "app" {
+		t.Fatalf("a failed cutover left current %s, previous %s", current, previous)
+	}
+}
+
+func TestUpgradeKeepsTheNewestFivePreUpgradeBackups(t *testing.T) {
+	f := newUpgradeFixture(t, map[string]string{"2.11.1": ""})
+	backups := filepath.Join(filepath.Dir(f.database), "backups")
+	if err := os.MkdirAll(backups, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Older versions sort after newer ones by name; age is the timestamp.
+	for i, version := range []string{"2.9.0", "2.8.0", "2.10.0", "2.10.1", "2.10.2", "2.11.0"} {
+		name := fmt.Sprintf("pre-%s-2025010%dT000000Z.db", version, i+1)
+		if err := os.WriteFile(filepath.Join(backups, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, other := range []string{"manual.db", "pre-notes.txt"} {
+		if err := os.WriteFile(filepath.Join(backups, other), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.u.upgrade(context.Background(), "2.11.1"); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, f.out)
+	}
+	entries, _ := os.ReadDir(backups)
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	kept := strings.Join(names, " ")
+	for _, gone := range []string{"pre-2.9.0-20250101", "pre-2.8.0-20250102"} {
+		if strings.Contains(kept, gone) {
+			t.Fatalf("%s should be pruned: %s", gone, kept)
+		}
+	}
+	for _, want := range []string{"pre-2.11.1-", "pre-2.10.0-20250103", "pre-2.11.0-20250106", "manual.db", "pre-notes.txt"} {
+		if !strings.Contains(kept, want) {
+			t.Fatalf("%s should be kept: %s", want, kept)
+		}
+	}
+	if len(names) != 7 {
+		t.Fatalf("want 5 backups and 2 other files, got %s", kept)
+	}
 }
 
 func TestUpgradeRefusesAnArchiveThatDoesNotMatchSHA256SUMS(t *testing.T) {
@@ -428,6 +676,23 @@ func TestUpgradeRefusesAnArchiveThatDoesNotMatchSHA256SUMS(t *testing.T) {
 
 	if err := f.u.upgrade(context.Background(), "2.11.1"); err == nil || !strings.Contains(err.Error(), "SHA256SUMS") {
 		t.Fatalf("want a checksum failure, got %v", err)
+	}
+}
+
+func TestDownloadsRefuseARedirectFromHTTPSToHTTP(t *testing.T) {
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("downgraded"))
+	}))
+	defer plain.Close()
+	secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL+r.URL.Path, http.StatusFound)
+	}))
+	defer secure.Close()
+	client := downloadClient()
+	client.Transport = secure.Client().Transport
+	u := &upgrader{http: client}
+	if data, err := u.download(context.Background(), secure.URL+"/SHA256SUMS", 1024); err == nil {
+		t.Fatalf("followed an https-to-http redirect: %q", data)
 	}
 }
 

@@ -33,8 +33,10 @@ import (
 //	client/updates-off        present: never download (bundled clients still run)
 //	client/last-error         why the last download failed, for check
 //
-// Clients follow the server's version, never the newest release, so a client
-// is never ahead of a server that has not been upgraded.
+// The managed client follows the server's version, never the newest release.
+// A bundled plugin client can still be ahead: plugins update when the
+// marketplace publishes, before the server's nightly upgrade. check warns
+// when an agent runs a client newer than the server.
 
 // ReleaseBaseURL is where release assets are downloaded from. Tests replace it.
 var ReleaseBaseURL = "https://github.com/MylesMCook/grasshopper/releases/download"
@@ -262,9 +264,10 @@ func Install(ctx context.Context, dir, version string) error {
 	}
 	final := filepath.Dir(managedProgram(dir, version))
 	if err := os.Rename(staging, final); err != nil {
-		// Another bridge may have installed the same version first.
-		if info, statErr := os.Stat(managedProgram(dir, version)); statErr != nil || !info.Mode().IsRegular() {
-			return err
+		// Another bridge may have installed the same version first; reuse
+		// its folder only if its program reports that version.
+		if !reportsVersion(ctx, managedProgram(dir, version), version) {
+			return fmt.Errorf("%s exists but does not hold client %s: %w", final, version, err)
 		}
 	}
 	return makeCurrent(dir, version)

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -422,6 +423,19 @@ func renderCheck(w io.Writer, result map[string]string, agents []agentReport) er
 	}
 	if note := result["client_note"]; note != "" {
 		fmt.Fprintln(w, note)
+	}
+	var newer []string
+	for _, agent := range agents {
+		if agent.State == agentNewer && !slices.Contains(newer, agent.Agent) {
+			newer = append(newer, agent.Agent)
+		}
+	}
+	if len(newer) > 0 {
+		names := newer[0]
+		if last := len(newer) - 1; last > 0 {
+			names = strings.Join(newer[:last], ", ") + " and " + newer[last]
+		}
+		fmt.Fprintf(w, "Warning: %s runs a client newer than the server; upgrade the server to match.\n", names)
 	}
 	if len(agents) == 0 {
 		fmt.Fprintln(w, "No Grasshopper agents found on this machine.")

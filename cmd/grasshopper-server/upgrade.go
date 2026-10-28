@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +29,8 @@ import (
 // current link at the new archive, restart the job and check authenticated
 // health. If the new server does not become healthy, current goes back to the
 // old archive and the job restarts on it. The previous link keeps the old
-// archive for --rollback.
+// archive for --rollback. Without --to, upgrade installs only a newer release
+// than the running one, and skips one that was rolled back or failed.
 //
 // Archives are extracted beside the running one as grasshopper-server-X.Y.Z,
 // next to the current and previous links. The plist runs current/bin/
@@ -58,7 +60,7 @@ type upgrader struct {
 func upgradeCommand(args []string) error {
 	flags := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	plist := flags.String("plist", "", "the server's launchd plist (default: the one Grasshopper plist in ~/Library/LaunchAgents)")
-	to := flags.String("to", "", "release to install (default: the latest release)")
+	to := flags.String("to", "", "release to install, even an older or skipped one (default: the latest release, if newer)")
 	rollback := flags.Bool("rollback", false, "switch back to the archive the last upgrade replaced")
 	schedule := flags.Bool("schedule", false, "install a launchd job that runs upgrade every night")
 	unschedule := flags.Bool("unschedule", false, "remove the nightly upgrade job")
@@ -87,9 +89,14 @@ func upgradeCommand(args []string) error {
 	}
 	u := &upgrader{
 		plist: *plist, out: os.Stdout, run: runCommand,
-		http:       &http.Client{Timeout: 10 * time.Minute},
+		http:       downloadClient(),
 		healthWait: 2 * time.Minute,
 	}
+	unlock, err := u.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	if *schedule || *unschedule {
@@ -298,21 +305,36 @@ func (u *upgrader) upgrade(ctx context.Context, target string) error {
 	if err != nil {
 		return err
 	}
-	if target == "" {
+	parent := filepath.Dir(current.root)
+	explicit := target != ""
+	if !explicit {
 		if target, err = u.latestVersion(ctx); err != nil {
 			return err
 		}
 	}
-	if _, ok := parseVersion(target); !ok {
+	wanted, ok := parseVersion(target)
+	if !ok {
 		return fmt.Errorf("invalid release %q", target)
 	}
 	if target == running {
 		u.step("The server already runs %s.", running)
 		return nil
 	}
+	// The nightly job names no release: it only moves forward, and never
+	// retries a release that was rolled back or failed its health check.
+	if !explicit {
+		if have, ok := parseVersion(running); ok && slices.Compare(wanted[:], have[:]) <= 0 {
+			u.step("The latest release %s is not newer than %s; nothing to do.", target, running)
+			return nil
+		}
+		if readSkip(parent) == target {
+			u.step("Skipping %s: it was rolled back or failed its health check. Run upgrade --to %s to install it anyway.", target, target)
+			return nil
+		}
+	}
 	u.step("Upgrading the server from %s to %s.", running, target)
 
-	root, err := u.fetchArchive(ctx, filepath.Dir(current.root), target)
+	root, err := u.fetchArchive(ctx, parent, target)
 	if err != nil {
 		return err
 	}
@@ -325,9 +347,13 @@ func (u *upgrader) upgrade(ctx context.Context, target string) error {
 		return err
 	}
 	if err := u.cutover(ctx, current, filepath.Base(root), target); err != nil {
+		u.recordSkip(parent, target)
 		return err
 	}
-	u.pruneArchives(filepath.Dir(current.root))
+	if skipped, ok := parseVersion(readSkip(parent)); ok && slices.Compare(wanted[:], skipped[:]) >= 0 {
+		_ = os.Remove(filepath.Join(parent, skipFile))
+	}
+	u.pruneArchives(parent)
 	u.step("The server runs %s. The previous version stays for upgrade --rollback.", target)
 	return nil
 }
@@ -343,6 +369,10 @@ func (u *upgrader) rollback(ctx context.Context) error {
 	if err != nil || filepath.Base(current.root) != "current" {
 		return errors.New("no earlier upgrade to roll back")
 	}
+	running, err := archiveVersion(current.root)
+	if err != nil {
+		return err
+	}
 	version, err := archiveVersion(filepath.Join(filepath.Dir(current.root), previous))
 	if err != nil {
 		return err
@@ -350,8 +380,24 @@ func (u *upgrader) rollback(ctx context.Context) error {
 	if err := u.cutover(ctx, current, previous, version); err != nil {
 		return err
 	}
+	u.recordSkip(filepath.Dir(current.root), running)
 	u.step("The server runs %s. Run upgrade --rollback again to go back.", version)
 	return nil
+}
+
+// skipFile, beside the archives, names the release the last rollback or
+// failed cutover backed out. Upgrades without --to skip exactly that release.
+const skipFile = "skip-version"
+
+func readSkip(parent string) string {
+	data, _ := os.ReadFile(filepath.Join(parent, skipFile))
+	return strings.TrimSpace(string(data))
+}
+
+func (u *upgrader) recordSkip(parent, version string) {
+	if err := os.WriteFile(filepath.Join(parent, skipFile), []byte(version+"\n"), 0o600); err != nil {
+		u.step("Could not record %s as skipped: %v", version, err)
+	}
 }
 
 func launchdDomain() string {
@@ -429,7 +475,9 @@ func (u *upgrader) unload(plist, label string) error {
 
 // cutover points the current link at the archive folder name, restarts the
 // job and waits for it to report version. If it does not, current goes back
-// and the old server restarts. On success, previous names the old archive.
+// and the old server restarts. previous names the old archive before the
+// restart, so a crash mid-cutover still leaves rollback aimed at it; a failed
+// cutover puts previous back.
 func (u *upgrader) cutover(ctx context.Context, s launchdJob, name, version string) error {
 	old, err := os.Readlink(s.root)
 	if err != nil {
@@ -439,15 +487,26 @@ func (u *upgrader) cutover(ctx context.Context, s launchdJob, name, version stri
 	if err != nil {
 		return err
 	}
+	previous := filepath.Join(filepath.Dir(s.root), "previous")
+	before, _ := os.Readlink(previous)
+	if err := link(previous, old); err != nil {
+		return err
+	}
 	if err := u.restartOn(ctx, s, name, version); err != nil {
 		u.step("%s did not become healthy: %v", version, err)
 		u.step("Restoring %s.", running)
-		if restoreErr := u.restartOn(ctx, s, old, running); restoreErr != nil {
+		restoreErr := u.restartOn(ctx, s, old, running)
+		if before == "" {
+			restoreErr = errors.Join(restoreErr, os.Remove(previous))
+		} else {
+			restoreErr = errors.Join(restoreErr, link(previous, before))
+		}
+		if restoreErr != nil {
 			return fmt.Errorf("%s failed (%v) and restoring %s also failed: %w", version, err, running, restoreErr)
 		}
 		return fmt.Errorf("%s failed; %s is running again: %w", version, running, err)
 	}
-	return link(filepath.Join(filepath.Dir(s.root), "previous"), old)
+	return nil
 }
 
 // restartOn points current at name and has launchd kill the running process
@@ -464,16 +523,20 @@ func (u *upgrader) restartOn(ctx context.Context, s launchdJob, name, version st
 
 // link atomically makes path a symlink to target, replacing what was there.
 func link(path, target string) error {
-	temp := path + ".tmp"
-	_ = os.Remove(temp)
+	temp := fmt.Sprintf("%s.tmp-%d-%d", path, os.Getpid(), time.Now().UnixNano())
 	if err := os.Symlink(target, temp); err != nil {
 		return err
 	}
-	return os.Rename(temp, path)
+	if err := os.Rename(temp, path); err != nil {
+		_ = os.Remove(temp)
+		return err
+	}
+	return nil
 }
 
 // waitHealthy waits for an owner-authenticated /connection on listen to
-// report version. The embedding model takes some seconds to load.
+// report version and answer one MCP search. The embedding model takes some
+// seconds to load.
 func (u *upgrader) waitHealthy(ctx context.Context, listen, tokenFile, version string) error {
 	token, err := readToken(tokenFile)
 	if err != nil {
@@ -498,7 +561,9 @@ func (u *upgrader) waitHealthy(ctx context.Context, listen, tokenFile, version s
 			case identity.Role != "owner" || identity.Version != version:
 				last = fmt.Errorf("server reports %s, not %s", identity.Version, version)
 			default:
-				return nil
+				if last = searchWorks(ctx, listen, token); last == nil {
+					return nil
+				}
 			}
 		} else {
 			last = err
@@ -510,6 +575,51 @@ func (u *upgrader) waitHealthy(ctx context.Context, listen, tokenFile, version s
 		}
 	}
 	return fmt.Errorf("server did not become healthy: %w", last)
+}
+
+// searchWorks makes one authenticated MCP search, so a server whose database
+// or model is broken fails health even though /connection answers.
+func searchWorks(ctx context.Context, listen, token string) error {
+	const body = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"scope":{},"query":"upgrade health check","limit":1},` +
+		`"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"grasshopper-upgrade","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}`
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+listen+"/mcp", strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	request.Header.Set("MCP-Protocol-Version", "2026-07-28")
+	request.Header.Set("Mcp-Method", "tools/call")
+	request.Header.Set("Mcp-Name", "search")
+	response, err := (&http.Client{Timeout: 15 * time.Second}).Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("search returned HTTP %d", response.StatusCode)
+	}
+	// The reply may come as one server-sent event.
+	for _, line := range strings.Split(string(raw), "\n") {
+		if data, ok := strings.CutPrefix(line, "data:"); ok {
+			raw = []byte(data)
+		}
+	}
+	var reply struct {
+		Error  json.RawMessage `json:"error"`
+		Result *struct {
+			IsError bool `json:"isError"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &reply); err != nil || reply.Error != nil || reply.Result == nil || reply.Result.IsError {
+		return errors.New("search failed")
+	}
+	return nil
 }
 
 func (u *upgrader) latestVersion(ctx context.Context) (string, error) {
@@ -568,6 +678,17 @@ func (u *upgrader) fetchArchive(ctx context.Context, parent, version string) (st
 	}
 	u.step("Downloaded and checked %s.", name)
 	return root, nil
+}
+
+func downloadClient() *http.Client {
+	// Same rule as internal/client's Install, copied so the server does not
+	// link the client package.
+	return &http.Client{Timeout: 10 * time.Minute, CheckRedirect: func(request *http.Request, via []*http.Request) error {
+		if len(via) > 5 || (via[0].URL.Scheme == "https" && request.URL.Scheme != "https") {
+			return errors.New("refusing redirect")
+		}
+		return nil
+	}}
 }
 
 func (u *upgrader) download(ctx context.Context, url string, limit int64) ([]byte, error) {
@@ -672,11 +793,30 @@ func (u *upgrader) backup(root string, s launchdJob, version string) (string, er
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, "pre-"+version+"-"+time.Now().UTC().Format("20060102T150405Z")+".db")
+	const stamp = "20060102T150405Z"
+	path := filepath.Join(dir, "pre-"+version+"-"+time.Now().UTC().Format(stamp)+".db")
 	if output, err := u.run(filepath.Join(root, "bin", "grasshopper-backup"), "--source", s.database, "--dest", path); err != nil {
 		return "", fmt.Errorf("backup failed: %w", err)
 	} else {
 		fmt.Fprint(u.out, string(output))
+	}
+	// Keep the newest five pre-upgrade backups, by their timestamp; leave
+	// every other file alone.
+	type dated struct {
+		path string
+		at   time.Time
+	}
+	var found []dated
+	names, _ := filepath.Glob(filepath.Join(dir, "pre-*.db"))
+	for _, name := range names {
+		base := strings.TrimSuffix(filepath.Base(name), ".db")
+		if at, err := time.Parse(stamp, base[strings.LastIndex(base, "-")+1:]); err == nil {
+			found = append(found, dated{name, at})
+		}
+	}
+	slices.SortFunc(found, func(a, b dated) int { return b.at.Compare(a.at) })
+	for _, old := range found[min(len(found), 5):] {
+		_ = os.Remove(old.path)
 	}
 	return path, nil
 }

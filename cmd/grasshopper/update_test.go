@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +30,40 @@ func TestCheckKeepsPluginsBehindWhenTheManagedClientIsBehind(t *testing.T) {
 	reports := []agentReport{{Agent: "Claude Code", Version: "2.11.0", State: agentBehind, Update: "claude plugin update"}}
 	if got := withManagedClient(reports, "2.11.1", "2.11.2")[0]; got.State != agentBehind {
 		t.Fatalf("managed client behind the server should not hide the plugin, got %+v", got)
+	}
+}
+
+func TestCheckWarnsWhenAnAgentRunsAClientNewerThanTheServer(t *testing.T) {
+	reports := []agentReport{
+		{Agent: "Claude Code", Version: "2.12.0", State: agentNewer},
+		{Agent: "Codex", Version: "2.11.0", State: agentBehind, Update: "codex plugin update"},
+		{Agent: "Cursor", Version: "2.11.0", State: agentBroken},
+		{Agent: "Old Codex", Version: "2.10.5", State: agentBehind, Update: "codex plugin update"},
+	}
+	// A managed client ahead of the server makes agents that hand off to it
+	// newer too.
+	reports = withManagedClient(reports, "2.11.2", "2.11.1")
+	if codex := reports[1]; codex.State != agentNewer || !strings.Contains(codex.Detail, "2.11.2") {
+		t.Fatalf("Codex hands off to 2.11.2, got %+v", codex)
+	}
+	if reports[1].Update != "" {
+		t.Fatalf("a plugin that hands off needs no plugin update, got %q", reports[1].Update)
+	}
+	// Below the minimum a plugin never hands off, so it still needs its update.
+	if old := reports[3]; old.State != agentBehind || old.Update == "" {
+		t.Fatalf("a plugin too old to hand off stays behind, got %+v", old)
+	}
+	var out bytes.Buffer
+	result := map[string]string{"status": "connected", "host_version": "2.11.1", "next_step": connectedNextStep}
+	_ = renderCheck(&out, result, reports) // the broken Cursor fails check
+	var warnings []string
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(line, "Warning:") {
+			warnings = append(warnings, line)
+		}
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "Claude Code and Codex") || strings.Contains(warnings[0], "Cursor") {
+		t.Fatalf("want one warning naming Claude Code and Codex, got %q\n%s", warnings, out.String())
 	}
 }
 

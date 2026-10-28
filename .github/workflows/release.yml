@@ -18,8 +18,12 @@ on:
 permissions:
   contents: read
 
+# Every publishing run shares one group, so a main push and a hand-pushed tag
+# for the same version never publish at once. Pull requests publish nothing
+# and keep their own group: a pending run in a shared group would replace a
+# pending release.
 concurrency:
-  group: release-${{ github.ref }}
+  group: ${{ github.event_name == 'pull_request' && format('release-pr-{0}', github.ref) || 'release' }}
   cancel-in-progress: false
 
 jobs:
