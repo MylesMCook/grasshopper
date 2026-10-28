@@ -76,7 +76,7 @@ func (r *Reader) searchKeys(ctx context.Context, keys []string, query string, ve
 	if prepared := prepareFTSQuery(query); prepared != "" {
 		rows, err := tx.QueryContext(ctx, "SELECT "+prefixedRecordColumns("c")+` FROM chunks_fts JOIN chunks c ON c.id=chunks_fts.rowid
  WHERE chunks_fts MATCH ? AND c.kind='memory' AND c.archived=0
- AND c.memory_scope IN (SELECT value FROM json_each(?)) `+filter+` ORDER BY bm25(chunks_fts),c.id`, prepared, string(keyJSON))
+ AND c.memory_scope IN (SELECT value FROM json_each(?)) `+filter+` ORDER BY bm25(chunks_fts),c.id LIMIT 200`, prepared, string(keyJSON))
 		if err != nil {
 			return Page{}, err
 		}
