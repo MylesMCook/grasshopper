@@ -265,6 +265,10 @@ func TestOwnerWritesNeedAnOwnerSessionAndExactOrigin(t *testing.T) {
 	if status, _ := ownerRead(t, server, "/visualizer/api/update", `{"id":`+jsonNumber(receipt.ID)+`,"expected_revision":1,"title":"","content":"   ","purpose":"decision","request_id":"blank"}`); status != http.StatusBadRequest {
 		t.Fatalf("blank content accepted: %d", status)
 	}
+	// An overlong handoff is the owner's input to fix, not a server fault to retry.
+	if status, _ := ownerRead(t, server, "/visualizer/api/update", `{"id":`+jsonNumber(receipt.ID)+`,"expected_revision":1,"title":"","content":"`+strings.Repeat("a", 601)+`","purpose":"handoff","request_id":"long-handoff"}`); status != http.StatusBadRequest {
+		t.Fatalf("overlong handoff status=%d want 400", status)
+	}
 	if status, _ := ownerRead(t, server, "/visualizer/api/update", `{"id":9999,"expected_revision":1,"title":"","content":"x","purpose":"decision","request_id":"missing"}`); status != http.StatusNotFound {
 		t.Fatalf("missing memory status=%d", status)
 	}

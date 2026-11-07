@@ -540,7 +540,7 @@ func ownerWriteResult(w http.ResponseWriter, r *http.Request, store *memory.Writ
 	case strings.HasPrefix(err.Error(), "memory_not_found"):
 		http.Error(w, "memory not found", http.StatusNotFound)
 	case strings.HasPrefix(err.Error(), "content must be"), strings.HasPrefix(err.Error(), "invalid purpose"), strings.HasPrefix(err.Error(), "project must use"),
-		strings.HasPrefix(err.Error(), "metadata too large"), strings.HasPrefix(err.Error(), "request_id must"):
+		strings.HasPrefix(err.Error(), "metadata too large"), strings.HasPrefix(err.Error(), "request_id must"), strings.HasPrefix(err.Error(), "handoff is"):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
 		http.Error(w, "memory not saved", http.StatusServiceUnavailable)
