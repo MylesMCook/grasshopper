@@ -79,3 +79,69 @@ func TestRestoringAHandoffKeepsOnePerScope(t *testing.T) {
 		t.Fatalf("restore left two or zero active handoffs: restored archived=%v newer archived=%v", restored.Archived, newer.Archived)
 	}
 }
+
+// A project handoff applies to the whole project: a device or platform the
+// agent sends is dropped, so another machine on the same project sees it, and
+// it replaces handoffs saved per device before this rule existed.
+func TestProjectHandoffIgnoresDeviceAndReplacesDeviceHandoffs(t *testing.T) {
+	w := fixtureWriter(t)
+	ctx := context.Background()
+	project, mac, windows, macos := "id:shared", "synthetic-mac", "synthetic-pc", "macos"
+	save := func(device *string, text, request string) Receipt {
+		t.Helper()
+		receipt, err := w.Write(ctx, WriteInput{
+			Scope: Scope{Project: &project, Device: device, Platform: &macos}, Content: text, Purpose: "handoff",
+			Provenance: Provenance{"codex", "synthetic", "end of session"}, RequestID: request,
+		}, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return receipt
+	}
+
+	// Simulate a handoff stored per device by an earlier release.
+	old := save(&mac, "Mac: left the parser half done.", "device-1")
+	oldScope, _ := Scope{Project: &project, Device: &mac, Platform: &macos}.Key()
+	if _, err := w.db.ExecContext(ctx, "UPDATE chunks SET memory_scope=? WHERE id=?", oldScope, old.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	current := save(&windows, "PC: parser done. Next: tests.", "device-2")
+	record, err := w.Get(ctx, Scope{Project: &project}, current.ID, nil)
+	if err != nil || record == nil || record.Scope.Device != nil || record.Scope.Platform != nil {
+		t.Fatalf("handoff kept a device or platform scope: %+v %v", record, err)
+	}
+	stale, err := w.RecordByID(ctx, old.ID, nil)
+	if err != nil || stale == nil || !stale.Archived {
+		t.Fatalf("device handoff for the same project stayed active: %+v %v", stale, err)
+	}
+}
+
+// Handoffs stay short: over 600 characters is refused with guidance, counted
+// in characters rather than bytes.
+func TestHandoffLongerThan600CharactersIsRefused(t *testing.T) {
+	w := fixtureWriter(t)
+	ctx := context.Background()
+	project := "id:short"
+	save := func(text, request string) error {
+		_, err := w.Write(ctx, WriteInput{
+			Scope: Scope{Project: &project}, Content: text, Purpose: "handoff",
+			Provenance: Provenance{"codex", "synthetic-mac", "end of session"}, RequestID: request,
+		}, nil, "")
+		return err
+	}
+	if err := save(strings.Repeat("é", 600), "limit-600"); err != nil {
+		t.Fatalf("600 characters should fit: %v", err)
+	}
+	err := save(strings.Repeat("a", 601), "limit-601")
+	if err == nil || !strings.Contains(err.Error(), "600") {
+		t.Fatalf("601 characters should be refused with the limit named: %v", err)
+	}
+	// The limit is for handoffs only.
+	if _, err := w.Write(ctx, WriteInput{
+		Scope: Scope{Project: &project}, Content: strings.Repeat("a", 601), Purpose: "decision",
+		Provenance: Provenance{"codex", "synthetic-mac", "design review"}, RequestID: "long-decision",
+	}, nil, ""); err != nil {
+		t.Fatalf("a long decision should still save: %v", err)
+	}
+}

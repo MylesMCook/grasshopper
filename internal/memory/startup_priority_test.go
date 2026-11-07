@@ -30,8 +30,13 @@ func TestSmallStartupBudgetPrioritizesConfirmedDecisionsBeforeLongHandoff(t *tes
 	if err != nil || len(before.Records) == 0 {
 		t.Fatalf("baseline: %+v %v", before, err)
 	}
-	_, err = w.Write(ctx, WriteInput{Scope: scope, Content: strings.Repeat("h", 1700), Purpose: "handoff", Provenance: Provenance{"test", "test", "synthetic"}, RequestID: "long-handoff"}, nil, "")
+	// New handoffs are capped at 600 characters, but databases still hold
+	// longer ones saved by earlier releases, so plant one directly.
+	handoff, err := w.Write(ctx, WriteInput{Scope: scope, Content: "short handoff", Purpose: "handoff", Provenance: Provenance{"test", "test", "synthetic"}, RequestID: "long-handoff"}, nil, "")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.db.ExecContext(ctx, "UPDATE chunks SET content=? WHERE id=?", strings.Repeat("h", 1700), handoff.ID); err != nil {
 		t.Fatal(err)
 	}
 	after, err := w.Context(ctx, scope, 3000)
