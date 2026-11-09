@@ -145,3 +145,38 @@ func TestHandoffLongerThan600CharactersIsRefused(t *testing.T) {
 		t.Fatalf("a long decision should still save: %v", err)
 	}
 }
+
+// Restoring a handoff stored per device by an earlier release must not hide
+// the project-wide handoff from every other device.
+func TestRestoringADeviceHandoffKeepsTheProjectHandoff(t *testing.T) {
+	w := fixtureWriter(t)
+	ctx := context.Background()
+	project, mac := "id:restore-device", "synthetic-mac"
+	deviceScope := Scope{Project: &project, Device: &mac}
+	save := func(text, request string) Receipt {
+		t.Helper()
+		receipt, err := w.Write(ctx, WriteInput{Scope: Scope{Project: &project}, Content: text, Purpose: "handoff", Provenance: Provenance{"codex", "synthetic", "end of session"}, RequestID: request}, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return receipt
+	}
+	old := save("Mac: left the parser half done.", "legacy-device")
+	key, _ := deviceScope.Key()
+	if _, err := w.db.ExecContext(ctx, "UPDATE chunks SET memory_scope=? WHERE id=?", key, old.ID); err != nil {
+		t.Fatal(err)
+	}
+	current := save("PC: parser done. Next: tests.", "project-wide")
+	retired, _ := w.RecordByID(ctx, old.ID, nil)
+	if !retired.Archived {
+		t.Fatal("setup: the project handoff should retire the device handoff")
+	}
+
+	if _, err := w.Archive(ctx, ArchiveInput{Scope: deviceScope, ID: old.ID, ExpectedRevision: retired.Revision, Archived: false, RequestID: "restore-device", Provenance: Provenance{"memory-view", "owner browser", "restore"}}); err != nil {
+		t.Fatal(err)
+	}
+	projectWide, _ := w.RecordByID(ctx, current.ID, nil)
+	if projectWide.Archived {
+		t.Fatal("restoring a device handoff archived the project-wide handoff other devices load")
+	}
+}
