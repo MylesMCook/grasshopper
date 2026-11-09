@@ -8,8 +8,9 @@ five agent tools do not change; this page decides what the owner sees.
 - **Kept**: a confirmed memory. Agents load it at startup.
 - **New**: an unconfirmed memory other than a handoff. Agents do not load it at
   startup until the owner keeps it. Keep confirms it; Discard archives it.
-- **Handoff**: one per exact scope. Saving a new handoff archives the previous
-  one with a note naming its replacement.
+- **Handoff**: one per project, on every device, at most 600 characters.
+  Saving a new handoff archives the previous one with a note naming its
+  replacement. A handoff without a project keeps one per exact scope.
 - **Where it applies**: a project, or All projects (global). Device and
   platform scopes still exist and show only when a memory has them.
 - **Who saved it**: "you" for the owner's edits and kept memories the owner
@@ -84,6 +85,16 @@ Feature: Owner reviews and manages memories
     When an agent saves a newer handoff for "grasshopper"
     Then the older handoff is archived with a note naming the newer one
     And handoffs in other scopes are unchanged
+
+  Scenario: A project handoff reaches every device
+    Given project "grasshopper" has a handoff saved for the Mac only
+    When an agent on the Windows PC saves a handoff for "grasshopper"
+    Then the new handoff applies to "grasshopper" on every device
+    And the Mac-only handoff is archived as replaced
+
+  Scenario: An overlong handoff is refused
+    When an agent saves a 601-character handoff
+    Then nothing is saved and the error names the 600-character limit
 
   Scenario: A memory moves to another project or every project
     Given a kept memory in project "grasshopper"

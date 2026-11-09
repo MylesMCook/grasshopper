@@ -301,6 +301,10 @@ func commitOrRollback(tx *sql.Tx, err *error) {
 // the same receipt or reject a different payload. A nil vector leaves a new
 // record available to lexical search only.
 func (w *Writer) Write(ctx context.Context, input WriteInput, vector []float32, model string) (receipt Receipt, err error) {
+	if input.Purpose == "handoff" && input.ID == nil && input.Scope.Project != nil {
+		// Handoffs record project progress that every machine on the project needs.
+		input.Scope.Device, input.Scope.Platform = nil, nil
+	}
 	scopeKey, err := input.Scope.Key()
 	if err != nil {
 		return receipt, err
@@ -323,6 +327,9 @@ func (w *Writer) Write(ctx context.Context, input WriteInput, vector []float32, 
 	case "preference", "decision", "lesson", "handoff", "observation":
 	default:
 		return receipt, errors.New("invalid purpose")
+	}
+	if n := utf8.RuneCountInString(input.Content); input.Purpose == "handoff" && n > maxHandoffChars {
+		return receipt, fmt.Errorf("handoff is %d characters; keep it to %d and put details in files or the task tracker", n, maxHandoffChars)
 	}
 	if input.Key != nil && (strings.TrimSpace(*input.Key) == "" || len(*input.Key) > 128) {
 		return receipt, errors.New("invalid preference key")
@@ -560,23 +567,44 @@ func checkDuplicate(ctx context.Context, tx *sql.Tx, scopeKey, memoryType, purpo
 	return err
 }
 
-// retireHandoffs archives the earlier active handoffs in a new handoff's exact
-// scope, inside the same transaction, so each scope keeps one current handoff.
-// Archiving adds a revision rather than deleting, so the owner can still read
-// or restore a replaced handoff. Its provenance names the replacing record.
+// maxHandoffChars bounds a handoff so startup context stays short.
+const maxHandoffChars = 600
+
+// retireHandoffs archives the earlier active handoffs that a new handoff
+// replaces, inside the same transaction. A project-wide handoff replaces every
+// handoff in its project whatever their device or platform (earlier releases
+// stored some per device). Any other handoff, such as a restored per-device
+// one, replaces only its exact scope, so it never hides the project-wide
+// handoff from other devices. Archiving adds a revision rather than deleting,
+// so the owner can still read or restore a replaced handoff. Its provenance
+// names the replacing record.
 func retireHandoffs(ctx context.Context, tx *sql.Tx, scope Scope, scopeKey string, replacement int64, by Provenance) error {
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM chunks WHERE kind='memory' AND archived=0 AND purpose='handoff' AND memory_scope=? AND id<>?`, scopeKey, replacement)
+	var project *string
+	if scope.Device == nil && scope.Platform == nil {
+		project = scope.Project
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id,memory_scope FROM chunks WHERE kind='memory' AND archived=0 AND purpose='handoff' AND id<>?
+ AND (memory_scope=? OR (? IS NOT NULL AND memory_scope<>'legacy' AND json_extract(memory_scope,'$.project')=?))`, replacement, scopeKey, project, project)
 	if err != nil {
 		return err
 	}
-	var ids []int64
+	type stored struct {
+		id    int64
+		scope Scope
+	}
+	var olds []stored
 	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
+		var old stored
+		var raw string
+		if err := rows.Scan(&old.id, &raw); err != nil {
 			rows.Close()
 			return err
 		}
-		ids = append(ids, id)
+		if err := json.Unmarshal([]byte(raw), &old.scope); err != nil {
+			rows.Close()
+			return err
+		}
+		olds = append(olds, old)
 	}
 	if err := rows.Close(); err != nil {
 		return err
@@ -586,8 +614,9 @@ func retireHandoffs(ctx context.Context, tx *sql.Tx, scope Scope, scopeKey strin
 		return err
 	}
 	now := time.Now().UTC().Format("2006-01-02T15:04:05.999999-07:00")
-	for _, id := range ids {
-		old, err := getInTx(ctx, tx, scope, id, nil)
+	for _, stored := range olds {
+		id := stored.id
+		old, err := getInTx(ctx, tx, stored.scope, id, nil)
 		if err != nil {
 			return err
 		}
@@ -600,7 +629,7 @@ func retireHandoffs(ctx context.Context, tx *sql.Tx, scope Scope, scopeKey strin
 		if _, err := tx.ExecContext(ctx, "UPDATE chunks SET archived=1,revision=revision+1,updated_at=?,provenance=? WHERE id=? AND revision=?", now, string(provenanceJSON), id, old.Revision); err != nil {
 			return err
 		}
-		current, err := getInTx(ctx, tx, scope, id, nil)
+		current, err := getInTx(ctx, tx, stored.scope, id, nil)
 		if err != nil {
 			return err
 		}
