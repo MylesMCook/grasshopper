@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -196,6 +197,25 @@ func setFacetTx(ctx context.Context, tx *sql.Tx, scope Scope, id int64, area *st
 	return err
 }
 
+// SetMemoryFacet sets an active memory's area and everywhere flag for the
+// owner. It changes how the memory is classified, not what it says, so it
+// creates no revision; the owner's audit log records the change.
+func (w *Writer) SetMemoryFacet(ctx context.Context, id int64, area *string, everywhere *bool) (err error) {
+	record, err := w.RecordByID(ctx, id, nil)
+	if err != nil {
+		return err
+	}
+	if record == nil || record.Archived {
+		return errors.New("memory_not_found")
+	}
+	tx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer commitOrRollback(tx, &err)
+	return setFacetTx(ctx, tx, record.Scope, id, area, everywhere)
+}
+
 // copyFacetTx carries a moved memory's area to its new ID. Everywhere is kept
 // only when the target is still global. The target ID can be an archived
 // keyed memory that Move revived, so its old classification is replaced.
@@ -213,8 +233,8 @@ func copyFacetTx(ctx context.Context, tx *sql.Tx, from, to int64, target Scope) 
 	return err
 }
 
-// attachFacets fills Area and Everywhere on records that have them.
-func (r *Reader) attachFacets(ctx context.Context, records []Record) error {
+// AttachFacets fills Area and Everywhere on records that have them.
+func (r *Reader) AttachFacets(ctx context.Context, records []Record) error {
 	if ok, err := r.hasFacetTables(ctx); err != nil || !ok || len(records) == 0 {
 		return err
 	}
@@ -255,6 +275,29 @@ func (r *Reader) attachFacets(ctx context.Context, records []Record) error {
 	return nil
 }
 
+// Suggestions lists active memories in scope that the owner has not kept,
+// newest first, so an agent can walk the owner through them. Handoffs are
+// left out: they are never kept, and the next one replaces them.
+func (r *Reader) Suggestions(ctx context.Context, scope Scope, limit, budget int) (Page, error) {
+	if limit < 1 || limit > 100 {
+		return Page{}, errors.New("invalid limit: use 1 to 100")
+	}
+	keys, err := scope.applicableKeys()
+	if err != nil {
+		return Page{}, err
+	}
+	records, err := r.scopedRecords(ctx, keys, " AND confirmed=0 AND purpose<>'handoff'", false)
+	if err != nil {
+		return Page{}, err
+	}
+	sort.SliceStable(records, func(i, j int) bool { return records[i].UpdatedAt > records[j].UpdatedAt })
+	page, err := boundRecords(records, budget, limit)
+	if err != nil {
+		return Page{}, err
+	}
+	return page, r.AttachFacets(ctx, page.Records)
+}
+
 // startupSelection is what startup loads for a session and what it leaves out
 // before the budget applies. Context and the owner's startup preview share it
 // so the two cannot drift apart.
@@ -265,7 +308,7 @@ type startupSelection struct {
 
 func (r *Reader) selectStartup(ctx context.Context, scope Scope, eligible []Record, now time.Time) (startupSelection, error) {
 	var s startupSelection
-	if err := r.attachFacets(ctx, eligible); err != nil {
+	if err := r.AttachFacets(ctx, eligible); err != nil {
 		return s, err
 	}
 	var err error

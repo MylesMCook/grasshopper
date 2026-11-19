@@ -145,7 +145,7 @@ func TestAreaWritesAreValidatedAndKept(t *testing.T) {
 		t.Fatal(err)
 	}
 	records := []Record{{ID: corrected.ID}}
-	if err := w.attachFacets(ctx, records); err != nil || records[0].Area != "Home" {
+	if err := w.AttachFacets(ctx, records); err != nil || records[0].Area != "Home" {
 		t.Fatalf("a correction without an area must keep the area: %+v %v", records, err)
 	}
 }
@@ -157,7 +157,7 @@ func TestFacetsSurviveDuplicatesAndMoves(t *testing.T) {
 	ctx := context.Background()
 	area := func(id int64) string {
 		records := []Record{{ID: id}}
-		if err := w.attachFacets(ctx, records); err != nil {
+		if err := w.AttachFacets(ctx, records); err != nil {
 			t.Fatal(err)
 		}
 		return records[0].Area
@@ -195,3 +195,42 @@ func TestFacetsSurviveDuplicatesAndMoves(t *testing.T) {
 }
 
 func strPtr(value string) *string { return &value }
+
+// Suggestions lists only unkept, non-handoff memories in scope, newest first.
+func TestSuggestionsListUnkeptMemoriesNewestFirst(t *testing.T) {
+	w := facetWriter(t, "Home")
+	ctx := context.Background()
+	house, other := "id:house", "id:other"
+	saveFacet(t, w, Scope{}, "Kept fact.", "decision", "", false)
+	saveFacet(t, w, Scope{Project: &house}, "House handoff: see tasks.md.", "handoff", "", false)
+	save := func(scope Scope, text, request string) {
+		t.Helper()
+		area := "Home"
+		if _, err := w.Write(ctx, WriteInput{Scope: scope, Content: text, Purpose: "lesson", Area: &area,
+			Provenance: Provenance{"test", "synthetic", "suggestions"}, RequestID: request}, nil, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save(Scope{}, "Older suggestion.", "s1")
+	save(Scope{Project: &house}, "Newer house suggestion.", "s2")
+	save(Scope{Project: &other}, "Other project suggestion.", "s3")
+	if _, err := w.db.ExecContext(ctx, "UPDATE chunks SET updated_at='2026-01-01T00:00:00Z' WHERE content='Older suggestion.'"); err != nil {
+		t.Fatal(err)
+	}
+	page, err := w.Suggestions(ctx, Scope{Project: &house}, 10, 16384)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loadedText(page); got != "Newer house suggestion.|Older suggestion." {
+		t.Fatalf("suggestions must be this scope's unkept memories, newest first: %s", got)
+	}
+	if page.Records[0].Area != "Home" {
+		t.Fatalf("suggestions must carry their proposed area: %+v", page.Records[0])
+	}
+	if one, _ := w.Suggestions(ctx, Scope{Project: &house}, 1, 16384); len(one.Records) != 1 || one.Omitted != 1 {
+		t.Fatalf("the limit must report what it left out: %+v", one)
+	}
+	if _, err := w.Suggestions(ctx, Scope{}, 0, 16384); err == nil {
+		t.Fatal("a zero limit must be refused")
+	}
+}

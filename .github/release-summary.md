@@ -1,17 +1,16 @@
-Grasshopper 2.12.1
+Grasshopper 2.13.0
 
-A clearer memory policy that now reaches every machine.
+Areas: memory for everything you use AI for, loaded only where it fits.
 
-- Agents save on their own only decisions with their reasons, lessons verified
-  in practice, and one handoff at the end of real work. Anything else,
-  including preferences, waits until you ask them to remember it.
-- Rules for how agents behave belong in AGENTS.md files, not in memory, and
-  agents offer to put them there. Documents stay where they live; memory keeps
-  a short pointer.
-- Handoffs point to the project's task file, branch and commit instead of
-  retelling the work.
-- Clients now serve the policy built into them, so policy changes arrive with
-  the self-update instead of staying at the copy written when a machine was
-  first connected.
-- New GLOSSARY.md and decision records (docs/adr) describe the memory model
-  Grasshopper is moving to.
+- Every memory can belong to one area, the part of your life it serves, such
+  as Home or Work. Create areas in Settings; agents propose one when they save.
+- Each project chooses the areas it uses on its page. A memory that is not tied
+  to a project loads only in projects that use its area, unless you mark it
+  "Load in every session". Memories without an area keep loading everywhere
+  until you sort them.
+- Handoffs older than 14 days stop loading at startup; search still finds them.
+- Folders without a Git remote become projects with a one-line
+  `.grasshopper-project` file, which agents create when you ask.
+- The startup preview names the two new reasons a memory is left out.
+- `search` can list the memories you have not kept yet, so an agent can walk
+  you through them when you ask it to review your memory.

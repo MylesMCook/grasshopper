@@ -130,8 +130,13 @@ func visualizerRecord(store *memory.Writer) http.HandlerFunc {
 			http.Error(w, "memory not found", http.StatusNotFound)
 			return
 		}
+		facets := []memory.Record{*record}
+		if err := store.AttachFacets(r.Context(), facets); err != nil {
+			http.Error(w, "record unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(record)
+		_ = json.NewEncoder(w).Encode(facets[0])
 	}
 }
 
@@ -227,6 +232,12 @@ func visualizerContext(store *memory.Writer, version, model string) http.Handler
 		}
 		if err == nil {
 			titles, err = omittedTitles(r.Context(), store, page)
+		}
+		if err == nil {
+			err = store.AttachFacets(r.Context(), page.Records)
+		}
+		if err == nil {
+			page.Areas, err = store.Areas(r.Context())
 		}
 		if err == nil {
 			review, archived, err = store.BrowseCounts(r.Context(), scope)
