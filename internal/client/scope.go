@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -91,10 +92,48 @@ func gitValue(ctx context.Context, cwd string, args ...string) string {
 	return strings.TrimSpace(string(output))
 }
 
-// ResolveScope prefers a local grasshopper.project-id, then the origin remote.
-// It returns an error when neither provides a durable project identity.
-// Both Git lookups share a two-second budget so a stalled process cannot
-// exhaust the startup hook's deadline before it requests memory context.
+// ProjectMarkerFile gives a folder without a Git remote a durable project
+// identity. It holds one line: the project ID, without the id: prefix. It
+// applies to its folder and every folder below it.
+const ProjectMarkerFile = ".grasshopper-project"
+
+// projectMarker returns the ID in the nearest marker file at or above cwd.
+// An unreadable or malformed marker counts as absent, so a stray file cannot
+// break startup. Markers in the home folder or a filesystem root are ignored:
+// they would turn everything below them into one project. The home check
+// compares file identity, since Windows paths differ in case and links alias.
+// Only small regular files are read, so a pipe or huge file cannot stall startup.
+func projectMarker(cwd string) string {
+	home, _ := os.UserHomeDir()
+	homeInfo, _ := os.Stat(home)
+	for dir := cwd; ; dir = filepath.Dir(dir) {
+		if filepath.Dir(dir) == dir {
+			return ""
+		}
+		if info, err := os.Stat(dir); err == nil && homeInfo != nil && os.SameFile(info, homeInfo) {
+			return ""
+		}
+		marker := filepath.Join(dir, ProjectMarkerFile)
+		if info, err := os.Stat(marker); err != nil || !info.Mode().IsRegular() || info.Size() > 256 {
+			continue
+		}
+		if data, err := os.ReadFile(marker); err == nil && len(data) <= 256 {
+			id := strings.TrimSpace(string(data))
+			valid := id != "" && len(id) <= 128 && strings.IndexFunc(id, func(r rune) bool {
+				return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.')
+			}) < 0
+			if valid {
+				return id
+			}
+		}
+	}
+}
+
+// ResolveScope prefers a local grasshopper.project-id, then a project marker
+// file, then the origin remote. It returns an error when none provides a
+// durable project identity. Both Git lookups share a two-second budget so a
+// stalled process cannot exhaust the startup hook's deadline before it
+// requests memory context.
 func ResolveScope(cwd, device string) (Scope, error) {
 	if !filepath.IsAbs(cwd) {
 		return Scope{}, errors.New("workspace path must be absolute")
@@ -103,6 +142,8 @@ func ResolveScope(cwd, device string) (Scope, error) {
 	defer cancel()
 	project := ""
 	if id := gitValue(ctx, cwd, "config", "--local", "--get", "grasshopper.project-id"); id != "" {
+		project = "id:" + id
+	} else if id := projectMarker(cwd); id != "" {
 		project = "id:" + id
 	} else {
 		if err := ctx.Err(); err != nil {
