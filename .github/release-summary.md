@@ -12,3 +12,5 @@ Areas: memory for everything you use AI for, loaded only where it fits.
 - Folders without a Git remote become projects with a one-line
   `.grasshopper-project` file, which agents create when you ask.
 - The startup preview names the two new reasons a memory is left out.
+- `search` can list the memories you have not kept yet, so an agent can walk
+  you through them when you ask it to review your memory.

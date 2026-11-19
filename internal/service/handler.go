@@ -58,10 +58,11 @@ type getInput struct {
 	Revision *int64       `json:"revision,omitempty"`
 }
 type searchInput struct {
-	Scope  memory.Scope `json:"scope"`
-	Query  string       `json:"query"`
-	Limit  *int         `json:"limit,omitempty"`
-	Budget *int         `json:"budget,omitempty"`
+	Scope       memory.Scope `json:"scope"`
+	Query       string       `json:"query"`
+	Limit       *int         `json:"limit,omitempty"`
+	Budget      *int         `json:"budget,omitempty"`
+	Suggestions *bool        `json:"suggestions,omitempty"`
 }
 type searchOutput struct {
 	Results       memory.Page `json:"results"`
@@ -332,7 +333,9 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			}
 			return nil, *record, nil
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "search", Title: "Search scoped memories", Description: "Find active memories by wording or meaning, limited to the given project, device and platform scope. The limit is 1 to 100.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "query": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer"}, "budget": map[string]any{"type": "integer"}}, "scope", "query")},
+	suggestions := optional("boolean")
+	suggestions["description"] = "List memories in scope that the owner has not kept yet, newest first, instead of matching the query. Use when the owner asks to review their memory."
+	mcp.AddTool(server, &mcp.Tool{Name: "search", Title: "Search scoped memories", Description: "Find active memories by wording or meaning, limited to the given project, device and platform scope. The limit is 1 to 100.", Annotations: read, InputSchema: objectSchema(map[string]any{"scope": scopeSchema(), "query": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer"}, "budget": map[string]any{"type": "integer"}, "suggestions": suggestions}, "scope", "query")},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in searchInput) (*mcp.CallToolResult, searchOutput, error) {
 			limit, budget := 10, 16384
 			if in.Limit != nil {
@@ -340,6 +343,10 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			}
 			if in.Budget != nil {
 				budget = *in.Budget
+			}
+			if in.Suggestions != nil && *in.Suggestions {
+				page, err := backend.Store.Suggestions(ctx, in.Scope, limit, budget)
+				return nil, searchOutput{page, false}, err
 			}
 			vector, err := embedQuery(ctx, in.Query)
 			if err != nil {

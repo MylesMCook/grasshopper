@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -263,6 +264,29 @@ func (r *Reader) AttachFacets(ctx context.Context, records []Record) error {
 		}
 	}
 	return nil
+}
+
+// Suggestions lists active memories in scope that the owner has not kept,
+// newest first, so an agent can walk the owner through them. Handoffs are
+// left out: they are never kept, and the next one replaces them.
+func (r *Reader) Suggestions(ctx context.Context, scope Scope, limit, budget int) (Page, error) {
+	if limit < 1 || limit > 100 {
+		return Page{}, errors.New("invalid limit: use 1 to 100")
+	}
+	keys, err := scope.applicableKeys()
+	if err != nil {
+		return Page{}, err
+	}
+	records, err := r.scopedRecords(ctx, keys, " AND confirmed=0 AND purpose<>'handoff'", false)
+	if err != nil {
+		return Page{}, err
+	}
+	sort.SliceStable(records, func(i, j int) bool { return records[i].UpdatedAt > records[j].UpdatedAt })
+	page, err := boundRecords(records, budget, limit)
+	if err != nil {
+		return Page{}, err
+	}
+	return page, r.AttachFacets(ctx, page.Records)
 }
 
 // startupSelection is what startup loads for a session and what it leaves out
