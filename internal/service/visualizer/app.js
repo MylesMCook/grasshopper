@@ -764,13 +764,15 @@ async function loadProjectAreas(project) {
   state.projectAreas[project] = null;
   try {
     const { status, data } = await api('/visualizer/api/areas', { project });
-    state.projectAreas[project] = status < 300 ? data.project_areas || [] : [];
-  } catch { state.projectAreas[project] = []; }
+    state.projectAreas[project] = status < 300 ? data.project_areas || [] : 'failed';
+  } catch { state.projectAreas[project] = 'failed'; }
   render();
 }
 
+// Changes replace the whole list, so they wait until the current list has loaded.
 async function toggleProjectArea(project, area, on) {
-  const current = state.projectAreas?.[project] || [];
+  const current = state.projectAreas?.[project];
+  if (!Array.isArray(current)) return;
   const areas = on ? [...current, area] : current.filter(name => name !== area);
   if (await areaWrite('/visualizer/api/areas/project', { project, areas }, `${projectName(project)} ${on ? 'now uses' : 'no longer uses'} ${area}.`)) { state.projectAreas[project] = areas; render(); }
 }
@@ -954,8 +956,9 @@ function projectPage() {
     if (durable(project) && areaNames().length) loadProjectAreas(project);
     const using = state.projectAreas?.[project];
     return [head(projectName(project), [`${applying} ${applying === 1 ? 'memory applies' : 'memories apply'} here`, durable(project) ? h('button', { type: 'button', class: 'quiet', onclick: () => startCreate(project) }, 'Add memory') : null, h('button', { type: 'button', class: 'quiet', onclick: () => openStartup(project) }, 'Preview startup')]), banner(),
-      durable(project) && areaNames().length ? section('Uses areas', using ? h('div', { class: 'stack' }, areaNames().map(area =>
-        h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: using.includes(area), 'aria-disabled': saving, onchange: event => toggleProjectArea(project, area, event.target.checked) }), area)))
+      durable(project) && areaNames().length ? section('Uses areas', Array.isArray(using) ? h('div', { class: 'stack' }, areaNames().map(area =>
+        h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: using.includes(area), 'aria-disabled': saving, 'data-key': `project-area:${area}`, onchange: event => toggleProjectArea(project, area, event.target.checked) }), area)))
+        : using === 'failed' ? h('p', { class: 'meta' }, "Couldn't load areas. ", h('button', { type: 'button', class: 'quiet', 'data-key': 'retry-areas', onclick: () => { delete state.projectAreas[project]; render(); } }, 'Try again'))
         : h('p', { class: 'meta loading', text: 'Loading…' })) : null,
       handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null,
       fresh.length ? section('New', fresh.map(record => suggestionRow(record)), 'warn') : null,
@@ -1197,7 +1200,7 @@ function memoryPanel(panel) {
       h('select', { 'aria-label': 'Area', 'aria-disabled': saving, onchange: event => setMemoryArea(record, { area: event.target.value }) },
         record.area ? null : h('option', { value: '', selected: true }, 'No area yet'),
         areaNames().map(name => h('option', { value: name, selected: record.area === name ? true : null }, name))),
-      isGlobal(record.scope) && record.area ? h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: Boolean(record.everywhere), onchange: event => setMemoryArea(record, { everywhere: event.target.checked }) }), 'Load in every session') : null)
+      isGlobal(record.scope) && record.area ? h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: Boolean(record.everywhere), 'data-key': 'everywhere', onchange: event => setMemoryArea(record, { everywhere: event.target.checked }) }), 'Load in every session') : null)
       : h('p', { class: 'meta', text: 'Add areas in Settings to sort memories.' })),
     // "Loads" means it can load; Preview startup shows the size limit's cuts.
     section('Startup', h('p', { class: 'val', text: record.archived ? 'Not loaded' : isNew ? 'Not until you keep it'

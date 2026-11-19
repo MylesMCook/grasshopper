@@ -1526,3 +1526,17 @@ test('Approve, Deny and Disconnect send once on a double click', async () => {
   await flush();
   assert.equal(ui.requests.filter(request => request.url === '/visualizer/api/devices' && request.method === 'DELETE').length, 1);
 });
+
+test('a failed area load offers a retry instead of showing no areas', async () => {
+  const ui = setup({ session: true, hash: `#page=project&project=${encodeURIComponent(PROJECT)}` });
+  await flush();
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT], areas: ['Home', 'Work'], server: { version: '2.9.0' }, total: 4 }, { ETag: '"index-1"' });
+  await ui.answer('/visualizer/api/context', 200, { records: projectRecords, projects: [PROJECT], areas: ['Home', 'Work'], total: 4 }, { ETag: '"page-1"' });
+  const box = area => [...ui.app.walk()].find(node => node.getAttribute?.('data-key') === `project-area:${area}`);
+  await ui.answer('/visualizer/api/areas', 503, 'areas unavailable');
+  assert.match(ui.text(), /Couldn't load areas/);
+  assert.ok(!box('Home'), 'no checkboxes that would replace the real list');
+  ui.find('Try again').click();
+  await ui.answer('/visualizer/api/areas', 200, { areas: ['Home', 'Work'], project_areas: ['Home'] });
+  assert.ok(box('Home').checked && !box('Work').checked, 'the loaded list shows');
+});

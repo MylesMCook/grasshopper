@@ -157,7 +157,7 @@ func TestFacetsSurviveDuplicatesAndMoves(t *testing.T) {
 	ctx := context.Background()
 	area := func(id int64) string {
 		records := []Record{{ID: id}}
-		if err := w.attachFacets(ctx, records); err != nil {
+		if err := w.AttachFacets(ctx, records); err != nil {
 			t.Fatal(err)
 		}
 		return records[0].Area

@@ -16,7 +16,7 @@ import (
 func areaRequestError(w http.ResponseWriter, err error) {
 	message := err.Error()
 	switch {
-	case strings.HasPrefix(message, "unknown_area"), strings.HasPrefix(message, "invalid"), strings.HasPrefix(message, "area required"):
+	case strings.HasPrefix(message, "unknown_area"), strings.HasPrefix(message, "invalid"), strings.HasPrefix(message, "area required"), strings.HasPrefix(message, "project must"):
 		http.Error(w, message, http.StatusBadRequest)
 	case message == "memory_not_found":
 		http.Error(w, "memory not found", http.StatusNotFound)

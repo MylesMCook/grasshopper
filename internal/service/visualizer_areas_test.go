@@ -29,6 +29,9 @@ func TestOwnerManagesAreas(t *testing.T) {
 	if status, _ := ownerJSON(t, server, "/visualizer/api/areas/project", map[string]any{"project": "id:house", "areas": []string{"Garden"}}); status != http.StatusBadRequest {
 		t.Fatalf("an unknown project area: status=%d", status)
 	}
+	if status, _ := ownerJSON(t, server, "/visualizer/api/areas/project", map[string]any{"project": "house", "areas": []string{"Home"}}); status != http.StatusBadRequest {
+		t.Fatalf("a project without a durable ID: status=%d", status)
+	}
 	status, body := ownerJSON(t, server, "/visualizer/api/areas", map[string]any{"project": "id:house"})
 	var areas, projectAreas []string
 	_ = json.Unmarshal(body["areas"], &areas)
