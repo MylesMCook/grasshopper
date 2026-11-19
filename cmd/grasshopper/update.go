@@ -29,13 +29,15 @@ func runManagedClient(configPath string) {
 	}
 }
 
-// followServerInBackground starts the bridge's self-update. It never delays
-// or fails the bridge; the new client is used from the next session.
+// followServerInBackground starts the bridge's self-update, then keeps Pi's
+// extension current. It never delays or fails the bridge; the new client is
+// used from the next session.
 func followServerInBackground(configPath string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		_, _ = client.FollowServer(ctx, configPath, clientVersion)
+		syncPiWiring(configPath)
 	}()
 }
 

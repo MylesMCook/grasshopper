@@ -391,6 +391,7 @@ func connectWithRoot(parent context.Context, args []string, root string, run com
 	if pending != nil {
 		_ = os.Remove(pendingPath(configPath))
 	}
+	syncPiWiring(configPath)
 	if *jsonOutput {
 		jsonPhase = map[string]string{"status": "connected", "server": *address, "device": *device, "registered_device": *device, "credential_role": "device", "registration": "verified", "next_step": connectedNextStep}
 	}
