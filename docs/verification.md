@@ -6,6 +6,20 @@ has never been verified. Per-release detail lives in each
 history (the full log up to 2.8.5 is in
 [the 2.8.5 tree](https://github.com/MylesMCook/grasshopper/blob/v2.8.5/docs/memory-acceptance.md)).
 
+## Areas in the memory view (2.13.0 branch, November 18)
+
+A branch server on the Windows PC (fresh database, local Granite model) served
+the memory view in a real browser. Settings added two areas and listed them; a
+project page showed both as checkboxes and saved one; an opened memory not tied
+to a project took the other area from its Area picker and then read "Loads in
+projects that use" that area. The project's startup preview loaded its own
+memory and left the other out as `other_area`; turning on "Load in every
+session" brought it back. A tab opened before the server restart kept running
+its old script until a new tab was opened.
+
+Not verified: the memory view on macOS or a phone, an agent saving with an
+area through MCP from a real harness, and a marker-file project in T3.
+
 ## 2.11.1 to 2.11.3 and nightly upgrades (October 28)
 
 [PR 90](https://github.com/MylesMCook/grasshopper/pull/90) (2.11.1),
