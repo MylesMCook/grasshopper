@@ -563,7 +563,7 @@ func TestCompactContextKeepsFullRecordsAndOmissions(t *testing.T) {
 		"id": 99, "revision": 7, "scope": map[string]any{"project": "git:example.com/Owner/Repo", "device": nil, "platform": "windows", "legacy": false},
 		"confirmed": false, "purpose": "handoff", "title": "Continue", "content": strings.Repeat("é", 220) + " Qualification: verify current Git state.",
 		"tags": "review", "archived": false, "created_at": "earlier", "updated_at": "current", "provenance": map[string]any{"harness": "cursor", "device": "test", "source": "commit abc"}, "future_field": "preserved",
-	}}, "omitted": 1, "omitted_ids": []int{100}, "omitted_records": []any{map[string]any{"id": 100, "revision": 2, "scope": map[string]any{"project": "id:other"}}}}
+	}}, "omitted": 1, "areas": []string{"Work"}, "omitted_ids": []int{100}, "omitted_records": []any{map[string]any{"id": 100, "revision": 2, "scope": map[string]any{"project": "id:other"}}}}
 	raw, _ := json.Marshal(original)
 	compact, err := compactContext(raw)
 	if err != nil {
@@ -580,6 +580,9 @@ func TestCompactContextKeepsFullRecordsAndOmissions(t *testing.T) {
 		if !bytes.Equal(x, y) {
 			t.Errorf("changed %s", key)
 		}
+	}
+	if areas, _ := after["areas"].([]any); len(areas) != 1 {
+		t.Error("startup context lost the areas list")
 	}
 	if after["omitted"] != float64(1) || len(after["omitted_records"].([]any)) != 1 {
 		t.Fatal("lost omissions")

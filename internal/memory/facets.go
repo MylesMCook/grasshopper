@@ -161,6 +161,8 @@ func requireArea(ctx context.Context, tx *sql.Tx, area string) error {
 
 // setFacetTx records a memory's area and everywhere flag. Only global
 // memories can load everywhere, and a new classification needs an area.
+// Facets classify a memory rather than say anything, so revision history
+// leaves them out: restoring a revision keeps the current area.
 func setFacetTx(ctx context.Context, tx *sql.Tx, scope Scope, id int64, area *string, everywhere *bool) error {
 	if area == nil && everywhere == nil {
 		return nil
@@ -184,6 +186,9 @@ func setFacetTx(ctx context.Context, tx *sql.Tx, scope Scope, id int64, area *st
 		currentEverywhere = *everywhere
 	}
 	if currentArea == "" {
+		if !currentEverywhere {
+			return nil
+		}
 		return errors.New("area required: give the memory an area before marking it everywhere")
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO memory_areas(memory_id,area,everywhere) VALUES(?,?,?)
@@ -192,13 +197,17 @@ func setFacetTx(ctx context.Context, tx *sql.Tx, scope Scope, id int64, area *st
 }
 
 // copyFacetTx carries a moved memory's area to its new ID. Everywhere is kept
-// only when the target is still global.
+// only when the target is still global. The target ID can be an archived
+// keyed memory that Move revived, so its old classification is replaced.
 func copyFacetTx(ctx context.Context, tx *sql.Tx, from, to int64, target Scope) error {
 	var tables int
 	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memory_areas'").Scan(&tables); err != nil || tables == 0 {
 		return err
 	}
 	global := target.Project == nil && target.Device == nil && target.Platform == nil
+	if _, err := tx.ExecContext(ctx, "DELETE FROM memory_areas WHERE memory_id=?", to); err != nil {
+		return err
+	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO memory_areas(memory_id,area,everywhere)
 		SELECT ?, area, everywhere AND ? FROM memory_areas WHERE memory_id=?`, to, global, from)
 	return err
