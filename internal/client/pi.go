@@ -53,8 +53,14 @@ func PiOff(configPath string) bool {
 }
 
 // SyncPi writes the extension when Pi is installed, its connection is not
-// turned off, and the file differs. It reports whether it wrote.
+// turned off, and the file differs. It reports whether it wrote. A relative
+// configuration path is made absolute first, because the extension is used
+// from every folder Pi starts in.
 func SyncPi(configPath, agentDir string) (bool, error) {
+	configPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return false, err
+	}
 	if PiOff(configPath) {
 		return false, nil
 	}
@@ -68,7 +74,16 @@ func SyncPi(configPath, agentDir string) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return false, err
 	}
-	return true, writeAtomic(path, want)
+	if err := writeAtomic(path, want); err != nil {
+		return false, err
+	}
+	// RemovePi writes pi-off before deleting the extension. A removal that
+	// raced this write has set pi-off by now, so undo the write rather than
+	// leave Pi connected after the owner removed it.
+	if PiOff(configPath) {
+		return false, os.Remove(path)
+	}
+	return true, nil
 }
 
 // InstallPi connects Pi even when automatic wiring was turned off.

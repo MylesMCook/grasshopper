@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/MylesMCook/grasshopper/internal/client"
@@ -44,6 +45,12 @@ func piCommand(args []string) error {
 	if err != nil {
 		return err
 	}
+	if path, err = filepath.Abs(path); err != nil {
+		return err
+	}
+	// A newer managed client carries the newer extension template; an older
+	// client from an extracted archive must not overwrite it.
+	runManagedClient(path)
 	dir, err := client.PiAgentDir()
 	if err != nil {
 		return err

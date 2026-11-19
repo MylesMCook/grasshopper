@@ -64,3 +64,22 @@ func TestRemovePiKeepsSyncFromRestoringIt(t *testing.T) {
 		t.Fatalf("install writes the extension again: %v", err)
 	}
 }
+
+// The extension is used from every folder Pi starts in, so a relative
+// configuration path must be written as an absolute one.
+func TestPiExtensionUsesAnAbsoluteConfigPath(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "pi", "agent")
+	t.Chdir(root)
+	if err := InstallPi(filepath.Join("settings", "client.json"), agentDir); err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(PiExtensionPath(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	quoted, _ := json.Marshal(filepath.Join(root, "settings", "client.json"))
+	if !strings.Contains(string(written), "const config: string = "+string(quoted)+";") {
+		t.Fatalf("extension must carry the absolute config path:\n%s", written)
+	}
+}
