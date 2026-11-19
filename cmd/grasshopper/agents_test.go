@@ -14,7 +14,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	checkAgents = func(string) []agentReport { return nil }
+	checkAgents = func(string, string) []agentReport { return nil }
 	os.Exit(m.Run())
 }
 
