@@ -17,6 +17,15 @@ memory and left the other out as `other_area`; turning on "Load in every
 session" brought it back. A tab opened before the server restart kept running
 its old script until a new tab was opened.
 
+Rehearsal on the macOS server (November 19), against a verified backup copy of
+the live database (848 revisions, quick_check ok): a branch build at `da0ebfd`
+refused anonymous requests, served owner context and search, created the area
+tables, and saved an MCP memory with an area that `search` then listed as a
+suggestion. The installed 2.12.1 server reopened that upgraded copy, served
+context and read the classified memory back; quick_check stayed ok. The copy was
+then deleted. The same night's scheduled job had already moved the live server
+from 2.11.3 to 2.12.1 at 03:30, the first real nightly upgrade.
+
 Not verified: the memory view on macOS or a phone, an agent saving with an
 area through MCP from a real harness, and a marker-file project in T3.
 
