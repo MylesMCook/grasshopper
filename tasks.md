@@ -7,6 +7,16 @@ Earlier release records are in Git history and
 
 ## Active
 
+Grasshopper becomes the owner's memory for everything they do with AI, used
+from T3 Code on every machine. The model is in [GLOSSARY.md](GLOSSARY.md) and
+[docs/adr](docs/adr). Build order: restore CI's ONNX Runtime (PR 96); this
+policy rewrite, with the policy built into the client so it reaches every
+machine; the Pi release (2.12.0, PR 95); the core model (areas, projects,
+Everywhere, facet-based startup loading, 14-day handoffs, marker files for
+non-repository projects); the memory view for areas; a "review my memory"
+skill for T3; a reviewed cleanup of the existing store; and a check on real
+machines.
+
 Updates are self-running: release on merge, a nightly `grasshopper-server
 upgrade` on the macOS server that only moves forward, and clients that follow
 the server's version. 2.11.3 is live on the Mac; its Claude Code and Codex

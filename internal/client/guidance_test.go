@@ -21,7 +21,7 @@ func TestOversizedAncestorGuidanceStillDeliversTheHook(t *testing.T) {
 		t.Fatalf("oversized AGENTS.md broke the hook: %v", err)
 	}
 	text := output["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
-	for _, expected := range []string{"Canonical memory policy marker.", "read the applicable AGENTS.md files from " + workspace} {
+	for _, expected := range []string{"# Shared memory policy", "read the applicable AGENTS.md files from " + workspace} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("hook lost %q: %s", expected, text[:min(len(text), 400)])
 		}

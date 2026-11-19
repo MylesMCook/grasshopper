@@ -1,18 +1,17 @@
-Grasshopper 2.11.3
+Grasshopper 2.12.1
 
-Safer unattended upgrades.
+A clearer memory policy that now reaches every machine.
 
-- The nightly server upgrade only moves forward: it never undoes a rollback,
-  never downgrades, and skips a release that was rolled back or failed its
-  health check until a newer one ships. `upgrade --to` still installs any
-  release.
-- Upgrade, rollback and schedule take a lock, so two never overlap; the
-  rollback link is set before the restart; pre-upgrade backups keep the
-  newest five.
-- An upgrade must answer a real search before it counts as healthy, and
-  downloads refuse an HTTPS-to-HTTP redirect.
-- Release runs never publish the same version twice at once, and archives are
-  reproducible.
-- `grasshopper check` warns when an agent runs a client newer than the server.
-- The server restarts itself if one embedding call is stuck for 30 seconds.
-- Search reads at most 200 full-text matches.
+- Agents save on their own only decisions with their reasons, lessons verified
+  in practice, and one handoff at the end of real work. Anything else,
+  including preferences, waits until you ask them to remember it.
+- Rules for how agents behave belong in AGENTS.md files, not in memory, and
+  agents offer to put them there. Documents stay where they live; memory keeps
+  a short pointer.
+- Handoffs point to the project's task file, branch and commit instead of
+  retelling the work.
+- Clients now serve the policy built into them, so policy changes arrive with
+  the self-update instead of staying at the copy written when a machine was
+  first connected.
+- New GLOSSARY.md and decision records (docs/adr) describe the memory model
+  Grasshopper is moving to.
