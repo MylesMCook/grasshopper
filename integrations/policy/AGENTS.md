@@ -41,8 +41,12 @@ a handoff.
 
 Use one authenticated backend, never a writable client memory database.
 Global scope must be explicit. The hook resolves project identity from
-`grasshopper.project-id` or credential-free normalized Git origin, preserving
-path case. Direct MCP calls use `project: "id:<ID>"` or `"git:<host/path>"`, never
+`grasshopper.project-id`, then a `.grasshopper-project` file in the folder or
+above it, then credential-free normalized Git origin, preserving path case.
+When the user makes a folder without a Git remote a project, create
+`.grasshopper-project` there holding one line: a new ID of lowercase letters,
+digits and hyphens, such as `home-7f3a`. Never put one in the home folder or a
+drive root. Direct MCP calls use `project: "id:<ID>"` or `"git:<host/path>"`, never
 a folder path. Without either, project identity is unresolved, not global.
 Scope device/OS facts accordingly; platform is `macos`, `windows`, or `linux`.
 Omit unknown fields. Use current scope for `get`/`search` and the record's exact

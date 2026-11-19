@@ -416,6 +416,32 @@ func TestProjectIdentityAndUnresolvedScope(t *testing.T) {
 	}
 }
 
+// A marker file gives a folder without a Git remote a project identity that
+// also covers its subfolders; a malformed marker is ignored.
+func TestProjectMarkerGivesAFolderAnIdentity(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "Home")
+	nested := filepath.Join(root, "notes", "garden")
+	if err := os.MkdirAll(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(root, ProjectMarkerFile)
+	if err := os.WriteFile(marker, []byte("home-7f3a\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{root, nested} {
+		scope, err := ResolveScope(dir, "test-device")
+		if err != nil || scope.Project == nil || *scope.Project != "id:home-7f3a" {
+			t.Fatalf("%s did not resolve to the marker's project: %+v %v", dir, scope, err)
+		}
+	}
+	if err := os.WriteFile(marker, []byte("not a valid id\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveScope(nested, "test-device"); err == nil {
+		t.Fatal("a malformed marker became a project identity")
+	}
+}
+
 func TestSameOriginAcrossClonePathsSharesProjectMemory(t *testing.T) {
 	root := t.TempDir()
 	makeClone := func(name, remote string) string {
