@@ -377,7 +377,7 @@ async function refreshIndex() {
         const project = record.scope?.project;
         if (project && !(recency.get(project) >= record.updated_at)) recency.set(project, record.updated_at);
       }
-      state.index = { projects: page.projects || [], recency, records: page.records, review: page.review_count || 0, server: page.server, total: page.total ?? page.records.length };
+      state.index = { projects: page.projects || [], recency, records: page.records, review: page.review_count || 0, server: page.server, total: page.total ?? page.records.length, areas: page.areas || [] };
     }
     if (chooseDefaultProject()) refreshPage();
     redraw(Boolean(page || wasOffline));
@@ -728,6 +728,53 @@ async function decidePairing(request, decision) {
   refreshDevices();
   render();
 }
+// ---------- areas ----------
+// Each memory serves one area; a project loads the areas it draws on.
+
+// The index is refreshed on every page, including Settings, which has no list.
+function areaNames() { return state.index?.areas || state.page?.areas || []; }
+function isGlobal(scope) { return !scope?.project && !scope?.device && !scope?.platform; }
+
+async function areaWrite(path, body, done) {
+  if (saving) return false;
+  saving = true; render();
+  let ok = false;
+  try {
+    const { status, data } = await api(path, body);
+    ok = status < 300;
+    say(ok ? done : status === 400 && data?.error ? `Not saved. ${data.error}` : "Couldn't save it. Try again.");
+  } catch (error) { if (!error.session) say("Couldn't save it. Try again."); }
+  finally { saving = false; }
+  if (ok) await Promise.all([refreshPage(), refreshIndex()]);
+  render();
+  return ok;
+}
+
+async function setMemoryArea(record, change) {
+  if (await areaWrite('/visualizer/api/areas/memory', { id: record.id, ...change }, 'Area saved.')) { Object.assign(record, change); render(); }
+}
+
+async function createArea(name) {
+  if (await areaWrite('/visualizer/api/areas/create', { name: name.trim() }, `Added “${name.trim()}”.`)) { state.areaDraft = ''; render(); }
+}
+
+async function loadProjectAreas(project) {
+  state.projectAreas ||= {};
+  if (project in state.projectAreas) return;
+  state.projectAreas[project] = null;
+  try {
+    const { status, data } = await api('/visualizer/api/areas', { project });
+    state.projectAreas[project] = status < 300 ? data.project_areas || [] : [];
+  } catch { state.projectAreas[project] = []; }
+  render();
+}
+
+async function toggleProjectArea(project, area, on) {
+  const current = state.projectAreas?.[project] || [];
+  const areas = on ? [...current, area] : current.filter(name => name !== area);
+  if (await areaWrite('/visualizer/api/areas/project', { project, areas }, `${projectName(project)} ${on ? 'now uses' : 'no longer uses'} ${area}.`)) { state.projectAreas[project] = areas; render(); }
+}
+
 async function renameDevice(device, label, panel) {
   if (saving) return;
   saving = true; render();
@@ -904,7 +951,12 @@ function projectPage() {
     const handoff = records.filter(record => record.purpose === 'handoff' && record.scope?.project === project).sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0];
     // Agents load this project's and every project's kept memories, so count and show both.
     const applying = own.length + global.length;
+    if (durable(project) && areaNames().length) loadProjectAreas(project);
+    const using = state.projectAreas?.[project];
     return [head(projectName(project), [`${applying} ${applying === 1 ? 'memory applies' : 'memories apply'} here`, durable(project) ? h('button', { type: 'button', class: 'quiet', onclick: () => startCreate(project) }, 'Add memory') : null, h('button', { type: 'button', class: 'quiet', onclick: () => openStartup(project) }, 'Preview startup')]), banner(),
+      durable(project) && areaNames().length ? section('Uses areas', using ? h('div', { class: 'stack' }, areaNames().map(area =>
+        h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: using.includes(area), 'aria-disabled': saving, onchange: event => toggleProjectArea(project, area, event.target.checked) }), area)))
+        : h('p', { class: 'meta loading', text: 'Loading…' })) : null,
       handoff ? section(shortDate(handoff.updated_at), row(handoff, { meta: by(handoff) })) : null,
       fresh.length ? section('New', fresh.map(record => suggestionRow(record)), 'warn') : null,
       // An empty project section only matters when nothing else applies here.
@@ -1023,6 +1075,12 @@ function settingsPage() {
   const server = state.index?.server;
   const theme = window.grasshopperTheme?.saved?.() || 'system';
   return [head('Settings', '', { search: false }),
+    section('Areas', h('div', { class: 'stack' },
+      h('p', { class: 'label', text: 'Each memory serves one area. A project loads the areas it uses; choose them on its page.' }),
+      h('p', { class: 'val', text: areaNames().length ? areaNames().join(', ') : 'No areas yet.' }),
+      h('form', { class: 'edit', onsubmit: event => { event.preventDefault(); if ((state.areaDraft || '').trim()) createArea(state.areaDraft); } },
+        h('input', { id: 'area-name', type: 'text', 'aria-label': 'New area', maxlength: '40', placeholder: 'New area', value: state.areaDraft || '', oninput: event => { state.areaDraft = event.target.value; } }),
+        h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'btn', 'aria-disabled': saving }, 'Add area'))))),
     section('Startup', h('div', { class: 'stack' },
       h('p', { class: 'label', text: 'What an agent gets when a session starts.' }),
       h('div', { class: 'two' },
@@ -1135,8 +1193,15 @@ function memoryPanel(panel) {
     h('div', { class: 'actions' }, actions),
     similar ? section('Similar', [row(similar), h('button', { type: 'button', class: 'quiet more', 'aria-disabled': saving, onclick: () => keepAndReplace(record, similar) }, 'Keep and replace it')], 'warn') : null,
     section('Applies to', h('p', { class: 'val' }, whereLabel(record.scope), record.scope?.project ? h('span', { class: 'meta', text: record.scope.project }) : null)),
+    record.archived || record.purpose === 'handoff' ? null : section('Area', areaNames().length ? h('div', { class: 'stack' },
+      h('select', { 'aria-label': 'Area', 'aria-disabled': saving, onchange: event => setMemoryArea(record, { area: event.target.value }) },
+        record.area ? null : h('option', { value: '', selected: true }, 'No area yet'),
+        areaNames().map(name => h('option', { value: name, selected: record.area === name ? true : null }, name))),
+      isGlobal(record.scope) && record.area ? h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: Boolean(record.everywhere), onchange: event => setMemoryArea(record, { everywhere: event.target.checked }) }), 'Load in every session') : null)
+      : h('p', { class: 'meta', text: 'Add areas in Settings to sort memories.' })),
     // "Loads" means it can load; Preview startup shows the size limit's cuts.
-    section('Startup', h('p', { class: 'val', text: record.archived ? 'Not loaded' : isNew ? 'Not until you keep it' : 'Loads' })),
+    section('Startup', h('p', { class: 'val', text: record.archived ? 'Not loaded' : isNew ? 'Not until you keep it'
+      : isGlobal(record.scope) && record.area && !record.everywhere ? `Loads in projects that use ${record.area}` : 'Loads' })),
     // The owner's own saves carry fixed internal provenance, so only the date shows.
     section(isNew ? 'Noticed by' : 'Saved by', by(record) === 'you' ? h('p', { class: 'val' }, 'You', h('span', { class: 'meta', text: fullDate(record.updated_at) }))
       : h('p', { class: 'val' }, by(record),

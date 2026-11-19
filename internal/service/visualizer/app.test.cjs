@@ -391,7 +391,8 @@ test('an opened memory lists where it applies, whether it loads at startup, and 
   await openSquash(ui);
   assert.ok(!ui.app.querySelector('p.about'), 'no prose sentence');
   const labels = panel().querySelectorAll('h2.sec-label').map(node => node.textContent);
-  assert.deepEqual(labels.slice(0, 3), ['Applies to', 'Startup', 'Saved by'], 'facts in a fixed order, with no kind');
+  assert.deepEqual(labels.slice(0, 4), ['Applies to', 'Area', 'Startup', 'Saved by'], 'facts in a fixed order, with no kind');
+  assert.equal(facts().Area, 'Add areas in Settings to sort memories.', 'with no areas yet, the panel points to Settings');
   assert.equal(facts().Startup, 'Loads');
   ui.rows('Use gh for PR status').click();
   await ui.answer('/visualizer/api/record', 200, projectRecords[1]);
