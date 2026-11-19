@@ -26,7 +26,9 @@ else, including preferences, only when the user asks you to remember it.
 Never save transcripts, status logs, raw tool output, secrets, credentials,
 customer data, hidden reasoning, guesses, or routine actions. Saves stay
 suggestions until the user keeps them; confirm only what the user supplied or
-accepted. Include harness, device, and a concise source reference.
+accepted. Include harness, device, and a concise source reference. Give each
+memory the one area it serves, from the areas startup context lists; set
+everywhere only when the user says a memory belongs in every session.
 
 A handoff points to where work stands; it does not retell it. Name the project's
 task file and the branch and commit, plus the one open issue that matters. Keep

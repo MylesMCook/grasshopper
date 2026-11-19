@@ -148,6 +148,10 @@ type Record struct {
 	// ContentTruncated marks an owner-list preview. Only browse lists set it;
 	// Get and agent context always carry complete text.
 	ContentTruncated bool `json:"content_truncated,omitempty"`
+	// Area and Everywhere are set only where a reader attaches facets; see
+	// facets.go. They are never part of the memory's scope key.
+	Area       string `json:"area,omitempty"`
+	Everywhere bool   `json:"everywhere,omitempty"`
 }
 
 // Reference identifies an omitted record without repeating its content.
@@ -165,6 +169,10 @@ type Page struct {
 	Omitted        int         `json:"omitted"`
 	OmittedIDs     []int64     `json:"omitted_ids"`
 	OmittedRecords []Reference `json:"omitted_records"`
+	// Areas and ProjectAreas are set only by startup context, so agents can
+	// give new memories one of the owner's areas.
+	Areas        []string `json:"areas,omitempty"`
+	ProjectAreas []string `json:"project_areas,omitempty"`
 }
 
 // Reader provides scoped read operations over a SQLite database.
@@ -288,15 +296,38 @@ func (r *Reader) getKeys(ctx context.Context, keys []string, id int64, revision 
 	return getInTx(ctx, tx, exact, id, revision)
 }
 
-// Context returns applicable confirmed records and at most one handoff,
-// preferring a project handoff. Records excluded by budget appear in
-// omission metadata.
+// Context returns applicable confirmed records and at most one recent
+// handoff, preferring a project handoff. Global memories in an area the
+// project does not draw on stay out (see facets.go). Records left out appear
+// in omission metadata.
 func (r *Reader) Context(ctx context.Context, scope Scope, budget int) (Page, error) {
 	keys, err := scope.applicableKeys()
 	if err != nil {
 		return Page{}, err
 	}
-	return r.contextKeys(ctx, keys, budget)
+	records, err := r.scopedRecords(ctx, keys, agentContextFilter, false)
+	if err != nil {
+		return Page{}, err
+	}
+	selection, err := r.selectStartup(ctx, scope, records, startupClock())
+	if err != nil {
+		return Page{}, err
+	}
+	page, err := boundStartupRecords(selection.selected, budget)
+	if err != nil {
+		return Page{}, err
+	}
+	for _, group := range [][]Record{selection.olderHandoffs, selection.expiredHandoffs, selection.otherArea} {
+		for _, record := range group {
+			page.Omitted++
+			if len(page.OmittedIDs) < 100 {
+				page.OmittedIDs = append(page.OmittedIDs, record.ID)
+				page.OmittedRecords = append(page.OmittedRecords, Reference{record.ID, record.Revision, record.Scope})
+			}
+		}
+	}
+	page.Areas, page.ProjectAreas = selection.areas, selection.projectAreas
+	return page, nil
 }
 
 // BrowseContext is for the authenticated read-only visualizer. A missing
@@ -510,26 +541,6 @@ func (r *Reader) browseDevices(ctx context.Context, scope BrowseScope, includeAr
 	return devices, rows.Err()
 }
 
-func (r *Reader) contextKeys(ctx context.Context, keys []string, budget int) (Page, error) {
-	records, err := r.scopedRecords(ctx, keys, agentContextFilter, false)
-	if err != nil {
-		return Page{}, err
-	}
-	selected, skipped := chooseHandoff(records)
-	page, err := boundStartupRecords(selected, budget)
-	if err != nil {
-		return Page{}, err
-	}
-	for _, record := range skipped {
-		page.Omitted++
-		if len(page.OmittedIDs) < 100 {
-			page.OmittedIDs = append(page.OmittedIDs, record.ID)
-			page.OmittedRecords = append(page.OmittedRecords, Reference{record.ID, record.Revision, record.Scope})
-		}
-	}
-	return page, nil
-}
-
 func boundStartupRecords(records []Record, budget int) (Page, error) {
 	page, err := boundRecords(records, budget, 0)
 	if err != nil || page.Omitted == 0 {
@@ -609,9 +620,11 @@ func chooseHandoff(records []Record) (selected, skipped []Record) {
 
 // Reasons the owner's startup preview gives for a memory an agent will not load.
 const (
-	NotLoadedUnconfirmed  = "unconfirmed"
-	NotLoadedOlderHandoff = "older_handoff"
-	NotLoadedOverBudget   = "over_budget"
+	NotLoadedUnconfirmed    = "unconfirmed"
+	NotLoadedOlderHandoff   = "older_handoff"
+	NotLoadedExpiredHandoff = "expired_handoff"
+	NotLoadedOtherArea      = "other_area"
+	NotLoadedOverBudget     = "over_budget"
 )
 
 // NotLoaded names a memory in scope that startup context leaves out, and why.
@@ -655,7 +668,11 @@ func (r *Reader) StartupPreview(ctx context.Context, scope Scope, budget int) (S
 			unconfirmed = append(unconfirmed, record)
 		}
 	}
-	selected, skipped := chooseHandoff(eligible)
+	selection, err := r.selectStartup(ctx, scope, eligible, startupClock())
+	if err != nil {
+		return Startup{}, err
+	}
+	selected := selection.selected
 	page, err := boundStartupRecords(selected, budget)
 	if err != nil {
 		return Startup{}, err
@@ -678,8 +695,14 @@ func (r *Reader) StartupPreview(ctx context.Context, scope Scope, budget int) (S
 			add(record, NotLoadedOverBudget)
 		}
 	}
-	for _, record := range skipped {
+	for _, record := range selection.olderHandoffs {
 		add(record, NotLoadedOlderHandoff)
+	}
+	for _, record := range selection.expiredHandoffs {
+		add(record, NotLoadedExpiredHandoff)
+	}
+	for _, record := range selection.otherArea {
+		add(record, NotLoadedOtherArea)
 	}
 	for _, record := range unconfirmed {
 		add(record, NotLoadedUnconfirmed)

@@ -110,11 +110,16 @@ func memoryTypeSchema() map[string]any {
 	return schema
 }
 func writeSchema() map[string]any {
+	area := optional("string")
+	area["description"] = "The one area of the owner's life this memory serves, from the areas startup context lists. Omit to keep the current area."
+	everywhere := optional("boolean")
+	everywhere["description"] = "Load this memory in every session. Only for memories with empty scope, and only when the owner says so."
 	return objectSchema(map[string]any{
 		"scope": scopeSchema(), "content": map[string]any{"type": "string", "maxLength": 32768}, "title": optional("string"), "tags": optional("string"),
 		"memory_type": memoryTypeSchema(), "purpose": map[string]any{"type": "string", "enum": []string{"preference", "decision", "lesson", "handoff", "observation"}},
 		"confirmed": map[string]any{"type": "boolean"}, "provenance": provenanceSchema(), "request_id": map[string]any{"type": "string"},
 		"key": optional("string"), "id": optional("integer"), "expected_revision": optional("integer"), "restore_revision": optional("integer"),
+		"area": area, "everywhere": everywhere,
 	}, "scope", "content", "purpose", "confirmed", "provenance", "request_id")
 }
 
@@ -135,6 +140,9 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 	upgradeCtx, upgradeCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer upgradeCancel()
 	if err := backend.Store.EnsureClientTokenSchema(upgradeCtx); err != nil {
+		return nil, err
+	}
+	if err := backend.Store.EnsureFacetSchema(upgradeCtx); err != nil {
 		return nil, err
 	}
 	if backend.Visualizer {
@@ -340,7 +348,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			page, err := backend.Store.Search(ctx, in.Scope, in.Query, vector, backend.Model, limit, budget)
 			return nil, searchOutput{page, vector != nil}, err
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "store", Title: "Save or correct memory", Description: "Use this when saving an explicit preference, accepted decision, verified lesson, or concise handoff with provenance and a request ID. The scope is where the memory applies: {} applies everywhere, project limits it to one project, and device or platform are only for facts about one machine or OS.", Annotations: write, InputSchema: writeSchema()},
+	mcp.AddTool(server, &mcp.Tool{Name: "store", Title: "Save or correct memory", Description: "Use this when saving an explicit preference, accepted decision, verified lesson, or concise handoff with provenance and a request ID. The scope is where the memory applies: {} is not tied to a project, project limits it to one project, and device or platform are only for facts about one machine or OS. Give the memory the area it serves; a {} memory with an area loads only in projects that draw on that area, unless the owner marks it everywhere.", Annotations: write, InputSchema: writeSchema()},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in memory.WriteInput) (*mcp.CallToolResult, storeOutput, error) {
 			receipt, embedded, err := saveMemory(ctx, in)
 			return nil, storeOutput{receipt, receipt.ID, receipt.Revision, receipt.Deduplicated, embedded}, agentReadError(err)

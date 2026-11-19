@@ -36,6 +36,11 @@ type WriteInput struct {
 	ID               *int64     `json:"id"`
 	ExpectedRevision *int64     `json:"expected_revision"`
 	RestoreRevision  *int64     `json:"restore_revision"`
+	// Area and Everywhere set the memory's facets (facets.go). Omitted, they
+	// leave the current facets unchanged; omitempty keeps request
+	// fingerprints from before areas stable.
+	Area       *string `json:"area,omitempty"`
+	Everywhere *bool   `json:"everywhere,omitempty"`
 }
 
 // ArchiveInput requests an archive-state change at an expected revision.
@@ -469,6 +474,7 @@ func writeTx(ctx context.Context, tx *sql.Tx, input WriteInput, scopeKey, finger
 			if (input.Key == nil) != (!exactKey.Valid) || (input.Key != nil && *input.Key != exactKey.String) {
 				return receipt, errors.New("dedup_key_conflict: exact content already has a different key")
 			}
+			// A duplicate save changes nothing, facets included; reclassify by ID.
 			return acknowledge(ctx, tx, input.RequestID, fingerprint, Receipt{exactID, exactRevision, true})
 		}
 		if !errors.Is(queryErr, sql.ErrNoRows) {
@@ -536,6 +542,9 @@ func writeTx(ctx context.Context, tx *sql.Tx, input WriteInput, scopeKey, finger
 		return receipt, errors.New("memory_not_found")
 	}
 	if err = snapshot(ctx, tx, *newRecord); err != nil {
+		return receipt, err
+	}
+	if err = setFacetTx(ctx, tx, input.Scope, *id, input.Area, input.Everywhere); err != nil {
 		return receipt, err
 	}
 	if !newRecord.Archived && newRecord.Purpose == "handoff" {
@@ -826,6 +835,9 @@ func (w *Writer) Move(ctx context.Context, input MoveInput, vector []float32, mo
 	}
 	if copied.Deduplicated {
 		return receipt, errors.New("move_target_exists: the same memory already exists there")
+	}
+	if err = copyFacetTx(ctx, tx, old.ID, copied.ID, copyInput.Scope); err != nil {
+		return receipt, err
 	}
 	note := input.Provenance
 	note.Source = fmt.Sprintf("Moved to memory %d", copied.ID)
