@@ -440,6 +440,22 @@ func TestProjectMarkerGivesAFolderAnIdentity(t *testing.T) {
 	if _, err := ResolveScope(nested, "test-device"); err == nil {
 		t.Fatal("a malformed marker became a project identity")
 	}
+	if err := os.WriteFile(marker, []byte("home-7f3a"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(nested, ProjectMarkerFile), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if scope, err := ResolveScope(nested, "test-device"); err != nil || *scope.Project != "id:home-7f3a" {
+		t.Fatalf("a marker that is not a file must be skipped: %+v %v", scope, err)
+	}
+	// The home folder is matched by identity, not by how its path is spelled.
+	aliasedHome := root + string(os.PathSeparator) + "."
+	t.Setenv("HOME", aliasedHome)
+	t.Setenv("USERPROFILE", aliasedHome)
+	if _, err := ResolveScope(nested, "test-device"); err == nil {
+		t.Fatal("a marker in the home folder became a project identity")
+	}
 }
 
 func TestSameOriginAcrossClonePathsSharesProjectMemory(t *testing.T) {
@@ -589,7 +605,7 @@ func TestCompactContextKeepsFullRecordsAndOmissions(t *testing.T) {
 		"id": 99, "revision": 7, "scope": map[string]any{"project": "git:example.com/Owner/Repo", "device": nil, "platform": "windows", "legacy": false},
 		"confirmed": false, "purpose": "handoff", "title": "Continue", "content": strings.Repeat("é", 220) + " Qualification: verify current Git state.",
 		"tags": "review", "archived": false, "created_at": "earlier", "updated_at": "current", "provenance": map[string]any{"harness": "cursor", "device": "test", "source": "commit abc"}, "future_field": "preserved",
-	}}, "omitted": 1, "omitted_ids": []int{100}, "omitted_records": []any{map[string]any{"id": 100, "revision": 2, "scope": map[string]any{"project": "id:other"}}}}
+	}}, "omitted": 1, "areas": []string{"Work"}, "omitted_ids": []int{100}, "omitted_records": []any{map[string]any{"id": 100, "revision": 2, "scope": map[string]any{"project": "id:other"}}}}
 	raw, _ := json.Marshal(original)
 	compact, err := compactContext(raw)
 	if err != nil {
@@ -606,6 +622,9 @@ func TestCompactContextKeepsFullRecordsAndOmissions(t *testing.T) {
 		if !bytes.Equal(x, y) {
 			t.Errorf("changed %s", key)
 		}
+	}
+	if areas, _ := after["areas"].([]any); len(areas) != 1 {
+		t.Error("startup context lost the areas list")
 	}
 	if after["omitted"] != float64(1) || len(after["omitted_records"].([]any)) != 1 {
 		t.Fatal("lost omissions")

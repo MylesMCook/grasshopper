@@ -20,18 +20,18 @@ func compactScope(scope Scope) map[string]any {
 }
 
 // compactContext changes hook presentation only. MCP records remain unchanged.
-// Preserve record content and unknown record fields; omit redundant active-row metadata.
+// Preserve record content, unknown record fields and unknown page fields, such
+// as the areas list; omit redundant active-row metadata.
 func compactContext(raw json.RawMessage) (json.RawMessage, error) {
-	var page struct {
-		Records        []map[string]json.RawMessage `json:"records"`
-		Omitted        int                          `json:"omitted"`
-		OmittedIDs     []int64                      `json:"omitted_ids,omitempty"`
-		OmittedRecords []json.RawMessage            `json:"omitted_records,omitempty"`
-	}
+	var page map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &page); err != nil {
 		return nil, err
 	}
-	for _, record := range page.Records {
+	var records []map[string]json.RawMessage
+	if err := json.Unmarshal(page["records"], &records); err != nil && page["records"] != nil {
+		return nil, err
+	}
+	for _, record := range records {
 		if string(record["archived"]) == "false" {
 			delete(record, "archived")
 		}
@@ -48,9 +48,15 @@ func compactContext(raw json.RawMessage) (json.RawMessage, error) {
 		}
 		record["scope"], _ = json.Marshal(compactScope(scope))
 	}
+	if page["records"] != nil {
+		page["records"], _ = json.Marshal(records)
+	}
 	// Complete references already carry the same IDs plus revision and scope.
-	if len(page.OmittedRecords) == len(page.OmittedIDs) {
-		page.OmittedIDs = nil
+	var omittedIDs, omittedRecords []json.RawMessage
+	_ = json.Unmarshal(page["omitted_ids"], &omittedIDs)
+	_ = json.Unmarshal(page["omitted_records"], &omittedRecords)
+	if len(omittedRecords) == len(omittedIDs) {
+		delete(page, "omitted_ids")
 	}
 	return json.Marshal(page)
 }

@@ -150,6 +150,50 @@ func TestAreaWritesAreValidatedAndKept(t *testing.T) {
 	}
 }
 
+// Duplicate saves leave facets alone, clearing everywhere needs no area, and
+// a classified keyed memory can move away and back.
+func TestFacetsSurviveDuplicatesAndMoves(t *testing.T) {
+	w := facetWriter(t, "Home", "Work")
+	ctx := context.Background()
+	area := func(id int64) string {
+		records := []Record{{ID: id}}
+		if err := w.attachFacets(ctx, records); err != nil {
+			t.Fatal(err)
+		}
+		return records[0].Area
+	}
+	saved := saveFacet(t, w, Scope{}, "Duplicate me.", "decision", "Home", false)
+	again, err := w.Write(ctx, WriteInput{Scope: Scope{}, Content: "Duplicate me.", Purpose: "decision", Confirmed: true,
+		Provenance: Provenance{"test", "synthetic", "facets"}, RequestID: "duplicate-new-area", Area: strPtr("Work")}, nil, "")
+	if err != nil || !again.Deduplicated || area(saved.ID) != "Home" {
+		t.Fatalf("a duplicate save changed the area: %+v %v %q", again, err, area(saved.ID))
+	}
+	off := false
+	if _, err := w.Write(ctx, WriteInput{Scope: Scope{}, Content: "No area yet.", Purpose: "decision",
+		Provenance: Provenance{"test", "synthetic", "facets"}, RequestID: "everywhere-off", Everywhere: &off}, nil, ""); err != nil {
+		t.Fatalf("everywhere false without an area must be accepted: %v", err)
+	}
+
+	project := "id:garden"
+	key := "garden-plan"
+	original, err := w.Write(ctx, WriteInput{Scope: Scope{Project: &project}, Content: "Plant in spring.", Purpose: "decision", Confirmed: true,
+		Provenance: Provenance{"test", "synthetic", "facets"}, RequestID: "keyed", Key: &key, Area: strPtr("Home")}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := w.Move(ctx, MoveInput{ID: original.ID, ExpectedRevision: original.Revision, RequestID: "move-out", Provenance: Provenance{"test", "synthetic", "facets"}}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.db.ExecContext(ctx, "UPDATE memory_areas SET area='Work' WHERE memory_id=?", moved.ID); err != nil {
+		t.Fatal(err)
+	}
+	back, err := w.Move(ctx, MoveInput{ID: moved.ID, ExpectedRevision: moved.Revision, Project: &project, RequestID: "move-back", Provenance: Provenance{"test", "synthetic", "facets"}}, nil, "")
+	if err != nil || back.ID != original.ID || area(back.ID) != "Work" {
+		t.Fatalf("move back must revive the original with the current area: %+v %v %q", back, err, area(back.ID))
+	}
+}
+
 func strPtr(value string) *string { return &value }
 
 // Suggestions lists only unkept, non-handoff memories in scope, newest first.
