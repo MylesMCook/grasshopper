@@ -397,6 +397,10 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			"/visualizer/api/move":               visualizerMove(backend.Store, moveMemory, audit),
 			"/visualizer/api/startup":            visualizerStartup(backend.Store),
 			"/visualizer/api/export":             visualizerExport(backend.Store),
+			"/visualizer/api/areas":              visualizerAreas(backend.Store),
+			"/visualizer/api/areas/create":       visualizerAreaCreate(backend.Store, audit),
+			"/visualizer/api/areas/project":      visualizerProjectAreas(backend.Store, audit),
+			"/visualizer/api/areas/memory":       visualizerMemoryArea(backend.Store, audit),
 			"/visualizer/api/session/revoke-all": sessions.revokeAll,
 		}
 	}

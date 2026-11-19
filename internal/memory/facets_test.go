@@ -145,7 +145,7 @@ func TestAreaWritesAreValidatedAndKept(t *testing.T) {
 		t.Fatal(err)
 	}
 	records := []Record{{ID: corrected.ID}}
-	if err := w.attachFacets(ctx, records); err != nil || records[0].Area != "Home" {
+	if err := w.AttachFacets(ctx, records); err != nil || records[0].Area != "Home" {
 		t.Fatalf("a correction without an area must keep the area: %+v %v", records, err)
 	}
 }
