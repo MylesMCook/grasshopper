@@ -340,7 +340,7 @@ func NewHandler(backend Backend, token string) (http.Handler, error) {
 			page, err := backend.Store.Search(ctx, in.Scope, in.Query, vector, backend.Model, limit, budget)
 			return nil, searchOutput{page, vector != nil}, err
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "store", Title: "Save or correct memory", Description: "Use this when saving an explicit preference, accepted decision, verified lesson, or concise handoff with provenance and a request ID. The scope is where the memory applies: {} applies everywhere, project limits it to one project, and device or platform are only for facts about one machine or OS.", Annotations: write, InputSchema: writeSchema()},
+	mcp.AddTool(server, &mcp.Tool{Name: "store", Title: "Save or correct memory", Description: "Use this when saving an explicit preference, accepted decision, verified lesson, or concise handoff with provenance and a request ID. The scope is where the memory applies: {} applies everywhere, project limits it to one project, and device or platform are only for facts about one machine or OS. A handoff applies to its whole project and holds at most 600 characters.", Annotations: write, InputSchema: writeSchema()},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in memory.WriteInput) (*mcp.CallToolResult, storeOutput, error) {
 			receipt, embedded, err := saveMemory(ctx, in)
 			return nil, storeOutput{receipt, receipt.ID, receipt.Revision, receipt.Deduplicated, embedded}, agentReadError(err)
