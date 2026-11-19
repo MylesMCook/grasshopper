@@ -22,7 +22,8 @@ func TestStoreGuidesScopeAndMemoryType(t *testing.T) {
 		if tool.Name != "store" {
 			continue
 		}
-		if !strings.Contains(tool.Description, "{} applies everywhere") || !strings.Contains(tool.Description, "only for facts about one machine") {
+		if !strings.Contains(tool.Description, "{} is not tied to a project") || !strings.Contains(tool.Description, "only for facts about one machine") ||
+			!strings.Contains(tool.Description, "unless the owner marks it everywhere") {
 			t.Fatalf("store scope guidance missing: %s", tool.Description)
 		}
 		schema, _ := json.Marshal(tool.InputSchema)

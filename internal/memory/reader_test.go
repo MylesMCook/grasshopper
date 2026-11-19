@@ -7,11 +7,22 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func ptr(s string) *string { return &s }
 
+// fixtureTime is shortly after the go-compat fixture was written, so its
+// handoffs are still inside the startup load window.
+func useFixtureClock(t *testing.T) {
+	t.Helper()
+	previous := startupClock
+	startupClock = func() time.Time { return time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC) }
+	t.Cleanup(func() { startupClock = previous })
+}
+
 func TestRustFixtureReadParity(t *testing.T) {
+	useFixtureClock(t)
 	root := filepath.Join("..", "..", "tests", "fixtures", "go-compat")
 	r, err := OpenReadOnly(filepath.Join(root, "memory.db"))
 	if err != nil {

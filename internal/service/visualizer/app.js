@@ -1175,7 +1175,7 @@ function devicePanel(panel) {
 
 function startupPanel(panel) {
   const data = panel.data;
-  const reasons = { unconfirmed: 'not kept yet', older_handoff: 'older handoff', over_budget: `over ${panel.agent}'s size limit` };
+  const reasons = { unconfirmed: 'not kept yet', older_handoff: 'older handoff', expired_handoff: 'handoff over 14 days old', other_area: 'area this project does not use', over_budget: `over ${panel.agent}'s size limit` };
   return [h('h2', { class: 'panel-title', text: `${panel.agent} in ${panel.project ? projectName(panel.project) : 'no project'}` }),
     panel.error ? h('p', { class: 'label', text: panel.error }) : !data ? h('p', { class: 'meta loading', text: 'Loading…' }) : [
       section('Gets', (data.records || []).length ? data.records.map(record => h('div', { class: 'row static' }, h('span', { class: 't', text: record.title }), h('span', { class: 'm', text: record.purpose === 'handoff' ? 'last session' : whereLabel(record.scope) }))) : h('p', { class: 'meta', text: 'Nothing would load.' })),
