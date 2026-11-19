@@ -20,6 +20,22 @@ its old script until a new tab was opened.
 Not verified: the memory view on macOS or a phone, an agent saving with an
 area through MCP from a real harness, and a marker-file project in T3.
 
+## Pi extension (2.12.0 branch, November 18)
+
+On the Windows PC, a branch build ran `pi install` into an empty Pi folder and
+wrote the extension with the client configuration path. Pi 1.5.2 (`pi -p`,
+fresh sessions, the real 2.11.3 managed client and server) then loaded the
+extension: it listed the five `mcp__grasshopper__*` tools, named the device
+and a confirmed memory from startup context without calling a tool, and
+returned the matching record from a `search` call. The startup hook delivered
+about 13 KB, inside Pi's prompt as a `grasshopper_memory` section.
+
+Not verified: Pi on macOS or Linux, Pi inside T3 Code, automatic writing of the
+extension from an agent session on a real machine (unit tests only), and
+`pi remove`. Two `internal/client` guidance tests fail on this Windows PC with
+and without this change, because the test temp folder sits under a home folder
+whose AGENTS.md they pick up; both pass with a temp folder outside it.
+
 ## 2.11.1 to 2.11.3 and nightly upgrades (October 28)
 
 [PR 90](https://github.com/MylesMCook/grasshopper/pull/90) (2.11.1),
