@@ -474,9 +474,7 @@ func writeTx(ctx context.Context, tx *sql.Tx, input WriteInput, scopeKey, finger
 			if (input.Key == nil) != (!exactKey.Valid) || (input.Key != nil && *input.Key != exactKey.String) {
 				return receipt, errors.New("dedup_key_conflict: exact content already has a different key")
 			}
-			if err = setFacetTx(ctx, tx, input.Scope, exactID, input.Area, input.Everywhere); err != nil {
-				return receipt, err
-			}
+			// A duplicate save changes nothing, facets included; reclassify by ID.
 			return acknowledge(ctx, tx, input.RequestID, fingerprint, Receipt{exactID, exactRevision, true})
 		}
 		if !errors.Is(queryErr, sql.ErrNoRows) {
