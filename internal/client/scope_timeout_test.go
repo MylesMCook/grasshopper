@@ -50,7 +50,7 @@ func TestHookReturnsContextWhenGitStalls(t *testing.T) {
 				t.Fatalf("stalled Git consumed the hook budget: %s", elapsed)
 			}
 			text := output["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
-			for _, expected := range []string{"Canonical memory policy marker.", "Grasshopper context loaded", "project_resolved=false"} {
+			for _, expected := range []string{"# Shared memory policy", "Grasshopper context loaded", "project_resolved=false"} {
 				if !strings.Contains(text, expected) {
 					t.Fatalf("stalled Git lost %q: %s", expected, text)
 				}

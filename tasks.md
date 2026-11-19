@@ -1,15 +1,24 @@
 # Grasshopper status
 
-Current release: [2.11.3](https://github.com/MylesMCook/grasshopper/releases/tag/v2.11.3),
+Current release: [2.12.0](https://github.com/MylesMCook/grasshopper/releases/tag/v2.12.0),
 on the marketplace and usegrasshopper.com; the macOS service follows releases nightly.
 Earlier release records are in Git history and
 [GitHub releases](https://github.com/MylesMCook/grasshopper/releases).
 
 ## Active
 
-Pi support (2.12.0) is in review: an extension the client keeps current in
-Pi's user folder. Verified with a branch build and real Pi sessions on the
-Windows PC; rollout to every machine follows the release.
+Grasshopper becomes the owner's memory for everything they do with AI, used
+from T3 Code on every machine. The model is in [GLOSSARY.md](GLOSSARY.md) and
+[docs/adr](docs/adr). Build order: restore CI's ONNX Runtime (PR 96); this
+policy rewrite, with the policy built into the client so it reaches every
+machine; the Pi release (2.12.0, PR 95); the core model (areas, projects,
+Everywhere, facet-based startup loading, 14-day handoffs, marker files for
+non-repository projects); the memory view for areas; a "review my memory"
+skill for T3; a reviewed cleanup of the existing store; and a check on real
+machines.
+
+Pi support shipped in 2.12.0: an extension the client keeps current in Pi's
+user folder, already installed on every machine.
 
 Updates are self-running: release on merge, a nightly `grasshopper-server
 upgrade` on the macOS server that only moves forward, and clients that follow

@@ -1,14 +1,17 @@
-Grasshopper 2.12.0
+Grasshopper 2.12.1
 
-Pi joins Codex, Cursor and Claude Code.
+A clearer memory policy that now reaches every machine.
 
-- Grasshopper connects Pi with one extension in Pi's user folder. Pi loads
-  memory at startup and gets the five memory tools, run by the same
-  self-updated client as every other agent on the machine.
-- No plugin step: once any agent on a machine runs this client, it adds Pi's
-  extension at its next session when Pi is installed, and rewrites it when a
-  later client changes it.
-- `grasshopper pi install` connects Pi right away, including on a machine that
-  runs only Pi. `grasshopper pi remove` disconnects it, and agents leave Pi
-  alone until it is installed again.
-- `grasshopper check` lists Pi with the client it runs.
+- Agents save on their own only decisions with their reasons, lessons verified
+  in practice, and one handoff at the end of real work. Anything else,
+  including preferences, waits until you ask them to remember it.
+- Rules for how agents behave belong in AGENTS.md files, not in memory, and
+  agents offer to put them there. Documents stay where they live; memory keeps
+  a short pointer.
+- Handoffs point to the project's task file, branch and commit instead of
+  retelling the work.
+- Clients now serve the policy built into them, so policy changes arrive with
+  the self-update instead of staying at the copy written when a machine was
+  first connected.
+- New GLOSSARY.md and decision records (docs/adr) describe the memory model
+  Grasshopper is moving to.

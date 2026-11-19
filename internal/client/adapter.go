@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	memorypolicy "github.com/MylesMCook/grasshopper/integrations/policy"
 )
 
 // Bridge forwards newline-delimited MCP messages to the remote service.
@@ -78,13 +80,6 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	if err != nil {
 		return nil, err
 	}
-	if filepath.Base(config.PolicyPath) != "AGENTS.md" {
-		return nil, errors.New("policy must be named AGENTS.md")
-	}
-	policyBytes, err := os.ReadFile(config.PolicyPath)
-	if err != nil || len(policyBytes) > 16384 {
-		return nil, errors.New("canonical AGENTS.md unavailable or too large")
-	}
 	cwd := stringValue(input["cwd"])
 	if cwd == "" {
 		if roots, ok := input["workspace_roots"].([]any); ok && len(roots) > 0 {
@@ -101,7 +96,9 @@ func Hook(configPath, harness string, input map[string]any) (map[string]any, err
 	if err != nil {
 		return nil, err
 	}
-	policy := string(policyBytes)
+	// The built-in policy, not the copy written at connect time, so policy
+	// changes reach every machine with the client's self-update.
+	policy := memorypolicy.Text
 	if harness != "cursor" && event != "SessionStart" && event != "SubagentStart" && !(harness == "codex" && event == "UserPromptSubmit") {
 		return nil, errors.New("unsupported hook event")
 	}

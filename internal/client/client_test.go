@@ -177,10 +177,15 @@ func TestGoBridgeAndHookUseOneBackend(t *testing.T) {
 		t.Fatal(err)
 	}
 	guidance := pretool["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
-	for _, expected := range []string{"Canonical memory policy marker.", "Root marker.", "Nested marker."} {
+	for _, expected := range []string{"# Shared memory policy", "Root marker.", "Nested marker."} {
 		if !strings.Contains(guidance, expected) {
 			t.Errorf("missing %q in nested guidance", expected)
 		}
+	}
+	// The policy file written at connect time is a stale copy; the client
+	// serves its built-in policy so updates arrive with self-update.
+	if strings.Contains(guidance, "Canonical memory policy marker.") {
+		t.Error("hook served the connect-time policy copy instead of the built-in policy")
 	}
 	startup, err := Hook(config, "claude", map[string]any{"cwd": nested, "hook_event_name": "SessionStart"})
 	if err != nil {
@@ -202,7 +207,7 @@ func TestGoBridgeAndHookUseOneBackend(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded := contextOutput["additional_context"].(string)
-	for _, expected := range []string{"project_resolved=true", "git:github.com/Owner/Repo", "Canonical memory policy marker."} {
+	for _, expected := range []string{"project_resolved=true", "git:github.com/Owner/Repo", "# Shared memory policy"} {
 		if !strings.Contains(loaded, expected) {
 			t.Errorf("missing %q in context", expected)
 		}
@@ -235,7 +240,7 @@ func TestCodexPromptFallbackLoadsContextOncePerSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := first["hookSpecificOutput"].(map[string]any)
-	if output["hookEventName"] != "UserPromptSubmit" || !strings.Contains(output["additionalContext"].(string), "Canonical memory policy marker.") {
+	if output["hookEventName"] != "UserPromptSubmit" || !strings.Contains(output["additionalContext"].(string), "# Shared memory policy") {
 		t.Fatalf("prompt hook did not deliver context: %v", first)
 	}
 	second, err := Hook(config, "codex", input)
