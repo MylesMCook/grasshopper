@@ -440,6 +440,22 @@ func TestProjectMarkerGivesAFolderAnIdentity(t *testing.T) {
 	if _, err := ResolveScope(nested, "test-device"); err == nil {
 		t.Fatal("a malformed marker became a project identity")
 	}
+	if err := os.WriteFile(marker, []byte("home-7f3a"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(nested, ProjectMarkerFile), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if scope, err := ResolveScope(nested, "test-device"); err != nil || *scope.Project != "id:home-7f3a" {
+		t.Fatalf("a marker that is not a file must be skipped: %+v %v", scope, err)
+	}
+	// The home folder is matched by identity, not by how its path is spelled.
+	aliasedHome := root + string(os.PathSeparator) + "."
+	t.Setenv("HOME", aliasedHome)
+	t.Setenv("USERPROFILE", aliasedHome)
+	if _, err := ResolveScope(nested, "test-device"); err == nil {
+		t.Fatal("a marker in the home folder became a project identity")
+	}
 }
 
 func TestSameOriginAcrossClonePathsSharesProjectMemory(t *testing.T) {

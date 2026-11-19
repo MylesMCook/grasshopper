@@ -100,14 +100,24 @@ const ProjectMarkerFile = ".grasshopper-project"
 // projectMarker returns the ID in the nearest marker file at or above cwd.
 // An unreadable or malformed marker counts as absent, so a stray file cannot
 // break startup. Markers in the home folder or a filesystem root are ignored:
-// they would turn everything below them into one project.
+// they would turn everything below them into one project. The home check
+// compares file identity, since Windows paths differ in case and links alias.
+// Only small regular files are read, so a pipe or huge file cannot stall startup.
 func projectMarker(cwd string) string {
 	home, _ := os.UserHomeDir()
+	homeInfo, _ := os.Stat(home)
 	for dir := cwd; ; dir = filepath.Dir(dir) {
-		if dir == home || filepath.Dir(dir) == dir {
+		if filepath.Dir(dir) == dir {
 			return ""
 		}
-		if data, err := os.ReadFile(filepath.Join(dir, ProjectMarkerFile)); err == nil && len(data) <= 256 {
+		if info, err := os.Stat(dir); err == nil && homeInfo != nil && os.SameFile(info, homeInfo) {
+			return ""
+		}
+		marker := filepath.Join(dir, ProjectMarkerFile)
+		if info, err := os.Stat(marker); err != nil || !info.Mode().IsRegular() || info.Size() > 256 {
+			continue
+		}
+		if data, err := os.ReadFile(marker); err == nil && len(data) <= 256 {
 			id := strings.TrimSpace(string(data))
 			valid := id != "" && len(id) <= 128 && strings.IndexFunc(id, func(r rune) bool {
 				return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.')
