@@ -35,18 +35,44 @@ for (const [remote, local, sha] of [
   ['onnx/model.onnx_data', 'model.onnx_data', '86a3a705d4598615894d89540ea71a3d9bbdb17a315e79edcd5dfc737222834b'],
   ['tokenizer.json', 'tokenizer.json', 'feeb83348dcb033bc6b9d2e1f7906ca9eb2d122845000c9416d894d7c2927149'],
 ]) await restore(`${source}/${remote}`, join(model, local), sha);
+// ONNX Runtime 1.30.0 comes from Grasshopper's own 2.11.3 server archive, because
+// Microsoft's release downloads stopped resolving. That archive carries the upstream
+// library, LICENSE and ThirdPartyNotices.txt unchanged (checked against the original
+// osx-arm64 archive). Both the archive and the library inside it are pinned.
 const platform = {
-  'darwin-arm64': ['osx-arm64', 'tgz', 'libonnxruntime.dylib', '6ebb5062a934537c352937821f9fe9718e7de1a2db1122a93dd363ffd53a7012'],
-  'linux-x64': ['linux-x64', 'tgz', 'libonnxruntime.so', 'a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd'],
-  'win32-x64': ['win-x64', 'zip', 'onnxruntime.dll', 'c6ba983baf5681af108599675d2a89c2d145512d02de28aed0bff177cd0ba949'],
+  'darwin-arm64': ['osx-arm64', 'darwin-arm64', 'libonnxruntime.dylib',
+    '9847befefc20cdc808135ed1114f82882596fe9d14be48005e350baa4fde825a', 'bffaa6ef856dba2c26f09c7c0e7018fd1562625f3485292c7ad28b83748c6879'],
+  'linux-x64': ['linux-x64', 'linux-amd64', 'libonnxruntime.so',
+    '0a4b6612dea9a811d8578661d9d0316c100af573886d9ed440e30f86652d76f5', '245a6f8c38127551057a1cd1ffd59f0a186a227ade4f3492dea2494eb565542e'],
+  'win32-x64': ['win-x64', 'windows-amd64', 'onnxruntime.dll',
+    '8206401d04e4686b5f1675f966400e5b7986aa6c2a6a81573eac933c4fc84444', '7e39e2bdbba836d98071ef28620735ba36a47c554cf794585269aecc50fab0da'],
 }[`${process.platform}-${process.arch}`];
 if (!platform) throw new Error(`Unsupported native test platform: ${process.platform}-${process.arch}`);
-const [target, extension, library, sha] = platform;
+const [target, release, library, archiveSha, librarySha] = platform;
 const name = `onnxruntime-${target}-1.30.0`;
-const archive = join(root, `${name}.${extension}`);
-await restore(`https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/${name}.${extension}`, archive, sha);
-const extracted = spawnSync('tar', ['-xf', archive, '-C', root], {stdio: 'inherit'});
-if (extracted.status !== 0) throw new Error('Runtime extraction failed');
+const archiveName = `grasshopper-server-${release}-2.11.3.zip`;
+const archive = join(root, archiveName);
+await restore(`https://github.com/MylesMCook/grasshopper/releases/download/v2.11.3/${archiveName}`, archive, archiveSha);
+// Each archive entry and where the upstream release layout keeps it.
+const files = [
+  [`runtime/${library}`, `lib/${library}`],
+  ['licenses/ONNX-Runtime-LICENSE', 'LICENSE'],
+  ['licenses/ONNX-Runtime-ThirdPartyNotices.txt', 'ThirdPartyNotices.txt'],
+];
+const entries = files.map(([entry]) => entry);
+const staging = join(root, `${name}.${randomUUID()}.extract`);
+await mkdir(staging);
+try {
+  // Windows' own bsdtar reads zip files; Git Bash's GNU tar on PATH does not.
+  const extracted = process.platform === 'win32'
+    ? spawnSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', archive, '-C', staging, ...entries], {stdio: 'inherit'})
+    : spawnSync('unzip', ['-q', archive, ...entries, '-d', staging], {stdio: 'inherit'});
+  if (extracted.status !== 0) throw new Error('Runtime extraction failed');
+  if (await digest(join(staging, 'runtime', library)) !== librarySha) throw new Error(`SHA-256 mismatch: ${library}`);
+  await rm(join(root, name), {recursive: true, force: true});
+  await mkdir(join(root, name, 'lib'), {recursive: true});
+  for (const [entry, local] of files) await rename(join(staging, entry), join(root, name, local));
+} finally { await rm(staging, {recursive: true, force: true}); }
 const runtime = join(root, name, 'lib', library);
 const environment = `GRASSHOPPER_EMBED_TEST_ROOT=${model}\nGRASSHOPPER_ONNX_RUNTIME_LIBRARY=${runtime}\n`;
 if (process.env.GITHUB_ENV) await appendFile(process.env.GITHUB_ENV, environment);
