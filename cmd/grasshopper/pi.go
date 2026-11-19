@@ -49,8 +49,13 @@ func piCommand(args []string) error {
 		return err
 	}
 	// A newer managed client carries the newer extension template; an older
-	// client from an extracted archive must not overwrite it.
-	runManagedClient(path)
+	// client from an extracted archive must not overwrite it, even when the
+	// newer one fails to start. handOff exits with the managed client's status.
+	if program, ok := client.HandOffTarget(path, clientVersion); ok && os.Getenv(handedOffEnv) == "" {
+		if err := handOff(program); err != nil {
+			return fmt.Errorf("a newer Grasshopper client is installed but did not start (%v); run %s %s", err, program, args[0])
+		}
+	}
 	dir, err := client.PiAgentDir()
 	if err != nil {
 		return err
