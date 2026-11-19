@@ -7,14 +7,18 @@ Earlier release records are in Git history and
 
 ## Active
 
+Pi support (2.12.0) is in review: an extension the client keeps current in
+Pi's user folder. Verified with a branch build and real Pi sessions on the
+Windows PC; rollout to every machine follows the release.
+
 Updates are self-running: release on merge, a nightly `grasshopper-server
 upgrade` on the macOS server that only moves forward, and clients that follow
 the server's version. 2.11.3 is live on the Mac; its Claude Code and Codex
 agents run the matching client (see [verification](docs/verification.md)).
-Pending, owner steps: the one-time plugin update on the Windows PC, and
-updating Cursor's plugin on the Mac to 2.11 (its active version is
-unverified). Not done: release signing (needs a new dependency) and a
-per-address pairing cap (ineffective behind the private proxy).
+Pending: the one-time plugin updates for Claude Code and Cursor on the
+Windows machines, and updating Cursor's plugin on the Mac to 2.11 (its active
+version is unverified). Not done: release signing (needs a new dependency) and
+a per-address pairing cap (ineffective behind the private proxy).
 
 Context-aware recall is released and deployed. The server balances scopes and
 old/new records when startup exceeds budget; updated hooks guide sanitized

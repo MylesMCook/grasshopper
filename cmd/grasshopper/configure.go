@@ -58,7 +58,7 @@ func checkConnection(args []string) error {
 	if *jsonOutput {
 		return json.NewEncoder(os.Stdout).Encode(result)
 	}
-	agents := checkAgents(result["host_version"])
+	agents := checkAgents(path, result["host_version"])
 	dir := client.ManagedDir(path)
 	managed, _, _ := client.ManagedClient(dir)
 	result["client_note"] = managedClientNote(dir, managed)
@@ -99,13 +99,19 @@ func withManagedClient(agents []agentReport, managed, serverVersion string) []ag
 }
 
 // checkAgents inspects this machine's agents. Tests replace it so check never
-// runs the developer's real agent CLIs or reads their Cursor settings.
-var checkAgents = func(serverVersion string) []agentReport {
+// runs the developer's real agent CLIs or reads their Cursor or Pi settings.
+var checkAgents = func(configPath, serverVersion string) []agentReport {
 	cursorDir := ""
 	if home, err := os.UserHomeDir(); err == nil {
 		cursorDir = filepath.Join(home, ".cursor")
 	}
-	return inspectAgents(runAgentCommand, cursorDir, serverVersion)
+	agents := inspectAgents(runAgentCommand, cursorDir, serverVersion)
+	if piDir, err := client.PiAgentDir(); err == nil {
+		if report, ok := piAgentReport(configPath, piDir, serverVersion); ok {
+			agents = append(agents, report)
+		}
+	}
+	return agents
 }
 
 func connectionStatus(path string) (string, string) {

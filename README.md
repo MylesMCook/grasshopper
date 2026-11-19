@@ -1,7 +1,7 @@
 # Grasshopper
 
-Memory for your coding agents. Tell one agent something once, and Codex, Cursor
-and Claude Code all remember it, on every machine. One private server holds the
+Memory for your coding agents. Tell one agent something once, and Codex, Cursor,
+Claude Code and Pi all remember it, on every machine. One private server holds the
 memories; you can see, fix or archive anything they keep.
 
 The guided setup is at [usegrasshopper.com/setup](https://usegrasshopper.com/setup/).
@@ -80,6 +80,20 @@ in place of the two commands above (one route or the other, not both):
 ./bin/grasshopper connect --agents claude --url https://your-server.tailnet.ts.net
 ```
 
+**Pi**
+
+Pi needs no plugin. Once another agent on the machine is connected, Grasshopper
+adds an extension to Pi at that agent's next session, and keeps it current.
+Pi then loads memory at startup and gets the five memory tools. To connect it
+right away, or on a machine that runs only Pi, connect with the
+[client archive](https://github.com/MylesMCook/grasshopper/releases/latest)
+and then add Pi:
+
+```sh
+./bin/grasshopper connect --url https://your-server.tailnet.ts.net
+./bin/grasshopper pi install
+```
+
 <a id="2-connect-once"></a>
 
 ### 3. Connect once
@@ -136,6 +150,7 @@ at a Grasshopper program that no longer exists.
 | Cursor | `agent plugin marketplace remove grasshopper-marketplace`, then `agent plugin marketplace add https://github.com/MylesMCook/grasshopper.git --git-ref marketplace`, then update your entry in the Plugins menu. Cursor pins the marketplace to one commit, so `agent plugin marketplace update` alone does not pick up a new release. An Imported copy updates with Claude Code | Run `./bin/grasshopper cursor remove` from the client archive, then uninstall the plugin |
 | Claude Code | `claude plugin marketplace update grasshopper-marketplace`, then `claude plugin update` your entry | `claude plugin uninstall` your entry, then `claude plugin marketplace remove grasshopper-marketplace` |
 | Claude Code (client archive) | `./bin/grasshopper setup --agents claude --update` | `./bin/grasshopper claude remove`, then remove the plugin |
+| Pi | Updates itself with the client | `grasshopper pi remove`; agents then leave Pi alone until `grasshopper pi install` |
 
 You can disconnect one device in the memory view without affecting others. A
 device token can read the whole store; project scope is not access control.
@@ -168,7 +183,7 @@ node --test internal/service/visualizer/app.test.cjs web/*.test.cjs
 [AGENTS.md](AGENTS.md) has the layout and project rules, and
 [DESIGN.md](DESIGN.md) the visual system. [Verification](docs/verification.md)
 lists what has been checked on real machines. The
-[shared memory policy](integrations/policy/AGENTS.md) governs all three agents.
+[shared memory policy](integrations/policy/AGENTS.md) governs every agent.
 
 [Report security concerns privately](https://github.com/MylesMCook/grasshopper/security/advisories/new),
 not in a public issue.

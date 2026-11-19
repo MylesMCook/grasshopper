@@ -1,18 +1,14 @@
-Grasshopper 2.11.3
+Grasshopper 2.12.0
 
-Safer unattended upgrades.
+Pi joins Codex, Cursor and Claude Code.
 
-- The nightly server upgrade only moves forward: it never undoes a rollback,
-  never downgrades, and skips a release that was rolled back or failed its
-  health check until a newer one ships. `upgrade --to` still installs any
-  release.
-- Upgrade, rollback and schedule take a lock, so two never overlap; the
-  rollback link is set before the restart; pre-upgrade backups keep the
-  newest five.
-- An upgrade must answer a real search before it counts as healthy, and
-  downloads refuse an HTTPS-to-HTTP redirect.
-- Release runs never publish the same version twice at once, and archives are
-  reproducible.
-- `grasshopper check` warns when an agent runs a client newer than the server.
-- The server restarts itself if one embedding call is stuck for 30 seconds.
-- Search reads at most 200 full-text matches.
+- Grasshopper connects Pi with one extension in Pi's user folder. Pi loads
+  memory at startup and gets the five memory tools, run by the same
+  self-updated client as every other agent on the machine.
+- No plugin step: once any agent on a machine runs this client, it adds Pi's
+  extension at its next session when Pi is installed, and rewrites it when a
+  later client changes it.
+- `grasshopper pi install` connects Pi right away, including on a machine that
+  runs only Pi. `grasshopper pi remove` disconnects it, and agents leave Pi
+  alone until it is installed again.
+- `grasshopper check` lists Pi with the client it runs.

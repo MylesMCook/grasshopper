@@ -1,4 +1,4 @@
-// Grasshopper is the stateless client for Codex, Cursor, and Claude Code.
+// Grasshopper is the stateless client for Codex, Cursor, Claude Code, and Pi.
 // It never stores memory locally.
 package main
 
@@ -32,6 +32,8 @@ Usage: grasshopper COMMAND [options]
   setup          Install agents from an extracted client archive
   claude remove  Remove local Claude Code connector wiring
   cursor remove  Remove local Cursor connector wiring
+  pi install     Connect Pi now (agents also do this when Pi is installed)
+  pi remove      Disconnect Pi and keep agents from reconnecting it
   configure      Configure an existing private device token manually
   config-path    Print this machine's client configuration path
 
@@ -66,6 +68,8 @@ Use grasshopper COMMAND --help for options, or --version for the version.`)
 		return cursorCommand(os.Args[2:])
 	case "claude":
 		return claudeCommand(os.Args[2:])
+	case "pi":
+		return piCommand(os.Args[2:])
 	case "bridge":
 		flags := flag.NewFlagSet("bridge", flag.ContinueOnError)
 		config := flags.String("config", "", "client configuration path")
@@ -118,7 +122,7 @@ Use grasshopper COMMAND --help for options, or --version for the version.`)
 		}
 		return json.NewEncoder(os.Stdout).Encode(output)
 	default:
-		return errors.New("use connect, setup, configure, check, update, cursor, claude, bridge, hook, or config-path")
+		return errors.New("use connect, setup, configure, check, update, cursor, claude, pi, bridge, hook, or config-path")
 	}
 }
 
