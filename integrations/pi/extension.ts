@@ -146,12 +146,32 @@ function unzip(data: Buffer, dest: string): void {
   }
 }
 
+function removeClientCopy(): void {
+  const dir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
+  const copy = join(dir, "extensions", "grasshopper.ts");
+  try {
+    const text = readFileSync(copy, "utf8");
+    if (text.startsWith("// Written by Grasshopper") || text.startsWith("// Grasshopper for Pi")) rmSync(copy);
+  } catch {
+    // No copy, or one Pi's owner wrote: leave it.
+  }
+}
+
 export default function (pi: any) {
   if ((globalThis as any)[claimed]) return;
   (globalThis as any)[claimed] = true;
   pi.on("session_shutdown", () => {
     delete (globalThis as any)[claimed];
   });
+
+  // A client older than 2.14.0 still writes its own copy, which does not
+  // check the claim above. The package removes that copy so Pi loads it no
+  // more; if it already loaded this session, the package stands down for this
+  // session instead of starting a second hook and MCP server.
+  if (!writtenConfig) {
+    removeClientCopy();
+    if (pi.getMcpServers?.().some((server: any) => server.name === "grasshopper")) return;
+  }
 
   const config = configPath();
   const program = managedClient(config);
