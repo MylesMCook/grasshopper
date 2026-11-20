@@ -29,6 +29,25 @@ from 2.11.3 to 2.12.1 at 03:30, the first real nightly upgrade.
 Not verified: the memory view on macOS or a phone, an agent saving with an
 area through MCP from a real harness, and a marker-file project in T3.
 
+## Pi package (2.14.0 branch, November 20)
+
+On Linux with Pi 1.6.0 (`@earendil-works/pi-coding-agent`), `pi install` of
+the repository folder into an empty Pi folder added the package. Driven by a
+scripted model provider and a stand-in client that answers the startup hook
+and serves one MCP tool: the startup section reached the model request, the
+model called `mcp__grasshopper__search` and got its result back, `/remember`
+and `/handoff` reached the model as rewritten prompts, `/grasshopper` ran
+`check`, `/grasshopper refresh` reloaded memory, and the footer status was set
+(RPC mode). With the client-written extension also present, Pi ran one hook
+and one bridge and reported no errors. With no client, `/grasshopper connect`
+downloaded the real 2.13.0 client archive, checked it against SHA256SUMS,
+unpacked it and ran its `connect --json`, which reported a missing address and
+an unreachable server as expected.
+
+Not verified: a real server and approval through `/grasshopper connect`, the
+reload after an actual compaction (Pi refused to compact a short session), the
+interactive TUI, a `git:` install from GitHub, and Pi on macOS or Windows.
+
 ## Pi extension (2.12.0 branch, November 18)
 
 On the Windows PC, a branch build ran `pi install` into an empty Pi folder and
