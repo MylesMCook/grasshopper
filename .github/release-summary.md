@@ -1,16 +1,16 @@
-Grasshopper 2.13.0
+Grasshopper 2.14.0
 
-Areas: memory for everything you use AI for, loaded only where it fits.
+Grasshopper for Pi is now a Pi package.
 
-- Every memory can belong to one area, the part of your life it serves, such
-  as Home or Work. Create areas in Settings; agents propose one when they save.
-- Each project chooses the areas it uses on its page. A memory that is not tied
-  to a project loads only in projects that use its area, unless you mark it
-  "Load in every session". Memories without an area keep loading everywhere
-  until you sort them.
-- Handoffs older than 14 days stop loading at startup; search still finds them.
-- Folders without a Git remote become projects with a one-line
-  `.grasshopper-project` file, which agents create when you ask.
-- The startup preview names the two new reasons a memory is left out.
-- `search` can list the memories you have not kept yet, so an agent can walk
-  you through them when you ask it to review your memory.
+- Install it with `pi install git:github.com/MylesMCook/grasshopper`. A machine
+  that runs only Pi connects with `/grasshopper connect <server link>`; Pi
+  downloads the client, checks it against SHA256SUMS, and walks through the
+  usual approval.
+- Pi's footer shows whether memory loaded. Memory reloads after compaction, and
+  `/grasshopper refresh` reloads it any time; `/grasshopper` shows the
+  connection check.
+- `/remember <text>` saves something on purpose and `/handoff` writes the
+  project's handoff.
+- The package runs the self-updated client, so it follows the server like
+  every other agent. Once it is installed, the client stops writing its own
+  Pi extension and removes the old one.

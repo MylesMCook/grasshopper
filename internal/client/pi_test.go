@@ -27,7 +27,7 @@ func TestSyncPiWritesTheExtensionOnlyWhenPiIsInstalled(t *testing.T) {
 		t.Fatal(err)
 	}
 	quoted, _ := json.Marshal(config)
-	if !strings.Contains(string(written), "const config: string = "+string(quoted)+";") || strings.Contains(string(written), "__GRASSHOPPER_CONFIG__") {
+	if !strings.Contains(string(written), "const writtenConfig: string = "+string(quoted)+";") || strings.Contains(string(written), `const writtenConfig: string = "";`) {
 		t.Fatalf("extension must carry the quoted config path:\n%s", written)
 	}
 	if wrote, err := SyncPi(config, agentDir); err != nil || wrote {
@@ -79,7 +79,44 @@ func TestPiExtensionUsesAnAbsoluteConfigPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	quoted, _ := json.Marshal(filepath.Join(root, "settings", "client.json"))
-	if !strings.Contains(string(written), "const config: string = "+string(quoted)+";") {
+	if !strings.Contains(string(written), "const writtenConfig: string = "+string(quoted)+";") {
 		t.Fatalf("extension must carry the absolute config path:\n%s", written)
+	}
+}
+
+// With the Pi package installed, the client stops writing its own copy and
+// removes an earlier one, so Pi never loads Grasshopper twice.
+func TestSyncPiDefersToThePiPackage(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(root, "grasshopper", "client.json")
+	agentDir := filepath.Join(root, "pi", "agent")
+	if err := InstallPi(config, agentDir); err != nil {
+		t.Fatal(err)
+	}
+	settings := `{"packages": ["npm:other", {"source": "git:github.com/MylesMCook/grasshopper@v2.14.0"}]}`
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if wrote, err := SyncPi(config, agentDir); err != nil || wrote {
+		t.Fatalf("sync must defer to the package, got wrote=%v err=%v", wrote, err)
+	}
+	if _, err := os.Stat(PiExtensionPath(agentDir)); !os.IsNotExist(err) {
+		t.Fatalf("the client copy must be removed, got %v", err)
+	}
+}
+
+func TestIsGrasshopperPackage(t *testing.T) {
+	for source, want := range map[string]bool{
+		"git:github.com/MylesMCook/grasshopper":         true,
+		"git:github.com/mylesmcook/grasshopper@v2.14.0": true,
+		"https://github.com/MylesMCook/grasshopper.git": true,
+		"git@github.com:MylesMCook/grasshopper.git":     true,
+		"git:github.com/MylesMCook/grasshopper-fork":    false,
+		"npm:grasshopper":                    false,
+		"git:github.com/someone/grasshopper": false,
+	} {
+		if got := isGrasshopperPackage(source); got != want {
+			t.Errorf("isGrasshopperPackage(%q) = %v, want %v", source, got, want)
+		}
 	}
 }
