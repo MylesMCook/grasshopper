@@ -170,7 +170,7 @@ export default function (pi: any) {
   // session instead of starting a second hook and MCP server.
   if (!writtenConfig) {
     removeClientCopy();
-    if (pi.getMcpServers?.().some((server: any) => server.name === "grasshopper")) return;
+    if ((pi.getMcpServers?.() ?? []).some((server: any) => server.name === "grasshopper")) return;
   }
 
   const config = configPath();
