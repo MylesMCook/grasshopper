@@ -89,14 +89,17 @@ func piCommand(args []string) error {
 // extension is listed only when it is installed and not turned off.
 func piAgentReport(configPath, agentDir, serverVersion string) (agentReport, bool) {
 	extension := client.PiExtensionPath(agentDir)
-	if _, err := os.Stat(extension); err != nil {
+	route := "Pi extension " + extension
+	if client.PiPackageInstalled(agentDir) {
+		route = "Pi package"
+	} else if _, err := os.Stat(extension); err != nil {
 		if info, err := os.Stat(agentDir); err != nil || !info.IsDir() || client.PiOff(configPath) {
 			return agentReport{}, false
 		}
 		return agentReport{Agent: "Pi", Route: "Pi extension", State: agentUnknown,
 			Detail: "Not connected yet; agents connect Pi at their next session.", Update: "Or run grasshopper pi install."}, true
 	}
-	report := agentReport{Agent: "Pi", Route: "Pi extension " + extension}
+	report := agentReport{Agent: "Pi", Route: route}
 	managed, _, ok := client.ManagedClient(client.ManagedDir(configPath))
 	if !ok {
 		report.State, report.Detail, report.Update = agentBroken, "No self-updated client for Pi to run.", "Run grasshopper update."

@@ -18,7 +18,11 @@ skill for T3; a reviewed cleanup of the existing store; and a check on real
 machines.
 
 Pi support shipped in 2.12.0: an extension the client keeps current in Pi's
-user folder, already installed on every machine.
+user folder, already installed on every machine. 2.14.0 makes it a Pi package
+(`pi install git:github.com/MylesMCook/grasshopper`) with a footer status,
+reload after compaction, `/grasshopper connect` for Pi-only machines,
+`/remember` and `/handoff`; the client stops writing its copy once the package
+is installed.
 
 Updates are self-running: release on merge, a nightly `grasshopper-server
 upgrade` on the macOS server that only moves forward, and clients that follow

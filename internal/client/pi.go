@@ -2,22 +2,20 @@ package client
 
 import (
 	"bytes"
-	"errors"
-	_ "embed"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+
+	piextension "github.com/MylesMCook/grasshopper/integrations/pi"
 )
 
-// Pi has no plugin marketplace, so Grasshopper connects it with one extension
-// file in Pi's user folder. The extension runs the self-updated client, and
+// Pi connects through the Grasshopper Pi package, or, without it, through one
+// extension file the client writes in Pi's user folder. The extension runs the self-updated client, and
 // the client rewrites the file when its template changes, so Pi follows
 // client releases without a plugin step. A pi-off file in the managed folder
 // keeps the client from writing it again after the owner removes it.
-
-//go:embed pi_extension.ts
-var piExtensionTemplate string
 
 // PiAgentDir is Pi's user configuration folder.
 func PiAgentDir() (string, error) {
@@ -39,7 +37,56 @@ func PiExtensionPath(agentDir string) string {
 // PiExtension is the extension for a client configuration path.
 func PiExtension(configPath string) []byte {
 	quoted, _ := json.Marshal(configPath)
-	return []byte(strings.Replace(piExtensionTemplate, "__GRASSHOPPER_CONFIG__", string(quoted), 1))
+	line := strings.Replace(piextension.ConfigLine, `""`, string(quoted), 1)
+	return []byte(strings.Replace(piextension.Extension, piextension.ConfigLine, line, 1))
+}
+
+// PiPackageInstalled reports whether Pi's user settings list the Grasshopper
+// Pi package. The package then serves Pi, and the client stops writing its
+// own copy of the extension so Pi does not load it twice.
+func PiPackageInstalled(agentDir string) bool {
+	data, err := os.ReadFile(filepath.Join(agentDir, "settings.json"))
+	if err != nil {
+		return false
+	}
+	var settings struct {
+		Packages []json.RawMessage `json:"packages"`
+	}
+	if json.Unmarshal(data, &settings) != nil {
+		return false
+	}
+	for _, raw := range settings.Packages {
+		var source string
+		if json.Unmarshal(raw, &source) != nil {
+			var entry struct {
+				Source string `json:"source"`
+			}
+			if json.Unmarshal(raw, &entry) != nil {
+				continue
+			}
+			source = entry.Source
+		}
+		if isGrasshopperPackage(source) {
+			return true
+		}
+	}
+	return false
+}
+
+// isGrasshopperPackage matches the git sources Pi accepts for this
+// repository, such as git:github.com/MylesMCook/grasshopper@v2.14.0 or
+// https://github.com/MylesMCook/grasshopper.
+func isGrasshopperPackage(source string) bool {
+	source = strings.ToLower(strings.TrimSpace(source))
+	for _, prefix := range []string{"git:", "https://", "http://", "ssh://", "git@"} {
+		source = strings.TrimPrefix(source, prefix)
+	}
+	source = strings.Replace(source, "github.com:", "github.com/", 1)
+	if at := strings.LastIndex(source, "@"); at > 0 {
+		source = source[:at]
+	}
+	source = strings.TrimSuffix(strings.TrimSuffix(source, "/"), ".git")
+	return source == "github.com/mylesmcook/grasshopper"
 }
 
 func piOffPath(configPath string) string {
@@ -65,6 +112,12 @@ func SyncPi(configPath, agentDir string) (bool, error) {
 		return false, nil
 	}
 	if info, err := os.Stat(agentDir); err != nil || !info.IsDir() {
+		return false, nil
+	}
+	if PiPackageInstalled(agentDir) {
+		if err := os.Remove(PiExtensionPath(agentDir)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
 		return false, nil
 	}
 	path, want := PiExtensionPath(agentDir), PiExtension(configPath)
